@@ -1,7 +1,7 @@
 ---
 title: feat: 系统 OpenAPI 与系统 Token 管理第一阶段
 type: feat
-status: active
+status: completed
 date: 2026-07-23
 origin: 用户口头需求：系统管理增加独立于普通用户 PAT 的 system OpenAPI 与 token 管理，优先服务版本管理等系统级自动化接入
 ---
@@ -77,7 +77,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: system token 数据模型与领域逻辑**
+- [x] **Unit 1: system token 数据模型与领域逻辑**
 
 **Goal:** 增加独立系统 token 表、scope 校验与 Bearer 认证基础能力。
 
@@ -99,7 +99,7 @@ flowchart TB
 **Verification:**
 - migration 可执行；domain 覆盖 scope 校验、鉴权成功/失败、更新和删除。
 
-- [ ] **Unit 2: 系统版本管理 API 接入 system token**
+- [x] **Unit 2: 系统版本管理 API 接入 system token**
 
 **Goal:** 让 system token 可调用版本管理系统 API，同时保持其它系统接口继续受网页登录态管理员控制。
 
@@ -126,7 +126,7 @@ flowchart TB
 - 缺少 scope 时返回 403。
 - system token 访问 settings 或其它系统接口失败。
 
-- [ ] **Unit 3: 系统管理页中的 system OpenAPI 与 token 管理**
+- [x] **Unit 3: 系统管理页中的 system OpenAPI 与 token 管理**
 
 **Goal:** 在系统管理中提供统一入口，支持查看文档、创建 token、复制 token、编辑范围、删除 token。
 
@@ -154,7 +154,7 @@ flowchart TB
 - 无权限用户不可访问。
 - 新建 token 后可再次复制。
 
-- [ ] **Unit 4: 独立 system OpenAPI 文档**
+- [x] **Unit 4: 独立 system OpenAPI 文档**
 
 **Goal:** 输出只描述系统版本管理能力的独立 OpenAPI 契约和在线文档。
 
@@ -190,3 +190,8 @@ flowchart TB
 
 - 该计划基于 `docs/plans/2026-07-23-003-feat-system-release-management-plan.md` 已完成的版本管理能力继续扩展。
 - 后续如果要开放更多系统级自动化能力，可继续在 `system_api_tokens` 上追加更细粒度 scope，并扩展独立 system OpenAPI 契约。
+
+## Completion Notes
+
+- 已落地 `system_api_tokens` 数据模型、system token Bearer 鉴权、系统版本管理 API scope 接入、系统 OpenAPI 管理页和独立 `docs/openapi/yuance-system.openapi.json`。
+- 当前代码中已存在 `api/src/domains/system_api_tokens.rs`、`api/templates/web/system/openapi.html`、`/api/system/openapi.json` 路由和系统管理流测试覆盖。

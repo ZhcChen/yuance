@@ -252,21 +252,11 @@ pub async fn unread_count(pool: &SqlitePool, user_id: i64) -> AppResult<i64> {
     .await?)
 }
 
-pub async fn mark_read(
+async fn get_notification_summary(
     pool: &SqlitePool,
     user_id: i64,
     notification_id: i64,
 ) -> AppResult<NotificationSummary> {
-    let result = sqlx::query(
-        "UPDATE notifications SET read_at = COALESCE(read_at, datetime('now')) WHERE id = ?1 AND recipient_user_id = ?2",
-    )
-    .bind(notification_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("消息不存在".to_string()));
-    }
     let row = sqlx::query_as::<
         _,
         (
@@ -293,7 +283,9 @@ pub async fn mark_read(
             END,
             n.title,
             n.body,
-            COALESCE(actor.display_name, ''), COALESCE(n.read_at, ''), n.created_at
+            COALESCE(actor.display_name, ''),
+            COALESCE(n.read_at, ''),
+            n.created_at
         FROM notifications n
         JOIN work_items wi ON wi.id = n.work_item_id
         LEFT JOIN work_item_comments c
@@ -308,7 +300,7 @@ pub async fn mark_read(
     .bind(user_id)
     .fetch_one(pool)
     .await?;
-    realtime::publish_topbar_refresh_for_user(user_id);
+
     Ok(NotificationSummary {
         id: row.0,
         kind: row.1,
@@ -320,6 +312,34 @@ pub async fn mark_read(
         read_at: row.7,
         created_at: row.8,
     })
+}
+
+pub async fn get_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    notification_id: i64,
+) -> AppResult<NotificationSummary> {
+    get_notification_summary(pool, user_id, notification_id).await
+}
+
+pub async fn mark_read(
+    pool: &SqlitePool,
+    user_id: i64,
+    notification_id: i64,
+) -> AppResult<NotificationSummary> {
+    let result = sqlx::query(
+        "UPDATE notifications SET read_at = COALESCE(read_at, datetime('now')) WHERE id = ?1 AND recipient_user_id = ?2",
+    )
+    .bind(notification_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("消息不存在".to_string()));
+    }
+    let notification = get_notification_summary(pool, user_id, notification_id).await?;
+    realtime::publish_topbar_refresh_for_user(user_id);
+    Ok(notification)
 }
 
 pub async fn mark_all_read(pool: &SqlitePool, user_id: i64) -> AppResult<u64> {

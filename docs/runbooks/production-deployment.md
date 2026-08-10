@@ -46,10 +46,11 @@ SQLite 数据必须位于 WSL Linux 文件系统，不得迁到 `/mnt/c`。`.env
 - SQLite 是唯一数据库。
 - 不部署 Redis；缓存使用进程内内存。
 - 不部署 PostgreSQL、NATS、Worker、独立前端或独立后台。
-- `/web`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
+- `/web`、`/web/app`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
-- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览，DOC、PPT 走 legacy 纯前端预览。
+- 必须显式配置并保持 `YUANCE_SERVER_INSTANCE_ID` 稳定；它绑定 Desktop device credential，变更后现有设备必须重新授权。
+- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览。DOC、PPT 属于 legacy 实验性纯前端预览，默认关闭。
 
 ## 自动启动
 
@@ -130,7 +131,7 @@ docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api migrate 
 
 - 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
 - PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 统一走站内前端离线预览。
-- DOC、PPT 也走站内前端 legacy 预览链路，不需要额外环境变量开关；复杂版式兼容性有限，PPT 当前运行时会带可见水印。
+- DOC、PPT 只有在 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true` 时才展示实验性预览入口；复杂版式兼容性有限，PPT 当前运行时会带可见水印。
 - 文档预览页只负责生成临时可访问地址，实际解析与渲染全部由浏览器完成。
 - 如果当前仍使用测试内存存储，文档预览页会自动回退到同源读取，不依赖外部文档服务。
 
@@ -142,7 +143,22 @@ YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3
 YUANCE_DATA_DIR=/data
 YUANCE_API_BIND_IP=127.0.0.1
 YUANCE_API_PORT=33033
+YUANCE_WEB_DIST_DIR=/app/web/dist
+YUANCE_SSE_DRAIN_TIMEOUT=30s
+YUANCE_STOP_GRACE_PERIOD=45s
+YUANCE_MAX_RELEASE_WINDOW=10m
+YUANCE_SERVER_INSTANCE_ID=<稳定且唯一的生产实例标识>
+YUANCE_DEVICE_TRUSTED_PROXY_CIDRS=127.0.0.0/8,172.16.0.0/12
+YUANCE_DEVICE_AUTHORIZATION_TTL=10m
+YUANCE_DEVICE_ACCESS_TTL=15m
+YUANCE_DEVICE_REFRESH_SLIDING_TTL=30d
+YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL=90d
+YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
+YUANCE_DEVICE_POLL_INTERVAL=5s
+YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=false
 ```
+
+Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。
 
 公网检查：
 
@@ -150,7 +166,7 @@ YUANCE_API_PORT=33033
 curl -fsS https://yuance.quanxinfu.com/api/healthz
 curl -fsS https://yuance.quanxinfu.com/api/readyz
 curl -I https://yuance.quanxinfu.com/web
-curl -I https://yuance.quanxinfu.com/static/app.css
+curl -I https://yuance.quanxinfu.com/static/auth.css
 ```
 
 ## FRP 与 Caddy

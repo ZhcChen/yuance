@@ -1,7 +1,7 @@
 ---
 title: feat: 新增项目周期与工作项可选归属
 type: feat
-status: in_progress
+status: completed
 date: 2026-07-21
 origin: 用户口头确认：项目详情新增周期 tab，周期时间必填，工作项与周期可选关联
 ---
@@ -99,7 +99,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: 周期数据模型与迁移**
+- [x] **Unit 1: 周期数据模型与迁移**
 
 **Goal:** 新增项目周期表和工作项可空关联字段，提供基础校验与查询模型。
 
@@ -132,7 +132,7 @@ flowchart TB
 **Verification:**
 - 迁移可执行，domain 查询/写入在集成测试中通过。
 
-- [ ] **Unit 2: 项目详情周期 tab 与管理界面**
+- [x] **Unit 2: 项目详情周期 tab 与管理界面**
 
 **Goal:** 在项目详情页新增周期 tab，支持周期列表展示和基本管理操作。
 
@@ -167,7 +167,7 @@ flowchart TB
 **Verification:**
 - Askama 模板编译通过；路由和页面渲染测试通过。
 
-- [ ] **Unit 3: 工作项与周期可选关联**
+- [x] **Unit 3: 工作项与周期可选关联**
 
 **Goal:** 在需求 / 任务 / Bug 新建与编辑流程中接入周期选择，并在详情中显示当前周期。
 
@@ -201,7 +201,7 @@ flowchart TB
 **Verification:**
 - 工作项创建、编辑和详情页展示链路在集成测试中通过。
 
-- [ ] **Unit 4: 周期筛选与基础统计**
+- [x] **Unit 4: 周期筛选与基础统计**
 
 **Goal:** 让项目内和全局工作项入口能按周期查看数据，并支持未关联周期筛选。
 
@@ -251,6 +251,11 @@ flowchart TB
 
 - 周期功能上线后，项目经理可先建周期，再逐步把新工作项归属进去；历史工作项不需要一次性回填。
 - 后续如果需要“周期流转历史”，建议新增单独表，不要在第一阶段过早复杂化。
+
+## Completion Notes
+
+- 已落地 `project_cycles` 数据模型、工作项可空 `cycle_id` 关联、项目周期路由、周期管理页面、工作项周期筛选和周期统计。
+- 当前代码中已存在 `api/migrations/202607210001_create_project_cycles.sql`、周期相关 domain 查询/写入、Web 路由和 `api/tests/project_management_flow.rs` 覆盖。
 
 ## Sources & References
 

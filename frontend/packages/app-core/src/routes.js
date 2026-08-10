@@ -1,0 +1,546 @@
+// @ts-check
+
+const DEFAULT_FILTER = 'all';
+const DEFAULT_PAGE = 1;
+const DEFAULT_PER_PAGE = 10;
+const WORK_ITEM_ROUTE_META = {
+  requirement: {
+    id: 'requirements',
+    title: '需求列表',
+    appPath: '/web/app/requirements',
+    webPath: '/web/requirements',
+  },
+  task: {
+    id: 'tasks',
+    title: '任务列表',
+    appPath: '/web/app/tasks',
+    webPath: '/web/tasks',
+  },
+  bug: {
+    id: 'bugs',
+    title: '缺陷列表',
+    appPath: '/web/app/bugs',
+    webPath: '/web/bugs',
+  },
+};
+
+function normalizeOwner(pathname) {
+  return pathname.startsWith('/web/app') ? 'app' : 'web';
+}
+
+function normalizeFilter(value) {
+  switch ((value || '').trim().toLowerCase()) {
+    case 'unread':
+      return 'unread';
+    case 'pending':
+    case 'pending_discussion':
+      return 'pending';
+    case 'read':
+      return 'read';
+    default:
+      return DEFAULT_FILTER;
+  }
+}
+
+function normalizePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function routeMetaForItemType(itemType = 'task') {
+  return WORK_ITEM_ROUTE_META[itemType] || WORK_ITEM_ROUTE_META.task;
+}
+
+function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', clearDefault = false, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof q === 'string' && q.trim()) {
+    params.set('q', q.trim());
+  }
+  if (typeof status === 'string' && status.trim()) {
+    params.set('status', status.trim());
+  }
+  if (typeof priority === 'string' && priority.trim()) {
+    params.set('priority', priority.trim().toUpperCase());
+  }
+  if (typeof assigneeUsername === 'string' && assigneeUsername.trim()) {
+    params.set('assignee_username', assigneeUsername.trim());
+  }
+  if (typeof projectKey === 'string' && projectKey.trim()) {
+    params.set('project_key', projectKey.trim());
+  }
+  const normalizedCycleId = normalizePositiveInt(cycleId, 0);
+  if (normalizedCycleId > 0) {
+    params.set('cycle_id', String(normalizedCycleId));
+  }
+  if (typeof sort === 'string' && sort.trim()) {
+    params.set('sort', sort.trim());
+  }
+  if (clearDefault) {
+    params.set('clear_default', 'true');
+  }
+  if (normalizedPage > DEFAULT_PAGE) {
+    params.set('page', String(normalizedPage));
+  }
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) {
+    params.set('per_page', String(normalizedPerPage));
+  }
+  return params.toString();
+}
+
+export function buildHomePath(owner = 'web') {
+  return owner === 'app' ? '/web/app' : '/web';
+}
+
+export function buildProfilePath(owner = 'web') {
+  return owner === 'app' ? '/web/app/me' : '/web/me';
+}
+
+export function buildSystemPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system' : '/web/system';
+}
+
+export function buildSystemPermissionsPath({ owner = 'web', q = '' } = {}) {
+  const base = owner === 'app' ? '/web/app/system/permissions' : '/web/system/permissions';
+  const params = new URLSearchParams();
+  if (typeof q === 'string' && q.trim()) params.set('q', q.trim());
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function buildSystemUsersPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/users' : '/web/system/users';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function buildSystemRolesPath({ owner = 'web', role = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof role === 'string' && role.trim()) params.set('role', role.trim());
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/roles' : '/web/system/roles';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function buildSystemStoragePath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/storage' : '/web/system/storage';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function buildSystemOpenApiPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system/openapi' : '/web/system/openapi';
+}
+
+export function buildSystemApiDocsPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system/api-docs' : '/web/system/api-docs';
+}
+
+export function buildSystemDatabaseStatsPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system/database-stats' : '/web/system/database-stats';
+}
+
+export function buildSystemAuditPath({ owner = 'web', actor = '', action = '', targetType = '', targetId = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of [['actor', actor], ['action', action], ['target_type', targetType], ['target_id', targetId]]) {
+    if (typeof value === 'string' && value.trim()) params.set(key, value.trim());
+  }
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/audit' : '/web/system/audit';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function buildSystemReleasesPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/releases' : '/web/system/releases';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
+export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof q === 'string' && q.trim()) {
+    params.set('q', q.trim());
+  }
+  if (normalizedPage > DEFAULT_PAGE) {
+    params.set('page', String(normalizedPage));
+  }
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) {
+    params.set('per_page', String(normalizedPerPage));
+  }
+  const basePath = owner === 'app' ? '/web/app/search' : '/web/search';
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+export function routePathForOwner(path, owner = 'web') {
+  if (typeof path !== 'string' || !(path === '/web' || path.startsWith('/web/')) || path.startsWith('/web/app')) {
+    return buildHomePath(owner);
+  }
+  let parsed;
+  try {
+    // URL is a host-neutral web standard available in both renderers.
+    // eslint-disable-next-line no-undef
+    parsed = new URL(path, 'https://routes.invalid');
+  } catch {
+    return buildHomePath(owner);
+  }
+  if (parsed.origin !== 'https://routes.invalid' || `${parsed.pathname}${parsed.search}${parsed.hash}` !== path) {
+    return buildHomePath(owner);
+  }
+  if (owner === 'app') {
+    const suffix = parsed.pathname === '/web' ? '' : parsed.pathname.slice('/web'.length);
+    return `/web/app${suffix}${parsed.search}${parsed.hash}`;
+  }
+  return path;
+}
+
+export function buildMessagesPath({ owner = 'web', filter = DEFAULT_FILTER, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedFilter = normalizeFilter(filter);
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedFilter !== DEFAULT_FILTER) {
+    params.set('filter', normalizedFilter);
+  }
+  if (normalizedPage > DEFAULT_PAGE) {
+    params.set('page', String(normalizedPage));
+  }
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) {
+    params.set('per_page', String(normalizedPerPage));
+  }
+  const basePath = owner === 'app' ? '/web/app/messages' : '/web/messages';
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+export function buildProjectsPath({ owner = 'app', status = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof status === 'string' && status.trim() && status.trim() !== 'all') {
+    params.set('status', status.trim());
+  }
+  if (normalizedPage > DEFAULT_PAGE) {
+    params.set('page', String(normalizedPage));
+  }
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) {
+    params.set('per_page', String(normalizedPerPage));
+  }
+  const basePath = owner === 'app' ? '/web/app/projects' : '/web/projects';
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = 'info' } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  if (!normalizedKey) {
+    return buildProjectsPath({ owner });
+  }
+  const basePath = owner === 'app'
+    ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
+    : `/web/projects/${encodeURIComponent(normalizedKey)}`;
+  return ['members', 'cycles', 'files', 'resources'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
+}
+
+export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  const normalizedId = Number(cycleId);
+  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) {
+    return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'cycles' });
+  }
+  return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/cycles/${normalizedId}`;
+}
+
+export function buildProjectResourceDetailPath({ owner = 'app', projectKey = '', resourceId = 0 } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  const normalizedId = Number(resourceId);
+  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'resources' });
+  return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/resources/${normalizedId}`;
+}
+
+export function buildProjectPersonalAnalysisPath({ owner = 'app', projectKey = '' } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  if (!normalizedKey) return buildProjectsPath({ owner });
+  return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/my-analysis`;
+}
+
+export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', clearDefault = false, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const meta = routeMetaForItemType(itemType);
+  const basePath = owner === 'app' ? meta.appPath : meta.webPath;
+  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, projectKey, cycleId, sort, clearDefault, page, perPage });
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+/**
+ * @param {{ owner?: 'app' | 'web', itemKey?: string, commentId?: number | null }} [options]
+ */
+export function buildWorkItemDetailPath({ owner = 'app', itemKey = '', commentId = null } = {}) {
+  const normalizedKey = String(itemKey || '').trim();
+  if (!normalizedKey) {
+    return buildWorkItemListPath({ owner, itemType: 'task' });
+  }
+  const basePath = owner === 'app'
+    ? `/web/app/work-items/${encodeURIComponent(normalizedKey)}`
+    : `/web/work-items/${encodeURIComponent(normalizedKey)}`;
+  if (typeof commentId === 'number' && Number.isInteger(commentId) && commentId > 0) {
+    return `${basePath}#comment-${commentId}`;
+  }
+  return basePath;
+}
+
+export function parseAppRoute(pathname = '/web', search = '', hash = '') {
+  const owner = normalizeOwner(pathname);
+  const query = new URLSearchParams(search);
+  const filter = normalizeFilter(query.get('filter') || '');
+  const page = normalizePositiveInt(query.get('page'), DEFAULT_PAGE);
+  const perPage = normalizePositiveInt(query.get('per_page'), DEFAULT_PER_PAGE);
+
+  if (pathname === '/web' || pathname === '/web/' || pathname === '/web/app' || pathname === '/web/app/') {
+    return {
+      id: 'home',
+      owner,
+      pathname,
+      search,
+      title: '元策浏览器工作台',
+    };
+  }
+
+  if (pathname === '/web/messages' || pathname.startsWith('/web/messages/') || pathname === '/web/app/messages' || pathname.startsWith('/web/app/messages/')) {
+    return {
+      id: 'messages',
+      owner,
+      pathname,
+      search,
+      filter,
+      page,
+      perPage,
+      title: '消息中心',
+    };
+  }
+
+  if (pathname === '/web/search' || pathname === '/web/app/search') {
+    return {
+      id: 'search',
+      owner,
+      pathname,
+      search,
+      q: (query.get('q') || '').trim(),
+      page,
+      perPage,
+      title: '全局搜索',
+    };
+  }
+
+  if (pathname === '/web/me' || pathname === '/web/app/me') {
+    return {
+      id: 'profile',
+      owner,
+      pathname,
+      search,
+      title: '个人中心',
+    };
+  }
+
+  if (pathname === '/web/system' || pathname === '/web/app/system') {
+    return {
+      id: 'system-dashboard',
+      owner,
+      pathname,
+      search,
+      title: '系统管理',
+    };
+  }
+
+  if (pathname === '/web/system/users' || pathname === '/web/app/system/users') {
+    return {
+      id: 'system-users',
+      owner,
+      pathname,
+      search,
+      page,
+      perPage,
+      title: '用户管理',
+    };
+  }
+
+  if (pathname === '/web/system/permissions' || pathname === '/web/app/system/permissions') {
+    return {
+      id: 'system-permissions', owner, pathname, search, q: (query.get('q') || '').trim(), title: '权限目录',
+    };
+  }
+
+  const systemRolePermissionsMatch = pathname.match(/^\/web\/(?:app\/)?system\/roles\/([^/]+)\/permissions$/u);
+  if (pathname === '/web/system/roles' || pathname === '/web/app/system/roles' || systemRolePermissionsMatch) {
+    return {
+      id: 'system-roles',
+      owner,
+      pathname,
+      search,
+      role: systemRolePermissionsMatch ? decodeURIComponent(systemRolePermissionsMatch[1]) : (query.get('role') || '').trim(),
+      page,
+      perPage,
+      title: '角色权限',
+    };
+  }
+
+  if (pathname === '/web/system/storage' || pathname === '/web/app/system/storage') {
+    return {
+      id: 'system-storage', owner, pathname, search, page, perPage, title: '对象存储',
+    };
+  }
+
+  if (pathname === '/web/system/openapi' || pathname === '/web/app/system/openapi') {
+    return {
+      id: 'system-openapi', owner, pathname, search, title: '系统 OpenAPI',
+    };
+  }
+
+  if (pathname === '/web/system/api-docs' || pathname === '/web/app/system/api-docs') {
+    return {
+      id: 'system-api-docs', owner, pathname, search, title: '系统 API 文档',
+    };
+  }
+
+  if (pathname === '/web/system/database-stats' || pathname === '/web/app/system/database-stats') {
+    return {
+      id: 'system-database-stats', owner, pathname, search, title: '数据库统计',
+    };
+  }
+
+  if (pathname === '/web/system/audit' || pathname === '/web/app/system/audit') {
+    return {
+      id: 'system-audit', owner, pathname, search,
+      actor: (query.get('actor') || '').trim(), action: (query.get('action') || '').trim(),
+      targetType: (query.get('target_type') || '').trim(), targetId: (query.get('target_id') || '').trim(),
+      page, perPage, title: '审计日志',
+    };
+  }
+
+  if (pathname === '/web/system/releases' || pathname === '/web/app/system/releases') {
+    return {
+      id: 'system-releases', owner, pathname, search, page, perPage, title: '版本管理',
+    };
+  }
+
+  if (pathname === '/web/projects' || pathname === '/web/app/projects') {
+    return {
+      id: 'projects',
+      owner,
+      pathname,
+      search,
+      status: (query.get('status') || '').trim(),
+      page,
+      perPage,
+      title: '项目列表',
+    };
+  }
+
+
+  const projectDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)$/);
+  if (projectDetailMatch) {
+    return {
+      id: 'project-detail',
+      owner,
+      pathname,
+      search,
+      projectKey: decodeURIComponent(projectDetailMatch[1]),
+      tab: ['members', 'cycles', 'files', 'resources'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
+      title: '项目详情',
+    };
+  }
+
+  const projectResourceDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/resources\/(\d+)$/);
+  if (projectResourceDetailMatch) {
+    return { id: 'project-resource-detail', owner, pathname, search, projectKey: decodeURIComponent(projectResourceDetailMatch[1]), resourceId: normalizePositiveInt(projectResourceDetailMatch[2], 0), title: '项目资料详情' };
+  }
+
+  const projectPersonalAnalysisMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/my-analysis$/);
+  if (projectPersonalAnalysisMatch) {
+    return { id: 'project-personal-analysis', owner, pathname, search, projectKey: decodeURIComponent(projectPersonalAnalysisMatch[1]), title: '个人项目分析' };
+  }
+
+
+  const projectCycleDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/cycles\/(\d+)$/);
+  if (projectCycleDetailMatch) {
+    return {
+      id: 'project-cycle-detail', owner, pathname, search,
+      projectKey: decodeURIComponent(projectCycleDetailMatch[1]),
+      cycleId: normalizePositiveInt(projectCycleDetailMatch[2], 0),
+      title: '项目周期详情',
+    };
+  }
+
+  for (const [itemType, meta] of Object.entries(WORK_ITEM_ROUTE_META)) {
+    if (pathname === meta.webPath || pathname === meta.appPath) {
+      return {
+        id: meta.id,
+        owner,
+        pathname,
+        search,
+        itemType,
+        q: (query.get('q') || '').trim(),
+        status: (query.get('status') || '').trim(),
+        priority: (query.get('priority') || '').trim().toUpperCase(),
+        assigneeUsername: (query.get('assignee_username') || '').trim(),
+        projectKey: (query.get('project_key') || '').trim(),
+        cycleId: normalizePositiveInt(query.get('cycle_id'), 0),
+        sort: (query.get('sort') || '').trim(),
+        clearDefault: query.get('clear_default') === 'true',
+        page,
+        perPage,
+        title: meta.title,
+      };
+    }
+  }
+
+  const workItemDetailMatch = pathname.match(/^\/web(?:\/app)?\/work-items\/([^/]+)$/);
+  if (workItemDetailMatch) {
+    const commentMatch = String(hash || '').match(/^#comment-(\d+)$/u);
+    const commentId = commentMatch ? normalizePositiveInt(commentMatch[1], 0) : 0;
+    return {
+      id: 'work-item-detail',
+      owner,
+      pathname,
+      search,
+      itemKey: decodeURIComponent(workItemDetailMatch[1]),
+      commentId: commentId || null,
+      title: '工作项详情',
+    };
+  }
+
+  const legacyPath = owner === 'app' && pathname.startsWith('/web/app/')
+    ? `/web/${pathname.slice('/web/app/'.length)}`
+    : '/web';
+
+  return {
+    id: 'unsupported',
+    owner,
+    pathname,
+    search,
+    legacyPath,
+    title: '未迁移路由',
+  };
+}

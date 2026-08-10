@@ -48,7 +48,7 @@ test("applies the runtime icon only to macOS development builds", () => {
 });
 
 test("bundles release and development Dock PNGs without replacing the macOS release icon", () => {
-  const config = readFileSync(path.join(desktopRoot, "electron-builder.yml"), "utf8");
+  const config = readFileSync(path.join(desktopRoot, "electron-builder.yml"), "utf8").replaceAll("\r\n", "\n");
   assert.match(config, new RegExp(`to: ${BRAND_ICON_RESOURCE_DIR}`));
   assert.match(config, new RegExp(`- ${RELEASE_DOCK_ICON_NAME}`));
   assert.match(config, new RegExp(`- ${DEVELOPMENT_DOCK_ICON_NAME}`));

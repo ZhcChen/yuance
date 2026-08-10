@@ -6,7 +6,9 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, projects, rbac, storage, system_api_tokens},
+    domains::{
+        auth, bootstrap, projects, rbac, storage, system_api_tokens, system_releases, users,
+    },
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -14,7 +16,7 @@ use yuance_api::{
 const CSRF_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[tokio::test]
-async fn system_users_page_renders_accounts_and_roles_for_admin() {
+async fn api_system_dashboard_returns_only_fixed_authorized_links() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -22,7 +24,7 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/web/system/users")
+                .uri("/api/v1/system/dashboard")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -31,640 +33,157 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-
-    assert!(body.contains("用户管理"));
-    assert!(body.contains("系统管理员"));
-    assert!(body.contains("系统管理"));
-    assert!(body.contains("角色权限"));
-    assert!(body.contains("topnav-menu"));
-    assert!(body.contains(r#"data-modal-open="user-create-modal""#));
-    assert!(body.contains(r#"id="user-create-modal""#));
-    assert!(body.contains(r#"action="/web/system/users""#));
-    assert!(body.contains(r#"data-select-search-placeholder="搜索角色""#));
-    assert!(!body.contains("action-menu"));
-    assert!(!body.contains("<aside class=\"sidebar\""));
+    let payload: Value = serde_json::from_str(&response_body(response).await)
+        .expect("dashboard response should be JSON");
+    let links = payload["data"]["links"]
+        .as_array()
+        .expect("dashboard links should be an array");
+    assert_eq!(links.len(), 7);
+    assert!(links.iter().all(|link| {
+        link["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("/web/system/"))
+    }));
+    assert!(
+        links
+            .iter()
+            .all(|link| link.as_object().is_some_and(|value| value.len() == 4))
+    );
 }
 
 #[tokio::test]
-async fn system_users_page_renders_project_assignment_controls() {
+async fn api_system_permissions_returns_fixed_catalog_and_enforces_permission() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
-    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
-    let joined_project = projects::create_project(
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/permissions")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response_json(response).await;
+    let items = payload["data"]
+        .as_array()
+        .expect("catalog should be an array");
+    assert!(
+        items
+            .iter()
+            .any(|item| item["permission_key"] == "system.roles.view")
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item.as_object().is_some_and(|object| object.len() == 5))
+    );
+
+    let member_id = users::create_user(
         &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "已加入项目".to_string(),
-            description: "用于验证当前项目摘要".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
+        users::CreateUserInput {
+            username: "permission_catalog_denied".to_string(),
+            display_name: "权限目录拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
         },
     )
     .await
-    .expect("joined project should create");
-    let available_project = projects::create_project(
+    .expect("member should create");
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/permissions")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_system_users_view_returns_atomic_pagination_permissions_and_project_constraints() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id = create_user_with_role(
         &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "可分配项目".to_string(),
-            description: "用于验证候选项目列表".to_string(),
-            status: "acceptance".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("available project should create");
-    let paused_project = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "暂停项目".to_string(),
-            description: "不应进入分配候选".to_string(),
-            status: "on_hold".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("paused project should create");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &joined_project.project_key,
-        "member1",
+        "atomic_member",
+        "原子读取成员",
+        "MemberPass2026!",
         "member",
     )
-    .await
-    .expect("member should join project");
-
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    let modal_body = html_fragment(&body, r#"id="user-project-assign-modal""#, "</aside>");
-
-    assert!(body.contains("<th>项目</th>"));
-    assert!(body.contains(r#"data-user-project-assign-trigger"#));
-    assert!(body.contains(r#"id="user-project-assign-modal""#));
-    assert!(modal_body.contains(r#"data-user-project-assign-form"#));
-    assert!(body.contains("已加入项目"));
-    assert!(modal_body.contains(r#"data-user-project-current-search"#));
-    assert!(modal_body.contains(r#"data-user-project-current-batch-form"#));
-    assert!(modal_body.contains("批量移除"));
-    assert!(modal_body.contains("可分配项目"));
-    assert!(modal_body.contains(&available_project.project_key));
-    assert!(!modal_body.contains(&paused_project.name));
-}
-
-#[tokio::test]
-async fn system_users_page_paginates_with_shared_controls() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    for index in 1..=12 {
+    .await;
+    for index in 1..=10 {
         create_user_with_role(
             &pool,
-            &format!("page_user_{index:02}"),
-            &format!("分页用户 {index:02}"),
+            &format!("atomic_page_{index:02}"),
+            &format!("分页成员 {index:02}"),
             "MemberPass2026!",
             "member",
         )
         .await;
     }
-    rbac::create_role(&pool, "page_viewer", "分页观察员", "self")
-        .await
-        .expect("role should create");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
-    let first_page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users?per_page=5")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(first_page_response.status(), StatusCode::OK);
-    let first_body = response_body(first_page_response).await;
-    assert_eq!(first_body.matches("class=\"user-table-row\"").count(), 5);
-    assert!(first_body.contains(r#"aria-label="用户列表分页""#));
-    assert!(first_body.contains("当前显示 1-5"));
-    assert!(first_body.contains("共 13 个用户"));
-    assert!(first_body.contains("data-pagination-size"));
-    assert!(first_body.contains(r#"<option value="5" selected>当前 5</option>"#));
-    assert!(first_body.contains("value=\"100\""));
-    assert!(first_body.contains("aria-label=\"跳转页码\""));
-    assert!(first_body.contains("page=2"));
-    assert!(first_body.contains("per_page=5"));
-    assert!(first_body.contains(r#"name="page" value="1""#));
-    assert!(first_body.contains(r#"name="per_page" value="5""#));
-    assert!(first_body.contains(r#"id="user-role-modal-page_user_"#));
-    assert!(first_body.contains(r#"data-select-search-placeholder="搜索角色""#));
-
-    let third_page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users?per_page=5&page=3")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(third_page_response.status(), StatusCode::OK);
-    let third_body = response_body(third_page_response).await;
-    assert_eq!(third_body.matches("class=\"user-table-row\"").count(), 3);
-    assert!(third_body.contains("当前显示 11-13"));
-    assert!(third_body.contains(r#"aria-current="page">3</a>"#));
-    assert!(third_body.contains(r#"action="/web/system/users/page_user_01/status""#));
-    assert!(third_body.contains(r#"action="/web/system/users/page_user_02/role""#));
-    assert!(third_body.contains(r#"action="/web/system/users/page_user_02/password""#));
-    assert_pagination_fields(
-        html_fragment(&third_body, r#"action="/web/system/users""#, "</form>"),
-        3,
-        5,
-    );
-    assert_pagination_fields(
-        html_fragment(
-            &third_body,
-            r#"action="/web/system/users/page_user_01/status""#,
-            "</form>",
-        ),
-        3,
-        5,
-    );
-    assert_pagination_fields(
-        html_fragment(
-            &third_body,
-            r#"action="/web/system/users/page_user_02/role""#,
-            "</form>",
-        ),
-        3,
-        5,
-    );
-    assert_pagination_fields(
-        html_fragment(
-            &third_body,
-            r#"action="/web/system/users/page_user_02/password""#,
-            "</form>",
-        ),
-        3,
-        5,
-    );
-
-    let overflow_page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users?per_page=5&page=999")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(overflow_page_response.status(), StatusCode::OK);
-    let overflow_body = response_body(overflow_page_response).await;
-    assert_eq!(overflow_body.matches("class=\"user-table-row\"").count(), 3);
-    assert!(overflow_body.contains("当前显示 11-13"));
-    assert!(overflow_body.contains(r#"aria-current="page">3</a>"#));
-
-    let status_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/page_user_01/status")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("status=disabled&page=3&per_page=5")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        status_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=3&per_page=5"
-    );
-
-    let role_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/page_user_02/role")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "role_code=page_viewer&page=3&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(role_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        role_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=3&per_page=5"
-    );
-
-    let password_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/page_user_02/password")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "password=MemberPass2027%21&page=3&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(password_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        password_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=3&per_page=5"
-    );
-
-    let invalid_create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=bad_page_user&display_name=%E9%94%99%E8%AF%AF%E5%88%86%E9%A1%B5&email=badpage%40example.test&mobile=13800000009&password=MemberPass2026%21&role_code=member&page=0&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_create_response.status(), StatusCode::BAD_REQUEST);
-    let invalid_created =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = 'bad_page_user'")
-            .fetch_one(&pool)
-            .await
-            .expect("user count should load");
-    assert_eq!(invalid_created, 0);
-
-    let create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=page_user_new&display_name=%E5%88%86%E9%A1%B5%E6%96%B0%E7%94%A8%E6%88%B7&email=page-new%40example.test&mobile=13800000010&password=MemberPass2026%21&role_code=member&page=3&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        create_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?per_page=5"
-    );
-    assert_eq!(user_role_code(&pool, "page_user_new").await, "member");
-
-    let invalid_page_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users?page=0&per_page=5")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_page_response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn admin_can_assign_multiple_projects_from_system_users_page() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let member_user_id =
-        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "批量项目 A".to_string(),
-            description: "系统用户页批量分配 A".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project a should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "批量项目 B".to_string(),
-            description: "系统用户页批量分配 B".to_string(),
-            status: "not_started".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project b should create");
-
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/projects")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "project_key={}&project_key={}&member_role=viewer&page=2&per_page=5",
-                    project_a.project_key, project_b.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=2&per_page=5"
-    );
-
-    let assigned = projects::list_project_summaries_for_user(&pool, member_user_id, false)
-        .await
-        .expect("assigned projects should load");
-    assert_eq!(assigned.len(), 2);
-    assert!(
-        assigned
-            .iter()
-            .any(|project| project.project_key == project_a.project_key)
-    );
-    assert!(
-        assigned
-            .iter()
-            .any(|project| project.project_key == project_b.project_key)
-    );
-
-    let detail_a = projects::get_project_detail(&pool, &project_a.project_key)
-        .await
-        .expect("project a detail should load")
-        .expect("project a should exist");
-    let detail_b = projects::get_project_detail(&pool, &project_b.project_key)
-        .await
-        .expect("project b detail should load")
-        .expect("project b should exist");
-    let members_a = projects::list_project_members(&pool, detail_a.id)
-        .await
-        .expect("project a members should load");
-    let members_b = projects::list_project_members(&pool, detail_b.id)
-        .await
-        .expect("project b members should load");
-    assert!(
-        members_a
-            .iter()
-            .any(|member| member.username == "member1" && member.member_role == "viewer")
-    );
-    assert!(
-        members_b
-            .iter()
-            .any(|member| member.username == "member1" && member.member_role == "viewer")
-    );
-}
-
-#[tokio::test]
-async fn admin_can_remove_project_from_system_users_page() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let member_user_id =
-        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let project = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "待移除项目".to_string(),
-            description: "系统用户页移除项目".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project should create");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project.project_key,
-        "member1",
-        "member",
-    )
-    .await
-    .expect("member should join project");
-
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "/web/system/users/member1/projects/{}/remove",
-                    project.project_key
-                ))
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("page=2&per_page=5")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=2&per_page=5"
-    );
-    assert!(
-        !projects::is_project_member(&pool, project.id, member_user_id)
-            .await
-            .expect("membership should load")
-    );
-}
-
-#[tokio::test]
-async fn admin_can_batch_remove_projects_from_system_users_page() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let member_user_id =
-        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "批量移除项目 A".to_string(),
-            description: "系统用户页批量移除 A".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project a should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "批量移除项目 B".to_string(),
-            description: "系统用户页批量移除 B".to_string(),
-            status: "acceptance".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project b should create");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project_a.project_key,
-        "member1",
-        "member",
-    )
-    .await
-    .expect("member should join project a");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project_b.project_key,
-        "member1",
-        "viewer",
-    )
-    .await
-    .expect("member should join project b");
-
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/projects/remove")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "project_key={}&project_key={}&page=3&per_page=20",
-                    project_a.project_key, project_b.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=3&per_page=20"
-    );
-    assert!(
-        !projects::is_project_member(&pool, project_a.id, member_user_id)
-            .await
-            .expect("project a membership should load")
-    );
-    assert!(
-        !projects::is_project_member(&pool, project_b.id, member_user_id)
-            .await
-            .expect("project b membership should load")
-    );
-}
-
-#[tokio::test]
-async fn system_user_project_batch_remove_blocks_when_any_project_has_active_work_items() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let member_user_id =
-        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "批量阻塞项目 A".to_string(),
-            description: "系统用户页批量移除阻塞 A".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project a should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "批量阻塞项目 B".to_string(),
-            description: "系统用户页批量移除阻塞 B".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project b should create");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project_a.project_key,
-        "member1",
-        "member",
-    )
-    .await
-    .expect("member should join project a");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project_b.project_key,
-        "member1",
-        "member",
-    )
-    .await
-    .expect("member should join project b");
-    projects::create_work_item(
+    let owned_project = projects::create_project(
         &pool,
         member_user_id,
+        projects::CreateProjectInput {
+            name: "成员负责项目".to_string(),
+            description: "负责人关系不可移除".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("owned project should create");
+    let blocked_project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "活跃工作项项目".to_string(),
+            description: "活跃工作项阻止移除".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("blocked project should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &blocked_project.project_key,
+        "atomic_member",
+        "maintainer",
+    )
+    .await
+    .expect("member should join blocked project");
+    projects::create_work_item(
+        &pool,
+        initialized.user_id,
         projects::CreateWorkItemInput {
-            project_key: project_b.project_key.clone(),
+            project_key: blocked_project.project_key.clone(),
             item_type: "task".to_string(),
-            title: "阻塞批量移除的任务".to_string(),
+            title: "阻止移除的活跃任务".to_string(),
             description: String::new(),
             priority: "P2".to_string(),
-            assignee_username: "member1".to_string(),
+            assignee_username: "atomic_member".to_string(),
             due_date: String::new(),
             parent_item_key: String::new(),
             actor_display_name_snapshot: String::new(),
@@ -672,521 +191,283 @@ async fn system_user_project_batch_remove_blocks_when_any_project_has_active_wor
     )
     .await
     .expect("blocking work item should create");
-
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/projects/remove")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "project_key={}&project_key={}",
-                    project_a.project_key, project_b.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert!(
-        projects::is_project_member(&pool, project_a.id, member_user_id)
-            .await
-            .expect("project a membership should load")
-    );
-    assert!(
-        projects::is_project_member(&pool, project_b.id, member_user_id)
-            .await
-            .expect("project b membership should load")
-    );
-}
-
-#[tokio::test]
-async fn system_user_project_remove_blocks_when_member_still_has_active_work_items() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let member_user_id =
-        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let project = projects::create_project(
+    let paused_project = projects::create_project(
         &pool,
         initialized.user_id,
         projects::CreateProjectInput {
-            name: "阻塞移除项目".to_string(),
-            description: "系统用户页移除受阻".to_string(),
-            status: "in_progress".to_string(),
+            name: "暂停候选项目".to_string(),
+            description: "暂停项目不得作为分配候选".to_string(),
+            status: "on_hold".to_string(),
             start_date: String::new(),
             due_date: String::new(),
         },
     )
     .await
-    .expect("project should create");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project.project_key,
-        "member1",
-        "member",
-    )
-    .await
-    .expect("member should join project");
-    let created = projects::create_work_item(
-        &pool,
-        member_user_id,
-        projects::CreateWorkItemInput {
-            project_key: project.project_key.clone(),
-            item_type: "task".to_string(),
-            title: "阻塞移除的任务".to_string(),
-            description: String::new(),
-            priority: "P2".to_string(),
-            assignee_username: "member1".to_string(),
-            due_date: String::new(),
-            parent_item_key: String::new(),
-            actor_display_name_snapshot: String::new(),
-        },
-    )
-    .await
-    .expect("work item should create");
-    assert!(!created.item_key.is_empty());
+    .expect("paused project should create");
 
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "/web/system/users/member1/projects/{}/remove",
-                    project.project_key
-                ))
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("page=1&per_page=10")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert!(
-        projects::is_project_member(&pool, project.id, member_user_id)
-            .await
-            .expect("membership should load")
-    );
-}
-
-#[tokio::test]
-async fn admin_can_update_project_role_from_system_users_page() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let member_user_id =
-        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let project = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "角色调整项目".to_string(),
-            description: "系统用户页角色调整".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project should create");
-    projects::add_project_member(
-        &pool,
-        initialized.user_id,
-        &project.project_key,
-        "member1",
-        "member",
-    )
-    .await
-    .expect("member should join project");
-
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "/web/system/users/member1/projects/{}/role",
-                    project.project_key
-                ))
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "member_role=maintainer&page=2&per_page=10",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users?page=2"
-    );
-    assert_eq!(
-        projects::project_member_role(&pool, project.id, member_user_id)
-            .await
-            .expect("member role should load"),
-        Some("maintainer".to_string())
-    );
-}
-
-#[tokio::test]
-async fn admin_can_create_member_user_and_member_can_login() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=member1&display_name=%E6%88%90%E5%91%98%E4%B8%80&email=member1%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=member",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/users"
-    );
-
-    let role = user_role_code(&pool, "member1").await;
-    assert_eq!(role, "member");
-
-    let session = auth::login(&pool, "member1", "MemberPass2026!")
-        .await
-        .expect("created member should login");
-    assert!(!session.raw_token.is_empty());
-}
-
-#[tokio::test]
-async fn user_create_rejects_invalid_contact_duplicate_username_and_inactive_role() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    rbac::create_role(&pool, "inactive_role", "停用角色", "self")
-        .await
-        .expect("role should create");
-    rbac::set_role_status(&pool, "inactive_role", "disabled")
-        .await
-        .expect("role should disable");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let invalid_email = app
+    let default_response = app
         .clone()
         .oneshot(
             Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=bademail&display_name=%E9%82%AE%E7%AE%B1%E9%94%99%E8%AF%AF&email=invalid-email&mobile=13800000001&password=MemberPass2026%21&role_code=member",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_email.status(), StatusCode::BAD_REQUEST);
-
-    let invalid_mobile = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=badmobile&display_name=%E6%89%8B%E6%9C%BA%E9%94%99%E8%AF%AF&email=badmobile%40example.test&mobile=1380000abc&password=MemberPass2026%21&role_code=member",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_mobile.status(), StatusCode::BAD_REQUEST);
-
-    let inactive_role = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=inactiverole&display_name=%E5%81%9C%E7%94%A8%E8%A7%92%E8%89%B2&email=inactiverole%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=inactive_role",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(inactive_role.status(), StatusCode::BAD_REQUEST);
-
-    create_user_with_role(&pool, "duplicate1", "重复用户", "MemberPass2026!", "member").await;
-    let duplicate = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "username=duplicate1&display_name=%E9%87%8D%E5%A4%8D%E7%94%A8%E6%88%B7&email=duplicate%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=member",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
-}
-
-#[tokio::test]
-async fn disabled_user_loses_existing_session() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let member_session = auth::login(&pool, "member1", "MemberPass2026!")
-        .await
-        .expect("member should login");
-    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/status")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("status=disabled")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web")
-                .header(header::COOKIE, member_cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
-    );
-}
-
-#[tokio::test]
-async fn locked_user_loses_session_and_cannot_login_until_unlocked() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let member_session = auth::login(&pool, "member1", "MemberPass2026!")
-        .await
-        .expect("member should login");
-    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let lock_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("PATCH")
-                .uri("/api/v1/system/users/member1/status")
-                .header(header::CONTENT_TYPE, "application/json")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from(r#"{"status":"locked"}"#))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(lock_response.status(), StatusCode::OK);
-    assert!(
-        response_body(lock_response)
-            .await
-            .contains(r#""status":"locked""#)
-    );
-
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users")
+                .uri("/api/v1/system/users-view")
                 .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("锁定"));
-    assert!(page_body.contains("解锁"));
-    assert!(
-        page_body.contains(r#"action="/web/system/users/member1/status" data-confirm-submit-form"#)
-    );
-    assert!(page_body.contains("确认解锁用户"));
-
-    let stale_session_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web")
-                .header(header::COOKIE, member_cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(stale_session_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(default_response.status(), StatusCode::OK);
+    let default_payload: Value = serde_json::from_str(&response_body(default_response).await)
+        .expect("users view response should be JSON");
     assert_eq!(
-        stale_session_response
-            .headers()
-            .get(header::LOCATION)
-            .unwrap(),
-        "/web/login"
+        default_payload["data"]["items"].as_array().map(Vec::len),
+        Some(10)
+    );
+    assert_eq!(default_payload["data"]["pagination"]["page"], 1);
+    assert_eq!(default_payload["data"]["pagination"]["per_page"], 10);
+    assert_eq!(default_payload["data"]["pagination"]["total_items"], 12);
+    assert_eq!(default_payload["data"]["pagination"]["total_pages"], 2);
+    assert_eq!(default_payload["data"]["can_manage_users"], true);
+    assert_eq!(default_payload["data"]["can_manage_user_projects"], true);
+    assert!(
+        default_payload["data"]["roles"]
+            .as_array()
+            .is_some_and(|roles| !roles.is_empty())
+    );
+    let project_options = default_payload["data"]["project_options"]
+        .as_array()
+        .expect("project options should be an array");
+    assert!(
+        project_options
+            .iter()
+            .any(|project| project["key"] == owned_project.project_key)
+    );
+    assert!(
+        !project_options
+            .iter()
+            .any(|project| project["key"] == paused_project.project_key)
     );
 
-    let locked_login = auth::login(&pool, "member1", "MemberPass2026!").await;
-    assert!(locked_login.is_err());
-
-    let unlock_response = app
+    let member_response = app
         .oneshot(
             Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/status")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(with_csrf("status=active")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(unlock_response.status(), StatusCode::SEE_OTHER);
-    let unlocked_login = auth::login(&pool, "member1", "MemberPass2026!")
-        .await
-        .expect("unlocked user should login");
-    assert!(!unlocked_login.raw_token.is_empty());
-}
-
-#[tokio::test]
-async fn resetting_password_revokes_old_sessions_and_allows_new_password() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let member_session = auth::login(&pool, "member1", "MemberPass2026!")
-        .await
-        .expect("member should login");
-    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/password")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("password=MemberPass2027%21")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web")
-                .header(header::COOKIE, member_cookie)
+                .uri("/api/v1/system/users-view?page=2&per_page=20")
+                .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-
-    let old_login = auth::login(&pool, "member1", "MemberPass2026!").await;
-    assert!(old_login.is_err());
-    let new_login = auth::login(&pool, "member1", "MemberPass2027!")
-        .await
-        .expect("new password should login");
-    assert!(!new_login.raw_token.is_empty());
+    assert_eq!(member_response.status(), StatusCode::OK);
+    let member_payload: Value = serde_json::from_str(&response_body(member_response).await)
+        .expect("users view response should be JSON");
+    assert_eq!(member_payload["data"]["pagination"]["page"], 1);
+    assert_eq!(member_payload["data"]["pagination"]["per_page"], 20);
+    let member = member_payload["data"]["items"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["username"] == "atomic_member")
+        })
+        .expect("atomic member should be present");
+    let assignments = member["assigned_projects"]
+        .as_array()
+        .expect("assigned projects should be an array");
+    let owned = assignments
+        .iter()
+        .find(|project| project["key"] == owned_project.project_key)
+        .expect("owned project should be present");
+    assert_eq!(owned["role_code"], "owner");
+    assert_eq!(owned["can_update_role"], false);
+    assert_eq!(owned["can_remove"], false);
+    assert!(
+        owned["remove_block_reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("负责人"))
+    );
+    let blocked = assignments
+        .iter()
+        .find(|project| project["key"] == blocked_project.project_key)
+        .expect("blocked project should be present");
+    assert_eq!(blocked["role_code"], "maintainer");
+    assert_eq!(blocked["active_assigned_count"], 1);
+    assert_eq!(blocked["can_update_role"], true);
+    assert_eq!(blocked["can_remove"], false);
+    assert!(
+        blocked["remove_block_reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("1 个"))
+    );
 }
 
 #[tokio::test]
-async fn super_admin_cannot_be_disabled_or_downgraded() {
+async fn api_system_user_project_relationship_flow_preserves_constraints() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "api_member", "API 成员", "MemberPass2026!", "member").await;
+    let mut project_keys = Vec::new();
+    for name in ["关系项目 A", "关系项目 B", "关系项目 C"] {
+        let project = projects::create_project(
+            &pool,
+            initialized.user_id,
+            projects::CreateProjectInput {
+                name: name.to_string(),
+                description: "系统用户项目关系 API".to_string(),
+                status: "in_progress".to_string(),
+                start_date: String::new(),
+                due_date: String::new(),
+            },
+        )
+        .await
+        .expect("project should create");
+        project_keys.push(project.project_key);
+    }
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let cookie = with_csrf_cookie(&initialized.cookie);
 
-    let disable_response = app
+    let assigned = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/web/system/users/admin/status")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("status=disabled")))
+                .uri("/api/v1/system/users/api_member/projects")
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "project_keys": project_keys,
+                        "member_role": "viewer",
+                    })
+                    .to_string(),
+                ))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(disable_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(assigned.status(), StatusCode::OK);
+    let assigned_payload = response_json(assigned).await;
+    assert_eq!(
+        assigned_payload["data"]["assigned_projects"]
+            .as_array()
+            .map(Vec::len),
+        Some(3)
+    );
 
-    let downgrade_response = app
+    let role_updated = app
+        .clone()
         .oneshot(
             Request::builder()
-                .method("POST")
-                .uri("/web/system/users/admin/role")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("role_code=member")))
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/system/users/api_member/projects/{}/role",
+                    project_keys[0]
+                ))
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"member_role":"maintainer"}"#))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(downgrade_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(role_updated.status(), StatusCode::OK);
+    assert_eq!(
+        projects::project_member_role(
+            &pool,
+            projects::get_project_detail(&pool, &project_keys[0])
+                .await
+                .expect("project should load")
+                .expect("project should exist")
+                .id,
+            member_user_id,
+        )
+        .await
+        .expect("member role should load"),
+        Some("maintainer".to_string())
+    );
 
-    let (status, is_super_admin, role_code) = sqlx::query_as::<_, (String, i64, String)>(
-        r#"
-        SELECT u.status, u.is_super_admin, r.role_code
-        FROM users u
-        JOIN user_roles ur ON ur.user_id = u.id
-        JOIN roles r ON r.id = ur.role_id
-        WHERE u.username = 'admin'
-        "#,
+    projects::create_work_item(
+        &pool,
+        member_user_id,
+        projects::CreateWorkItemInput {
+            project_key: project_keys[1].clone(),
+            item_type: "task".to_string(),
+            title: "阻塞项目关系移除".to_string(),
+            description: String::new(),
+            priority: "P2".to_string(),
+            assignee_username: "api_member".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
     )
-    .fetch_one(&pool)
     .await
-    .expect("admin should load");
-    assert_eq!(status, "active");
-    assert_eq!(is_super_admin, 1);
-    assert_eq!(role_code, "system_admin");
+    .expect("blocking work item should create");
+    let blocked = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/system/users/api_member/projects")
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "project_keys": [project_keys[1].clone(), project_keys[2].clone()] }).to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(blocked.status(), StatusCode::BAD_REQUEST);
+    let memberships = projects::list_user_project_memberships(&pool, member_user_id)
+        .await
+        .expect("memberships should load");
+    assert_eq!(memberships.len(), 3);
+
+    let removed_one = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/system/users/api_member/projects/{}",
+                    project_keys[0]
+                ))
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(removed_one.status(), StatusCode::OK);
+
+    let removed_batch = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/system/users/api_member/projects")
+                .header(header::COOKIE, cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "project_keys": [project_keys[2].clone()] }).to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(removed_batch.status(), StatusCode::OK);
+    let remaining = projects::list_user_project_memberships(&pool, member_user_id)
+        .await
+        .expect("memberships should load");
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].project_key, project_keys[1]);
 }
 
 #[tokio::test]
@@ -1215,341 +496,6 @@ async fn regular_member_cannot_access_system_users_page() {
 }
 
 #[tokio::test]
-async fn admin_can_replace_regular_user_role() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    rbac::create_role(&pool, "system_viewer", "系统观察员", "self")
-        .await
-        .expect("role should create");
-    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users/member1/role")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("role_code=system_viewer")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-
-    let role = user_role_code(&pool, "member1").await;
-    assert_eq!(role, "system_viewer");
-}
-
-#[tokio::test]
-async fn custom_role_can_receive_permissions_and_drive_system_nav() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let create_role_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "role_code=system_viewer&role_name=%E7%B3%BB%E7%BB%9F%E8%A7%82%E5%AF%9F%E5%91%98&data_scope_type=self",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(create_role_response.status(), StatusCode::SEE_OTHER);
-
-    let permissions_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles/system_viewer/permissions")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(permissions_response.status(), StatusCode::OK);
-    let permissions_body = response_body(permissions_response).await;
-    assert!(permissions_body.contains("系统观察员"));
-    assert!(permissions_body.contains("system.users.view"));
-
-    let workbench_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles?role=system_viewer")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(workbench_response.status(), StatusCode::OK);
-    let workbench_body = response_body(workbench_response).await;
-    assert!(workbench_body.contains("role-workbench"));
-    assert!(workbench_body.contains("role-list"));
-    assert!(workbench_body.contains(r#"data-modal-open="role-create-modal""#));
-    assert!(workbench_body.contains(r#"id="role-create-modal""#));
-    assert!(workbench_body.contains(r#"role="dialog""#));
-    assert!(workbench_body.contains(r#"action="/web/system/roles""#));
-    assert!(
-        workbench_body.contains(
-            r#"action="/web/system/roles/system_viewer/status" data-confirm-submit-form"#
-        )
-    );
-    assert!(workbench_body.contains("确认禁用角色"));
-    assert!(workbench_body.contains(r#"class="role-status-form""#));
-    assert!(
-        workbench_body.contains(r#"class="btn btn-sm btn-secondary" type="submit">禁用</button>"#)
-    );
-    assert!(!workbench_body.contains("role-status-button"));
-    assert!(!workbench_body.contains("role-create-form"));
-    assert!(workbench_body.contains("data-permission-tree"));
-    assert!(workbench_body.contains("data-permission-group-key=\"system\""));
-    assert!(workbench_body.contains("查看用户管理"));
-    assert!(workbench_body.contains("管理用户"));
-
-    let update_permissions_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/system_viewer/permissions")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("permission_keys=system.users.view")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(update_permissions_response.status(), StatusCode::SEE_OTHER);
-
-    create_user_with_role(
-        &pool,
-        "viewer1",
-        "观察员一",
-        "ViewerPass2026!",
-        "system_viewer",
-    )
-    .await;
-    let viewer_session = auth::login(&pool, "viewer1", "ViewerPass2026!")
-        .await
-        .expect("viewer should login");
-    let viewer_cookie = auth::session_cookie_header(&viewer_session.raw_token, false);
-
-    let users_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users")
-                .header(header::COOKIE, viewer_cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(users_response.status(), StatusCode::OK);
-    let users_body = response_body(users_response).await;
-    assert!(users_body.contains("用户管理"));
-    assert!(users_body.contains("/web/system/users"));
-    assert!(!users_body.contains("/web/system/roles"));
-    assert!(!users_body.contains("/web/system/storage"));
-    assert!(!users_body.contains("/web/system/database-stats"));
-
-    let roles_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles")
-                .header(header::COOKIE, viewer_cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(roles_response.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn system_roles_page_paginates_with_shared_controls() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    for index in 1..=12 {
-        rbac::create_role(
-            &pool,
-            &format!("page_role_{index:02}"),
-            &format!("分页角色 {index:02}"),
-            "self",
-        )
-        .await
-        .expect("role should create");
-    }
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let first_page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles?per_page=5")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(first_page_response.status(), StatusCode::OK);
-    let first_body = response_body(first_page_response).await;
-    assert_eq!(first_body.matches("class=\"role-list-row").count(), 5);
-    assert!(first_body.contains(r#"aria-label="角色列表分页""#));
-    assert!(first_body.contains("当前显示 1-5"));
-    assert!(first_body.contains("共 14 个角色"));
-    assert!(first_body.contains("data-pagination-size"));
-    assert!(first_body.contains("value=\"100\""));
-    assert!(first_body.contains("aria-label=\"跳转页码\""));
-    assert!(first_body.contains("role=system_admin"));
-    assert!(first_body.contains("page=2"));
-    assert!(first_body.contains("per_page=5"));
-    assert!(first_body.contains(r#"name="page" value="1""#));
-    assert!(first_body.contains(r#"name="per_page" value="5""#));
-
-    let third_page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles?per_page=5&page=3")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(third_page_response.status(), StatusCode::OK);
-    let third_body = response_body(third_page_response).await;
-    assert_eq!(third_body.matches("class=\"role-list-row").count(), 4);
-    assert!(third_body.contains("当前显示 11-14"));
-    assert!(third_body.contains(r#"aria-current="page">3</a>"#));
-
-    let selected_cross_page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles?role=page_role_12&per_page=5&page=1")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(selected_cross_page_response.status(), StatusCode::OK);
-    let selected_cross_page_body = response_body(selected_cross_page_response).await;
-    assert!(selected_cross_page_body.contains("当前角色：分页角色 12"));
-
-    let status_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/page_role_12/status")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("status=disabled&page=3&per_page=5")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        status_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/roles?role=page_role_12&page=3&per_page=5"
-    );
-
-    let permissions_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/page_role_12/permissions")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "permission_keys=system.users.view&page=3&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(permissions_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        permissions_response
-            .headers()
-            .get(header::LOCATION)
-            .unwrap(),
-        "/web/system/roles?role=page_role_12&page=3&per_page=5"
-    );
-
-    let invalid_create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "role_code=page_role_bad&role_name=%E9%94%99%E8%AF%AF%E5%88%86%E9%A1%B5&data_scope_type=self&page=0&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_create_response.status(), StatusCode::BAD_REQUEST);
-    let invalid_created = rbac::find_role(&pool, "page_role_bad")
-        .await
-        .expect("role lookup should succeed");
-    assert!(invalid_created.is_none());
-
-    let create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "role_code=page_role_new&role_name=%E5%88%86%E9%A1%B5%E6%96%B0%E8%A7%92%E8%89%B2&data_scope_type=self&page=1&per_page=5",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        create_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/roles?role=page_role_new&page=3&per_page=5"
-    );
-
-    let invalid_page_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/roles?page=0&per_page=5")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_page_response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn role_permission_update_adds_parent_page_for_action_permission() {
     let pool = test_pool().await;
     rbac::seed_core(&pool)
@@ -1574,106 +520,6 @@ async fn role_permission_update_adds_parent_page_for_action_permission() {
 
     assert!(granted.contains(&"system.users.manage".to_string()));
     assert!(granted.contains(&"system.users.view".to_string()));
-}
-
-#[tokio::test]
-async fn system_role_permissions_cannot_be_modified_from_page() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/member/permissions")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("permission_keys=project.view")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn role_status_controls_assigned_permissions() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    rbac::create_role(&pool, "system_viewer", "系统观察员", "self")
-        .await
-        .expect("role should create");
-    rbac::replace_role_permissions(&pool, "system_viewer", &["system.users.view".to_string()])
-        .await
-        .expect("permissions should replace");
-    create_user_with_role(
-        &pool,
-        "viewer1",
-        "观察员一",
-        "ViewerPass2026!",
-        "system_viewer",
-    )
-    .await;
-    let viewer_session = auth::login(&pool, "viewer1", "ViewerPass2026!")
-        .await
-        .expect("viewer should login");
-    let viewer_cookie = auth::session_cookie_header(&viewer_session.raw_token, false);
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/system_viewer/status")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("status=disabled")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/users")
-                .header(header::COOKIE, viewer_cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn system_database_stats_page_renders_cache_shell_for_admin() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/database-stats")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains("数据库统计"));
-    assert!(body.contains(r#"data-database-stats-page"#));
-    assert!(body.contains(r#"data-api-url="/api/v1/system/database-stats""#));
-    assert!(body.contains("浏览器暂无缓存"));
-    assert!(body.contains(r#"href="/web/system/database-stats""#));
 }
 
 #[tokio::test]
@@ -1722,6 +568,133 @@ async fn api_system_database_stats_requires_permission_and_returns_snapshot() {
         .await
         .expect("router should respond");
     assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_system_docs_requires_permission_and_returns_embedded_contract() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    create_user_with_role(
+        &pool,
+        "api_docs_member",
+        "文档普通成员",
+        "ApiDocsPass2026!",
+        "member",
+    )
+    .await;
+    let regular_session = auth::login(&pool, "api_docs_member", "ApiDocsPass2026!")
+        .await
+        .expect("member should login");
+    let regular_cookie = auth::session_cookie_header(&regular_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let success_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/api-docs-view")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(success_response.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_str(&response_body(success_response).await)
+        .expect("API docs response should be JSON");
+    let document: Value = serde_json::from_str(
+        payload["data"]["source"]
+            .as_str()
+            .expect("embedded document should be a string"),
+    )
+    .expect("embedded document should be valid JSON");
+    assert_eq!(document["openapi"], "3.1.0");
+    assert!(document["paths"]["/api/v1/system/releases"].is_object());
+
+    let forbidden_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/api-docs-view")
+                .header(header::COOKIE, regular_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_system_roles_view_returns_atomic_selection_permissions_and_capabilities() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    for index in 1..=11 {
+        let role_code = format!("atomic_role_{index:02}");
+        rbac::create_role(&pool, &role_code, &format!("原子角色 {index:02}"), "all")
+            .await
+            .expect("role should create");
+    }
+    rbac::replace_role_permissions(
+        &pool,
+        "atomic_role_11",
+        &["system.dashboard.view".to_string()],
+    )
+    .await
+    .expect("role permissions should update");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/roles-view?role=atomic_role_11")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_str(&response_body(response).await)
+        .expect("roles view response should be JSON");
+    assert_eq!(payload["data"]["items"].as_array().map(Vec::len), Some(10));
+    assert_eq!(payload["data"]["pagination"]["page"], 1);
+    assert_eq!(payload["data"]["pagination"]["per_page"], 10);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 13);
+    assert_eq!(payload["data"]["pagination"]["total_pages"], 2);
+    assert_eq!(
+        payload["data"]["selected_role"]["role_code"],
+        "atomic_role_11"
+    );
+    assert_eq!(payload["data"]["can_manage_roles"], true);
+    assert_eq!(payload["data"]["can_edit_permissions"], true);
+    assert!(
+        payload["data"]["permissions"]
+            .as_array()
+            .is_some_and(|permissions| permissions.iter().any(|permission| {
+                permission["permission_key"] == "system.dashboard.view"
+                    && permission["granted"] == true
+            }))
+    );
+
+    let system_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/roles-view?role=system_admin&page=2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(system_response.status(), StatusCode::OK);
+    let system_payload: Value = serde_json::from_str(&response_body(system_response).await)
+        .expect("roles view response should be JSON");
+    assert_eq!(
+        system_payload["data"]["selected_role"]["role_code"],
+        "system_admin"
+    );
+    assert_eq!(system_payload["data"]["can_edit_permissions"], false);
 }
 
 #[tokio::test]
@@ -1916,15 +889,25 @@ async fn api_system_role_permissions_flow_matches_permission_tree_model() {
 }
 
 #[tokio::test]
-async fn system_releases_page_renders_for_admin() {
+async fn api_system_releases_view_returns_one_atomic_paginated_snapshot() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let write_cookie = with_csrf_cookie(&initialized.cookie);
+    create_system_release_api(
+        &app,
+        &write_cookie,
+        "v2.0.0",
+        "共享发布视图",
+        "原子读取设置、版本和资产。",
+    )
+    .await;
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .uri("/web/system/releases")
+                .uri("/api/v1/system/releases-view?page=1&per_page=20")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -1933,109 +916,216 @@ async fn system_releases_page_renders_for_admin() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains("版本管理"));
-    assert!(body.contains("保留策略"));
-    assert!(body.contains(r#"data-modal-open="system-release-create-modal""#));
-    assert!(body.contains(r#"action="/web/system/releases/settings""#));
-    assert!(body.contains(r#"href="/web/downloads" target="_blank""#));
-    assert!(body.contains("暂无版本记录"));
+    let payload = response_json(response).await;
+    assert_eq!(payload["data"]["settings"]["retention_count"], 5);
+    assert_eq!(
+        payload["data"]["items"][0]["release"]["version_name"],
+        "v2.0.0"
+    );
+    assert_eq!(payload["data"]["items"][0]["assets"], serde_json::json!([]));
+    assert_eq!(payload["data"]["pagination"]["per_page"], 20);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 1);
+    assert_eq!(payload["data"]["can_manage_releases"], true);
+
+    let member_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "release_view_denied".to_string(),
+            display_name: "发布读取拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/releases-view")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
-async fn system_openapi_page_renders_and_supports_token_crud() {
+async fn api_system_openapi_view_enforces_permissions_and_plaintext_once() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let write_cookie = with_csrf_cookie(&initialized.cookie);
 
-    let page_response = app
+    let empty = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/web/system/openapi")
+                .uri("/api/v1/system/openapi-view")
                 .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("系统 OpenAPI"));
-    assert!(page_body.contains("/api/system/openapi.json"));
-    assert!(page_body.contains("/web/system/api-docs"));
-    assert!(page_body.contains(r#"data-modal-open="system-api-token-modal""#));
+    assert_eq!(empty.status(), StatusCode::OK);
+    assert_eq!(
+        empty.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let empty_payload = response_json(empty).await;
+    assert_eq!(empty_payload["data"]["items"], serde_json::json!([]));
+    assert_eq!(empty_payload["data"]["active_count"], 0);
+    assert_eq!(empty_payload["data"]["token_limit"], 100);
+    assert_eq!(empty_payload["data"]["can_manage_tokens"], true);
 
-    let create_response = app
+    let created = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/web/system/openapi")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "name=CI%20Release&scopes=system_release%3Aread&scopes=system_release%3Awrite",
-                )))
+                .uri("/api/v1/system/api-tokens")
+                .header(header::COOKIE, write_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "Shared release automation",
+                        "scopes": ["system_release:read", "system_release:write"]
+                    })
+                    .to_string(),
+                ))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(created.status(), StatusCode::CREATED);
     assert_eq!(
-        create_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/openapi"
+        created.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let created_payload = response_json(created).await;
+    let token_id = created_payload["data"]["token"]["id"]
+        .as_i64()
+        .expect("created token id should exist");
+    let raw_token = created_payload["data"]["raw_token"]
+        .as_str()
+        .expect("created token plaintext should be returned once");
+    assert!(raw_token.starts_with("yuance_sys_pat_"));
+    assert_eq!(
+        created_payload["data"]["token"]["name"],
+        "Shared release automation"
     );
 
-    let created_token_id =
-        sqlx::query_scalar::<_, i64>("SELECT id FROM system_api_tokens WHERE name = 'CI Release'")
+    let view = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/openapi-view")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let view_payload = response_json(view).await;
+    assert_eq!(view_payload["data"]["active_count"], 1);
+    assert_eq!(view_payload["data"]["items"][0]["id"], token_id);
+    assert_eq!(
+        view_payload["data"]["items"][0]["raw_token"],
+        serde_json::Value::Null
+    );
+    assert!(!view_payload.to_string().contains(raw_token));
+
+    let updated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/system/api-tokens/{token_id}"))
+                .header(header::COOKIE, write_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "Release reader",
+                        "scopes": ["system_release:read"]
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated_payload = response_json(updated).await;
+    assert_eq!(updated_payload["data"]["name"], "Release reader");
+    assert_eq!(
+        updated_payload["data"]["raw_token"],
+        serde_json::Value::Null
+    );
+
+    let member_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "openapi_view_denied".to_string(),
+            display_name: "系统 Token 拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/openapi-view")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let deleted = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/system/api-tokens/{token_id}"))
+                .header(header::COOKIE, write_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(deleted.status(), StatusCode::OK);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_api_tokens")
             .fetch_one(&pool)
             .await
-            .expect("system token should exist");
-
-    let created_page = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/openapi")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(created_page.status(), StatusCode::OK);
-    let created_body = response_body(created_page).await;
-    assert!(created_body.contains("CI Release"));
-    assert!(created_body.contains("系统 Token 已复制。"));
-    assert!(created_body.contains("版本写入 / 发布 / 资产上传"));
-
-    let delete_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "/web/system/openapi/tokens/{created_token_id}/delete"
-                ))
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf("")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        delete_response.headers().get(header::LOCATION).unwrap(),
-        "/web/system/openapi"
+            .expect("token count should load"),
+        0
     );
-
-    let remaining_tokens = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_api_tokens")
-        .fetch_one(&pool)
-        .await
-        .expect("system token count should load");
-    assert_eq!(remaining_tokens, 0);
 }
 
 #[tokio::test]
@@ -2679,6 +1769,458 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
     assert_eq!(file_object_count, 1);
 }
 
+#[tokio::test]
+async fn internal_release_retention_preserves_current_and_verified_n_minus_one() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let mut release_ids = Vec::new();
+    for (index, age_days) in [(1, 3), (2, 2), (3, 1)] {
+        let id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO system_release_versions (
+                version_name, title, status, channel, verification_status,
+                manifest_sha256, signing_key_id, source_commit, source_tag,
+                verified_at, published_at, created_by_user_id, updated_by_user_id
+            )
+            VALUES (
+                ?1, ?1, 'published', 'internal', 'verified',
+                ?2, '0123456789ABCDEF', ?3, ?4,
+                datetime('now', ?5), datetime('now', ?5), ?6, ?6
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(format!("v4.0.{index}"))
+        .bind(format!("{index:064x}"))
+        .bind(format!("{index:040x}"))
+        .bind(format!("desktop-v4.0.{index}"))
+        .bind(format!("-{age_days} days"))
+        .bind(initialized.user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("internal release should seed");
+        release_ids.push(id);
+    }
+
+    for release_id in &release_ids[1..] {
+        for (platform, architecture) in [
+            ("macos", "x64"),
+            ("macos", "arm64"),
+            ("windows", "x64"),
+            ("windows", "arm64"),
+            ("linux", "x64"),
+            ("linux", "arm64"),
+        ] {
+            let file_object_id = sqlx::query_scalar::<_, i64>(
+                r#"
+                INSERT INTO file_objects (
+                    object_key, original_filename, content_type, byte_size,
+                    checksum_sha256, status, created_by_user_id
+                )
+                VALUES (?1, ?2, 'application/octet-stream', 1, ?3, 'uploaded', ?4)
+                RETURNING id
+                "#,
+            )
+            .bind(format!("release/{release_id}/{platform}-{architecture}"))
+            .bind(format!("Yuance-{release_id}-{platform}-{architecture}.bin"))
+            .bind("0".repeat(64))
+            .bind(initialized.user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("installer file should seed");
+            sqlx::query(
+                r#"
+                INSERT INTO system_release_assets (
+                    release_id, file_object_id, platform, architecture, artifact_kind
+                )
+                VALUES (?1, ?2, ?3, ?4, 'installer')
+                "#,
+            )
+            .bind(release_id)
+            .bind(file_object_id)
+            .bind(platform)
+            .bind(architecture)
+            .execute(&pool)
+            .await
+            .expect("installer asset should seed");
+        }
+    }
+
+    system_releases::update_settings(&pool, &test_settings(), initialized.user_id, 1)
+        .await
+        .expect("retention update should succeed");
+
+    let remaining = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM system_release_versions ORDER BY published_at, id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("remaining releases should load");
+    assert_eq!(remaining, release_ids[1..]);
+
+    system_releases::withdraw_release(
+        &pool,
+        initialized.user_id,
+        release_ids[2],
+        system_releases::WithdrawSystemReleaseInput {
+            reason: "回退演练".to_string(),
+            github_withdrawal_status: "pending".to_string(),
+        },
+    )
+    .await
+    .expect("current release should withdraw");
+    let failed_withdrawal = system_releases::update_withdrawal_status(
+        &pool,
+        initialized.user_id,
+        release_ids[2],
+        "failed",
+    )
+    .await
+    .expect("GitHub withdrawal failure should remain visible");
+    assert_eq!(failed_withdrawal.release.github_withdrawal_status, "failed");
+    let recovered = system_releases::get_latest_published_release_detail(&pool)
+        .await
+        .expect("latest query should succeed")
+        .expect("N-1 should become latest");
+    assert_eq!(recovered.release.id, release_ids[1]);
+}
+
+#[tokio::test]
+async fn concurrent_release_download_check_converges_to_withdrawn_denial() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let release_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO system_release_versions (
+            version_name, title, status, published_at,
+            created_by_user_id, updated_by_user_id
+        )
+        VALUES ('v4.1.0', '并发撤回', 'published', datetime('now'), ?1, ?1)
+        RETURNING id
+        "#,
+    )
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("release should seed");
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+    let withdraw_pool = pool.clone();
+    let withdraw_barrier = barrier.clone();
+    let actor_user_id = initialized.user_id;
+    let withdraw = tokio::spawn(async move {
+        withdraw_barrier.wait().await;
+        system_releases::withdraw_release(
+            &withdraw_pool,
+            actor_user_id,
+            release_id,
+            system_releases::WithdrawSystemReleaseInput {
+                reason: "并发撤回演练".to_string(),
+                github_withdrawal_status: "pending".to_string(),
+            },
+        )
+        .await
+    });
+    let download_pool = pool.clone();
+    let download = tokio::spawn(async move {
+        barrier.wait().await;
+        system_releases::ensure_release_allows_download(&download_pool, release_id).await
+    });
+    withdraw
+        .await
+        .expect("withdraw task should join")
+        .expect("withdraw should succeed");
+    let _concurrent_result = download.await.expect("download task should join");
+    assert!(
+        system_releases::ensure_release_allows_download(&pool, release_id)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn internal_system_release_requires_verification_and_supports_withdrawal() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let invalid = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        "/api/v1/system/releases",
+        serde_json::json!({"version_name":"v3.0.0","channel":"internal"}),
+    )
+    .await;
+    assert_eq!(invalid.0, StatusCode::BAD_REQUEST);
+
+    let created = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        "/api/v1/system/releases",
+        serde_json::json!({
+            "version_name": "v3.0.0",
+            "title": "内部桌面版",
+            "notes": "仅供内部验证",
+            "channel": "internal",
+            "manifest_sha256": "a".repeat(64),
+            "signing_key_id": "ABCDEF0123456789",
+            "source_commit": "b".repeat(40),
+            "source_tag": "desktop-v3.0.0"
+        }),
+    )
+    .await;
+    assert_eq!(created.0, StatusCode::CREATED);
+    let release_id = json_i64(&created.1, &["data", "release", "id"]);
+    assert_eq!(
+        json_string(&created.1, &["data", "release", "verification_status"]),
+        "pending"
+    );
+
+    let publish_before_verify = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "PATCH",
+        &format!("/api/v1/system/releases/{release_id}"),
+        serde_json::json!({
+            "version_name": "v3.0.0", "title": "内部桌面版",
+            "notes": "仅供内部验证", "publish": true
+        }),
+    )
+    .await;
+    assert_eq!(publish_before_verify.0, StatusCode::CONFLICT);
+
+    let verify_incomplete = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/verify"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(verify_incomplete.0, StatusCode::BAD_REQUEST);
+
+    let targets = [
+        ("macos", "x64", "Yuance-3.0.0-mac-x64.dmg"),
+        ("macos", "arm64", "Yuance-3.0.0-mac-arm64.dmg"),
+        ("windows", "x64", "Yuance-3.0.0-win-x64.exe"),
+        ("windows", "arm64", "Yuance-3.0.0-win-arm64.exe"),
+        ("linux", "x64", "Yuance-3.0.0-linux-x64.AppImage"),
+        ("linux", "arm64", "Yuance-3.0.0-linux-arm64.AppImage"),
+    ];
+    let mut first_asset_id = 0;
+    for (platform, architecture, filename) in targets {
+        let asset = create_system_release_asset_api_with_architecture(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            filename,
+            "application/octet-stream",
+            8,
+        )
+        .await;
+        let asset_id = json_i64(&asset, &["data", "id"]);
+        if first_asset_id == 0 {
+            first_asset_id = asset_id;
+        }
+        let upload =
+            get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id)
+                .await;
+        upload_test_storage_object(
+            &app,
+            &admin_cookie,
+            &json_string(&upload, &["data", "request", "url"]),
+            b"internal",
+            "application/octet-stream",
+        )
+        .await;
+        mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
+    }
+
+    for (platform, architecture, filename) in targets {
+        create_and_upload_system_release_evidence_asset(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            "signature",
+            &format!("{filename}.minisig"),
+            "c".repeat(64),
+        )
+        .await;
+        create_and_upload_system_release_evidence_asset(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            "sbom",
+            &format!("{filename}.cdx.json"),
+            "d".repeat(64),
+        )
+        .await;
+    }
+    let mut manifest_asset_id = 0;
+    for (kind, filename, checksum) in [
+        ("manifest", "release-manifest.json", "a".repeat(64)),
+        ("signature", "release-manifest.json.minisig", "e".repeat(64)),
+        ("checksums", "SHA256SUMS", "f".repeat(64)),
+        ("signature", "SHA256SUMS.minisig", "1".repeat(64)),
+    ] {
+        let evidence_asset_id = create_and_upload_system_release_evidence_asset(
+            &app,
+            &admin_cookie,
+            release_id,
+            "linux",
+            "universal",
+            kind,
+            filename,
+            checksum,
+        )
+        .await;
+        if filename == "release-manifest.json" {
+            manifest_asset_id = evidence_asset_id;
+        }
+    }
+    let readback = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!("/api/v1/system/releases/{release_id}/assets/{manifest_asset_id}/download-url"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(readback.0, StatusCode::OK);
+    assert_eq!(json_i64(&readback.1, &["data", "expires_in_seconds"]), 300);
+    assert_eq!(
+        json_string(&readback.1, &["data", "checksum_sha256"]),
+        "a".repeat(64)
+    );
+    let old_readback_url = json_string(&readback.1, &["data", "request", "url"]);
+    let excessive_ttl = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!(
+            "/api/v1/system/releases/{release_id}/assets/{manifest_asset_id}/download-url?expires_in_seconds=301"
+        ),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(excessive_ttl.0, StatusCode::BAD_REQUEST);
+
+    let verified = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/verify"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(verified.0, StatusCode::OK);
+    assert_eq!(
+        json_string(&verified.1, &["data", "release", "verification_status"]),
+        "verified"
+    );
+
+    let published = system_release_json_request(
+        &app, &admin_cookie, "PATCH", &format!("/api/v1/system/releases/{release_id}"),
+        serde_json::json!({"version_name":"v3.0.0","title":"内部桌面版","notes":"仅供内部验证","publish":true}),
+    ).await;
+    assert_eq!(published.0, StatusCode::OK);
+
+    let rewrite_published = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "PATCH",
+        &format!("/api/v1/system/releases/{release_id}"),
+        serde_json::json!({
+            "version_name":"v3.0.0",
+            "title":"被改写的标题",
+            "notes":"仅供内部验证",
+            "publish":false
+        }),
+    )
+    .await;
+    assert_eq!(rewrite_published.0, StatusCode::CONFLICT);
+
+    let mutate_published = system_release_json_request(
+        &app, &admin_cookie, "POST", &format!("/api/v1/system/releases/{release_id}/assets"),
+        serde_json::json!({"platform":"linux","architecture":"x64","original_filename":"late.AppImage","content_type":"application/octet-stream","byte_size":1}),
+    ).await;
+    assert_eq!(mutate_published.0, StatusCode::CONFLICT);
+
+    let withdrawn = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/withdraw"),
+        serde_json::json!({"reason":"内部验证发现阻塞问题","github_withdrawal_status":"pending"}),
+    )
+    .await;
+    assert_eq!(withdrawn.0, StatusCode::OK);
+    assert_eq!(
+        json_string(&withdrawn.1, &["data", "release", "status"]),
+        "withdrawn"
+    );
+    let new_readback = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!("/api/v1/system/releases/{release_id}/assets/{manifest_asset_id}/download-url"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(new_readback.0, StatusCode::NOT_FOUND);
+    let residual_readback = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(old_readback_url)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(residual_readback.status(), StatusCode::OK);
+
+    let withdrawal_updated = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "PATCH",
+        &format!("/api/v1/system/releases/{release_id}/withdrawal"),
+        serde_json::json!({"github_withdrawal_status":"succeeded"}),
+    )
+    .await;
+    assert_eq!(withdrawal_updated.0, StatusCode::OK);
+    assert_eq!(
+        json_string(
+            &withdrawal_updated.1,
+            &["data", "release", "github_withdrawal_status"]
+        ),
+        "succeeded"
+    );
+
+    let download = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/downloads/{release_id}/assets/{first_asset_id}"
+                ))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(download.status(), StatusCode::NOT_FOUND);
+}
+
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     let result = bootstrap::bootstrap_init(
         pool,
@@ -2733,6 +2275,73 @@ async fn create_system_release_api(
         .expect("router should respond");
     assert_eq!(response.status(), StatusCode::CREATED);
     response_json(response).await
+}
+
+async fn system_release_json_request(
+    app: &axum::Router,
+    admin_cookie: &str,
+    method: &str,
+    uri: &str,
+    payload: Value,
+) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(payload.to_string()))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let status = response.status();
+    (status, response_json(response).await)
+}
+
+async fn create_and_upload_system_release_evidence_asset(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    platform: &str,
+    architecture: &str,
+    artifact_kind: &str,
+    filename: &str,
+    checksum_sha256: String,
+) -> i64 {
+    let created = system_release_json_request(
+        app,
+        admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/assets"),
+        serde_json::json!({
+            "platform": platform,
+            "architecture": architecture,
+            "artifact_kind": artifact_kind,
+            "original_filename": filename,
+            "content_type": "application/octet-stream",
+            "byte_size": 8,
+            "checksum_sha256": checksum_sha256
+        }),
+    )
+    .await;
+    assert_eq!(created.0, StatusCode::CREATED);
+    let asset_id = json_i64(&created.1, &["data", "id"]);
+    let upload =
+        get_system_release_asset_upload_url_api(app, admin_cookie, release_id, asset_id).await;
+    upload_test_storage_object(
+        app,
+        admin_cookie,
+        &json_string(&upload, &["data", "request", "url"]),
+        b"evidence",
+        "application/octet-stream",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(app, admin_cookie, release_id, asset_id).await;
+    asset_id
 }
 
 async fn update_system_release_api(
@@ -2817,7 +2426,8 @@ async fn create_system_release_asset_api_with_architecture(
                         "architecture": architecture,
                         "original_filename": filename,
                         "content_type": content_type,
-                        "byte_size": byte_size
+                        "byte_size": byte_size,
+                        "checksum_sha256": "0".repeat(64)
                     })
                     .to_string(),
                 ))
@@ -2963,22 +2573,6 @@ async fn create_user_with_role(
     user_id
 }
 
-async fn user_role_code(pool: &sqlx::SqlitePool, username: &str) -> String {
-    sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT r.role_code
-        FROM users u
-        JOIN user_roles ur ON ur.user_id = u.id
-        JOIN roles r ON r.id = ur.role_id
-        WHERE u.username = ?1
-        "#,
-    )
-    .bind(username)
-    .fetch_one(pool)
-    .await
-    .expect("role code should load")
-}
-
 async fn response_body(response: axum::response::Response) -> String {
     let body = response
         .into_body()
@@ -2993,18 +2587,6 @@ async fn response_body(response: axum::response::Response) -> String {
 
 async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_str(&response_body(response).await).expect("body should be valid json")
-}
-
-fn html_fragment<'a>(body: &'a str, marker: &str, closing: &str) -> &'a str {
-    let start = body.find(marker).expect("fragment marker should exist");
-    let tail = &body[start..];
-    let end = tail.find(closing).expect("fragment closing should exist") + closing.len();
-    &tail[..end]
-}
-
-fn assert_pagination_fields(fragment: &str, page: i64, per_page: i64) {
-    assert!(fragment.contains(&format!(r#"name="page" value="{page}""#)));
-    assert!(fragment.contains(&format!(r#"name="per_page" value="{per_page}""#)));
 }
 
 async fn test_pool() -> sqlx::SqlitePool {
@@ -3050,15 +2632,13 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 
 fn with_csrf_cookie(session_cookie: &str) -> String {
     format!("{session_cookie}; yuance_csrf={CSRF_TOKEN}")
-}
-
-fn with_csrf(body: &str) -> String {
-    format!("{body}&_csrf={CSRF_TOKEN}")
 }
 
 fn json_path<'a>(value: &'a Value, path: &[&str]) -> &'a Value {

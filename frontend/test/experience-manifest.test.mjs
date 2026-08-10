@@ -1,0 +1,173 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { access, readFile } from 'node:fs/promises';
+import Ajv2020 from 'ajv/dist/2020.js';
+
+const manifestUrl = new URL('../parity/experience-manifest.json', import.meta.url);
+const schemaUrl = new URL('../parity/experience-manifest.schema.json', import.meta.url);
+const sourceInventoryUrl = new URL('../parity/legacy-source-inventory.json', import.meta.url);
+const markerClassificationUrl = new URL('../parity/interaction-marker-classification.json', import.meta.url);
+
+const allowedExceptionCodes = [
+  'auth.transport',
+  'boundary.server-rendered',
+  'file.picker',
+  'file.save',
+  'notification.native',
+  'route.transport',
+  'window.lifecycle',
+];
+
+async function readJson(url) {
+  return JSON.parse(await readFile(url, 'utf8'));
+}
+
+test('体验清单完整通过 Draft 2020 JSON Schema 校验', async () => {
+  const [manifest, schema] = await Promise.all([readJson(manifestUrl), readJson(schemaUrl)]);
+  const validate = new Ajv2020({ allErrors: true }).compile(schema);
+
+  assert.equal(validate(manifest), true, JSON.stringify(validate.errors, null, 2));
+});
+
+test('体验清单 schema 使用封闭对象和受控宿主差异枚举', async () => {
+  const schema = await readJson(schemaUrl);
+
+  assert.equal(schema.additionalProperties, false);
+  for (const definition of ['page', 'action', 'hostException', 'evidence']) {
+    assert.equal(schema.$defs[definition].additionalProperties, false, `${definition} 必须拒绝未知字段`);
+  }
+  assert.deepEqual([...schema.$defs.hostException.properties.code.enum].sort(), allowedExceptionCodes);
+});
+
+test('体验清单登记全部且仅登记允许的宿主差异', async () => {
+  const manifest = await readJson(manifestUrl);
+  const codes = manifest.hostExceptions.map(({ code }) => code).sort();
+
+  assert.deepEqual(codes, allowedExceptionCodes);
+  assert.equal(new Set(codes).size, codes.length);
+  for (const exception of manifest.hostExceptions) {
+    assert.ok(exception.capability.length > 0);
+    assert.ok(exception.browserBehavior.length > 0);
+    assert.ok(exception.desktopBehavior.length > 0);
+    assert.ok(exception.sharedOutcome.length > 0);
+    assert.ok(exception.tests.length >= 2, `${exception.code} 必须同时登记 Browser/Desktop 证据`);
+    for (const evidencePath of exception.tests) {
+      await access(new URL(`../../${evidencePath}`, import.meta.url));
+    }
+  }
+});
+
+test('体验清单 ID 和引用保持唯一且闭合', async () => {
+  const [manifest, sourceInventory] = await Promise.all([
+    readJson(manifestUrl),
+    readJson(sourceInventoryUrl),
+  ]);
+  const pageIds = manifest.pages.map(({ id }) => id);
+  const actionIds = manifest.actions.map(({ id }) => id);
+  const contractIds = new Set([...pageIds, ...actionIds]);
+  const routeMethods = new Map(sourceInventory.routes.map(({ route, methods }) => [route, methods]));
+  const templates = new Set(sourceInventory.templates);
+
+  assert.equal(new Set(pageIds).size, pageIds.length, 'page id 不得重复');
+  assert.equal(new Set(actionIds).size, actionIds.length, 'action id 不得重复');
+  for (const page of manifest.pages) {
+    assert.ok(routeMethods.has(page.route), `${page.id} 引用了不存在的正式 Web route ${page.route}`);
+    assert.ok(page.sourceTemplates.length > 0 || (page.sourceHandlers?.length ?? 0) > 0, `${page.id} 必须登记模板或运行时 handler`);
+    for (const method of page.methods) {
+      assert.ok(routeMethods.get(page.route).includes(method), `${page.id} 登记了不存在的 ${method} ${page.route}`);
+    }
+    for (const template of page.sourceTemplates) {
+      assert.ok(templates.has(template), `${page.id} 引用了不存在的模板 ${template}`);
+    }
+  }
+  for (const action of manifest.actions) {
+    assert.ok(pageIds.includes(action.pageId), `${action.id} 引用了不存在的页面 ${action.pageId}`);
+    if (action.status === 'retired') {
+      assert.ok(action.request.path.startsWith('/api/'), `${action.id} 退役后必须指向共享 API 请求`);
+    } else {
+      assert.ok(routeMethods.get(action.request.path)?.includes(action.request.method), `${action.id} 引用了不存在的正式 Web 请求 ${action.request.method} ${action.request.path}`);
+    }
+  }
+  for (const effect of manifest.dynamicApiEffects) {
+    assert.ok(effect.owners.every((owner) => contractIds.has(owner)), `${effect.path} 存在无效 owner`);
+  }
+});
+
+test('完成态清单不得留下空页面或动作基线', async () => {
+  const manifest = await readJson(manifestUrl);
+
+  if (manifest.status === 'complete') {
+    assert.ok(manifest.pages.length > 0);
+    assert.ok(manifest.actions.length > 0);
+    for (const entry of [...manifest.pages, ...manifest.actions]) {
+      assert.ok(['shared', 'retired'].includes(entry.status), `${entry.id} 尚未完成迁移: ${entry.status}`);
+      assert.ok(entry.evidence.browserTests.length > 0, `${entry.id} 缺少 Browser 证据`);
+      assert.ok(entry.evidence.desktopTests.length > 0, `${entry.id} 缺少 Desktop 证据`);
+      assert.ok(entry.evidence.reviews.length > 0, `${entry.id} 缺少 review 证据`);
+    }
+  }
+});
+
+test('切换态清单必须登记开关和回滚测试证据', async () => {
+  const manifest = await readJson(manifestUrl);
+
+  for (const entry of [...manifest.pages, ...manifest.actions]) {
+    if (entry.status !== 'cutover') continue;
+    assert.ok(entry.evidence.cutoverFlag, `${entry.id} 缺少 cutoverFlag`);
+    assert.ok(entry.evidence.rollbackTest, `${entry.id} 缺少 rollbackTest`);
+    await access(new URL(`../../${entry.evidence.rollbackTest}`, import.meta.url));
+  }
+});
+
+test('所有旧 Web 交互标记均有受控分类', async () => {
+  const [sourceInventory, classification] = await Promise.all([
+    readJson(sourceInventoryUrl),
+    readJson(markerClassificationUrl),
+  ]);
+  const sourceMarkers = [...new Set([...sourceInventory.appInteractionMarkers, ...sourceInventory.templateInteractionMarkers])].sort();
+  const classifiedMarkers = classification.classifications.map(({ marker }) => marker).sort();
+
+  assert.deepEqual(classifiedMarkers, sourceMarkers);
+  assert.equal(new Set(classifiedMarkers).size, classifiedMarkers.length);
+  for (const entry of classification.classifications) {
+    assert.ok(['action', 'control', 'state', 'transport', 'presentation'].includes(entry.category));
+    assert.ok(entry.sources.length > 0 && entry.sources.every((source) => ['app-js', 'template'].includes(source)));
+  }
+});
+
+test('页面只拥有读取入口且每个 route method 只有一个 contract owner', async () => {
+  const [manifest, sourceInventory] = await Promise.all([readJson(manifestUrl), readJson(sourceInventoryUrl)]);
+  const owners = new Map();
+  const register = (signature, owner) => {
+    assert.equal(owners.has(signature), false, `${signature} 同时被 ${owners.get(signature)} 和 ${owner} 登记`);
+    owners.set(signature, owner);
+  };
+
+  for (const page of manifest.pages) {
+    assert.deepEqual(page.methods, ['GET'], `${page.id} 的写操作必须拆成 action`);
+    register(`GET ${page.route}`, page.id);
+    for (const effect of page.apiEffects ?? []) {
+      assert.ok(effect.path.startsWith('/api/') && effect.purpose.length > 0, `${page.id} 的动态 API effect 无效`);
+    }
+  }
+  for (const action of manifest.actions) {
+    if (action.request.path.startsWith('/web')) {
+      register(`${action.request.method} ${action.request.path}`, action.id);
+    } else {
+      assert.equal(action.status, 'retired', `${action.id} 使用共享 API 前必须完成 legacy action 退役`);
+    }
+    for (const effect of action.apiEffects ?? []) {
+      assert.ok(effect.path.startsWith('/api/'), `${action.id} 的动态 API effect 必须使用 /api 路径`);
+      assert.ok(effect.purpose.length > 0, `${action.id} 的动态 API effect 必须说明业务目的`);
+    }
+  }
+
+  const sourceSignatures = sourceInventory.routes.flatMap(({ route, methods }) => methods.map((method) => `${method} ${route}`));
+  assert.deepEqual([...owners.keys()].sort(), sourceSignatures.sort(), '每个正式 Web route/method 必须被且仅被一个 contract 覆盖');
+
+  const templateOwners = new Set([
+    ...manifest.pages.flatMap(({ sourceTemplates }) => sourceTemplates),
+    ...manifest.actions.flatMap(({ sourceTemplates = [] }) => sourceTemplates),
+  ]);
+  assert.deepEqual([...templateOwners].sort(), [...sourceInventory.templates].sort(), '每个 Askama 模板必须存在 contract owner');
+});

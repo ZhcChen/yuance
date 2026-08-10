@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "classifications": [
+    {
+      "marker": "data-document-preview-root",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-preview",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-sidebar-panel",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-sidebar-tab",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-experimental",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-file-type",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-host",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-kind-label",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-metric",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-nav",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-reload",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-status",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-status-copy",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-title",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-type",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    }
+  ]
+}

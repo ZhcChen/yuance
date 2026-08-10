@@ -1,0 +1,20 @@
+{
+  "name": "@yuance/frontend-app-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "dependencies": {
+    "@yuance/frontend-api-client": "0.1.0",
+    "@yuance/frontend-platform-contract": "0.1.0"
+  },
+  "scripts": {
+    "check:source": "node ../../scripts/assert-js-only.mjs src test",
+    "check:js": "tsc -p jsconfig.json",
+    "lint": "eslint \"src/**/*.js\" \"test/**/*.mjs\"",
+    "test": "node --test test/**/*.test.mjs",
+    "check": "npm run check:source && npm run check:js && npm run lint && npm run test"
+  }
+}

@@ -63,17 +63,18 @@ async fn bootstrap_login_and_storage_save_write_audit_logs() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .uri("/api/v1/storage/config")
+                .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, with_csrf_cookie(&session_cookie))
-                .body(Body::from(with_csrf(
-                    "endpoint=https%3A%2F%2Foss-cn-hangzhou.aliyuncs.com&region=cn-hangzhou&bucket=yuance-files&access_key_id=AKIAAUDITSECRETID&access_key_secret=AuditSecretValue2026%21&activate=on",
-                )))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"endpoint":"https://oss-cn-hangzhou.aliyuncs.com","region":"cn-hangzhou","bucket":"yuance-files","access_key_id":"AKIAAUDITSECRETID","access_key_secret":"AuditSecretValue2026!","activate":true}"#,
+                ))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(storage_response.status(), StatusCode::OK);
+    assert_eq!(storage_response.status(), StatusCode::CREATED);
 
     let actions = sqlx::query_scalar::<_, String>(
         r#"
@@ -93,7 +94,7 @@ async fn bootstrap_login_and_storage_save_write_audit_logs() {
     let audit_page = app
         .oneshot(
             Request::builder()
-                .uri("/web/system/audit")
+                .uri("/api/v1/system/audit")
                 .header(header::COOKIE, session_cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -102,10 +103,11 @@ async fn bootstrap_login_and_storage_save_write_audit_logs() {
         .expect("router should respond");
     assert_eq!(audit_page.status(), StatusCode::OK);
     let body = response_body(audit_page).await;
-    assert!(body.contains("审计日志"));
-    assert!(body.contains("首次初始化"));
-    assert!(body.contains("用户登录"));
-    assert!(body.contains("保存对象存储配置"));
+    assert!(body.contains(r#""action":"bootstrap.init""#));
+    assert!(body.contains(r#""action":"auth.login""#));
+    assert!(body.contains(r#""action":"storage.config.save""#));
+    assert!(!body.contains("AKIAAUDITSECRETID"));
+    assert!(!body.contains("AuditSecretValue2026!"));
 }
 
 #[tokio::test]
@@ -190,7 +192,7 @@ async fn permission_denials_write_audit_logs() {
 
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().any(|row| row.0 == "system.users.view"
-        && row.1.contains(r#""source":"web.system""#)
+        && row.1.contains(r#""source":"web.view""#)
         && row.2 == "203.0.113.10"
         && row.3 == "YuanceWebAuditTest/1.0"));
     assert!(rows.iter().any(|row| row.0 == "project.manage"
@@ -272,99 +274,6 @@ async fn failed_login_attempts_write_audit_logs_without_password() {
         rows.iter()
             .all(|row| !row.2.contains("WrongPass") && !row.2.contains("AnotherWrongPass"))
     );
-}
-
-#[tokio::test]
-async fn audit_page_can_filter_and_paginate_logs() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let session = auth::login(&pool, "admin", "AdminPass2026!")
-        .await
-        .expect("admin should login");
-    let cookie = auth::session_cookie_header(&session.raw_token, false);
-    let admin_id = sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE username = 'admin'")
-        .fetch_one(&pool)
-        .await
-        .expect("admin id should load");
-    audit::record(
-        &pool,
-        Some(admin_id),
-        "storage.config.save",
-        "storage_config",
-        "oss-primary",
-        r#"{"bucket":"primary"}"#,
-    )
-    .await
-    .expect("audit log should record");
-    audit::record(
-        &pool,
-        Some(admin_id),
-        "storage.config.save",
-        "storage_config",
-        "oss-backup",
-        r#"{"bucket":"backup"}"#,
-    )
-    .await
-    .expect("audit log should record");
-    audit::record(
-        &pool,
-        Some(admin_id),
-        "user.create",
-        "user",
-        "member1",
-        r#"{"username":"member1"}"#,
-    )
-    .await
-    .expect("audit log should record");
-
-    let page = audit::list_filtered(
-        &pool,
-        audit::AuditLogFilter {
-            actor: "admin".to_string(),
-            action: "storage.config.save".to_string(),
-            target_type: "storage_config".to_string(),
-            target_id: "oss".to_string(),
-        },
-        1,
-        1,
-    )
-    .await
-    .expect("audit page should load");
-    assert_eq!(page.total_items, 2);
-    assert_eq!(page.total_pages(), 2);
-    assert_eq!(page.items.len(), 1);
-
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/audit?action=storage.config.save&target_type=storage_config&target_id=oss&page=1&per_page=1")
-                .header(header::COOKIE, cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains(r#"aria-label="审计日志筛选""#));
-    assert!(body.contains(r#"value="storage.config.save""#));
-    assert!(body.contains(r#"value="storage_config""#));
-    assert!(body.contains(r#"value="oss""#));
-    assert!(body.contains("保存对象存储配置"));
-    assert!(!body.contains("创建用户"));
-    assert!(body.contains("当前显示 1-1"));
-    assert!(body.contains("共 2 条"));
-    assert!(body.contains("data-pagination-size"));
-    assert!(body.contains("value=\"100\""));
-    assert!(body.contains("aria-label=\"跳转页码\""));
-    assert!(body.contains(r#"aria-label="下一页""#));
-    assert!(body.contains("action=storage.config.save"));
-    assert!(body.contains("target_type=storage_config"));
-    assert!(body.contains("target_id=oss"));
-    assert!(body.contains("page=2"));
-    assert!(body.contains("per_page=1"));
 }
 
 #[tokio::test]
@@ -534,6 +443,8 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 

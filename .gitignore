@@ -1,9 +1,15 @@
 /target/
 /data/
 /dist/
+/web/dist/
 /desktop/dist/
-/desktop/release/
+/desktop/renderer-dist/
+!/desktop/release/
+/desktop/release/*
+!/desktop/release/release-manifest.schema.json
+!/desktop/release/minisign.pub
 /.context/
+/.local/
 node_modules/
 /.env
 /api/.env

@@ -1,19 +1,23 @@
 use axum::{
     Json,
     body::Bytes,
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode, header},
+    extract::{Extension, Path, Query, State},
+    http::{HeaderMap, Method, StatusCode, header},
     response::{
-        AppendHeaders, IntoResponse,
+        AppendHeaders, IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
 };
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
+use sqlx::SqlitePool;
+use std::{
+    collections::{HashMap, HashSet},
+    convert::Infallible,
+};
 
 use crate::{
     domains::{
-        api_tokens, audit, auth, bootstrap, database_stats, files, notifications,
+        api_tokens, audit, auth, bootstrap, database_stats, device_sessions, files, notifications,
         project_resources, projects, rbac, storage, system_api_tokens, system_releases, users,
     },
     platform::{
@@ -22,9 +26,9 @@ use crate::{
         security::csrf,
     },
     web::{
-        audit_context,
+        attachment_preview, audit_context,
         response::{ApiEnvelope, json},
-        router::{AppState, app_release_version},
+        router::{AppState, DeviceAuthClientIp, app_release_version},
         test_storage::{
             TestStorageDownloadQuery, TestStorageUploadQuery, bind_test_storage_download_grant,
             bind_test_storage_upload_grant, verify_test_storage_download_grant,
@@ -54,11 +58,47 @@ pub struct BootstrapStatusPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SystemDashboardLinkPayload {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub path: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemDashboardPayload {
+    pub links: Vec<SystemDashboardLinkPayload>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AuthUserPayload {
     pub id: i64,
     pub username: String,
     pub display_name: String,
     pub is_super_admin: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OwnProfilePayload {
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub email: String,
+    pub mobile: String,
+    pub status: String,
+    pub is_super_admin: bool,
+    pub roles: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOwnProfileRequest {
+    display_name: String,
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    mobile: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +148,26 @@ pub struct ProjectQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchResultPayload {
+    pub kind: String,
+    pub key: String,
+    pub title: String,
+    pub context: String,
+    pub target: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AuditLogQuery {
     #[serde(default)]
     actor: String,
@@ -141,6 +201,82 @@ pub struct ProjectDetailPayload {
     pub due_date: String,
     pub created_at: String,
     pub updated_at: String,
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectCyclePayload {
+    pub id: i64,
+    pub name: String,
+    pub goal: String,
+    pub description: String,
+    pub owner_username: String,
+    pub owner: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub closed_at: String,
+    pub is_closed: bool,
+    pub total_items: i64,
+    pub requirement_count: i64,
+    pub task_count: i64,
+    pub bug_count: i64,
+    pub pending_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub work_items: Vec<ProjectCycleWorkItemPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectCycleWorkItemPayload {
+    pub key: String,
+    pub item_type: String,
+    pub title: String,
+    pub status: String,
+    pub priority: String,
+    pub assignee_username: String,
+    pub assignee: String,
+    pub due_date: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectPersonalAnalysisPayload {
+    pub username: String,
+    pub display_name: String,
+    pub joined_at: String,
+    pub completed_total: i64,
+    pub completed_requirements: i64,
+    pub completed_tasks: i64,
+    pub completed_bugs: i64,
+    pub completed_last_30_days: i64,
+    pub pending: ProjectPersonalAnalysisPendingPayload,
+    pub daily_average: f64,
+    pub daily_peak: i64,
+    pub daily_peak_date: String,
+    pub monthly_average: f64,
+    pub monthly_peak: i64,
+    pub monthly_peak_month: String,
+    pub active_days: i64,
+    pub comment_count: i64,
+    pub handoff_count: i64,
+    pub recent_completions: Vec<ProjectPersonalCompletionPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectPersonalAnalysisPendingPayload {
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectPersonalCompletionPayload {
+    pub key: String,
+    pub item_type: String,
+    pub title: String,
+    pub completed_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -162,6 +298,7 @@ pub struct ProjectResourcePayload {
     pub created_at: String,
     pub updated_at: String,
     pub url: String,
+    pub access_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -212,6 +349,66 @@ where
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkItemListSummaryPayload {
+    pub total_items: i64,
+    pub active_items: i64,
+    pub high_priority_items: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListFilterPayload {
+    pub item_type: String,
+    pub q: String,
+    pub status: String,
+    pub priority: String,
+    pub project_key: String,
+    pub assignee_username: String,
+    pub cycle_id: String,
+    pub sort: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListAssigneePayload {
+    pub username: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListCyclePayload {
+    pub id: i64,
+    pub name: String,
+    pub is_closed: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemParentOptionPayload {
+    pub key: String,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemSavedViewPayload {
+    pub id: i64,
+    pub name: String,
+    pub filters: WorkItemListFilterPayload,
+    pub per_page: i64,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListViewPayload {
+    pub items: Vec<WorkItemPayload>,
+    pub pagination: PaginationPayload,
+    pub summary: WorkItemListSummaryPayload,
+    pub filters: WorkItemListFilterPayload,
+    pub assignees: Vec<WorkItemListAssigneePayload>,
+    pub cycles: Vec<WorkItemListCyclePayload>,
+    pub parent_options: Vec<WorkItemParentOptionPayload>,
+    pub saved_views: Vec<WorkItemSavedViewPayload>,
+    pub can_manage_work_items: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct WorkItemDetailPayload {
     pub key: String,
     pub item_type: String,
@@ -233,6 +430,60 @@ pub struct WorkItemDetailPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkItemDetailViewOptionPayload {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailViewPermissionsPayload {
+    pub can_manage_work_items: bool,
+    pub can_edit_primary_post: bool,
+    pub can_close_work_item: bool,
+    pub can_reopen_work_item: bool,
+    pub can_restore_work_item: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailNavigationLinkPayload {
+    pub item_key: String,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailNavigationPayload {
+    pub previous: Option<WorkItemDetailNavigationLinkPayload>,
+    pub next: Option<WorkItemDetailNavigationLinkPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemFlowRecordPayload {
+    pub source_kind: String,
+    pub actor: String,
+    pub created_at: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemFlowHistoryPayload {
+    pub items: Vec<WorkItemFlowRecordPayload>,
+    pub pagination: PaginationPayload,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailViewPayload {
+    pub item: WorkItemDetailPayload,
+    pub primary_post: Option<CommentPayload>,
+    pub cycle: Option<WorkItemDetailViewOptionPayload>,
+    pub assignees: Vec<WorkItemDetailViewOptionPayload>,
+    pub parent_options: Vec<WorkItemParentOptionPayload>,
+    pub status_options: Vec<WorkItemDetailViewOptionPayload>,
+    pub permissions: WorkItemDetailViewPermissionsPayload,
+    pub navigation: WorkItemDetailNavigationPayload,
+    pub flow_history: WorkItemFlowHistoryPayload,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CommentPayload {
     pub id: i64,
     pub parent_comment_id: Option<i64>,
@@ -240,6 +491,7 @@ pub struct CommentPayload {
     pub body: String,
     pub body_format: String,
     pub author: String,
+    pub author_username: String,
     pub created_at: String,
     pub updated_at: String,
     pub is_flow: bool,
@@ -258,6 +510,14 @@ pub struct WorkItemTypingSnapshotPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct NotificationTargetPayload {
+    pub kind: String,
+    pub project_key: String,
+    pub work_item_key: String,
+    pub comment_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct NotificationPayload {
     pub id: i64,
     pub kind: String,
@@ -267,12 +527,31 @@ pub struct NotificationPayload {
     pub created_at: String,
     pub read: bool,
     pub open_url: String,
+    pub target: Option<NotificationTargetPayload>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct NotificationFeedPayload {
     pub items: Vec<NotificationPayload>,
     pub unread_count: i64,
+    pub pending_count: i64,
+    pub filter: String,
+    pub page: i64,
+    pub per_page: i64,
+    pub total_items: i64,
+    pub total_pages: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NotificationTargetResultPayload {
+    pub notification_id: i64,
+    pub read: bool,
+    pub target: Option<NotificationTargetPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NotificationMarkAllReadPayload {
+    pub affected: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -289,13 +568,65 @@ pub struct TopbarCurrentProjectPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TopbarProjectOptionPayload {
+    pub key: String,
+    pub name: String,
+    pub pending_count: i64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct TopbarStatusPayload {
     pub requirements_count: i64,
     pub tasks_count: i64,
     pub bugs_count: i64,
     pub notifications_count: i64,
     pub project_badges: Vec<TopbarProjectBadgePayload>,
+    pub project_options: Vec<TopbarProjectOptionPayload>,
+    pub system_links: Vec<SystemDashboardLinkPayload>,
     pub current_project: Option<TopbarCurrentProjectPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardMetricsPayload {
+    pub active_projects: usize,
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
+    pub assigned_total: usize,
+    pub high_priority: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardProjectPayload {
+    pub key: String,
+    pub name: String,
+    pub owner: String,
+    pub status: String,
+    pub work_item_count: i64,
+    pub active_work_item_count: i64,
+    pub pending_requirements: i64,
+    pub pending_tasks: i64,
+    pub pending_bugs: i64,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardActivityPayload {
+    pub id: i64,
+    pub project_key: String,
+    pub summary: String,
+    pub actor: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardPayload {
+    pub metrics: DashboardMetricsPayload,
+    pub projects: Vec<DashboardProjectPayload>,
+    pub pending_discussions: Vec<NotificationPayload>,
+    pub pending_discussion_count: i64,
+    pub activities: Vec<DashboardActivityPayload>,
+    pub can_manage_projects: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -330,40 +661,179 @@ pub struct CreateApiTokenRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateApiTokenRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    project_scope: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOwnPasswordRequest {
+    current_password: String,
+    new_password: String,
+    new_password_confirm: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceSessionPayload {
+    pub family_id: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub platform: String,
+    pub client_version: String,
+    pub status: String,
+    pub generation: i64,
+    pub last_seen_at: String,
+    pub created_at: String,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct NotificationQuery {
-    #[serde(default = "default_notification_limit")]
-    limit: i64,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    filter: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 fn default_notification_limit() -> i64 {
     5
 }
 
+fn notification_filter_from_query(
+    value: &str,
+) -> AppResult<(notifications::NotificationFilter, &'static str)> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "all" => Ok((notifications::NotificationFilter::All, "all")),
+        "unread" => Ok((notifications::NotificationFilter::Unread, "unread")),
+        "pending" | "pending_discussion" => Ok((
+            notifications::NotificationFilter::PendingDiscussion,
+            "pending",
+        )),
+        "read" => Ok((notifications::NotificationFilter::Read, "read")),
+        _ => Err(AppError::BadRequest("消息筛选条件无效".to_string())),
+    }
+}
+
+fn no_store_json<T>(data: T) -> impl IntoResponse
+where
+    T: Serialize,
+{
+    (
+        AppendHeaders([(header::CACHE_CONTROL, "private, no-store")]),
+        json(data),
+    )
+}
+
 pub async fn list_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<NotificationQuery>,
-) -> AppResult<axum::Json<ApiEnvelope<NotificationFeedPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
-    let items = notifications::list_for_user(pool, user.id, false, query.limit)
-        .await?
-        .into_iter()
-        .map(notification_payload)
-        .collect();
+
+    let (filter, filter_value) = notification_filter_from_query(&query.filter)?;
+    let page = query.page.unwrap_or(1);
+    let per_page = query
+        .per_page
+        .or(query.limit)
+        .unwrap_or(default_notification_limit());
+    if page < 1 {
+        return Err(AppError::BadRequest("页码不能小于 1".to_string()));
+    }
+    if !(1..=100).contains(&per_page) {
+        return Err(AppError::BadRequest(
+            "每页数量必须在 1-100 之间".to_string(),
+        ));
+    }
+
+    let total_items = notifications::count_for_user_filtered(pool, user.id, filter).await?;
+    let total_pages = total_pages(total_items, per_page);
+    let resolved_page = page.min(total_pages.max(1));
+    let items =
+        notifications::list_for_user_page_filtered(pool, user.id, filter, resolved_page, per_page)
+            .await?
+            .into_iter()
+            .map(notification_payload)
+            .collect();
     let unread_count = notifications::unread_count(pool, user.id).await?;
-    Ok(json(NotificationFeedPayload {
+    let pending_count = notifications::count_for_user_filtered(
+        pool,
+        user.id,
+        notifications::NotificationFilter::PendingDiscussion,
+    )
+    .await?;
+    Ok(no_store_json(NotificationFeedPayload {
         items,
         unread_count,
+        pending_count,
+        filter: filter_value.to_string(),
+        page: resolved_page,
+        per_page,
+        total_items,
+        total_pages,
     }))
+}
+
+pub async fn get_notification_target(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(notification_id): Path<i64>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    let notification = notifications::get_for_user(pool, user.id, notification_id).await?;
+    Ok(no_store_json(notification_target_result_payload(
+        notification,
+    )))
+}
+
+pub async fn mark_notification_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(notification_id): Path<i64>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    ensure_api_csrf(&headers)?;
+    let notification = notifications::mark_read(pool, user.id, notification_id).await?;
+    Ok(no_store_json(notification_target_result_payload(
+        notification,
+    )))
+}
+
+pub async fn mark_all_notifications_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    ensure_api_csrf(&headers)?;
+    let affected = notifications::mark_all_read(pool, user.id).await?;
+    Ok(no_store_json(NotificationMarkAllReadPayload { affected }))
 }
 
 pub async fn get_topbar_status(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> AppResult<axum::Json<ApiEnvelope<TopbarStatusPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
     let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
@@ -415,6 +885,30 @@ pub async fn get_topbar_status(
     } else {
         Vec::new()
     };
+    let project_options = if can_view_projects || can_view_work_items {
+        projects::list_project_summaries_for_user(pool, user.id, can_access_all_projects)
+            .await?
+            .into_iter()
+            .filter(|project| {
+                project_key_in_token_scope(&token_project_scope, &project.project_key)
+            })
+            .map(|project| {
+                let pending_count = project_badges
+                    .iter()
+                    .find(|badge| badge.project_key.eq_ignore_ascii_case(&project.project_key))
+                    .map(|badge| badge.pending_count)
+                    .unwrap_or_default();
+                TopbarProjectOptionPayload {
+                    key: project.project_key,
+                    name: project.name,
+                    pending_count,
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let system_links = topbar_system_links(pool, &headers, user.id).await?;
 
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     let notifications_count = notifications::unread_count(pool, user.id).await?;
@@ -431,21 +925,110 @@ pub async fn get_topbar_status(
         }
     });
 
-    Ok(json(TopbarStatusPayload {
+    Ok(no_store_json(TopbarStatusPayload {
         requirements_count: work_item_counts.requirements,
         tasks_count: work_item_counts.tasks,
         bugs_count: work_item_counts.bugs,
         notifications_count,
         project_badges,
+        project_options,
+        system_links,
         current_project,
     }))
+}
+
+async fn topbar_system_links(
+    pool: &sqlx::SqlitePool,
+    headers: &HeaderMap,
+    user_id: i64,
+) -> AppResult<Vec<SystemDashboardLinkPayload>> {
+    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+        if !device_sessions::is_device_access_token(&raw_token)
+            && !api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, "system:admin")
+                .await?
+        {
+            return Ok(Vec::new());
+        }
+    }
+    if !rbac::user_has_permission(pool, user_id, "system.dashboard.view").await? {
+        return Ok(Vec::new());
+    }
+    let mut links = vec![SystemDashboardLinkPayload {
+        id: "dashboard",
+        title: "总览",
+        description: "系统管理总览。",
+        path: "/web/system",
+    }];
+    let candidates = [
+        (
+            "users",
+            "用户管理",
+            "账号、状态、角色绑定、重置密码。",
+            "/web/system/users",
+            "system.users.view",
+        ),
+        (
+            "roles",
+            "角色权限",
+            "系统角色、权限点、角色授权。",
+            "/web/system/roles",
+            "system.roles.view",
+        ),
+        (
+            "storage",
+            "对象存储",
+            "对象存储配置、探测、初始化和版本回滚。",
+            "/web/system/storage",
+            "system.storage.view",
+        ),
+        (
+            "openapi",
+            "系统 OpenAPI",
+            "系统接口文档与 system token 管理。",
+            "/web/system/openapi",
+            "system.api_tokens.view",
+        ),
+        (
+            "releases",
+            "版本管理",
+            "维护桌面端、移动端版本与多平台安装包。",
+            "/web/system/releases",
+            "system.releases.view",
+        ),
+        (
+            "database-stats",
+            "数据库统计",
+            "按需查看表设计、表备注和数据量。",
+            "/web/system/database-stats",
+            "system.database_stats.view",
+        ),
+        (
+            "audit",
+            "审计日志",
+            "登录、授权、配置变更和高风险操作。",
+            "/web/system/audit",
+            "system.audit.view",
+        ),
+    ];
+    for (id, title, description, path, permission) in candidates {
+        if rbac::user_has_permission(pool, user_id, permission).await? {
+            links.push(SystemDashboardLinkPayload {
+                id,
+                title,
+                description,
+                path,
+            });
+        }
+    }
+    Ok(links)
 }
 
 pub async fn topbar_events(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let user_id = user.id;
     let release_version = app_release_version();
     let mut receiver = realtime::subscribe_user_realtime();
@@ -469,10 +1052,16 @@ pub async fn topbar_events(
         }
     };
 
-    Ok(Sse::new(stream).keep_alive(
-        KeepAlive::new()
-            .interval(std::time::Duration::from_secs(20))
-            .text("keep-alive"),
+    Ok((
+        AppendHeaders([
+            (header::CACHE_CONTROL, "private, no-store"),
+            (header::HeaderName::from_static("x-accel-buffering"), "no"),
+        ]),
+        Sse::new(stream).keep_alive(
+            KeepAlive::new()
+                .interval(std::time::Duration::from_secs(20))
+                .text("keep-alive"),
+        ),
     ))
 }
 
@@ -604,6 +1193,43 @@ pub struct AttachmentSignedUrlPayload {
     pub attachment: AttachmentPayload,
     pub request: storage::SignedObjectRequest,
     pub expires_in_seconds: u64,
+    pub expires_at: String,
+    pub checksum_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectAttachmentPreviewPayload {
+    pub attachment: AttachmentPayload,
+    pub preview: AttachmentPreviewPayload,
+    pub navigation: AttachmentPreviewNavigationPayload,
+    pub content_url: String,
+    pub download_url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentPreviewPayload {
+    pub kind: Option<&'static str>,
+    pub strategy: Option<&'static str>,
+    pub file_type: Option<&'static str>,
+    pub kind_label: Option<&'static str>,
+    pub is_experimental: bool,
+    pub legacy_preview_enabled: bool,
+    pub content_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentPreviewNavigationPayload {
+    pub position: usize,
+    pub total: usize,
+    pub previous: Option<AttachmentPreviewNavigationLinkPayload>,
+    pub next: Option<AttachmentPreviewNavigationLinkPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentPreviewNavigationLinkPayload {
+    pub id: i64,
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -635,6 +1261,62 @@ pub struct SystemUserPayload {
     pub updated_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SystemUsersViewQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemRolesViewQuery {
+    role: Option<String>,
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemStorageViewQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemUserProjectPayload {
+    pub key: String,
+    pub name: String,
+    pub status: String,
+    pub role_code: String,
+    pub active_assigned_count: i64,
+    pub can_remove: bool,
+    pub can_update_role: bool,
+    pub remove_block_reason: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemUserViewPayload {
+    #[serde(flatten)]
+    pub user: SystemUserPayload,
+    pub assigned_projects: Vec<SystemUserProjectPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemProjectAssignmentOptionPayload {
+    pub key: String,
+    pub name: String,
+    pub owner: String,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemUsersViewPayload {
+    pub items: Vec<SystemUserViewPayload>,
+    pub roles: Vec<SystemRolePayload>,
+    pub project_options: Vec<SystemProjectAssignmentOptionPayload>,
+    pub pagination: PaginationPayload,
+    pub can_manage_users: bool,
+    pub can_manage_user_projects: bool,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SystemRolePayload {
     pub role_code: String,
@@ -643,6 +1325,16 @@ pub struct SystemRolePayload {
     pub is_system: bool,
     pub data_scope_type: String,
     pub permission_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemRolesViewPayload {
+    pub items: Vec<SystemRolePayload>,
+    pub selected_role: Option<SystemRolePayload>,
+    pub permissions: Vec<SystemPermissionPayload>,
+    pub pagination: PaginationPayload,
+    pub can_manage_roles: bool,
+    pub can_edit_permissions: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -708,6 +1400,62 @@ pub struct StorageConfigVersionPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SystemStorageViewPayload {
+    pub config: Option<StorageConfigPayload>,
+    pub versions: Vec<StorageConfigVersionPayload>,
+    pub pagination: PaginationPayload,
+    pub inspection: Option<storage::StorageBucketInspection>,
+    pub inspection_error: String,
+    pub can_manage_storage: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemApiTokenPayload {
+    pub id: i64,
+    pub name: String,
+    pub scopes: Vec<String>,
+    pub token_suffix: String,
+    pub created_by: String,
+    pub updated_by: String,
+    pub last_used_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemOpenApiViewPayload {
+    pub items: Vec<SystemApiTokenPayload>,
+    pub active_count: i64,
+    pub token_limit: i64,
+    pub can_manage_tokens: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemApiDocsPayload {
+    pub source: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreatedSystemApiTokenPayload {
+    pub token: SystemApiTokenPayload,
+    pub raw_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSystemApiTokenRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemApiTokenRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SystemReleaseSettingsPayload {
     pub retention_count: i64,
     pub updated_by: String,
@@ -721,11 +1469,13 @@ pub struct SystemReleaseAssetPayload {
     pub file_object_id: i64,
     pub platform: String,
     pub architecture: String,
+    pub artifact_kind: String,
     pub object_key: String,
     pub filename: String,
     pub content_type: String,
     pub byte_size: i64,
     pub status: String,
+    pub checksum_sha256: String,
     pub created_at: String,
 }
 
@@ -736,7 +1486,17 @@ pub struct SystemReleasePayload {
     pub title: String,
     pub notes: String,
     pub status: String,
+    pub channel: String,
+    pub verification_status: String,
+    pub manifest_sha256: String,
+    pub signing_key_id: String,
+    pub source_commit: String,
+    pub source_tag: String,
     pub published_at: String,
+    pub verified_at: String,
+    pub withdrawn_at: String,
+    pub withdrawal_reason: String,
+    pub github_withdrawal_status: String,
     pub created_by: String,
     pub updated_by: String,
     pub created_at: String,
@@ -751,23 +1511,91 @@ pub struct SystemReleaseDetailPayload {
     pub assets: Vec<SystemReleaseAssetPayload>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseViewAssetPayload {
+    pub id: i64,
+    pub release_id: i64,
+    pub platform: String,
+    pub architecture: String,
+    pub artifact_kind: String,
+    pub filename: String,
+    pub content_type: String,
+    pub byte_size: i64,
+    pub status: String,
+    pub checksum_sha256: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseViewDetailPayload {
+    pub release: SystemReleasePayload,
+    pub assets: Vec<SystemReleaseViewAssetPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleasesViewPayload {
+    pub settings: SystemReleaseSettingsPayload,
+    pub items: Vec<SystemReleaseViewDetailPayload>,
+    pub pagination: PaginationPayload,
+    pub can_manage_releases: bool,
+}
+
 #[derive(Debug, Clone)]
 struct ApiTokenActor {
     display_name: String,
 }
 
 #[derive(Debug, Clone)]
+struct DeviceApiPrincipal {
+    device_id: String,
+    family_id: String,
+    generation: i64,
+    authorization_version: i64,
+}
+
+#[derive(Debug, Clone)]
+enum ApiPrincipalKind {
+    Session,
+    ApiToken(ApiTokenActor),
+    Device(DeviceApiPrincipal),
+}
+
+#[derive(Debug, Clone)]
 struct ApiPrincipal {
     user: auth::AuthUser,
-    token_actor: Option<ApiTokenActor>,
+    kind: ApiPrincipalKind,
 }
 
 impl ApiPrincipal {
     fn actor_display_name_snapshot(&self) -> String {
-        self.token_actor
-            .as_ref()
-            .map(|actor| actor.display_name.clone())
-            .unwrap_or_default()
+        match &self.kind {
+            ApiPrincipalKind::ApiToken(actor) => actor.display_name.clone(),
+            ApiPrincipalKind::Session | ApiPrincipalKind::Device(_) => String::new(),
+        }
+    }
+
+    fn audit_details(&self) -> String {
+        match &self.kind {
+            ApiPrincipalKind::Session => serde_json::json!({"source": "session"}).to_string(),
+            ApiPrincipalKind::ApiToken(_) => serde_json::json!({"source": "api_token"}).to_string(),
+            ApiPrincipalKind::Device(device) => serde_json::json!({
+                "source": "device",
+                "device_id": device.device_id,
+                "family_id": device.family_id,
+                "generation": device.generation,
+                "authorization_version": device.authorization_version,
+            })
+            .to_string(),
+        }
+    }
+
+    fn audit_details_with(&self, details: serde_json::Value) -> String {
+        let mut base = serde_json::from_str::<serde_json::Value>(&self.audit_details())
+            .unwrap_or_else(|_| serde_json::json!({}));
+        if let (Some(base), Some(details)) = (base.as_object_mut(), details.as_object()) {
+            base.extend(details.clone());
+        }
+        base.to_string()
     }
 }
 
@@ -811,6 +1639,12 @@ pub struct WorkItemQuery {
     project_key: String,
     #[serde(default)]
     assignee_username: String,
+    #[serde(default)]
+    cycle_id: String,
+    #[serde(default)]
+    sort: String,
+    #[serde(default)]
+    clear_default: bool,
     #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
@@ -909,6 +1743,13 @@ pub struct UnlockProjectResourceRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ResetProjectResourcePasswordRequest {
+    access_password_action: String,
+    #[serde(default)]
+    access_password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateCurrentProjectRequest {
     project_key: String,
 }
@@ -928,6 +1769,8 @@ pub struct CreateWorkItemRequest {
     parent_item_key: String,
     #[serde(default)]
     assignee_username: String,
+    #[serde(default)]
+    cycle_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -949,6 +1792,17 @@ pub struct UpdateWorkItemRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateWorkItemPrimaryPostRequest {
+    body: String,
+    #[serde(default = "default_html_body_format")]
+    body_format: String,
+}
+
+fn default_html_body_format() -> String {
+    "html".to_string()
+}
+
+#[derive(Debug, Deserialize)]
 pub struct HandoffWorkItemRequest {
     status: String,
     #[serde(default)]
@@ -957,6 +1811,66 @@ pub struct HandoffWorkItemRequest {
     body: String,
     #[serde(default)]
     source_comment_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWorkItemSavedViewRequest {
+    project_key: String,
+    item_type: String,
+    name: String,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    cycle_id: String,
+    #[serde(default)]
+    sort: String,
+    #[serde(default = "default_work_item_saved_view_per_page")]
+    per_page: i64,
+    #[serde(default)]
+    is_default: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameWorkItemSavedViewRequest {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchUpdateWorkItemsRequest {
+    project_key: String,
+    item_type: String,
+    item_keys: Vec<String>,
+    action: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchUpdateWorkItemFailurePayload {
+    pub item_key: String,
+    pub code: &'static str,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchUpdateWorkItemsPayload {
+    pub updated_count: usize,
+    pub updated_item_keys: Vec<String>,
+    pub failed_count: usize,
+    pub failed_items: Vec<BatchUpdateWorkItemFailurePayload>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -988,10 +1902,25 @@ pub struct UpdateProjectMemberRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ProjectCycleRequest {
+    name: String,
+    #[serde(default)]
+    goal: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    owner_username: String,
+    start_date: String,
+    end_date: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateAttachmentRequest {
     original_filename: String,
     content_type: String,
     byte_size: i64,
+    #[serde(default)]
+    checksum_sha256: String,
     #[serde(default)]
     folder_id: Option<i64>,
 }
@@ -1045,6 +1974,8 @@ pub struct FolderContentPayload {
 pub struct SignedUrlQuery {
     #[serde(default)]
     expires_in_seconds: Option<u64>,
+    #[serde(default)]
+    access: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1080,6 +2011,22 @@ pub struct SetUserRoleRequest {
 #[derive(Debug, Deserialize)]
 pub struct ResetUserPasswordRequest {
     password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignSystemUserProjectsRequest {
+    project_keys: Vec<String>,
+    member_role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RemoveSystemUserProjectsRequest {
+    project_keys: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetSystemUserProjectRoleRequest {
+    member_role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1120,6 +2067,16 @@ pub struct CreateSystemReleaseRequest {
     title: String,
     #[serde(default)]
     notes: String,
+    #[serde(default = "default_release_channel")]
+    channel: String,
+    #[serde(default)]
+    manifest_sha256: String,
+    #[serde(default)]
+    signing_key_id: String,
+    #[serde(default)]
+    source_commit: String,
+    #[serde(default)]
+    source_tag: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1134,6 +2091,18 @@ pub struct UpdateSystemReleaseRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct WithdrawSystemReleaseRequest {
+    reason: String,
+    #[serde(default = "default_github_withdrawal_status")]
+    github_withdrawal_status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemReleaseWithdrawalRequest {
+    github_withdrawal_status: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateSystemReleaseSettingsRequest {
     retention_count: i64,
 }
@@ -1142,9 +2111,13 @@ pub struct UpdateSystemReleaseSettingsRequest {
 pub struct CreateSystemReleaseAssetRequest {
     platform: String,
     architecture: String,
+    #[serde(default = "default_release_artifact_kind")]
+    artifact_kind: String,
     original_filename: String,
     content_type: String,
     byte_size: i64,
+    #[serde(default)]
+    checksum_sha256: String,
 }
 
 pub async fn healthz() -> axum::Json<ApiEnvelope<HealthPayload<'static>>> {
@@ -1341,7 +2314,8 @@ pub async fn login(
     let csrf_cookie = csrf::cookie_header(&csrf_token, state.settings.env == "production");
 
     Ok((
-        AppendHeaders([
+        AppendHeaders(vec![
+            (header::CACHE_CONTROL, "private, no-store".to_string()),
             (header::SET_COOKIE, cookie),
             (header::SET_COOKIE, refresh_cookie),
             (header::SET_COOKIE, csrf_cookie),
@@ -1353,13 +2327,100 @@ pub async fn login(
     ))
 }
 
-pub async fn me(
+pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> AppResult<impl IntoResponse> {
+    let user = require_d2_api_principal(&state, &headers).await?.user;
+
+    Ok(no_store_json(auth_user_payload(user)))
+}
+
+pub async fn get_own_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> AppResult<axum::Json<ApiEnvelope<AuthUserPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+) -> AppResult<axum::Json<ApiEnvelope<OwnProfilePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    let profile = users::get_user_summary(state.pool()?, principal.user.id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    Ok(json(own_profile_payload(profile)))
+}
 
-    Ok(json(auth_user_payload(user)))
+pub async fn update_own_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateOwnProfileRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<OwnProfilePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    let profile = users::update_own_profile(
+        pool,
+        principal.user.id,
+        users::UpdateOwnProfileInput {
+            display_name: payload.display_name,
+            email: payload.email,
+            mobile: payload.mobile,
+        },
+    )
+    .await?;
+    audit::record_with_context(
+        pool,
+        Some(principal.user.id),
+        "me.profile.update",
+        "user",
+        &profile.username,
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(json(own_profile_payload(profile)))
+}
+
+pub async fn update_own_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateOwnPasswordRequest>,
+) -> AppResult<StatusCode> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    if payload.new_password != payload.new_password_confirm {
+        return Err(AppError::BadRequest("两次输入的新密码不一致".to_string()));
+    }
+    let current_session = match &principal.kind {
+        ApiPrincipalKind::Session => {
+            let raw_session = auth::session_cookie(&headers).ok_or(AppError::Unauthorized)?;
+            let raw_refresh = auth::refresh_cookie(&headers);
+            users::CurrentPasswordSession::Browser {
+                raw_session,
+                raw_refresh,
+            }
+        }
+        ApiPrincipalKind::Device(device) => users::CurrentPasswordSession::Device {
+            family_id: device.family_id.clone(),
+        },
+        ApiPrincipalKind::ApiToken(_) => unreachable!("account principal was checked"),
+    };
+    users::change_own_password(
+        state.pool()?,
+        principal.user.id,
+        &payload.current_password,
+        &payload.new_password,
+        current_session,
+    )
+    .await?;
+    audit::record_with_context(
+        state.pool()?,
+        Some(principal.user.id),
+        "me.password.update",
+        "user",
+        &principal.user.username,
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn logout(
@@ -1395,7 +2456,8 @@ pub async fn logout(
         auth::clear_refresh_cookie_header(state.settings.env == "production");
 
     Ok((
-        AppendHeaders([
+        AppendHeaders(vec![
+            (header::CACHE_CONTROL, "private, no-store".to_string()),
             (header::SET_COOKIE, clear_cookie),
             (header::SET_COOKIE, clear_refresh_cookie),
         ]),
@@ -1408,7 +2470,8 @@ pub async fn list_projects(
     headers: HeaderMap,
     Query(query): Query<ProjectQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<ProjectPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -1462,11 +2525,54 @@ pub async fn list_projects(
     }))
 }
 
+pub async fn search(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SearchQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<SearchResultPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    let pagination = normalize_api_pagination(query.page, query.per_page)?;
+    let search_query = query.q.trim();
+    if search_query.chars().count() > 128 {
+        return Err(AppError::BadRequest(
+            "搜索关键词不能超过 128 个字符".to_string(),
+        ));
+    }
+    let include_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
+    let include_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let page = projects::search_visible_paginated(
+        pool,
+        user.id,
+        can_access_all_projects,
+        search_query,
+        include_projects,
+        include_work_items,
+        pagination,
+    )
+    .await?;
+    let total_pages = page.total_pages();
+    let items = page.items.into_iter().map(search_result_payload).collect();
+
+    Ok(json(PaginatedPayload {
+        items,
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+    }))
+}
+
 pub async fn get_current_project(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Option<CurrentProjectPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -1487,7 +2593,8 @@ pub async fn update_current_project(
     headers: HeaderMap,
     Json(payload): Json<UpdateCurrentProjectRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CurrentProjectPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -1514,7 +2621,8 @@ pub async fn create_project(
     headers: HeaderMap,
     Json(payload): Json<CreateProjectRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -1536,25 +2644,13 @@ pub async fn create_project(
         "project.create",
         "project",
         &project.project_key,
-        "{}",
+        &principal.audit_details(),
     )
     .await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let project = project_detail_payload(pool, user.id, can_access_all_projects, project).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        json(ProjectDetailPayload {
-            key: project.project_key,
-            name: project.name,
-            description: project.description,
-            status: project.status,
-            owner_username: project.owner_username,
-            owner: project.owner_display_name,
-            start_date: project.start_date,
-            due_date: project.due_date,
-            created_at: project.created_at,
-            updated_at: project.updated_at,
-        }),
-    ))
+    Ok((StatusCode::CREATED, json(project)))
 }
 
 pub async fn get_project(
@@ -1562,26 +2658,19 @@ pub async fn get_project(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
 
-    Ok(json(ProjectDetailPayload {
-        key: project.project_key,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-        owner_username: project.owner_username,
-        owner: project.owner_display_name,
-        start_date: project.start_date,
-        due_date: project.due_date,
-        created_at: project.created_at,
-        updated_at: project.updated_at,
-    }))
+    Ok(json(
+        project_detail_payload(pool, user.id, can_access_all_projects, project).await?,
+    ))
 }
 
 pub async fn update_project(
@@ -1590,7 +2679,8 @@ pub async fn update_project(
     Path(project_key): Path<String>,
     Json(payload): Json<UpdateProjectRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -1625,25 +2715,17 @@ pub async fn update_project(
         "project.update",
         "project",
         &updated.project_key,
-        &format!(
-            r#"{{"status":"{}","owner_username":"{}"}}"#,
-            updated.status, updated.owner_username
-        ),
+        &principal.audit_details_with(serde_json::json!({
+            "status": updated.status,
+            "owner_username": updated.owner_username,
+        })),
     )
     .await?;
 
-    Ok(json(ProjectDetailPayload {
-        key: updated.project_key,
-        name: updated.name,
-        description: updated.description,
-        status: updated.status,
-        owner_username: updated.owner_username,
-        owner: updated.owner_display_name,
-        start_date: updated.start_date,
-        due_date: updated.due_date,
-        created_at: updated.created_at,
-        updated_at: updated.updated_at,
-    }))
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    Ok(json(
+        project_detail_payload(pool, user.id, can_access_all_projects, updated).await?,
+    ))
 }
 
 pub async fn add_project_member(
@@ -1652,7 +2734,8 @@ pub async fn add_project_member(
     Path(project_key): Path<String>,
     Json(payload): Json<AddProjectMemberRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -1675,10 +2758,10 @@ pub async fn add_project_member(
         "project.member.add",
         "project",
         &project_key,
-        &format!(
-            r#"{{"username":"{}","member_role":"{}"}}"#,
-            member.username, member.member_role
-        ),
+        &principal.audit_details_with(serde_json::json!({
+            "username": member.username,
+            "member_role": member.member_role,
+        })),
     )
     .await?;
 
@@ -1690,7 +2773,8 @@ pub async fn list_project_members(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectMemberPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -1712,7 +2796,8 @@ pub async fn update_project_member_role(
     Path((project_key, username)): Path<(String, String)>,
     Json(payload): Json<UpdateProjectMemberRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectMemberPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -1735,10 +2820,10 @@ pub async fn update_project_member_role(
         "project.member.role.update",
         "project",
         &project_key,
-        &format!(
-            r#"{{"username":"{}","member_role":"{}"}}"#,
-            member.username, member.member_role
-        ),
+        &principal.audit_details_with(serde_json::json!({
+            "username": member.username,
+            "member_role": member.member_role,
+        })),
     )
     .await?;
 
@@ -1750,7 +2835,8 @@ pub async fn remove_project_member(
     headers: HeaderMap,
     Path((project_key, username)): Path<(String, String)>,
 ) -> AppResult<StatusCode> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -1766,11 +2852,162 @@ pub async fn remove_project_member(
         "project.member.remove",
         "project",
         &project_key,
-        &format!(r#"{{"username":"{}"}}"#, username),
+        &principal.audit_details_with(serde_json::json!({"username": username})),
     )
     .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn list_project_cycles(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectCyclePayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    Ok(json(
+        projects::list_project_cycles(pool, project.id)
+            .await?
+            .into_iter()
+            .map(|cycle| project_cycle_payload(cycle, Vec::new()))
+            .collect(),
+    ))
+}
+
+pub async fn get_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let cycle = projects::get_project_cycle(pool, project.id, cycle_id).await?;
+    let work_items =
+        projects::list_project_cycle_work_item_snapshots(pool, project.id, cycle_id).await?;
+    Ok(json(project_cycle_payload(cycle, work_items)))
+}
+
+pub async fn get_project_personal_analysis(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectPersonalAnalysisPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let analysis = projects::personal_project_analysis(pool, project.id, user.id).await?;
+    Ok(json(project_personal_analysis_payload(user, analysis)))
+}
+
+pub async fn create_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<ProjectCycleRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let cycle =
+        projects::create_project_cycle(pool, user.id, &project_key, cycle_create_input(payload))
+            .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.cycle.create",
+        "project_cycle",
+        &cycle.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        json(project_cycle_payload(cycle, Vec::new())),
+    ))
+}
+
+pub async fn update_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+    Json(payload): Json<ProjectCycleRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let input = cycle_update_input(payload);
+    let cycle =
+        projects::update_project_cycle(pool, user.id, &project_key, cycle_id, input).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.cycle.update",
+        "project_cycle",
+        &cycle.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok(json(project_cycle_payload(cycle, Vec::new())))
+}
+
+pub async fn close_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let cycle = projects::close_project_cycle(pool, user.id, &project_key, cycle_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.cycle.close",
+        "project_cycle",
+        &cycle.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok(json(project_cycle_payload(cycle, Vec::new())))
 }
 
 pub async fn list_work_items(
@@ -1778,7 +3015,8 @@ pub async fn list_work_items(
     headers: HeaderMap,
     Query(query): Query<WorkItemQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<WorkItemPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -1809,8 +3047,8 @@ pub async fn list_work_items(
                     priority: query.priority,
                     project_key: String::new(),
                     assignee_username: query.assignee_username,
-                    cycle_id: String::new(),
-                    sort_by: String::new(),
+                    cycle_id: query.cycle_id,
+                    sort_by: query.sort,
                 },
                 projects::Pagination {
                     page: 1,
@@ -1848,8 +3086,8 @@ pub async fn list_work_items(
             priority: query.priority,
             project_key,
             assignee_username: query.assignee_username,
-            cycle_id: String::new(),
-            sort_by: String::new(),
+            cycle_id: query.cycle_id,
+            sort_by: query.sort,
         },
         pagination,
     )
@@ -1868,12 +3106,283 @@ pub async fn list_work_items(
     }))
 }
 
+pub async fn get_work_item_list_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<WorkItemQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemListViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let item_type = api_work_item_type(query.item_type.as_deref())?
+        .ok_or_else(|| AppError::BadRequest("工作项类型不能为空".to_string()))?;
+    let project_key =
+        default_api_project_key(pool, user, can_access_all_projects, query.project_key).await?;
+    if project_key.is_empty() {
+        return Err(AppError::BadRequest("请先选择当前项目".to_string()));
+    }
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+
+    let saved_views = projects::list_work_item_saved_views_for_user(
+        pool,
+        user.id,
+        can_access_all_projects,
+        &project.project_key,
+        item_type,
+    )
+    .await?;
+    let default_view = if query.clear_default {
+        None
+    } else {
+        saved_views.iter().find(|view| view.is_default)
+    };
+    let mut filter = default_view
+        .map(|view| view.filter.clone())
+        .unwrap_or_else(|| projects::WorkItemListFilter {
+            item_type: Some(item_type.to_string()),
+            project_key: project.project_key.clone(),
+            sort_by: "updated_desc".to_string(),
+            ..projects::WorkItemListFilter::default()
+        });
+    if !query.q.trim().is_empty() {
+        filter.keyword = query.q;
+    }
+    if !query.status.trim().is_empty() {
+        filter.status = query.status;
+    }
+    if !query.priority.trim().is_empty() {
+        filter.priority = query.priority;
+    }
+    if !query.assignee_username.trim().is_empty() {
+        filter.assignee_username = query.assignee_username;
+    }
+    if !query.cycle_id.trim().is_empty() {
+        filter.cycle_id = query.cycle_id;
+    }
+    if !query.sort.trim().is_empty() {
+        filter.sort_by = query.sort;
+    }
+    filter.item_type = Some(item_type.to_string());
+    filter.project_key = project.project_key.clone();
+    let pagination = normalize_api_pagination(
+        query.page,
+        query
+            .per_page
+            .or_else(|| default_view.map(|view| view.per_page)),
+    )?;
+    let (page, stats, members, cycles) = tokio::try_join!(
+        projects::list_work_item_summaries_filtered_for_user_paginated(
+            pool,
+            user.id,
+            can_access_all_projects,
+            filter.clone(),
+            pagination,
+        ),
+        projects::work_item_list_stats_filtered_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            filter.clone(),
+        ),
+        projects::list_project_members(pool, project.id),
+        projects::list_project_cycles(pool, project.id),
+    )?;
+    let parent_options = if item_type == "task" {
+        projects::list_work_item_summaries_filtered_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            projects::WorkItemListFilter {
+                item_type: Some("requirement".to_string()),
+                project_key: project.project_key.clone(),
+                ..projects::WorkItemListFilter::default()
+            },
+        )
+        .await?
+        .into_iter()
+        .map(|item| WorkItemParentOptionPayload {
+            key: item.item_key,
+            title: item.title,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
+    let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
+        && ((can_access_all_projects
+            && rbac::user_has_permission(pool, user.id, "work_item.manage").await?)
+            || projects::user_can_write_project_content(
+                pool,
+                project.id,
+                user.id,
+                user.is_super_admin,
+            )
+            .await?);
+    let total_pages = page.total_pages();
+
+    Ok(json(WorkItemListViewPayload {
+        items: page.items.into_iter().map(work_item_payload).collect(),
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+        summary: WorkItemListSummaryPayload {
+            total_items: stats.total_items,
+            active_items: stats.active_items,
+            high_priority_items: stats.high_priority_items,
+        },
+        filters: work_item_list_filter_payload(item_type, filter),
+        assignees: members
+            .into_iter()
+            .map(|member| WorkItemListAssigneePayload {
+                username: member.username,
+                display_name: member.display_name,
+            })
+            .collect(),
+        cycles: cycles
+            .into_iter()
+            .map(|cycle| WorkItemListCyclePayload {
+                id: cycle.id,
+                name: cycle.name,
+                is_closed: !cycle.closed_at.is_empty(),
+            })
+            .collect(),
+        parent_options,
+        saved_views: saved_views
+            .into_iter()
+            .map(|view| WorkItemSavedViewPayload {
+                id: view.id,
+                name: view.name,
+                filters: work_item_list_filter_payload(item_type, view.filter),
+                per_page: view.per_page,
+                is_default: view.is_default,
+            })
+            .collect(),
+        can_manage_work_items,
+    }))
+}
+
+pub async fn create_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateWorkItemSavedViewRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    let view = projects::create_work_item_saved_view(
+        pool,
+        user.id,
+        api_user_can_access_all_projects(pool, user).await?,
+        &payload.project_key,
+        &payload.item_type,
+        projects::CreateWorkItemSavedViewInput {
+            name: payload.name,
+            filter: projects::WorkItemListFilter {
+                item_type: Some(payload.item_type.clone()),
+                keyword: payload.q,
+                status: payload.status,
+                priority: payload.priority,
+                project_key: payload.project_key.clone(),
+                assignee_username: payload.assignee_username,
+                cycle_id: payload.cycle_id,
+                sort_by: payload.sort,
+            },
+            per_page: payload.per_page,
+            is_default: payload.is_default,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        json(work_item_saved_view_payload(view)),
+    ))
+}
+
+pub async fn rename_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+    Json(payload): Json<RenameWorkItemSavedViewRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemSavedViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
+    ensure_api_token_scope(
+        pool,
+        &headers,
+        principal.user.id,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+    )
+    .await?;
+    let view = projects::rename_work_item_saved_view(
+        pool,
+        principal.user.id,
+        saved_view_id,
+        &payload.name,
+    )
+    .await?;
+    Ok(json(work_item_saved_view_payload(view)))
+}
+
+pub async fn set_default_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemSavedViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
+    ensure_api_token_scope(
+        pool,
+        &headers,
+        principal.user.id,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+    )
+    .await?;
+    let view =
+        projects::set_default_work_item_saved_view(pool, principal.user.id, saved_view_id).await?;
+    Ok(json(work_item_saved_view_payload(view)))
+}
+
+pub async fn delete_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
+    ensure_api_token_scope(
+        pool,
+        &headers,
+        principal.user.id,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+    )
+    .await?;
+    projects::delete_work_item_saved_view(pool, principal.user.id, saved_view_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn create_work_item(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<CreateWorkItemRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -1884,7 +3393,7 @@ pub async fn create_work_item(
         .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let item = projects::create_work_item(
+    let item = projects::create_work_item_with_cycle(
         pool,
         user.id,
         projects::CreateWorkItemInput {
@@ -1898,6 +3407,7 @@ pub async fn create_work_item(
             parent_item_key: payload.parent_item_key,
             actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
+        payload.cycle_id,
     )
     .await?;
     audit::record(
@@ -1913,12 +3423,144 @@ pub async fn create_work_item(
     Ok((StatusCode::CREATED, json(work_item_detail_payload(item))))
 }
 
+pub async fn batch_update_work_items(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BatchUpdateWorkItemsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<BatchUpdateWorkItemsPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    let project = projects::get_project_detail(pool, &payload.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+
+    let action_target_is_valid = match payload.action.trim() {
+        "assignee" => {
+            !payload.assignee_username.trim().is_empty()
+                && payload.status.trim().is_empty()
+                && payload.priority.trim().is_empty()
+                && payload.cycle_id.is_none()
+        }
+        "status" => {
+            !payload.status.trim().is_empty()
+                && payload.assignee_username.trim().is_empty()
+                && payload.priority.trim().is_empty()
+                && payload.cycle_id.is_none()
+        }
+        "priority" => {
+            !payload.priority.trim().is_empty()
+                && payload.status.trim().is_empty()
+                && payload.assignee_username.trim().is_empty()
+                && payload.cycle_id.is_none()
+        }
+        "cycle" => {
+            payload.status.trim().is_empty()
+                && payload.assignee_username.trim().is_empty()
+                && payload.priority.trim().is_empty()
+        }
+        _ => false,
+    };
+    if !action_target_is_valid {
+        return Err(AppError::BadRequest(
+            "批量操作动作与目标参数不匹配".to_string(),
+        ));
+    }
+
+    if payload.item_keys.len() > 100 {
+        return Err(AppError::BadRequest(
+            "单次最多只能批量操作 100 个工作项".to_string(),
+        ));
+    }
+    let mut item_keys = Vec::new();
+    for item_key in payload.item_keys {
+        let item_key = item_key.trim().to_ascii_uppercase();
+        if item_keys.contains(&item_key) {
+            return Err(AppError::BadRequest("工作项编号不能重复".to_string()));
+        }
+        item_keys.push(item_key);
+    }
+    if item_keys.is_empty() {
+        return Err(AppError::BadRequest("请至少选择一个工作项".to_string()));
+    }
+
+    let mut updated_item_keys = Vec::new();
+    let mut failed_items = Vec::new();
+    for item_key in item_keys {
+        let result = projects::batch_update_work_items(
+            pool,
+            user.id,
+            projects::BatchUpdateWorkItemsInput {
+                project_key: payload.project_key.clone(),
+                item_type: payload.item_type.clone(),
+                item_keys: vec![item_key.clone()],
+                action: payload.action.clone(),
+                status: payload.status.clone(),
+                assignee_username: payload.assignee_username.clone(),
+                priority: payload.priority.clone(),
+                cycle_id: payload.cycle_id,
+                actor_display_name_snapshot: principal.actor_display_name_snapshot(),
+            },
+        )
+        .await;
+        match result {
+            Ok(_) => updated_item_keys.push(item_key),
+            Err(error @ (AppError::Database(_) | AppError::Io(_))) => return Err(error),
+            Err(error) => {
+                let code = match &error {
+                    AppError::BadRequest(_) => "bad_request",
+                    AppError::Conflict(_) => "conflict",
+                    AppError::Forbidden(_) => "forbidden",
+                    AppError::NotFound(_) => "not_found",
+                    _ => "operation_failed",
+                };
+                failed_items.push(BatchUpdateWorkItemFailurePayload {
+                    item_key,
+                    code,
+                    message: error.to_string(),
+                });
+            }
+        }
+    }
+
+    let response = BatchUpdateWorkItemsPayload {
+        updated_count: updated_item_keys.len(),
+        updated_item_keys,
+        failed_count: failed_items.len(),
+        failed_items,
+    };
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.batch.update",
+        "project",
+        &project.project_key,
+        &serde_json::json!({
+            "action": payload.action,
+            "updated_count": response.updated_count,
+            "failed_count": response.failed_count,
+            "updated_item_keys": response.updated_item_keys,
+            "failed_item_keys": response.failed_items.iter().map(|item| &item.item_key).collect::<Vec<_>>(),
+        })
+        .to_string(),
+    )
+    .await?;
+
+    Ok(json(response))
+}
+
 pub async fn get_work_item(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, &item_key)
@@ -1932,13 +3574,159 @@ pub async fn get_work_item(
     Ok(json(work_item_detail_payload(item)))
 }
 
+pub async fn get_work_item_detail_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
+        && ((can_access_all_projects
+            && rbac::user_has_permission(pool, user.id, "work_item.manage").await?)
+            || projects::user_can_write_project_content(
+                pool,
+                project.id,
+                user.id,
+                user.is_super_admin,
+            )
+            .await?);
+    let is_deleted = !item.deleted_at.trim().is_empty();
+    let can_restore_work_item = is_deleted
+        && can_manage_work_items
+        && rbac::user_has_permission(pool, user.id, "work_item.manage").await?;
+    let members = projects::list_project_members(pool, project.id).await?;
+    let parent_options = if item.item_type == "task" {
+        projects::list_work_item_summaries_filtered_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            projects::WorkItemListFilter {
+                item_type: Some("requirement".to_string()),
+                project_key: project.project_key.clone(),
+                ..projects::WorkItemListFilter::default()
+            },
+        )
+        .await?
+        .into_iter()
+        .map(|entry| WorkItemParentOptionPayload {
+            key: entry.item_key,
+            title: entry.title,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
+    let navigation = if is_deleted {
+        WorkItemDetailNavigationPayload {
+            previous: None,
+            next: None,
+        }
+    } else {
+        work_item_detail_navigation(
+            projects::list_work_item_summaries_filtered_for_user(
+                pool,
+                user.id,
+                can_access_all_projects,
+                projects::WorkItemListFilter {
+                    item_type: Some(item.item_type.clone()),
+                    project_key: project.project_key.clone(),
+                    ..projects::WorkItemListFilter::default()
+                },
+            )
+            .await?,
+            &item.item_key,
+        )
+    };
+    let flow_page = projects::list_work_item_operation_records_paginated(
+        pool,
+        item.id,
+        &item.item_key,
+        projects::Pagination {
+            page: 1,
+            per_page: 10,
+        },
+    )
+    .await?;
+    let flow_total_pages = flow_page.total_pages();
+    let current_status = projects::normalize_work_item_status(&item.status)?;
+    let comments = projects::list_work_item_comments(pool, item.id).await?;
+    let primary_post = projects::work_item_primary_post(
+        &comments,
+        item.primary_post_comment_id,
+        &item.reporter_username,
+        &item.description,
+    )
+    .cloned()
+    .map(comment_payload);
+
+    Ok(json(WorkItemDetailViewPayload {
+        item: work_item_detail_payload(item.clone()),
+        primary_post,
+        cycle: item
+            .cycle_id
+            .map(|cycle_id| WorkItemDetailViewOptionPayload {
+                value: cycle_id.to_string(),
+                label: item.cycle_name.clone(),
+            }),
+        assignees: members
+            .into_iter()
+            .map(|member| WorkItemDetailViewOptionPayload {
+                value: member.username,
+                label: member.display_name,
+            })
+            .collect(),
+        parent_options,
+        status_options: api_work_item_status_options(&item.item_type, current_status)?,
+        permissions: WorkItemDetailViewPermissionsPayload {
+            can_manage_work_items,
+            can_edit_primary_post: !is_deleted
+                && can_manage_work_items
+                && projects::user_can_edit_work_item_post(item.reporter_user_id, user.id),
+            can_close_work_item: can_manage_work_items
+                && !is_deleted
+                && !matches!(current_status, "closed" | "cancelled")
+                && item.assignee_username == user.username,
+            can_reopen_work_item: can_manage_work_items
+                && !is_deleted
+                && matches!(current_status, "closed" | "cancelled"),
+            can_restore_work_item,
+        },
+        navigation,
+        flow_history: WorkItemFlowHistoryPayload {
+            items: flow_page
+                .items
+                .into_iter()
+                .map(work_item_flow_record_payload)
+                .collect(),
+            pagination: PaginationPayload {
+                page: flow_page.page,
+                per_page: flow_page.per_page,
+                total_items: flow_page.total_items,
+                total_pages: flow_total_pages,
+            },
+        },
+    }))
+}
+
 pub async fn update_work_item(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(item_key): Path<String>,
     Json(payload): Json<UpdateWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -1982,11 +3770,73 @@ pub async fn update_work_item(
         "work_item.update",
         "work_item",
         &updated.item_key,
-        "{}",
+        &principal.audit_details(),
     )
     .await?;
 
     Ok(json(work_item_detail_payload(updated)))
+}
+
+pub async fn update_work_item_primary_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Json(payload): Json<UpdateWorkItemPrimaryPostRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    if !projects::user_can_edit_work_item_post(item.reporter_user_id, user.id) {
+        return Err(AppError::Forbidden(
+            "只有报告人可以编辑工作项主内容".to_string(),
+        ));
+    }
+    if payload.body_format != "html" {
+        return Err(AppError::BadRequest(
+            "工作项主内容格式只能是 html".to_string(),
+        ));
+    }
+    let comments = projects::list_work_item_comments(pool, item.id).await?;
+    let existing = projects::work_item_primary_post(
+        &comments,
+        item.primary_post_comment_id,
+        &item.reporter_username,
+        &item.description,
+    )
+    .map(|comment| comment.id);
+    let comment = projects::upsert_work_item_primary_post(
+        pool,
+        user.id,
+        &item_key,
+        existing,
+        &payload.body,
+        &principal.actor_display_name_snapshot(),
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.primary_post.update",
+        "work_item",
+        &item_key,
+        &principal.audit_details(),
+    )
+    .await?;
+
+    Ok(json(comment_payload(comment)))
 }
 
 pub async fn handoff_work_item(
@@ -1995,7 +3845,7 @@ pub async fn handoff_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<HandoffWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2044,10 +3894,12 @@ pub async fn restore_work_item(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
     let item = projects::get_work_item_detail(pool, &item_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
@@ -2055,7 +3907,7 @@ pub async fn restore_work_item(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let restored = projects::restore_work_item(pool, user.id, &item_key).await?;
     audit::record(
         pool,
@@ -2076,7 +3928,7 @@ pub async fn create_work_item_comment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2121,7 +3973,7 @@ pub async fn create_work_item_comment_draft(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2154,7 +4006,7 @@ pub async fn publish_work_item_comment_draft(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2192,6 +4044,62 @@ pub async fn publish_work_item_comment_draft(
     Ok(json(comment_payload(comment)))
 }
 
+pub async fn cancel_work_item_comment_draft(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let (item, project, comment) = require_api_comment_context_for_user(
+        &state,
+        &headers,
+        &principal.user,
+        &item_key,
+        comment_id,
+    )
+    .await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if !comment.is_draft {
+        return Err(AppError::BadRequest("该评论不是草稿".to_string()));
+    }
+    if comment.author_user_id != Some(user.id) {
+        return Err(AppError::Forbidden("只能取消自己的草稿评论".to_string()));
+    }
+
+    for attachment in files::list_attachments(pool, "comment", comment.id).await? {
+        storage::delete_object_if_exists(pool, &state.settings, &attachment.object_key).await?;
+        files::archive_attachment(
+            pool,
+            attachment.id,
+            "comment",
+            comment.id,
+            user.id,
+            &principal.actor_display_name_snapshot(),
+            None,
+            None,
+        )
+        .await?;
+    }
+    let cancelled =
+        projects::cancel_work_item_comment_draft(pool, user.id, &item_key, comment_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.comment.draft.cancel",
+        "work_item",
+        &item_key,
+        &format!(r#"{{"comment_id":{comment_id}}}"#),
+    )
+    .await?;
+    Ok(json(comment_payload(cancelled)))
+}
+
 pub async fn list_work_item_comments(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2215,7 +4123,8 @@ pub async fn update_work_item_comment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -2258,7 +4167,7 @@ pub async fn create_work_item_comment_attachment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, item, project, comment) =
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2276,7 +4185,8 @@ pub async fn create_work_item_comment_attachment(
     } else {
         Some(format!("登记评论附件 {}", payload.original_filename))
     };
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -2291,6 +4201,7 @@ pub async fn create_work_item_comment_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary,
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -2431,14 +4342,110 @@ pub async fn work_item_comment_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn work_item_comment_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let (user, _item, _project, comment) =
+        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "comment", comment.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{}/preview",
+                sibling.id
+            )
+        },
+    );
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "comment",
+        &comment_id.to_string(),
+        &format!(r#"{{"source":"api","work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url: format!(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content"
+        ),
+        download_url: format!(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url"
+        ),
+    }))
+}
+
+pub async fn work_item_comment_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<Response> {
+    let (user, _item, _project, comment) =
+        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "comment",
+        &comment_id.to_string(),
+        &format!(r#"{{"source":"api","work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
 pub async fn work_item_comment_attachment_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
-    let (user, item, project, comment) =
-        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let (item, project, comment) = require_api_comment_context_for_user(
+        &state,
+        &headers,
+        &principal.user,
+        &item_key,
+        comment_id,
+    )
+    .await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
@@ -2472,18 +4479,23 @@ pub async fn work_item_comment_attachment_delete(
     }
     let existing =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
-    let attachment = files::archive_attachment(
+    projects::ensure_work_item_comment_inline_attachment_can_be_removed(
         pool,
-        attachment_id,
-        "comment",
+        item.id,
         comment.id,
-        user.id,
-        &principal.actor_display_name_snapshot(),
-        None,
-        None,
+        attachment_id,
     )
     .await?;
+    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
+    projects::archive_work_item_comment_inline_attachment(
+        pool,
+        item.id,
+        comment.id,
+        attachment_id,
+        existing.file_object_id,
+    )
+    .await?;
+    let attachment = files::get_attachment(pool, attachment_id).await?;
     audit::record(
         pool,
         Some(user.id),
@@ -2503,7 +4515,7 @@ pub async fn create_project_attachment(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2518,7 +4530,8 @@ pub async fn create_project_attachment(
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let activity_summary = format!("登记项目附件 {}", payload.original_filename);
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -2533,6 +4546,7 @@ pub async fn create_project_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: Some(activity_summary),
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -2553,7 +4567,8 @@ pub async fn list_project_attachments(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<AttachmentPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -2575,7 +4590,8 @@ pub async fn project_attachment_upload_url(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -2605,7 +4621,8 @@ pub async fn project_attachment_mark_uploaded(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
@@ -2646,7 +4663,8 @@ pub async fn project_attachment_download_url(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -2680,12 +4698,190 @@ pub async fn project_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn project_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "project", project.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/projects/{project_key}/attachments/{}/preview",
+                sibling.id
+            )
+        },
+    );
+    let content_url =
+        format!("/api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content");
+    let download_url =
+        format!("/api/v1/projects/{project_key}/attachments/{attachment_id}/download-url");
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "project",
+        &project_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url,
+        download_url,
+    }))
+}
+
+pub async fn project_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "project",
+        &project_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
+async fn attachment_preview_content_response(
+    state: &AppState,
+    pool: &SqlitePool,
+    headers: &HeaderMap,
+    method: Method,
+    attachment: files::FileAttachmentSummary,
+    user_id: i64,
+    audit_target_type: &str,
+    audit_target_id: &str,
+    audit_detail: &str,
+) -> AppResult<Response> {
+    ensure_attachment_preview_content_enabled(
+        &attachment,
+        state.settings.experimental_legacy_preview_enabled(),
+    )?;
+    let (stored_content_type, total_u64) =
+        storage::stat_object(pool, &state.settings, &attachment.object_key).await?;
+    let total = usize::try_from(total_u64)
+        .map_err(|_| AppError::BadRequest("附件大小超出当前预览能力".to_string()))?;
+    let range = match headers.get(header::RANGE) {
+        Some(value) => match parse_single_byte_range(value.to_str().unwrap_or_default(), total) {
+            Some(range) => Some(range),
+            None => return Ok(range_not_satisfiable_response(total)?),
+        },
+        None => None,
+    };
+    let (status, start, end) = match range {
+        Some((start, end)) => (StatusCode::PARTIAL_CONTENT, start, end),
+        None => (StatusCode::OK, 0, total.saturating_sub(1)),
+    };
+    let selected_length = if total == 0 { 0 } else { end - start + 1 };
+    let body = if method == Method::HEAD || selected_length == 0 {
+        Bytes::new()
+    } else if status == StatusCode::PARTIAL_CONTENT {
+        Bytes::from(
+            storage::read_object_range(
+                pool,
+                &state.settings,
+                &attachment.object_key,
+                start as u64,
+                (end + 1) as u64,
+            )
+            .await?,
+        )
+    } else {
+        let (_, content) =
+            storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+        Bytes::from(content)
+    };
+    let mut response = (status, body).into_response();
+    let response_headers = response.headers_mut();
+    response_headers.insert(header::CONTENT_TYPE, stored_content_type.parse()?);
+    response_headers.insert(header::CONTENT_LENGTH, selected_length.to_string().parse()?);
+    response_headers.insert(header::ACCEPT_RANGES, "bytes".parse()?);
+    response_headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    response_headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
+    response_headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'none'; sandbox".parse()?,
+    );
+    response_headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
+    if status == StatusCode::PARTIAL_CONTENT {
+        response_headers.insert(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{total}").parse()?,
+        );
+    }
+    audit::record(
+        pool,
+        Some(user_id),
+        "file.preview.content",
+        audit_target_type,
+        audit_target_id,
+        audit_detail,
+    )
+    .await?;
+    Ok(response)
+}
+
 pub async fn project_attachment_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2726,7 +4922,7 @@ pub async fn list_project_resources(
     Path(project_key): Path<String>,
     Query(query): Query<ResourceQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectResourcePayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let user = require_d2_api_principal(&state, &headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
@@ -2760,7 +4956,7 @@ pub async fn create_project_resource(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateProjectResourceRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2828,7 +5024,7 @@ pub async fn update_project_resource(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<UpdateProjectResourceRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2852,15 +5048,13 @@ pub async fn update_project_resource(
             access_password_action: payload.access_password_action,
             access_password: payload.access_password,
             tags: payload.tags.unwrap_or_else(|| resource.tags.clone()),
-            related_work_item_key: payload
-                .related_work_item_key
-                .unwrap_or_else(|| {
-                    resource
-                        .related_work_item
-                        .as_ref()
-                        .map(|item| item.item_key.clone())
-                        .unwrap_or_default()
-                }),
+            related_work_item_key: payload.related_work_item_key.unwrap_or_else(|| {
+                resource
+                    .related_work_item
+                    .as_ref()
+                    .map(|item| item.item_key.clone())
+                    .unwrap_or_default()
+            }),
             related_cycle_id: parse_api_optional_cycle_id_with_fallback(
                 payload.related_cycle_id,
                 resource.related_cycle.as_ref().map(|cycle| cycle.id),
@@ -2887,7 +5081,7 @@ pub async fn archive_project_resource(
     headers: HeaderMap,
     Path((project_key, resource_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2928,9 +5122,15 @@ pub async fn unlock_project_resource(
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_UNLOCK).await?;
-    let verified =
-        project_resources::verify_resource_password(pool, resource.id, &payload.access_password)
-            .await?;
+    let (verified, access_token) =
+        project_resources::verify_resource_password_and_issue_access_token(
+            pool,
+            &state.settings.security_master_key,
+            user.id,
+            resource.id,
+            &payload.access_password,
+        )
+        .await?;
     let audit_action = if verified {
         "project_resource.unlock.success"
     } else {
@@ -2949,7 +5149,68 @@ pub async fn unlock_project_resource(
         return Err(AppError::Forbidden("访问密码不正确".to_string()));
     }
 
-    Ok(json(project_resource_unlocked_payload(resource)))
+    Ok(json(project_resource_unlocked_payload(
+        resource,
+        access_token,
+    )))
+}
+
+pub async fn reset_project_resource_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Json(payload): Json<ResetProjectResourcePasswordRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE).await?;
+    if !user.is_super_admin {
+        return Err(AppError::Forbidden(
+            "只有超级管理员可以重置资料保险箱密码".to_string(),
+        ));
+    }
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let updated = project_resources::reset_resource_access_password(
+        pool,
+        user.id,
+        resource.id,
+        project_resources::ResetProjectResourceAccessPasswordInput {
+            access_password_action: payload.access_password_action,
+            access_password: payload.access_password,
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
+        },
+    )
+    .await?;
+    let mode = if updated.is_protected { "set" } else { "clear" };
+    audit::record(
+        pool,
+        Some(user.id),
+        "project_resource.password.reset",
+        "project_resource",
+        &updated.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({
+            "project": project.project_key,
+            "mode": mode,
+            "actor_is_super_admin": true,
+        })),
+    )
+    .await?;
+    let refresh_user_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT user_id FROM project_members WHERE project_id = ?1
+        UNION
+        SELECT id FROM users WHERE is_super_admin = 1 AND status = 'active'
+        "#,
+    )
+    .bind(project.id)
+    .fetch_all(pool)
+    .await?;
+    realtime::publish_topbar_refresh_for_users(refresh_user_ids);
+
+    Ok(json(project_resource_payload(updated)))
 }
 
 pub async fn create_project_resource_attachment(
@@ -2958,7 +5219,7 @@ pub async fn create_project_resource_attachment(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2974,7 +5235,8 @@ pub async fn create_project_resource_attachment(
     let config = storage::active_config(pool)
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -2989,6 +5251,7 @@ pub async fn create_project_resource_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: None,
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -3005,6 +5268,38 @@ pub async fn create_project_resource_attachment(
     .await?;
 
     Ok((StatusCode::CREATED, json(attachment_payload(attachment))))
+}
+
+pub async fn list_project_resource_attachments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<AttachmentPayload>>>> {
+    let (user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    if resource.is_protected
+        && !project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
+            &query.access,
+            user.id,
+            resource.id,
+        )
+        .await?
+    {
+        return Err(AppError::Forbidden(
+            "受保护资料附件需要先验证访问密码".to_string(),
+        ));
+    }
+    let attachments = files::list_attachments(pool, "project_resource", resource.id)
+        .await?
+        .into_iter()
+        .map(attachment_payload)
+        .collect();
+    Ok(json(attachments))
 }
 
 pub async fn project_resource_attachment_upload_url(
@@ -3096,12 +5391,21 @@ pub async fn project_resource_attachment_download_url(
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
-    if resource.is_protected {
+    let pool = state.pool()?;
+    if resource.is_protected
+        && !project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
+            &query.access,
+            user.id,
+            resource.id,
+        )
+        .await?
+    {
         return Err(AppError::Forbidden(
             "受保护资料附件需要先验证访问密码".to_string(),
         ));
     }
-    let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
@@ -3131,12 +5435,110 @@ pub async fn project_resource_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn project_resource_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let (user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    ensure_project_resource_access_grant(&state, pool, &user, &resource, &query.access).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let access_suffix = resource_access_query_suffix(&query.access);
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "project_resource", resource.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{}/preview{access_suffix}",
+                sibling.id
+            )
+        },
+    );
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"source":"api","project":"{project_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url: format!(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content{access_suffix}"
+        ),
+        download_url: format!(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url{access_suffix}"
+        ),
+    }))
+}
+
+pub async fn project_resource_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<Response> {
+    let (user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    ensure_project_resource_access_grant(&state, pool, &user, &resource, &query.access).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"source":"api","project":"{project_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
 pub async fn project_resource_attachment_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -3186,7 +5588,7 @@ pub async fn create_work_item_attachment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, item, project) = require_api_work_item_context(&state, &headers, &item_key).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3198,7 +5600,8 @@ pub async fn create_work_item_attachment(
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let activity_summary = format!("登记工作项附件 {}", payload.original_filename);
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -3213,6 +5616,7 @@ pub async fn create_work_item_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: Some(activity_summary),
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -3345,6 +5749,93 @@ pub async fn work_item_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn work_item_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let (user, item, _project) = require_api_work_item_context(&state, &headers, &item_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "work_item", item.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/work-items/{item_key}/attachments/{}/preview",
+                sibling.id
+            )
+        },
+    );
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "work_item",
+        &item_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url: format!(
+            "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"
+        ),
+        download_url: format!(
+            "/api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url"
+        ),
+    }))
+}
+
+pub async fn work_item_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((item_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let (user, item, _project) = require_api_work_item_context(&state, &headers, &item_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "work_item",
+        &item_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
 pub async fn list_system_users(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3359,6 +5850,206 @@ pub async fn list_system_users(
         .collect();
 
     Ok(json(payload))
+}
+
+pub async fn get_system_users_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemUsersViewQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUsersViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, actor.id, "system.users.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let total_items = users::count_users(pool).await?;
+    let total_pages = ((total_items + pagination.per_page - 1) / pagination.per_page).max(1);
+    let page = pagination.page.min(total_pages);
+    let summaries = users::list_users_page(pool, page, pagination.per_page).await?;
+    let can_manage_users = rbac::user_has_permission(pool, actor.id, "system.users.manage").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &actor).await?;
+    let can_manage_user_projects = can_manage_users
+        && can_access_all_projects
+        && rbac::user_has_permission(pool, actor.id, "project.manage").await?;
+
+    let mut items = Vec::with_capacity(summaries.len());
+    for summary in summaries {
+        items.push(system_user_view_payload(pool, summary).await?);
+    }
+
+    let roles = rbac::list_roles(pool)
+        .await?
+        .into_iter()
+        .map(system_role_payload)
+        .collect();
+    let project_options = if can_manage_user_projects {
+        projects::list_project_summaries(pool)
+            .await?
+            .into_iter()
+            .filter(|project| projects::ensure_project_accepts_writes(&project.status).is_ok())
+            .map(|project| SystemProjectAssignmentOptionPayload {
+                key: project.project_key,
+                name: project.name,
+                owner: project.owner_display_name,
+                status: project.status,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(json(SystemUsersViewPayload {
+        items,
+        roles,
+        project_options,
+        pagination: PaginationPayload {
+            page,
+            per_page: pagination.per_page,
+            total_items,
+            total_pages,
+        },
+        can_manage_users,
+        can_manage_user_projects,
+    }))
+}
+
+pub async fn get_system_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<SystemDashboardPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.dashboard.view").await?;
+    let mut links = topbar_system_links(pool, &headers, user.id).await?;
+    links.retain(|link| link.id != "dashboard");
+
+    Ok(json(SystemDashboardPayload { links }))
+}
+
+pub async fn get_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_view_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
+    let can_view_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
+    let summaries = if can_view_projects {
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_PROJECT_READ).await?;
+        projects::list_project_summaries_for_user(pool, user.id, can_access_all_projects).await?
+    } else {
+        Vec::new()
+    };
+    let pending_by_project = if can_view_work_items {
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+        projects::list_project_pending_counts_for_user(pool, user.id)
+            .await?
+            .into_iter()
+            .map(|counts| (counts.project_id, counts))
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
+    let assigned = if can_view_work_items {
+        projects::count_pending_assigned_work_items(pool, user.id, can_access_all_projects, None)
+            .await?
+    } else {
+        projects::WorkItemAssignmentCounts::default()
+    };
+    let assigned_items = if can_view_work_items {
+        projects::list_assigned_work_item_summaries(pool, user.id, None).await?
+    } else {
+        Vec::new()
+    };
+    let high_priority = assigned_items
+        .iter()
+        .filter(|item| {
+            matches!(item.priority.as_str(), "P0" | "P1")
+                && !matches!(
+                    item.status.as_str(),
+                    "done" | "closed" | "resolved" | "verified" | "cancelled"
+                )
+        })
+        .count();
+    let active_projects = summaries
+        .iter()
+        .filter(|project| {
+            matches!(
+                project.status.as_str(),
+                "not_started" | "in_progress" | "acceptance"
+            )
+        })
+        .count();
+    let projects = summaries
+        .into_iter()
+        .map(|project| {
+            let pending = pending_by_project
+                .get(&project.id)
+                .cloned()
+                .unwrap_or_default();
+            DashboardProjectPayload {
+                key: project.project_key,
+                name: project.name,
+                owner: fallback_text(project.owner_display_name, "未分配"),
+                status: project.status,
+                work_item_count: project.work_item_count,
+                active_work_item_count: project.active_work_item_count,
+                pending_requirements: pending.requirements,
+                pending_tasks: pending.tasks,
+                pending_bugs: pending.bugs,
+                updated_at: project.updated_at,
+            }
+        })
+        .collect();
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    let pending_discussion_count = notifications::count_for_user_filtered(
+        pool,
+        user.id,
+        notifications::NotificationFilter::PendingDiscussion,
+    )
+    .await?;
+    let pending_discussions = notifications::list_for_user_page_filtered(
+        pool,
+        user.id,
+        notifications::NotificationFilter::PendingDiscussion,
+        1,
+        5,
+    )
+    .await?
+    .into_iter()
+    .map(notification_payload)
+    .collect();
+    let activities = if can_view_projects {
+        projects::list_recent_activities_for_user(pool, user.id, can_access_all_projects, 5)
+            .await?
+            .into_iter()
+            .map(|activity| DashboardActivityPayload {
+                id: activity.id,
+                project_key: activity.project_key,
+                summary: activity.summary,
+                actor: fallback_text(activity.actor_display_name, "系统"),
+                created_at: activity.created_at,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(no_store_json(DashboardPayload {
+        metrics: DashboardMetricsPayload {
+            active_projects,
+            requirements: assigned.requirements,
+            tasks: assigned.tasks,
+            bugs: assigned.bugs,
+            assigned_total: assigned_items.len(),
+            high_priority,
+        },
+        projects,
+        pending_discussions,
+        pending_discussion_count,
+        activities,
+        can_manage_projects: rbac::user_has_permission(pool, user.id, "project.manage").await?,
+    }))
 }
 
 pub async fn create_system_user(
@@ -3479,6 +6170,152 @@ pub async fn reset_system_user_password(
     Ok(json(system_user_payload(updated)))
 }
 
+pub async fn assign_system_user_projects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    Json(payload): Json<AssignSystemUserProjectsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    let project_keys = normalize_unique_non_empty_strings(&payload.project_keys);
+    if project_keys.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要分配的项目".to_string(),
+        ));
+    }
+
+    let mut assigned_project_keys = Vec::new();
+    for project_key in project_keys {
+        projects::add_project_member(
+            pool,
+            actor.id,
+            &project_key,
+            &target.username,
+            &payload.member_role,
+        )
+        .await?;
+        assigned_project_keys.push(project_key);
+    }
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.assign",
+        "user",
+        &target.username,
+        &serde_json::json!({
+            "source": "api",
+            "project_keys": assigned_project_keys,
+            "member_role": payload.member_role,
+        })
+        .to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
+pub async fn remove_system_user_projects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    Json(payload): Json<RemoveSystemUserProjectsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    let project_keys = normalize_unique_non_empty_strings(&payload.project_keys);
+    if project_keys.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要移除的项目".to_string(),
+        ));
+    }
+    ensure_system_user_projects_removable(pool, target.id, &project_keys).await?;
+
+    for project_key in &project_keys {
+        projects::remove_project_member(pool, actor.id, project_key, &target.username).await?;
+    }
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.remove.batch",
+        "user",
+        &target.username,
+        &serde_json::json!({ "source": "api", "project_keys": project_keys }).to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
+pub async fn remove_system_user_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((username, project_key)): Path<(String, String)>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    ensure_system_user_projects_removable(pool, target.id, std::slice::from_ref(&project_key))
+        .await?;
+    projects::remove_project_member(pool, actor.id, &project_key, &target.username).await?;
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.remove",
+        "user",
+        &target.username,
+        &serde_json::json!({ "source": "api", "project_key": project_key }).to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
+pub async fn update_system_user_project_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((username, project_key)): Path<(String, String)>,
+    Json(payload): Json<SetSystemUserProjectRoleRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    projects::update_project_member_role(
+        pool,
+        actor.id,
+        &project_key,
+        &target.username,
+        &payload.member_role,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.role.update",
+        "user",
+        &target.username,
+        &serde_json::json!({
+            "source": "api",
+            "project_key": project_key,
+            "member_role": payload.member_role,
+        })
+        .to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
 pub async fn list_system_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3493,6 +6330,62 @@ pub async fn list_system_roles(
         .collect();
 
     Ok(json(payload))
+}
+
+pub async fn get_system_roles_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemRolesViewQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemRolesViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, actor.id, "system.roles.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let total_items = rbac::count_roles(pool).await?;
+    let total_pages = ((total_items + pagination.per_page - 1) / pagination.per_page).max(1);
+    let page = pagination.page.min(total_pages);
+    let roles = rbac::list_roles_page(pool, page, pagination.per_page).await?;
+    let requested_role = query.role.as_deref().map(str::trim).unwrap_or_default();
+    let selected_role = if requested_role.is_empty() {
+        roles.first().cloned()
+    } else if let Some(role) = roles
+        .iter()
+        .find(|role| role.role_code == requested_role)
+        .cloned()
+    {
+        Some(role)
+    } else {
+        match rbac::find_role(pool, requested_role).await {
+            Ok(Some(role)) => Some(role),
+            Ok(None) | Err(AppError::BadRequest(_)) => roles.first().cloned(),
+            Err(error) => return Err(error),
+        }
+    };
+    let permissions = match selected_role.as_ref() {
+        Some(role) => rbac::list_permissions_for_role(pool, Some(&role.role_code))
+            .await?
+            .into_iter()
+            .map(system_permission_payload)
+            .collect(),
+        None => Vec::new(),
+    };
+    let can_manage_roles = rbac::user_has_permission(pool, actor.id, "system.roles.manage").await?;
+    let can_edit_permissions =
+        can_manage_roles && selected_role.as_ref().is_some_and(|role| !role.is_system);
+
+    Ok(json(SystemRolesViewPayload {
+        items: roles.into_iter().map(system_role_payload).collect(),
+        selected_role: selected_role.map(system_role_payload),
+        permissions,
+        pagination: PaginationPayload {
+            page,
+            per_page: pagination.per_page,
+            total_items,
+            total_pages,
+        },
+        can_manage_roles,
+        can_edit_permissions,
+    }))
 }
 
 pub async fn create_system_role(
@@ -3662,6 +6555,136 @@ pub async fn list_system_audit_logs(
     }))
 }
 
+pub async fn get_system_openapi_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.view").await?;
+    let items = system_api_tokens::list_tokens(pool)
+        .await?
+        .into_iter()
+        .map(system_api_token_payload)
+        .collect::<Vec<_>>();
+    let can_manage_tokens =
+        rbac::user_has_permission(pool, user.id, "system.api_tokens.manage").await?;
+
+    Ok(no_store_json(SystemOpenApiViewPayload {
+        active_count: items.len() as i64,
+        token_limit: system_api_tokens::MAX_ACTIVE_SYSTEM_TOKENS,
+        items,
+        can_manage_tokens,
+    }))
+}
+
+pub async fn get_system_api_docs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<SystemApiDocsPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.view").await?;
+
+    Ok(json(SystemApiDocsPayload {
+        source: include_str!("../../../../docs/openapi/yuance-system.openapi.json").to_string(),
+    }))
+}
+
+pub async fn create_system_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateSystemApiTokenRequest>,
+) -> AppResult<Response> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.manage").await?;
+    let created = system_api_tokens::create_token(
+        pool,
+        &state.settings.security_master_key,
+        user.id,
+        system_api_tokens::CreateSystemApiTokenInput {
+            name: payload.name,
+            scopes: payload.scopes,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "system.api_token.create",
+        "system_api_token",
+        &created.token.id.to_string(),
+        r#"{"source":"api"}"#,
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        AppendHeaders([(header::CACHE_CONTROL, "private, no-store")]),
+        json(CreatedSystemApiTokenPayload {
+            token: system_api_token_payload(created.token),
+            raw_token: created.raw_token,
+        }),
+    )
+        .into_response())
+}
+
+pub async fn update_system_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    Json(payload): Json<UpdateSystemApiTokenRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.manage").await?;
+    let updated = system_api_tokens::update_token(
+        pool,
+        user.id,
+        token_id,
+        system_api_tokens::UpdateSystemApiTokenInput {
+            name: payload.name,
+            scopes: payload.scopes,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "system.api_token.update",
+        "system_api_token",
+        &updated.id.to_string(),
+        r#"{"source":"api"}"#,
+    )
+    .await?;
+    Ok(no_store_json(system_api_token_payload(updated)))
+}
+
+pub async fn delete_system_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.manage").await?;
+    let deleted = system_api_tokens::delete_token(pool, token_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "system.api_token.delete",
+        "system_api_token",
+        &deleted.id.to_string(),
+        r#"{"source":"api"}"#,
+    )
+    .await?;
+    Ok(no_store_json(system_api_token_payload(deleted)))
+}
+
 pub async fn get_system_release_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3725,6 +6748,45 @@ pub async fn list_system_releases(
     }))
 }
 
+pub async fn get_system_releases_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemReleaseListQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleasesViewPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let page = system_releases::list_releases_page(pool, pagination).await?;
+    let total_pages = page.total_pages();
+    let mut items = Vec::with_capacity(page.items.len());
+    for release in page.items {
+        let assets = system_releases::list_release_assets(pool, release.id).await?;
+        items.push(SystemReleaseViewDetailPayload {
+            release: system_release_payload(release),
+            assets: assets
+                .into_iter()
+                .map(system_release_view_asset_payload)
+                .collect(),
+        });
+    }
+    let settings = system_release_settings_payload(system_releases::get_settings(pool).await?);
+    let can_manage_releases =
+        rbac::user_has_permission(pool, user.id, "system.releases.manage").await?;
+
+    Ok(json(SystemReleasesViewPayload {
+        settings,
+        items,
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+        can_manage_releases,
+    }))
+}
+
 pub async fn create_system_release(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3742,6 +6804,11 @@ pub async fn create_system_release(
             version_name: payload.version_name,
             title: payload.title,
             notes: payload.notes,
+            channel: payload.channel,
+            manifest_sha256: payload.manifest_sha256,
+            signing_key_id: payload.signing_key_id,
+            source_commit: payload.source_commit,
+            source_tag: payload.source_tag,
         },
     )
     .await?;
@@ -3830,6 +6897,103 @@ pub async fn update_system_release(
     Ok(json(system_release_detail_payload(updated)))
 }
 
+pub async fn verify_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let verified =
+        system_releases::mark_release_verified(pool, principal.actor_user_id(), release_id).await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(principal.actor_user_id()),
+        "system.release.verify",
+        "system_release",
+        &release_id.to_string(),
+        &format!(r#"{{{}}}"#, system_release_audit_source(&principal)),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(verified)))
+}
+
+pub async fn withdraw_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Json(payload): Json<WithdrawSystemReleaseRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let withdrawn = system_releases::withdraw_release(
+        pool,
+        principal.actor_user_id(),
+        release_id,
+        system_releases::WithdrawSystemReleaseInput {
+            reason: payload.reason,
+            github_withdrawal_status: payload.github_withdrawal_status,
+        },
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(principal.actor_user_id()),
+        "system.release.withdraw",
+        "system_release",
+        &release_id.to_string(),
+        &format!(r#"{{{}}}"#, system_release_audit_source(&principal)),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(withdrawn)))
+}
+
+pub async fn update_system_release_withdrawal(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Json(payload): Json<UpdateSystemReleaseWithdrawalRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let updated = system_releases::update_withdrawal_status(
+        pool,
+        principal.actor_user_id(),
+        release_id,
+        &payload.github_withdrawal_status,
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(principal.actor_user_id()),
+        "system.release.withdrawal.update",
+        "system_release",
+        &release_id.to_string(),
+        &format!(
+            r#"{{{},"github_withdrawal_status":"{}"}}"#,
+            system_release_audit_source(&principal),
+            updated.release.github_withdrawal_status
+        ),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(updated)))
+}
+
 pub async fn create_system_release_asset(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3847,9 +7011,11 @@ pub async fn create_system_release_asset(
         system_releases::CreateSystemReleaseAssetInput {
             platform: payload.platform,
             architecture: payload.architecture,
+            artifact_kind: payload.artifact_kind,
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
+            checksum_sha256: payload.checksum_sha256,
             created_by_user_id: principal.actor_user_id(),
         },
     )
@@ -3870,9 +7036,12 @@ pub async fn system_release_asset_upload_url(
     let pool = state.pool()?;
     ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
         .await?;
+    system_releases::ensure_release_is_mutable(pool, release_id).await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
     let expires_in_seconds =
         normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request = storage::presign_upload_url(
         pool,
         &state.settings,
@@ -3902,6 +7071,59 @@ pub async fn system_release_asset_upload_url(
         },
         request,
         expires_in_seconds,
+        expires_at,
+        checksum_sha256: String::new(),
+    }))
+}
+
+pub async fn system_release_asset_download_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    system_releases::ensure_release_allows_download(pool, release_id).await?;
+    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
+    if asset.status != "uploaded" {
+        return Err(AppError::BadRequest(
+            "版本资产尚未上传完成，不能回读".to_string(),
+        ));
+    }
+    let expires_in_seconds =
+        normalize_system_release_download_expiration(query.expires_in_seconds)?;
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let mut request =
+        storage::presign_download_url(pool, &state.settings, &asset.object_key, expires_in_seconds)
+            .await?;
+    bind_test_storage_download_grant(
+        &state,
+        &asset.object_key,
+        &asset.content_type,
+        principal.actor_user_id(),
+        expires_in_seconds,
+        &mut request,
+    )?;
+    Ok(json(AttachmentSignedUrlPayload {
+        attachment: AttachmentPayload {
+            id: asset.id,
+            file_object_id: asset.file_object_id,
+            object_key: asset.object_key,
+            filename: asset.original_filename,
+            content_type: asset.content_type,
+            byte_size: asset.byte_size,
+            status: asset.status,
+            created_by: String::new(),
+            created_at: asset.created_at,
+        },
+        request,
+        expires_in_seconds,
+        expires_at,
+        checksum_sha256: asset.checksum_sha256,
     }))
 }
 
@@ -3955,6 +7177,53 @@ pub async fn get_storage_config(
         .map(storage_config_payload);
 
     Ok(json(payload))
+}
+
+pub async fn get_system_storage_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemStorageViewQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemStorageViewPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.storage.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let total_items = storage::count_config_versions(pool).await?;
+    let total_pages = ((total_items + pagination.per_page - 1) / pagination.per_page).max(1);
+    let page = pagination.page.min(total_pages);
+    let config = storage::latest_config(pool).await?;
+    let versions = storage::list_config_versions_page(pool, page, pagination.per_page)
+        .await?
+        .into_iter()
+        .map(storage_config_version_payload)
+        .collect();
+    let (inspection, inspection_error) = if config.is_some() {
+        match storage::inspect_active_initialization(pool, &state.settings).await {
+            Ok(value) => (Some(value), String::new()),
+            Err(_) => (
+                None,
+                "对象存储检查失败，请确认已激活配置并稍后重试。".to_string(),
+            ),
+        }
+    } else {
+        (None, "对象存储尚未配置，请先保存并激活配置。".to_string())
+    };
+    let can_manage_storage =
+        rbac::user_has_permission(pool, user.id, "system.storage.manage").await?;
+
+    Ok(json(SystemStorageViewPayload {
+        config: config.map(storage_config_payload),
+        versions,
+        pagination: PaginationPayload {
+            page,
+            per_page: pagination.per_page,
+            total_items,
+            total_pages,
+        },
+        inspection,
+        inspection_error,
+        can_manage_storage,
+    }))
 }
 
 pub async fn save_storage_config(
@@ -4114,9 +7383,7 @@ pub async fn test_storage_upload(
     Query(query): Query<TestStorageUploadQuery>,
     body: Bytes,
 ) -> AppResult<StatusCode> {
-    let user_id = require_test_storage_upload_actor_user_id(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    verify_test_storage_upload_grant(&state, &query, user_id)?;
+    verify_test_storage_upload_grant(&state, &query)?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -4135,11 +7402,9 @@ pub async fn test_storage_upload(
 
 pub async fn test_storage_download(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Query(query): Query<TestStorageDownloadQuery>,
 ) -> AppResult<impl IntoResponse> {
-    let user_id = require_test_storage_upload_actor_user_id(&state, &headers).await?;
-    let granted_content_type = verify_test_storage_download_grant(&state, &query, user_id)?;
+    let granted_content_type = verify_test_storage_download_grant(&state, &query)?;
     let (storage_content_type, content) =
         storage::read_object(state.pool()?, &state.settings, &query.object_key).await?;
     let normalized_storage_content_type = storage_content_type.trim().to_ascii_lowercase();
@@ -4168,10 +7433,10 @@ pub async fn list_api_tokens(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ApiTokenPayload>>>> {
-    ensure_cookie_api_auth(&headers)?;
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
     let pool = state.pool()?;
-    let tokens = api_tokens::list_tokens(pool, user.id)
+    let tokens = api_tokens::list_tokens(pool, principal.user.id)
         .await?
         .into_iter()
         .map(api_token_payload)
@@ -4185,14 +7450,14 @@ pub async fn create_api_token(
     headers: HeaderMap,
     Json(payload): Json<CreateApiTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
-    ensure_cookie_api_auth(&headers)?;
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     let created = api_tokens::create_token(
         pool,
         &state.settings.security_master_key,
-        user.id,
+        principal.user.id,
         api_tokens::CreateApiTokenInput {
             name: payload.name,
             scopes: payload.scopes,
@@ -4203,7 +7468,7 @@ pub async fn create_api_token(
     .await?;
     audit::record(
         pool,
-        Some(user.id),
+        Some(principal.user.id),
         "api_token.create",
         "api_token",
         &created.token.id.to_string(),
@@ -4220,19 +7485,53 @@ pub async fn create_api_token(
     ))
 }
 
+pub async fn update_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    Json(payload): Json<UpdateApiTokenRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ApiTokenPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    let token = api_tokens::update_token(
+        pool,
+        principal.user.id,
+        token_id,
+        api_tokens::UpdateApiTokenInput {
+            name: payload.name,
+            scopes: payload.scopes,
+            project_scope: payload.project_scope,
+        },
+    )
+    .await?;
+    audit::record_with_context(
+        pool,
+        Some(principal.user.id),
+        "api_token.update",
+        "api_token",
+        &token.id.to_string(),
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(json(api_token_payload(token)))
+}
+
 pub async fn delete_api_token(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(token_id): Path<i64>,
 ) -> AppResult<axum::Json<ApiEnvelope<ApiTokenPayload>>> {
-    ensure_cookie_api_auth(&headers)?;
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    let token = api_tokens::delete_token(pool, user.id, token_id).await?;
+    let token = api_tokens::delete_token(pool, principal.user.id, token_id).await?;
     audit::record(
         pool,
-        Some(user.id),
+        Some(principal.user.id),
         "api_token.delete",
         "api_token",
         &token.id.to_string(),
@@ -4243,13 +7542,115 @@ pub async fn delete_api_token(
     Ok(json(api_token_payload(token)))
 }
 
-fn ensure_cookie_api_auth(headers: &HeaderMap) -> AppResult<()> {
-    if api_tokens::bearer_token(headers).is_some() {
-        return Err(AppError::Forbidden(
-            "访问 Token 不能管理其它访问 Token，请使用浏览器登录会话".to_string(),
-        ));
+pub async fn list_device_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<DeviceSessionPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    let current_family_id = match &principal.kind {
+        ApiPrincipalKind::Device(device) => Some(device.family_id.as_str()),
+        _ => None,
+    };
+    let sessions = device_sessions::list_device_families_for_user(
+        state.pool()?,
+        principal.user.id,
+        &state.settings.device_sessions.server_instance_id,
+    )
+    .await
+    .map_err(device_session_api_error)?
+    .into_iter()
+    .map(|session| DeviceSessionPayload {
+        is_current: current_family_id == Some(session.family_id.as_str()),
+        family_id: session.family_id,
+        device_id: session.device_id,
+        device_name: session.device_name,
+        platform: session.platform,
+        client_version: session.client_version,
+        status: session.family_status,
+        generation: session.generation,
+        last_seen_at: session.last_seen_at.to_rfc3339(),
+        created_at: session.created_at.to_rfc3339(),
+    })
+    .collect();
+    Ok(json(sessions))
+}
+
+pub(crate) async fn revoke_device_session(
+    State(state): State<AppState>,
+    Extension(DeviceAuthClientIp(client_ip)): Extension<DeviceAuthClientIp>,
+    headers: HeaderMap,
+    Path(family_id): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<DeviceSessionPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    let session = device_sessions::list_device_families_for_user(
+        pool,
+        principal.user.id,
+        &state.settings.device_sessions.server_instance_id,
+    )
+    .await
+    .map_err(device_session_api_error)?
+    .into_iter()
+    .find(|session| session.family_id == family_id)
+    .ok_or_else(|| AppError::NotFound("设备会话不存在".to_string()))?;
+    if session.family_status != "revoked" {
+        device_sessions::revoke_family_for_user(
+            pool,
+            principal.user.id,
+            &family_id,
+            chrono::Utc::now(),
+            "user_revoke",
+        )
+        .await
+        .map_err(device_session_api_error)?;
     }
-    Ok(())
+    audit::record_with_context(
+        pool,
+        Some(principal.user.id),
+        "device_session.revoke",
+        "device_credential_family",
+        &family_id,
+        &principal.audit_details(),
+        &audit_context::from_headers_with_client_ip(&headers, client_ip),
+    )
+    .await?;
+    Ok(json(DeviceSessionPayload {
+        is_current: matches!(&principal.kind, ApiPrincipalKind::Device(device) if device.family_id == family_id),
+        family_id: session.family_id,
+        device_id: session.device_id,
+        device_name: session.device_name,
+        platform: session.platform,
+        client_version: session.client_version,
+        status: "revoked".to_string(),
+        generation: session.generation,
+        last_seen_at: session.last_seen_at.to_rfc3339(),
+        created_at: session.created_at.to_rfc3339(),
+    }))
+}
+
+fn device_session_api_error(error: device_sessions::DeviceSessionError) -> AppError {
+    match error {
+        device_sessions::DeviceSessionError::StorageFailure(error) => AppError::Database(error),
+        device_sessions::DeviceSessionError::InvalidRequest(message) => {
+            AppError::BadRequest(message)
+        }
+        device_sessions::DeviceSessionError::FamilyRevoked => {
+            AppError::Conflict("设备会话已撤销".to_string())
+        }
+        error => AppError::Conflict(error.to_string()),
+    }
+}
+
+fn ensure_account_principal(principal: &ApiPrincipal) -> AppResult<()> {
+    match &principal.kind {
+        ApiPrincipalKind::Session | ApiPrincipalKind::Device(_) => Ok(()),
+        ApiPrincipalKind::ApiToken(_) => Err(AppError::Forbidden(
+            "访问 Token 不能读取或修改账户资料".to_string(),
+        )),
+    }
 }
 
 fn ensure_api_csrf(headers: &HeaderMap) -> AppResult<()> {
@@ -4265,7 +7666,12 @@ async fn require_api_user(state: &AppState, headers: &HeaderMap) -> AppResult<au
 
 async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResult<ApiPrincipal> {
     let pool = state.pool()?;
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+    if let Some(raw_token) = single_bearer_token(headers)? {
+        if device_sessions::is_device_access_token(&raw_token) {
+            return Err(AppError::Forbidden(
+                "设备 access token 未授权访问此业务 API".to_string(),
+            ));
+        }
         let authenticated = api_tokens::authenticated_token_from_bearer_token(pool, &raw_token)
             .await?
             .ok_or(AppError::Unauthorized)?;
@@ -4273,7 +7679,7 @@ async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResu
             api_token_actor_display_name(&authenticated.user, &authenticated.token_name);
         return Ok(ApiPrincipal {
             user: authenticated.user,
-            token_actor: Some(ApiTokenActor { display_name }),
+            kind: ApiPrincipalKind::ApiToken(ApiTokenActor { display_name }),
         });
     }
     let user = auth::user_from_headers(pool, headers)
@@ -4281,7 +7687,46 @@ async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResu
         .ok_or(AppError::Unauthorized)?;
     Ok(ApiPrincipal {
         user,
-        token_actor: None,
+        kind: ApiPrincipalKind::Session,
+    })
+}
+
+async fn require_d2_api_principal(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> AppResult<ApiPrincipal> {
+    let Some(raw_token) = single_bearer_token(headers)? else {
+        return require_api_principal(state, headers).await;
+    };
+    if !device_sessions::is_device_access_token(&raw_token) {
+        return require_api_principal(state, headers).await;
+    }
+
+    let pool = state.pool()?;
+    let context = audit_context::from_headers(headers);
+    let access = device_sessions::authenticate_access_token(
+        pool,
+        &raw_token,
+        &state.settings.device_sessions.server_instance_id,
+        chrono::Utc::now(),
+        &context.ip,
+        &context.user_agent,
+    )
+    .await
+    .map_err(|_| AppError::Unauthorized)?;
+    Ok(ApiPrincipal {
+        user: auth::AuthUser {
+            id: access.user_id,
+            username: access.username,
+            display_name: access.display_name,
+            is_super_admin: access.is_super_admin,
+        },
+        kind: ApiPrincipalKind::Device(DeviceApiPrincipal {
+            device_id: access.device_id,
+            family_id: access.family_id,
+            generation: access.generation,
+            authorization_version: access.authorization_version,
+        }),
     })
 }
 
@@ -4290,7 +7735,7 @@ async fn require_system_release_api_principal(
     headers: &HeaderMap,
 ) -> AppResult<SystemReleaseApiPrincipal> {
     let pool = state.pool()?;
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+    if let Some(raw_token) = single_bearer_token(headers)? {
         if !system_api_tokens::is_system_token(&raw_token) {
             return Err(AppError::Forbidden(
                 "系统版本管理接口仅支持系统访问 Token 或浏览器登录会话".to_string(),
@@ -4309,19 +7754,13 @@ async fn require_system_release_api_principal(
     Ok(SystemReleaseApiPrincipal::Session(user))
 }
 
-async fn require_test_storage_upload_actor_user_id(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> AppResult<i64> {
-    let pool = state.pool()?;
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
-        if let Some(authenticated) =
-            system_api_tokens::authenticated_token_from_bearer_token(pool, &raw_token).await?
-        {
-            return Ok(authenticated.owner_user_id);
-        }
+fn single_bearer_token(headers: &HeaderMap) -> AppResult<Option<String>> {
+    if headers.get_all(header::AUTHORIZATION).iter().count() > 1 {
+        return Err(AppError::Forbidden(
+            "请求只能携带一个 Authorization 凭证".to_string(),
+        ));
     }
-    Ok(require_api_user(state, headers).await?.id)
+    Ok(api_tokens::bearer_token(headers))
 }
 
 async fn ensure_system_release_api_permission(
@@ -4386,6 +7825,17 @@ async fn api_user_can_access_all_projects(
     rbac::user_has_all_data_scope(pool, user.id).await
 }
 
+fn search_result_payload(hit: projects::SearchHit) -> SearchResultPayload {
+    SearchResultPayload {
+        kind: hit.hit_type,
+        key: hit.key,
+        title: hit.title,
+        context: hit.context,
+        target: hit.url,
+        updated_at: hit.updated_at,
+    }
+}
+
 async fn require_api_work_item_context(
     state: &AppState,
     headers: &HeaderMap,
@@ -4395,7 +7845,18 @@ async fn require_api_work_item_context(
     projects::WorkItemDetail,
     projects::ProjectDetail,
 )> {
-    let user = require_api_user(state, headers).await?;
+    let user = require_d2_api_principal(state, headers).await?.user;
+    let (item, project) =
+        require_api_work_item_context_for_user(state, headers, &user, item_key).await?;
+    Ok((user, item, project))
+}
+
+async fn require_api_work_item_context_for_user(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: &auth::AuthUser,
+    item_key: &str,
+) -> AppResult<(projects::WorkItemDetail, projects::ProjectDetail)> {
     let pool = state.pool()?;
     ensure_api_permission(pool, headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, item_key)
@@ -4406,7 +7867,7 @@ async fn require_api_work_item_context(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, headers, user.id, user.is_super_admin, project.id).await?;
 
-    Ok((user, item, project))
+    Ok((item, project))
 }
 
 async fn require_api_comment_context(
@@ -4421,6 +7882,34 @@ async fn require_api_comment_context(
     projects::WorkItemCommentSummary,
 )> {
     let (user, item, project) = require_api_work_item_context(state, headers, item_key).await?;
+    let comment = require_api_comment_for_user(state, &user, &item, comment_id).await?;
+
+    Ok((user, item, project, comment))
+}
+
+async fn require_api_comment_context_for_user(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: &auth::AuthUser,
+    item_key: &str,
+    comment_id: i64,
+) -> AppResult<(
+    projects::WorkItemDetail,
+    projects::ProjectDetail,
+    projects::WorkItemCommentSummary,
+)> {
+    let (item, project) =
+        require_api_work_item_context_for_user(state, headers, user, item_key).await?;
+    let comment = require_api_comment_for_user(state, user, &item, comment_id).await?;
+    Ok((item, project, comment))
+}
+
+async fn require_api_comment_for_user(
+    state: &AppState,
+    user: &auth::AuthUser,
+    item: &projects::WorkItemDetail,
+    comment_id: i64,
+) -> AppResult<projects::WorkItemCommentSummary> {
     let pool = state.pool()?;
     let comment =
         projects::get_work_item_comment_including_drafts(pool, item.id, comment_id).await?;
@@ -4428,13 +7917,16 @@ async fn require_api_comment_context(
         return Err(AppError::Forbidden("无权访问该草稿评论".to_string()));
     }
 
-    Ok((user, item, project, comment))
+    Ok(comment)
 }
 
 fn work_item_comment_matches_primary_post_summary(
     item: &projects::WorkItemDetail,
     comment: &projects::WorkItemCommentSummary,
 ) -> bool {
+    if let Some(primary_post_comment_id) = item.primary_post_comment_id {
+        return comment.id == primary_post_comment_id;
+    }
     if comment.is_flow
         || comment.parent_comment_id.is_some()
         || comment.body_format != "html"
@@ -4474,7 +7966,7 @@ async fn require_api_project_resource_context(
     projects::ProjectDetail,
     project_resources::ProjectResourceDetail,
 )> {
-    let user = require_api_user(state, headers).await?;
+    let user = require_d2_api_principal(state, headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, project_key)
@@ -4513,6 +8005,9 @@ async fn ensure_api_token_project_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(());
     };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(());
+    }
     if api_tokens::token_allows_project(pool, &raw_token, user_id, project_id).await? {
         return Ok(());
     }
@@ -4530,6 +8025,9 @@ async fn api_token_project_scope_keys(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(None);
     };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(None);
+    }
     api_tokens::token_project_scope_keys(pool, &raw_token, user_id).await
 }
 
@@ -4644,6 +8142,9 @@ async fn ensure_api_token_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(());
     };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(());
+    }
     if api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, required_scope).await? {
         return Ok(());
     }
@@ -4707,6 +8208,8 @@ async fn signed_attachment_url_payload(
     }
 
     let expires_in_seconds = normalize_signed_url_expiration(kind, query.expires_in_seconds)?;
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request = match kind {
         SignedUrlKind::Upload => {
             storage::presign_upload_url(
@@ -4747,10 +8250,18 @@ async fn signed_attachment_url_payload(
         )?;
     }
 
+    let checksum_sha256 =
+        sqlx::query_scalar::<_, String>("SELECT checksum_sha256 FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(pool)
+            .await?;
+
     Ok(AttachmentSignedUrlPayload {
         attachment: attachment_payload(attachment),
         request,
         expires_in_seconds,
+        expires_at,
+        checksum_sha256,
     })
 }
 
@@ -4763,6 +8274,16 @@ fn normalize_signed_url_expiration(kind: SignedUrlKind, value: Option<u64>) -> A
     if !(60..=3600).contains(&value) {
         return Err(AppError::BadRequest(
             "签名有效期必须在 60-3600 秒之间".to_string(),
+        ));
+    }
+    Ok(value)
+}
+
+fn normalize_system_release_download_expiration(value: Option<u64>) -> AppResult<u64> {
+    let value = value.unwrap_or(system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS);
+    if !(60..=system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS).contains(&value) {
+        return Err(AppError::BadRequest(
+            "版本资产下载签名有效期必须在 60-300 秒之间".to_string(),
         ));
     }
     Ok(value)
@@ -4811,9 +8332,7 @@ fn parse_api_optional_i64(value: &str) -> AppResult<Option<i64>> {
     Ok(Some(parsed))
 }
 
-fn parse_api_optional_cycle_id(
-    value: Option<serde_json::Value>,
-) -> AppResult<Option<i64>> {
+fn parse_api_optional_cycle_id(value: Option<serde_json::Value>) -> AppResult<Option<i64>> {
     parse_api_optional_cycle_id_with_fallback(value, None)
 }
 
@@ -4906,6 +8425,21 @@ fn auth_user_payload(user: auth::AuthUser) -> AuthUserPayload {
     }
 }
 
+fn own_profile_payload(profile: users::UserSummary) -> OwnProfilePayload {
+    OwnProfilePayload {
+        id: profile.id,
+        username: profile.username,
+        display_name: profile.display_name,
+        email: profile.email,
+        mobile: profile.mobile,
+        status: profile.status,
+        is_super_admin: profile.is_super_admin,
+        roles: profile.role_names,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
+    }
+}
+
 fn api_token_payload(token: api_tokens::ApiTokenSummary) -> ApiTokenPayload {
     ApiTokenPayload {
         id: token.id,
@@ -4933,6 +8467,43 @@ fn project_payload(project: projects::ProjectSummary) -> ProjectPayload {
     }
 }
 
+async fn project_detail_payload(
+    pool: &sqlx::SqlitePool,
+    user_id: i64,
+    can_access_all_projects: bool,
+    project: projects::ProjectDetail,
+) -> AppResult<ProjectDetailPayload> {
+    let count = |item_type: &str| {
+        projects::work_item_list_stats_filtered_for_user(
+            pool,
+            user_id,
+            can_access_all_projects,
+            projects::WorkItemListFilter {
+                item_type: Some(item_type.to_string()),
+                project_key: project.project_key.clone(),
+                ..Default::default()
+            },
+        )
+    };
+    let (requirements, tasks, bugs) =
+        tokio::try_join!(count("requirement"), count("task"), count("bug"))?;
+    Ok(ProjectDetailPayload {
+        key: project.project_key,
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        owner_username: project.owner_username,
+        owner: project.owner_display_name,
+        start_date: project.start_date,
+        due_date: project.due_date,
+        created_at: project.created_at,
+        updated_at: project.updated_at,
+        requirements: requirements.total_items,
+        tasks: tasks.total_items,
+        bugs: bugs.total_items,
+    })
+}
+
 fn current_project_payload(project: projects::CurrentProject) -> CurrentProjectPayload {
     CurrentProjectPayload {
         key: project.project_key,
@@ -4952,6 +8523,41 @@ fn work_item_payload(item: projects::WorkItemSummary) -> WorkItemPayload {
         assignee: item.assignee_display_name,
         updated_at: item.updated_at,
     }
+}
+
+fn work_item_list_filter_payload(
+    item_type: &str,
+    filter: projects::WorkItemListFilter,
+) -> WorkItemListFilterPayload {
+    WorkItemListFilterPayload {
+        item_type: item_type.to_string(),
+        q: filter.keyword,
+        status: filter.status,
+        priority: filter.priority,
+        project_key: filter.project_key,
+        assignee_username: filter.assignee_username,
+        cycle_id: filter.cycle_id,
+        sort: if filter.sort_by.trim().is_empty() {
+            "updated_desc".to_string()
+        } else {
+            filter.sort_by
+        },
+    }
+}
+
+fn work_item_saved_view_payload(view: projects::WorkItemSavedView) -> WorkItemSavedViewPayload {
+    let item_type = view.item_type.clone();
+    WorkItemSavedViewPayload {
+        id: view.id,
+        name: view.name,
+        filters: work_item_list_filter_payload(&item_type, view.filter),
+        per_page: view.per_page,
+        is_default: view.is_default,
+    }
+}
+
+fn default_work_item_saved_view_per_page() -> i64 {
+    10
 }
 
 fn work_item_detail_payload(item: projects::WorkItemDetail) -> WorkItemDetailPayload {
@@ -4976,6 +8582,119 @@ fn work_item_detail_payload(item: projects::WorkItemDetail) -> WorkItemDetailPay
     }
 }
 
+fn work_item_detail_navigation(
+    items: Vec<projects::WorkItemSummary>,
+    current_item_key: &str,
+) -> WorkItemDetailNavigationPayload {
+    let Some(index) = items
+        .iter()
+        .position(|entry| entry.item_key == current_item_key)
+    else {
+        return WorkItemDetailNavigationPayload {
+            previous: None,
+            next: None,
+        };
+    };
+    let link = |entry: &projects::WorkItemSummary| WorkItemDetailNavigationLinkPayload {
+        item_key: entry.item_key.clone(),
+        title: entry.title.clone(),
+    };
+    WorkItemDetailNavigationPayload {
+        previous: index
+            .checked_sub(1)
+            .and_then(|value| items.get(value))
+            .map(link),
+        next: items.get(index + 1).map(link),
+    }
+}
+
+fn api_work_item_status_options(
+    item_type: &str,
+    current_status: &str,
+) -> AppResult<Vec<WorkItemDetailViewOptionPayload>> {
+    let selected_status = if current_status == "cancelled" {
+        "in_progress"
+    } else {
+        current_status
+    };
+    let mut values = if current_status == "cancelled" {
+        Vec::new()
+    } else {
+        vec![current_status]
+    };
+    for status in projects::allowed_work_item_status_transitions(current_status)? {
+        let relevant = match item_type {
+            "bug" => matches!(
+                *status,
+                "open"
+                    | "in_progress"
+                    | "pending_confirmation"
+                    | "resolved"
+                    | "verified"
+                    | "closed"
+            ),
+            "requirement" | "task" => matches!(
+                *status,
+                "open" | "in_progress" | "pending_confirmation" | "done" | "closed"
+            ),
+            _ => false,
+        };
+        if relevant && !values.contains(status) {
+            values.push(status);
+        }
+    }
+    if values.is_empty() {
+        values.push(selected_status);
+    }
+    values
+        .into_iter()
+        .map(|status| {
+            Ok(WorkItemDetailViewOptionPayload {
+                value: status.to_string(),
+                label: api_work_item_status_label(status)?.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn api_work_item_status_label(status: &str) -> AppResult<&'static str> {
+    match status {
+        "open" => Ok("待处理"),
+        "in_progress" => Ok("进行中"),
+        "pending_confirmation" => Ok("待确认"),
+        "done" => Ok("已完成"),
+        "resolved" => Ok("已解决"),
+        "verified" => Ok("已验证"),
+        "closed" => Ok("已关闭"),
+        "cancelled" => Ok("已取消"),
+        _ => Err(AppError::BadRequest("工作项状态无效".to_string())),
+    }
+}
+
+fn work_item_flow_record_payload(
+    record: projects::WorkItemOperationSummary,
+) -> WorkItemFlowRecordPayload {
+    let summary = if record.source_kind == "edit" {
+        "作者编辑了主帖内容".to_string()
+    } else {
+        record
+            .body
+            .strip_prefix("[yuance-flow] ")
+            .unwrap_or(&record.body)
+            .to_string()
+    };
+    WorkItemFlowRecordPayload {
+        source_kind: record.source_kind,
+        actor: if record.actor_display_name.trim().is_empty() {
+            "系统".to_string()
+        } else {
+            record.actor_display_name
+        },
+        created_at: record.created_at,
+        summary,
+    }
+}
+
 fn project_member_payload(member: projects::ProjectMemberDetail) -> ProjectMemberPayload {
     ProjectMemberPayload {
         user_id: member.user_id,
@@ -4993,6 +8712,108 @@ fn project_member_summary_payload(member: projects::ProjectMemberSummary) -> Pro
         username: member.username,
         member_role: member.member_role,
         joined_at: member.joined_at,
+    }
+}
+
+fn project_cycle_payload(
+    cycle: projects::ProjectCycleDetail,
+    work_items: Vec<projects::ProjectCycleWorkItemSnapshot>,
+) -> ProjectCyclePayload {
+    let is_closed = !cycle.closed_at.is_empty();
+    ProjectCyclePayload {
+        id: cycle.id,
+        name: cycle.name,
+        goal: cycle.goal,
+        description: cycle.description,
+        owner_username: cycle.owner_username,
+        owner: cycle.owner_display_name,
+        start_date: cycle.start_date,
+        end_date: cycle.end_date,
+        closed_at: cycle.closed_at,
+        is_closed,
+        total_items: cycle.total_items,
+        requirement_count: cycle.requirement_count,
+        task_count: cycle.task_count,
+        bug_count: cycle.bug_count,
+        pending_count: cycle.pending_count,
+        created_at: cycle.created_at,
+        updated_at: cycle.updated_at,
+        work_items: work_items
+            .into_iter()
+            .map(|item| ProjectCycleWorkItemPayload {
+                key: item.item_key,
+                item_type: item.item_type,
+                title: item.title,
+                status: item.status,
+                priority: item.priority,
+                assignee_username: item.assignee_username,
+                assignee: item.assignee_display_name,
+                due_date: item.due_date,
+                updated_at: item.updated_at,
+            })
+            .collect(),
+    }
+}
+
+fn project_personal_analysis_payload(
+    user: &auth::AuthUser,
+    analysis: projects::PersonalProjectAnalysis,
+) -> ProjectPersonalAnalysisPayload {
+    ProjectPersonalAnalysisPayload {
+        username: user.username.clone(),
+        display_name: user.display_name.clone(),
+        joined_at: analysis.joined_at,
+        completed_total: analysis.completed_total,
+        completed_requirements: analysis.completed_requirements,
+        completed_tasks: analysis.completed_tasks,
+        completed_bugs: analysis.completed_bugs,
+        completed_last_30_days: analysis.completed_last_30_days,
+        pending: ProjectPersonalAnalysisPendingPayload {
+            requirements: analysis.pending.requirements,
+            tasks: analysis.pending.tasks,
+            bugs: analysis.pending.bugs,
+        },
+        daily_average: analysis.daily_average,
+        daily_peak: analysis.daily_peak,
+        daily_peak_date: analysis.daily_peak_date,
+        monthly_average: analysis.monthly_average,
+        monthly_peak: analysis.monthly_peak,
+        monthly_peak_month: analysis.monthly_peak_month,
+        active_days: analysis.active_days,
+        comment_count: analysis.comment_count,
+        handoff_count: analysis.handoff_count,
+        recent_completions: analysis
+            .recent_completions
+            .into_iter()
+            .map(|item| ProjectPersonalCompletionPayload {
+                key: item.item_key,
+                item_type: item.item_type,
+                title: item.title,
+                completed_at: item.completed_at,
+            })
+            .collect(),
+    }
+}
+
+fn cycle_create_input(payload: ProjectCycleRequest) -> projects::CreateProjectCycleInput {
+    projects::CreateProjectCycleInput {
+        name: payload.name,
+        goal: payload.goal,
+        description: payload.description,
+        owner_username: payload.owner_username,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+    }
+}
+
+fn cycle_update_input(payload: ProjectCycleRequest) -> projects::UpdateProjectCycleInput {
+    projects::UpdateProjectCycleInput {
+        name: payload.name,
+        goal: payload.goal,
+        description: payload.description,
+        owner_username: payload.owner_username,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
     }
 }
 
@@ -5030,6 +8851,7 @@ fn project_resource_summary_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+        access_token: None,
     }
 }
 
@@ -5071,11 +8893,13 @@ fn project_resource_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+        access_token: None,
     }
 }
 
 fn project_resource_unlocked_payload(
     resource: project_resources::ProjectResourceDetail,
+    access_token: Option<String>,
 ) -> ProjectResourcePayload {
     let project_key = resource.project_key.clone();
     ProjectResourcePayload {
@@ -5103,6 +8927,7 @@ fn project_resource_unlocked_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+        access_token,
     }
 }
 
@@ -5138,6 +8963,7 @@ fn comment_payload(comment: projects::WorkItemCommentSummary) -> CommentPayload 
         body: comment.body,
         body_format: comment.body_format,
         author: comment.author_display_name,
+        author_username: comment.author_username,
         created_at: comment.created_at,
         updated_at: comment.updated_at,
         is_flow: comment.is_flow,
@@ -5160,6 +8986,8 @@ fn work_item_typing_snapshot_payload(
 }
 
 fn notification_payload(notification: notifications::NotificationSummary) -> NotificationPayload {
+    let target = notification_target_payload(&notification);
+    let read = !notification.read_at.is_empty();
     NotificationPayload {
         id: notification.id,
         kind: notification.kind,
@@ -5167,8 +8995,35 @@ fn notification_payload(notification: notifications::NotificationSummary) -> Not
         body: fallback_text(notification.body, "查看详情"),
         actor: fallback_text(notification.actor_display_name, "系统"),
         created_at: notification.created_at,
-        read: !notification.read_at.is_empty(),
+        read,
         open_url: format!("/web/messages/{}/open", notification.id),
+        target: Some(target),
+    }
+}
+
+fn notification_target_result_payload(
+    notification: notifications::NotificationSummary,
+) -> NotificationTargetResultPayload {
+    NotificationTargetResultPayload {
+        notification_id: notification.id,
+        read: !notification.read_at.is_empty(),
+        target: Some(notification_target_payload(&notification)),
+    }
+}
+
+fn notification_target_payload(
+    notification: &notifications::NotificationSummary,
+) -> NotificationTargetPayload {
+    NotificationTargetPayload {
+        kind: "work_item".to_string(),
+        project_key: notification
+            .work_item_key
+            .split('-')
+            .next()
+            .unwrap_or_default()
+            .to_string(),
+        work_item_key: notification.work_item_key.clone(),
+        comment_id: notification.comment_id,
     }
 }
 
@@ -5192,6 +9047,159 @@ fn attachment_payload(attachment: files::FileAttachmentSummary) -> AttachmentPay
         created_by: attachment.created_by_display_name,
         created_at: attachment.created_at,
     }
+}
+
+fn attachment_preview_navigation(
+    attachments: Vec<files::FileAttachmentSummary>,
+    current_attachment_id: i64,
+    legacy_preview_enabled: bool,
+    link_url: impl Fn(&files::FileAttachmentSummary) -> String,
+) -> AttachmentPreviewNavigationPayload {
+    let previewable = attachments
+        .into_iter()
+        .filter(|attachment| {
+            attachment.status == "uploaded"
+                && attachment_preview::kind(
+                    &attachment.original_filename,
+                    &attachment.content_type,
+                    legacy_preview_enabled,
+                )
+                .is_some()
+        })
+        .collect::<Vec<_>>();
+    let total = previewable.len();
+    let Some(current_index) = previewable
+        .iter()
+        .position(|attachment| attachment.id == current_attachment_id)
+    else {
+        return AttachmentPreviewNavigationPayload {
+            position: 0,
+            total,
+            previous: None,
+            next: None,
+        };
+    };
+    let link = |attachment: &files::FileAttachmentSummary| AttachmentPreviewNavigationLinkPayload {
+        id: attachment.id,
+        title: attachment.original_filename.clone(),
+        url: link_url(attachment),
+    };
+
+    AttachmentPreviewNavigationPayload {
+        position: current_index + 1,
+        total,
+        previous: current_index
+            .checked_sub(1)
+            .and_then(|index| previewable.get(index))
+            .map(link),
+        next: previewable.get(current_index + 1).map(link),
+    }
+}
+
+async fn ensure_project_resource_access_grant(
+    state: &AppState,
+    pool: &SqlitePool,
+    user: &auth::AuthUser,
+    resource: &project_resources::ProjectResourceDetail,
+    access_token: &str,
+) -> AppResult<()> {
+    if resource.is_protected
+        && !project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
+            access_token,
+            user.id,
+            resource.id,
+        )
+        .await?
+    {
+        return Err(AppError::Forbidden(
+            "受保护资料附件需要先验证访问密码".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn resource_access_query_suffix(access_token: &str) -> String {
+    if access_token.trim().is_empty() {
+        return String::new();
+    }
+    let encoded = serde_urlencoded::to_string([("access", access_token)]).unwrap_or_default();
+    if encoded.is_empty() {
+        String::new()
+    } else {
+        format!("?{encoded}")
+    }
+}
+
+fn ensure_attachment_preview_content_enabled(
+    attachment: &files::FileAttachmentSummary,
+    legacy_preview_enabled: bool,
+) -> AppResult<()> {
+    if attachment.status == "deleted" {
+        return Err(AppError::NotFound("附件已归档，不能预览".to_string()));
+    }
+    if attachment.status != "uploaded" {
+        return Err(AppError::BadRequest(
+            "附件尚未上传完成，请稍后再试".to_string(),
+        ));
+    }
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    if strategy.is_some_and(|value| !value.is_enabled(legacy_preview_enabled)) {
+        return Err(AppError::BadRequest(
+            "旧格式实验性预览当前未开启，请下载原文件查看".to_string(),
+        ));
+    }
+    if attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    )
+    .is_none()
+    {
+        return Err(AppError::BadRequest("当前文件类型暂不支持预览".to_string()));
+    }
+    Ok(())
+}
+
+fn parse_single_byte_range(value: &str, total: usize) -> Option<(usize, usize)> {
+    let range = value.strip_prefix("bytes=")?;
+    if total == 0 || range.contains(',') {
+        return None;
+    }
+    let (start, end) = range.split_once('-')?;
+    if start.is_empty() {
+        let suffix = end.parse::<usize>().ok()?;
+        if suffix == 0 {
+            return None;
+        }
+        return Some((total.saturating_sub(suffix), total - 1));
+    }
+    let start = start.parse::<usize>().ok()?;
+    if start >= total {
+        return None;
+    }
+    let end = if end.is_empty() {
+        total - 1
+    } else {
+        end.parse::<usize>().ok()?.min(total - 1)
+    };
+    (start <= end).then_some((start, end))
+}
+
+fn range_not_satisfiable_response(total: usize) -> AppResult<Response> {
+    let mut response = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_RANGE, format!("bytes */{total}").parse()?);
+    headers.insert(header::ACCEPT_RANGES, "bytes".parse()?);
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'none'; sandbox".parse()?,
+    );
+    Ok(response)
 }
 
 fn audit_log_payload(log: audit::AuditLogSummary) -> AuditLogPayload {
@@ -5223,6 +9231,133 @@ fn system_user_payload(user: users::UserSummary) -> SystemUserPayload {
         created_at: user.created_at,
         updated_at: user.updated_at,
     }
+}
+
+async fn system_user_view_payload(
+    pool: &SqlitePool,
+    user: users::UserSummary,
+) -> AppResult<SystemUserViewPayload> {
+    if user.is_super_admin {
+        return Ok(SystemUserViewPayload {
+            user: system_user_payload(user),
+            assigned_projects: Vec::new(),
+        });
+    }
+    let active_counts =
+        projects::count_pending_assigned_work_items_by_project(pool, user.id, false)
+            .await?
+            .into_iter()
+            .map(|entry| (entry.project_key, entry.total))
+            .collect::<HashMap<_, _>>();
+    let assigned_projects = projects::list_user_project_memberships(pool, user.id)
+        .await?
+        .into_iter()
+        .map(|project| system_user_project_payload(project, &active_counts))
+        .collect();
+    Ok(SystemUserViewPayload {
+        user: system_user_payload(user),
+        assigned_projects,
+    })
+}
+
+fn system_user_project_payload(
+    project: projects::UserProjectMembershipSummary,
+    active_counts: &HashMap<String, i64>,
+) -> SystemUserProjectPayload {
+    let active_assigned_count = active_counts
+        .get(&project.project_key)
+        .copied()
+        .unwrap_or(0);
+    let can_update_role = project.member_role != "owner";
+    let can_remove = can_update_role && active_assigned_count <= 0;
+    let remove_block_reason = if !can_update_role {
+        "该成员当前是项目负责人，请先在项目详情中转移负责人".to_string()
+    } else if can_remove {
+        String::new()
+    } else {
+        format!(
+            "该成员在此项目仍有 {active_assigned_count} 个待处理 / 进行中 / 待确认工作项，需先转交处理人"
+        )
+    };
+    SystemUserProjectPayload {
+        key: project.project_key,
+        name: project.project_name,
+        status: project.project_status,
+        role_code: project.member_role,
+        active_assigned_count,
+        can_remove,
+        can_update_role,
+        remove_block_reason,
+    }
+}
+
+async fn ensure_system_user_project_management(
+    pool: &SqlitePool,
+    headers: &HeaderMap,
+    actor: &auth::AuthUser,
+) -> AppResult<()> {
+    ensure_api_permission(pool, headers, actor.id, "system.users.manage").await?;
+    ensure_api_permission(pool, headers, actor.id, "project.manage").await?;
+    if api_user_can_access_all_projects(pool, actor).await? {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(
+        "需要全项目管理权限才能管理用户项目关系".to_string(),
+    ))
+}
+
+async fn require_manageable_system_user(
+    pool: &SqlitePool,
+    username: &str,
+) -> AppResult<users::UserSummary> {
+    let user = users::get_user_summary_by_username(pool, username)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("用户不存在".to_string()))?;
+    if user.is_super_admin {
+        return Err(AppError::BadRequest(
+            "超级管理员默认拥有全项目访问，无需管理项目关系".to_string(),
+        ));
+    }
+    Ok(user)
+}
+
+async fn ensure_system_user_projects_removable(
+    pool: &SqlitePool,
+    user_id: i64,
+    project_keys: &[String],
+) -> AppResult<()> {
+    let active_counts =
+        projects::count_pending_assigned_work_items_by_project(pool, user_id, false)
+            .await?
+            .into_iter()
+            .map(|entry| (entry.project_key, entry.total))
+            .collect::<HashMap<_, _>>();
+    let memberships = projects::list_user_project_memberships(pool, user_id)
+        .await?
+        .into_iter()
+        .map(|project| (project.project_key.clone(), project))
+        .collect::<HashMap<_, _>>();
+    for project_key in project_keys {
+        let project = memberships
+            .get(project_key)
+            .ok_or_else(|| AppError::BadRequest(format!("用户当前未加入项目 {project_key}")))?;
+        let relation = system_user_project_payload(project.clone(), &active_counts);
+        if !relation.can_remove {
+            return Err(AppError::BadRequest(relation.remove_block_reason));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_unique_non_empty_strings(values: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .filter(|value| seen.insert((*value).to_string()))
+        .map(str::to_string)
+        .collect()
 }
 
 fn system_role_payload(role: rbac::RoleSummary) -> SystemRolePayload {
@@ -5318,6 +9453,22 @@ fn system_release_settings_payload(
     }
 }
 
+fn system_api_token_payload(
+    token: system_api_tokens::SystemApiTokenSummary,
+) -> SystemApiTokenPayload {
+    SystemApiTokenPayload {
+        id: token.id,
+        name: token.name,
+        scopes: token.scopes,
+        token_suffix: token.token_suffix,
+        created_by: token.created_by_display_name,
+        updated_by: token.updated_by_display_name,
+        last_used_at: token.last_used_at,
+        created_at: token.created_at,
+        updated_at: token.updated_at,
+    }
+}
+
 fn system_release_asset_payload(
     asset: system_releases::SystemReleaseAssetSummary,
 ) -> SystemReleaseAssetPayload {
@@ -5327,11 +9478,31 @@ fn system_release_asset_payload(
         file_object_id: asset.file_object_id,
         platform: asset.platform,
         architecture: asset.architecture,
+        artifact_kind: asset.artifact_kind,
         object_key: asset.object_key,
         filename: asset.original_filename,
         content_type: asset.content_type,
         byte_size: asset.byte_size,
         status: asset.status,
+        checksum_sha256: asset.checksum_sha256,
+        created_at: asset.created_at,
+    }
+}
+
+fn system_release_view_asset_payload(
+    asset: system_releases::SystemReleaseAssetSummary,
+) -> SystemReleaseViewAssetPayload {
+    SystemReleaseViewAssetPayload {
+        id: asset.id,
+        release_id: asset.release_id,
+        platform: asset.platform,
+        architecture: asset.architecture,
+        artifact_kind: asset.artifact_kind,
+        filename: asset.original_filename,
+        content_type: asset.content_type,
+        byte_size: asset.byte_size,
+        status: asset.status,
+        checksum_sha256: asset.checksum_sha256,
         created_at: asset.created_at,
     }
 }
@@ -5345,7 +9516,17 @@ fn system_release_payload(
         title: release.title,
         notes: release.notes,
         status: release.status,
+        channel: release.channel,
+        verification_status: release.verification_status,
+        manifest_sha256: release.manifest_sha256,
+        signing_key_id: release.signing_key_id,
+        source_commit: release.source_commit,
+        source_tag: release.source_tag,
         published_at: release.published_at,
+        verified_at: release.verified_at,
+        withdrawn_at: release.withdrawn_at,
+        withdrawal_reason: release.withdrawal_reason,
+        github_withdrawal_status: release.github_withdrawal_status,
         created_by: release.created_by_display_name,
         updated_by: release.updated_by_display_name,
         created_at: release.created_at,
@@ -5370,6 +9551,18 @@ fn system_release_detail_payload(
 
 fn default_project_status() -> String {
     "not_started".to_string()
+}
+
+fn default_release_channel() -> String {
+    system_releases::RELEASE_CHANNEL_LEGACY.to_string()
+}
+
+fn default_release_artifact_kind() -> String {
+    system_releases::RELEASE_ARTIFACT_INSTALLER.to_string()
+}
+
+fn default_github_withdrawal_status() -> String {
+    "pending".to_string()
 }
 
 fn default_true() -> bool {

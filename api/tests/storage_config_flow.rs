@@ -13,233 +13,6 @@ use yuance_api::{
 const CSRF_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[tokio::test]
-async fn storage_page_renders_empty_state_for_admin() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/storage")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains("阿里云 OSS"));
-    assert!(body.contains("尚未配置对象存储"));
-    assert!(body.contains(r#"data-modal-open="storage-config-modal""#));
-    assert!(body.contains(r#"id="storage-config-modal""#));
-    assert!(body.contains(r#"role="dialog""#));
-    assert!(body.contains("name=\"_csrf\""));
-    assert!(body.contains(r#"value="https://oss-cn-hangzhou.aliyuncs.com""#));
-    assert!(body.contains(r#"value="oss-cn-hangzhou""#));
-    assert!(body.contains(r#"value="yuance-files""#));
-    assert!(body.contains("qfy-sc 兼容策略"));
-    assert!(body.contains("对象存储尚未激活，请先保存并激活配置。"));
-}
-
-#[tokio::test]
-async fn storage_config_save_encrypts_secret_and_renders_masked_config() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(with_csrf(
-                    "endpoint=https%3A%2F%2Foss-cn-hangzhou.aliyuncs.com&region=cn-hangzhou&bucket=yuance-files&access_key_id=AKIAUNIT5SECRETID&access_key_secret=Unit5SecretValue2026%21&activate=on",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains("对象存储配置已保存"));
-    assert!(body.contains("yuance-files"));
-    assert!(body.contains("AKIA****ETID"));
-    assert!(body.contains("已激活"));
-    assert!(!body.contains("AKIAUNIT5SECRETID"));
-    assert!(!body.contains("Unit5SecretValue2026"));
-
-    let (id_ciphertext, secret_ciphertext, hint, status) =
-        sqlx::query_as::<_, (String, String, String, String)>(
-            r#"
-            SELECT
-                access_key_id_ciphertext,
-                access_key_secret_ciphertext,
-                access_key_id_hint,
-                status
-            FROM storage_configs
-            WHERE bucket = 'yuance-files'
-            "#,
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("storage config should exist");
-
-    assert_eq!(hint, "AKIA****ETID");
-    assert_eq!(status, "active");
-    assert_ne!(id_ciphertext, "AKIAUNIT5SECRETID");
-    assert_ne!(secret_ciphertext, "Unit5SecretValue2026!");
-    assert!(id_ciphertext.starts_with("v1:"));
-    assert!(secret_ciphertext.starts_with("v1:"));
-}
-
-#[tokio::test]
-async fn storage_config_save_uses_qfy_compatible_defaults_for_blank_fields() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(with_csrf(
-                    "endpoint=&region=&bucket=&access_key_id=AKIAUNIT5SECRETID&access_key_secret=Unit5SecretValue2026%21&activate=on",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains("对象存储配置已保存"));
-    assert!(body.contains("yuance-files"));
-    assert!(body.contains("oss-cn-hangzhou"));
-
-    let (endpoint, region, bucket) = sqlx::query_as::<_, (String, String, String)>(
-        r#"
-        SELECT endpoint, region, bucket
-        FROM storage_configs
-        WHERE status = 'active'
-        "#,
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("storage config should exist");
-
-    assert_eq!(endpoint, storage::DEFAULT_ALIYUN_OSS_ENDPOINT);
-    assert_eq!(region, storage::DEFAULT_ALIYUN_OSS_REGION);
-    assert_eq!(bucket, storage::DEFAULT_ALIYUN_OSS_BUCKET);
-}
-
-#[tokio::test]
-async fn storage_config_requires_csrf_and_manage_permission() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
-    let member_session = auth::login(&pool, "member1", "MemberPass2026!")
-        .await
-        .expect("member should login");
-    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let missing_csrf = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::from(storage_body()))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(missing_csrf.status(), StatusCode::FORBIDDEN);
-
-    let member_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&member_cookie))
-                .body(Body::from(with_csrf(&storage_body())))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(member_response.status(), StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn storage_config_validation_rejects_invalid_bucket() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(with_csrf(
-                    "endpoint=https%3A%2F%2Foss-cn-hangzhou.aliyuncs.com&region=cn-hangzhou&bucket=Invalid_Bucket&access_key_id=AKIAUNIT5SECRETID&access_key_secret=Unit5SecretValue2026%21&activate=on",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn storage_config_rejects_memory_endpoint_outside_test_environment() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let mut non_test_settings = test_settings();
-    non_test_settings.env = "production".to_string();
-    let app = build_router(AppState::new(non_test_settings, Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(with_csrf(
-                    "endpoint=memory%3A%2F%2Fyuance-tests&region=test&bucket=yuance-files&access_key_id=AKIAUNIT5SECRETID&access_key_secret=Unit5SecretValue2026%21&activate=on",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let body = response_body(response).await;
-    assert!(body.contains("memory 测试对象存储只允许在 test 环境使用"));
-    let config_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM storage_configs")
-        .fetch_one(&pool)
-        .await
-        .expect("config count should load");
-    assert_eq!(config_count, 0);
-}
-
-#[tokio::test]
 async fn storage_config_versions_can_list_and_rollback_through_api() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -347,368 +120,6 @@ async fn storage_config_versions_can_list_and_rollback_through_api() {
     .await
     .expect("audit count should load");
     assert_eq!(audit_count, 1);
-}
-
-#[tokio::test]
-async fn storage_page_renders_versions_and_can_rollback() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    storage::save_config(
-        &pool,
-        &test_settings(),
-        initialized.user_id,
-        storage::SaveStorageConfigInput {
-            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
-            region: "test".to_string(),
-            bucket: "yuance-old".to_string(),
-            access_key_id: "AKIAOLDSECRETID".to_string(),
-            access_key_secret: "OldSecretValue2026!".to_string(),
-            activate: true,
-        },
-    )
-    .await
-    .expect("first storage config should save");
-    storage::save_config(
-        &pool,
-        &test_settings(),
-        initialized.user_id,
-        storage::SaveStorageConfigInput {
-            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
-            region: "test".to_string(),
-            bucket: "yuance-new".to_string(),
-            access_key_id: "AKIANEWSECRETID".to_string(),
-            access_key_secret: "NewSecretValue2026!".to_string(),
-            activate: true,
-        },
-    )
-    .await
-    .expect("second storage config should save");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/storage")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("配置版本"));
-    assert!(page_body.contains("v1"));
-    assert!(page_body.contains("v2"));
-    assert!(page_body.contains("yuance-old"));
-    assert!(page_body.contains("yuance-new"));
-    assert!(page_body.contains(r#"data-confirm-title="回滚对象存储配置""#));
-    assert!(page_body.contains(r#"action="/web/system/storage/versions/1/rollback""#));
-    assert!(!page_body.contains("OldSecretValue2026"));
-    assert!(!page_body.contains("NewSecretValue2026"));
-
-    let rollback_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage/versions/1/rollback")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(rollback_response.status(), StatusCode::OK);
-    let rollback_body = response_body(rollback_response).await;
-    assert!(rollback_body.contains("已回滚到 v1 的配置快照"));
-    assert!(rollback_body.contains("yuance-old"));
-    assert!(rollback_body.contains("v3"));
-
-    let active = storage::active_config(&pool)
-        .await
-        .expect("active config should load")
-        .expect("active config should exist");
-    assert_eq!(active.bucket, "yuance-old");
-    assert_eq!(active.version, 3);
-}
-
-#[tokio::test]
-async fn storage_page_paginates_versions_and_preserves_page_on_rollback() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    for index in 1..=12 {
-        storage::save_config(
-            &pool,
-            &test_settings(),
-            initialized.user_id,
-            storage::SaveStorageConfigInput {
-                endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
-                region: "test".to_string(),
-                bucket: format!("yuance-version-{index}"),
-                access_key_id: format!("AKIAPAGE{index:02}SECRETID"),
-                access_key_secret: format!("PageSecretValue{index:02}!2026"),
-                activate: true,
-            },
-        )
-        .await
-        .expect("storage config should save");
-    }
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/storage?page=2")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("共 12 个版本"));
-    assert!(page_body.contains("当前显示 11-12"));
-    assert!(page_body.contains(r#"href="/web/system/storage?page=2" aria-current="page">2</a>"#));
-    assert!(page_body.contains(r#"action="/web/system/storage/versions/1/rollback""#));
-    assert!(page_body.contains(r#"name="page" value="2""#));
-    assert!(page_body.contains(r#"name="per_page" value="10""#));
-
-    let invalid_rollback_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage/versions/1/rollback")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}&page=0&per_page=10")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(invalid_rollback_response.status(), StatusCode::BAD_REQUEST);
-    let active_before = storage::active_config(&pool)
-        .await
-        .expect("active config should load")
-        .expect("active config should exist");
-    assert_eq!(active_before.version, 12);
-
-    let rollback_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage/versions/1/rollback")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}&page=2&per_page=10")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(rollback_response.status(), StatusCode::OK);
-    let rollback_body = response_body(rollback_response).await;
-    assert!(rollback_body.contains("已回滚到 v1 的配置快照"));
-    assert!(rollback_body.contains("共 13 个版本"));
-    assert!(rollback_body.contains("当前显示 11-13"));
-    assert!(rollback_body.contains(r#"name="page" value="2""#));
-
-    let active = storage::active_config(&pool)
-        .await
-        .expect("active config should load")
-        .expect("active config should exist");
-    assert_eq!(active.version, 13);
-    assert_eq!(active.bucket, "yuance-version-1");
-}
-
-#[tokio::test]
-async fn storage_page_can_probe_active_config_without_leaking_secret() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    storage::save_config(
-        &pool,
-        &test_settings(),
-        initialized.user_id,
-        storage::SaveStorageConfigInput {
-            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
-            region: "test".to_string(),
-            bucket: "yuance-probe-files".to_string(),
-            access_key_id: "AKIAUNIT5SECRETID".to_string(),
-            access_key_secret: "Unit5SecretValue2026!".to_string(),
-            activate: true,
-        },
-    )
-    .await
-    .expect("storage config should save");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/storage")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains(r#"action="/web/system/storage/probe""#));
-    assert!(page_body.contains("测试连接"));
-
-    let probe_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage/probe")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(probe_response.status(), StatusCode::OK);
-    let probe_body = response_body(probe_response).await;
-    assert!(probe_body.contains("对象存储桶可读写，但需要初始化"));
-    assert!(probe_body.contains("storage-message-warning"));
-    assert!(!probe_body.contains("Unit5SecretValue2026!"));
-    assert!(!probe_body.contains("AKIAUNIT5SECRETID"));
-
-    let audit_count = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(*)
-        FROM audit_logs
-        WHERE action = 'storage.config.probe'
-          AND metadata LIKE '%"source":"web"%'
-          AND metadata LIKE '%"ok":true%'
-        "#,
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("audit count should load");
-    assert_eq!(audit_count, 1);
-}
-
-#[tokio::test]
-async fn storage_probe_page_renders_sanitized_failure_for_missing_active_config() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage/probe")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-    assert!(body.contains("对象存储探测失败"));
-    assert!(body.contains("对象存储未激活"));
-    assert!(body.contains("storage-message-error"));
-}
-
-#[tokio::test]
-async fn storage_bucket_inspect_and_initialize_marks_runtime_ready() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    storage::save_config(
-        &pool,
-        &test_settings(),
-        initialized.user_id,
-        storage::SaveStorageConfigInput {
-            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
-            region: "test".to_string(),
-            bucket: "yuance-init-files".to_string(),
-            access_key_id: "AKIAUNIT5SECRETID".to_string(),
-            access_key_secret: "Unit5SecretValue2026!".to_string(),
-            activate: true,
-        },
-    )
-    .await
-    .expect("storage config should save");
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-    let admin_cookie = with_csrf_cookie(&initialized.cookie);
-
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/storage")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("桶状态"));
-    assert!(page_body.contains("需要初始化"));
-    assert!(page_body.contains(r#"action="/web/system/storage/initialize""#));
-
-    let initialize_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/storage/initialize")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, admin_cookie.clone())
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}")))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(initialize_response.status(), StatusCode::OK);
-    let initialize_body = response_body(initialize_response).await;
-    assert!(initialize_body.contains("对象存储桶初始化完成"));
-    assert!(initialize_body.contains("运行就绪"));
-    assert!(initialize_body.contains("yuance-system/.initialized"));
-    assert!(!initialize_body.contains("Unit5SecretValue2026!"));
-    assert!(!initialize_body.contains("AKIAUNIT5SECRETID"));
-
-    let api_inspect = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/storage/config/inspect")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(api_inspect.status(), StatusCode::OK);
-    let inspect_body = response_body(api_inspect).await;
-    assert!(inspect_body.contains(r#""initialized":true"#));
-    assert!(inspect_body.contains(r#""needs_initialization":false"#));
-    assert!(inspect_body.contains("yuance-system/.initialized"));
-
-    let api_initialize_missing_csrf = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/storage/config/initialize")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(api_initialize_missing_csrf.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -968,6 +379,118 @@ async fn api_storage_config_save_masks_secret_and_requires_permission() {
 }
 
 #[tokio::test]
+async fn api_system_storage_view_returns_one_masked_paginated_snapshot() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let settings = test_settings();
+    for index in 1..=12 {
+        storage::save_config(
+            &pool,
+            &settings,
+            initialized.user_id,
+            storage::SaveStorageConfigInput {
+                endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+                region: "test".to_string(),
+                bucket: format!("storage-view-{index:02}"),
+                access_key_id: "AKIASTORAGEVIEWSECRET".to_string(),
+                access_key_secret: "StorageViewSecret2026!".to_string(),
+                activate: true,
+            },
+        )
+        .await
+        .expect("storage config should save");
+    }
+    let app = build_router(AppState::new(settings, Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/storage-view?page=2&per_page=10")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).expect("storage view should be JSON");
+    assert_eq!(payload["data"]["config"]["bucket"], "storage-view-12");
+    assert_eq!(
+        payload["data"]["config"]["access_key_id_hint"],
+        "AKIA****CRET"
+    );
+    assert_eq!(payload["data"]["versions"].as_array().unwrap().len(), 2);
+    assert_eq!(payload["data"]["pagination"]["page"], 2);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 12);
+    assert_eq!(payload["data"]["pagination"]["total_pages"], 2);
+    assert_eq!(payload["data"]["can_manage_storage"], true);
+    assert!(!body.contains("AKIASTORAGEVIEWSECRET"));
+    assert!(!body.contains("StorageViewSecret2026"));
+}
+
+#[tokio::test]
+async fn api_system_storage_view_returns_stable_empty_state_and_requires_view_permission() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_id = create_user_with_role(
+        &pool,
+        "storage_view_member",
+        "存储读取普通成员",
+        "MemberPass2026!",
+        "member",
+    )
+    .await;
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let forbidden_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/storage-view")
+                .header(header::COOKIE, member_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+
+    let empty_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/storage-view")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(empty_response.status(), StatusCode::OK);
+    let body = response_body(empty_response).await;
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).expect("storage view should be JSON");
+    assert!(payload["data"]["config"].is_null());
+    assert_eq!(payload["data"]["versions"], serde_json::json!([]));
+    assert_eq!(payload["data"]["pagination"]["page"], 1);
+    assert_eq!(payload["data"]["pagination"]["per_page"], 10);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 0);
+    assert_eq!(payload["data"]["pagination"]["total_pages"], 1);
+    assert!(payload["data"]["inspection"].is_null());
+    assert_eq!(
+        payload["data"]["inspection_error"],
+        "对象存储尚未配置，请先保存并激活配置。"
+    );
+    assert_eq!(payload["data"]["can_manage_storage"], true);
+}
+
+#[tokio::test]
 async fn api_storage_config_probe_uses_active_config_without_leaking_secret() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -1125,6 +648,8 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 
@@ -1134,12 +659,4 @@ fn csrf_cookie() -> String {
 
 fn with_csrf_cookie(session_cookie: &str) -> String {
     format!("{session_cookie}; {}", csrf_cookie())
-}
-
-fn with_csrf(body: &str) -> String {
-    format!("{body}&_csrf={CSRF_TOKEN}")
-}
-
-fn storage_body() -> String {
-    "endpoint=https%3A%2F%2Foss-cn-hangzhou.aliyuncs.com&region=cn-hangzhou&bucket=yuance-files&access_key_id=AKIAUNIT5SECRETID&access_key_secret=Unit5SecretValue2026%21&activate=on".to_string()
 }

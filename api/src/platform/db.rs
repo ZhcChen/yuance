@@ -77,7 +77,20 @@ fn sqlite_file_path(database_url: &str) -> Option<PathBuf> {
 }
 
 fn is_memory_database(database_url: &str) -> bool {
-    database_url == "sqlite::memory:" || database_url == "sqlite://:memory:"
+    if database_url == "sqlite::memory:" || database_url == "sqlite://:memory:" {
+        return true;
+    }
+    let Some((_, query)) = database_url
+        .strip_prefix("sqlite:")
+        .and_then(|value| value.split_once('?'))
+    else {
+        return false;
+    };
+    serde_urlencoded::from_str::<Vec<(String, String)>>(query).is_ok_and(|pairs| {
+        pairs
+            .iter()
+            .any(|(key, value)| key == "mode" && value == "memory")
+    })
 }
 
 impl From<sqlx::migrate::MigrateError> for AppError {
@@ -108,7 +121,29 @@ mod tests {
     fn memory_database_detection_accepts_supported_sqlite_memory_urls() {
         assert!(is_memory_database("sqlite::memory:"));
         assert!(is_memory_database("sqlite://:memory:"));
+        assert!(is_memory_database(
+            "sqlite:file:device-session?mode=memory&cache=shared"
+        ));
+        assert!(is_memory_database(
+            "sqlite:file:device-session?cache=shared&mode=memory"
+        ));
+        assert!(!is_memory_database(
+            "sqlite:file:device-session?mode=rwc&cache=shared"
+        ));
         assert!(!is_memory_database("sqlite://data/yuance.sqlite3"));
+    }
+
+    #[test]
+    fn named_memory_database_does_not_create_a_file_uri_directory() {
+        let root =
+            std::env::temp_dir().join(format!("yuance-db-memory-test-{}", std::process::id()));
+        let marker = root.join("file:device-session");
+        ensure_sqlite_parent_dir(
+            "sqlite:file:device-session?mode=memory&cache=shared",
+            root.to_str().expect("root should be utf-8"),
+        )
+        .expect("memory URI should not create a directory");
+        assert!(!marker.exists());
     }
 
     #[test]

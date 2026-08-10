@@ -79,7 +79,6 @@ pub fn bind_test_storage_upload_grant(
 pub fn verify_test_storage_upload_grant(
     state: &AppState,
     query: &TestStorageUploadQuery,
-    user_id: i64,
 ) -> AppResult<()> {
     let plaintext = crypto::decrypt_secret(
         &state.settings.security_master_key,
@@ -90,7 +89,7 @@ pub fn verify_test_storage_upload_grant(
     let grant: TestStorageUploadGrant = serde_json::from_str(&plaintext)
         .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
     if grant.object_key != query.object_key
-        || grant.user_id != user_id
+        || grant.user_id <= 0
         || grant.expires_at <= Utc::now().timestamp()
     {
         return Err(AppError::Forbidden(
@@ -139,7 +138,6 @@ pub fn bind_test_storage_download_grant(
 pub fn verify_test_storage_download_grant(
     state: &AppState,
     query: &TestStorageDownloadQuery,
-    user_id: i64,
 ) -> AppResult<String> {
     let plaintext = crypto::decrypt_secret(
         &state.settings.security_master_key,
@@ -150,7 +148,7 @@ pub fn verify_test_storage_download_grant(
     let grant: TestStorageDownloadGrant = serde_json::from_str(&plaintext)
         .map_err(|_| AppError::Forbidden("测试对象存储下载授权无效或已过期".to_string()))?;
     if grant.object_key != query.object_key
-        || grant.user_id != user_id
+        || grant.user_id <= 0
         || grant.expires_at <= Utc::now().timestamp()
     {
         return Err(AppError::Forbidden(

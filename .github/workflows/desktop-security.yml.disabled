@@ -1,0 +1,118 @@
+name: Desktop Security
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+          - windows-11-arm
+          - ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            api
+            desktop/native/file-guard
+
+      - name: Install shared frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install desktop dependencies
+        run: npm --prefix desktop ci
+
+      - name: Run focused Device API tests
+        run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_business_parity_flow --test device_sse_authorization_flow --test device_file_transfer_flow
+
+      - name: Run desktop checks
+        run: npm --prefix desktop run check
+
+      - name: Run Windows desktop tests
+        if: runner.os == 'Windows'
+        run: npm --prefix desktop run test:serial
+
+      - name: Run macOS desktop tests without Keychain
+        if: runner.os == 'macOS'
+        run: npm --prefix desktop test
+
+      - name: Run Linux desktop tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop test
+
+      - name: Build unpacked desktop app
+        run: npm --prefix desktop run pack:dir
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Verify packaged ASAR
+        run: npm --prefix desktop run verify:bundle -- dist
+
+      - name: Smoke unpacked app protocol
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:app-protocol -- dist
+
+      - name: Smoke Linux unpacked app protocol
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:app-protocol -- dist
+
+      - name: Smoke unpacked desktop feature parity
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:desktop-feature-parity -- dist
+
+      - name: Smoke Linux unpacked desktop feature parity
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:desktop-feature-parity -- dist
+
+      - name: Scan source, fixture, report, ASAR, and unpacked artifacts
+        run: npm --prefix desktop run scan:credential-leaks
+
+      - name: Verify desktop feature parity evidence
+        run: npm --prefix desktop run verify:desktop-feature-parity-artifacts
+
+      - name: Verify native single-instance boundary
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:single-instance
+
+      - name: Verify Linux single-instance boundary
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:single-instance
+
+      - name: Upload desktop security verification
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-security-verification-${{ matrix.os }}
+          path: desktop/dist/verification/
+          if-no-files-found: warn
+          retention-days: 14

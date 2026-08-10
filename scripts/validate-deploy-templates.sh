@@ -6,6 +6,8 @@ PRODUCTION_DIR="$ROOT_DIR/deploy/easy-deploy/production"
 BACKEND_DIR="$PRODUCTION_DIR/backend"
 GATEWAY_DIR="$PRODUCTION_DIR/gateway"
 COMPOSE_FILE="$BACKEND_DIR/compose.yaml.example"
+PRODUCTION_README="$PRODUCTION_DIR/README.md"
+APP_METADATA="$BACKEND_DIR/app.yaml.example"
 
 require_file() {
   if [ ! -f "$ROOT_DIR/$1" ]; then
@@ -72,6 +74,13 @@ if ! grep -q 'container_name: yuance-api' "$COMPOSE_FILE"; then
   exit 1
 fi
 
+for file in "$BACKEND_DIR/.env.example" "$COMPOSE_FILE"; do
+  if ! grep -q 'YUANCE_DEVICE_TRUSTED_PROXY_CIDRS' "$file"; then
+    echo "部署模板缺少 YUANCE_DEVICE_TRUSTED_PROXY_CIDRS: $file" >&2
+    exit 1
+  fi
+done
+
 if ! grep -q '127.0.0.1.*33033' "$GATEWAY_DIR/Caddyfile.yuance.example"; then
   echo "旧环境回滚用 Caddy 模板必须反代到 127.0.0.1:33033。" >&2
   exit 1
@@ -87,6 +96,18 @@ if grep -q 'YUANCE_DEPLOY_HOST:-qfy-sc-test' "$ROOT_DIR/scripts/deploy-productio
   exit 1
 fi
 
+for file in "$PRODUCTION_README" "$APP_METADATA"; do
+  if ! grep -q '/srv/yuance/backend' "$file"; then
+    echo "正式部署说明必须声明 WSL 运行目录 /srv/yuance/backend: $file" >&2
+    exit 1
+  fi
+done
+
+if grep -Eq '(当前部署机器|部署服务器当前).*qfy-sc-test' "$PRODUCTION_README" "$APP_METADATA"; then
+  echo "正式部署说明不得把 qfy-sc-test 描述为当前应用运行节点。" >&2
+  exit 1
+fi
+
 if ! grep -q 'remote 模式必须显式设置 YUANCE_DEPLOY_HOST' "$ROOT_DIR/scripts/deploy-production.sh"; then
   echo "remote 模式必须校验显式目标主机。" >&2
   exit 1
@@ -97,6 +118,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
     cd "$BACKEND_DIR"
     YUANCE_SESSION_SECRET="validate-session-secret-change-before-deploy" \
     YUANCE_SECURITY_MASTER_KEY="validate-security-master-key-change-before-deploy" \
+    YUANCE_SERVER_INSTANCE_ID="validate-production-instance" \
       docker compose --env-file .env.example -f compose.yaml.example config >/dev/null
   )
 else

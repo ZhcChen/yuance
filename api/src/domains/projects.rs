@@ -153,6 +153,7 @@ pub struct WorkItemDetail {
     pub item_type: String,
     pub title: String,
     pub description: String,
+    pub primary_post_comment_id: Option<i64>,
     pub status: String,
     pub priority: String,
     pub project_key: String,
@@ -823,8 +824,9 @@ pub async fn list_work_item_saved_views_for_user(
     project_key: &str,
     item_type: &str,
 ) -> AppResult<Vec<WorkItemSavedView>> {
-    let scope = resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
-        .await?;
+    let scope =
+        resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
+            .await?;
     let rows = sqlx::query_as::<
         _,
         (
@@ -925,8 +927,9 @@ pub async fn get_default_work_item_saved_view_for_user(
     project_key: &str,
     item_type: &str,
 ) -> AppResult<Option<WorkItemSavedView>> {
-    let views = list_work_item_saved_views_for_user(pool, user_id, is_super_admin, project_key, item_type)
-        .await?;
+    let views =
+        list_work_item_saved_views_for_user(pool, user_id, is_super_admin, project_key, item_type)
+            .await?;
     Ok(views.into_iter().find(|view| view.is_default))
 }
 
@@ -942,7 +945,11 @@ pub async fn create_work_item_saved_view(
         resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
             .await?;
     let name = validate_name(&input.name, "视图名称", 40)?;
-    let filter = canonicalize_work_item_saved_view_filter(scope.project_key.as_str(), &scope.item_type, input.filter)?;
+    let filter = canonicalize_work_item_saved_view_filter(
+        scope.project_key.as_str(),
+        &scope.item_type,
+        input.filter,
+    )?;
     let pagination = normalize_pagination(Pagination {
         page: 1,
         per_page: input.per_page,
@@ -972,7 +979,8 @@ pub async fn create_work_item_saved_view(
 
     let mut tx = pool.begin().await?;
     if input.is_default {
-        clear_default_work_item_saved_views(&mut tx, user_id, scope.project_id, &scope.item_type).await?;
+        clear_default_work_item_saved_views(&mut tx, user_id, scope.project_id, &scope.item_type)
+            .await?;
     }
     let insert_result = sqlx::query_scalar::<_, i64>(
         r#"
@@ -1077,13 +1085,8 @@ pub async fn set_default_work_item_saved_view(
     }
 
     let mut tx = pool.begin().await?;
-    clear_default_work_item_saved_views(
-        &mut tx,
-        user_id,
-        current.project_id,
-        &current.item_type,
-    )
-    .await?;
+    clear_default_work_item_saved_views(&mut tx, user_id, current.project_id, &current.item_type)
+        .await?;
     sqlx::query(
         r#"
         UPDATE work_item_saved_views
@@ -1109,13 +1112,11 @@ pub async fn delete_work_item_saved_view(
     user_id: i64,
     saved_view_id: i64,
 ) -> AppResult<()> {
-    let result = sqlx::query(
-        "DELETE FROM work_item_saved_views WHERE id = ?1 AND user_id = ?2",
-    )
-    .bind(saved_view_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM work_item_saved_views WHERE id = ?1 AND user_id = ?2")
+        .bind(saved_view_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("保存视图不存在".to_string()));
     }
@@ -3179,10 +3180,10 @@ pub async fn personal_project_analysis(
     .await?;
     let months = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT MAX(1.0,
+        SELECT CAST(MAX(1.0,
             (CAST(strftime('%Y', 'now') AS INTEGER) - CAST(strftime('%Y', ?1) AS INTEGER)) * 12
             + CAST(strftime('%m', 'now') AS INTEGER) - CAST(strftime('%m', ?1) AS INTEGER) + 1
-        )
+        ) AS REAL)
         "#,
     )
     .bind(&joined_at)
@@ -3307,6 +3308,15 @@ pub async fn create_work_item(
     actor_user_id: i64,
     input: CreateWorkItemInput,
 ) -> AppResult<WorkItemDetail> {
+    create_work_item_with_cycle(pool, actor_user_id, input, None).await
+}
+
+pub async fn create_work_item_with_cycle(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    input: CreateWorkItemInput,
+    cycle_id: Option<i64>,
+) -> AppResult<WorkItemDetail> {
     let project_key = validate_project_key(&input.project_key)?;
     let item_type = validate_work_item_type(&input.item_type)?;
     let title = validate_name(&input.title, "工作项标题", 160)?;
@@ -3329,6 +3339,8 @@ pub async fn create_work_item(
     ensure_project_accepts_writes(&project_status)?;
     let parent_work_item_id =
         resolve_parent_work_item_id(pool, project_id, item_type, parent_item_key).await?;
+    let cycle = resolve_project_cycle(pool, project_id, cycle_id).await?;
+    let cycle_id = cycle.as_ref().map(|(id, _)| *id);
     let assignee_user_id = if assignee_username.is_empty() {
         actor_user_id
     } else {
@@ -3368,9 +3380,10 @@ pub async fn create_work_item(
             reporter_user_id,
             reporter_display_name_snapshot,
             parent_work_item_id,
+            cycle_id,
             due_date
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, ?10, NULLIF(?11, ''))
+        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, ?10, ?11, NULLIF(?12, ''))
         RETURNING id
         "#,
     )
@@ -3384,6 +3397,7 @@ pub async fn create_work_item(
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
     .bind(parent_work_item_id)
+    .bind(cycle_id)
     .bind(&due_date)
     .fetch_one(&mut *tx)
     .await?;
@@ -3425,6 +3439,30 @@ pub async fn create_work_item(
     .execute(&mut *tx)
     .await?;
 
+    if let Some((_, cycle_name)) = cycle {
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                actor_display_name_snapshot,
+                action,
+                target_type,
+                target_id,
+                summary
+            )
+            VALUES (?1, ?2, ?3, 'work_item.cycle.linked', 'work_item', ?4, ?5)
+            "#,
+        )
+        .bind(project_id)
+        .bind(actor_user_id)
+        .bind(&actor_display_name_snapshot)
+        .bind(&item_key)
+        .bind(format!("将工作项 {item_key} 关联到周期 {cycle_name}"))
+        .execute(&mut *tx)
+        .await?;
+    }
+
     tx.commit().await?;
     realtime::publish_topbar_refresh_for_user(assignee_user_id);
 
@@ -3445,6 +3483,7 @@ pub async fn get_work_item_detail(
             wi.item_type AS item_type,
             wi.title AS title,
             wi.description AS description,
+            wi.primary_post_comment_id AS primary_post_comment_id,
             wi.status AS status,
             wi.priority AS priority,
             p.project_key AS project_key,
@@ -3483,6 +3522,7 @@ pub async fn get_work_item_detail(
         item_type: row.get("item_type"),
         title: row.get("title"),
         description: row.get("description"),
+        primary_post_comment_id: row.get("primary_post_comment_id"),
         status: row.get("status"),
         priority: row.get("priority"),
         project_key: row.get("project_key"),
@@ -4237,17 +4277,16 @@ pub async fn batch_update_work_items(
         "assignee" => {
             let assignee_user_id =
                 resolve_project_member_user_id(pool, project.id, &input.assignee_username).await?;
-            let (assignee_username, assignee_display_name) =
-                sqlx::query_as::<_, (String, String)>(
-                    r#"
+            let (assignee_username, assignee_display_name) = sqlx::query_as::<_, (String, String)>(
+                r#"
                     SELECT u.username, u.display_name
                     FROM users u
                     WHERE u.id = ?1
                     "#,
-                )
-                .bind(assignee_user_id)
-                .fetch_one(pool)
-                .await?;
+            )
+            .bind(assignee_user_id)
+            .fetch_one(pool)
+            .await?;
             for item in &items {
                 if item.assignee_user_id == Some(assignee_user_id) {
                     return Err(AppError::BadRequest(format!(
@@ -4592,23 +4631,23 @@ pub async fn batch_update_work_items(
                 .execute(&mut *tx)
                 .await?;
 
-                let (activity_action, activity_summary) = if item.cycle_id.is_none() && cycle_id.is_some()
-                {
-                    (
-                        "work_item.cycle.linked",
-                        format!("批量将工作项 {} 关联到周期 {}", item.item_key, cycle_name),
-                    )
-                } else if item.cycle_id.is_some() && cycle_id.is_none() {
-                    (
-                        "work_item.cycle.unlinked",
-                        format!("批量取消工作项 {} 的周期关联", item.item_key),
-                    )
-                } else {
-                    (
-                        "work_item.cycle.updated",
-                        format!("批量调整工作项 {} 的所属周期", item.item_key),
-                    )
-                };
+                let (activity_action, activity_summary) =
+                    if item.cycle_id.is_none() && cycle_id.is_some() {
+                        (
+                            "work_item.cycle.linked",
+                            format!("批量将工作项 {} 关联到周期 {}", item.item_key, cycle_name),
+                        )
+                    } else if item.cycle_id.is_some() && cycle_id.is_none() {
+                        (
+                            "work_item.cycle.unlinked",
+                            format!("批量取消工作项 {} 的周期关联", item.item_key),
+                        )
+                    } else {
+                        (
+                            "work_item.cycle.updated",
+                            format!("批量调整工作项 {} 的所属周期", item.item_key),
+                        )
+                    };
                 sqlx::query(
                     r#"
                     INSERT INTO project_activities (
@@ -5500,6 +5539,61 @@ pub async fn publish_work_item_comment_draft(
     realtime::publish_work_item_discussion_refresh(item_key);
 
     get_work_item_comment(pool, work_item_id, comment_id).await
+}
+
+pub async fn cancel_work_item_comment_draft(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    comment_id: i64,
+) -> AppResult<WorkItemCommentSummary> {
+    let Some((work_item_id, project_status)) = sqlx::query_as::<_, (i64, String)>(
+        r#"
+        SELECT wi.id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let draft = get_work_item_comment_including_drafts(pool, work_item_id, comment_id).await?;
+    if !draft.is_draft {
+        return Err(AppError::BadRequest("该评论不是草稿".to_string()));
+    }
+    if draft.is_flow {
+        return Err(AppError::Forbidden("流程记录不能作为草稿取消".to_string()));
+    }
+    if draft.author_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden("只能取消自己的草稿评论".to_string()));
+    }
+
+    let affected = sqlx::query(
+        r#"
+        UPDATE work_item_comments
+        SET deleted_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND is_draft = 1
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if affected == 0 {
+        return Err(AppError::NotFound("草稿评论不存在".to_string()));
+    }
+    Ok(draft)
 }
 
 pub async fn get_work_item_comment(
@@ -6504,9 +6598,7 @@ fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<Normalize
                 .map_err(|_| AppError::BadRequest("周期不能为空且必须是数字".to_string()))
                 .and_then(|parsed| {
                     if parsed <= 0 {
-                        Err(AppError::BadRequest(
-                            "周期不能为空且必须是数字".to_string(),
-                        ))
+                        Err(AppError::BadRequest("周期不能为空且必须是数字".to_string()))
                     } else {
                         Ok(parsed)
                     }
@@ -6808,7 +6900,9 @@ async fn ensure_work_item_saved_view_cycle_in_scope(
     .fetch_one(pool)
     .await?;
     if count == 0 {
-        return Err(AppError::BadRequest("周期不存在或不属于当前项目".to_string()));
+        return Err(AppError::BadRequest(
+            "周期不存在或不属于当前项目".to_string(),
+        ));
     }
     Ok(())
 }
@@ -6911,13 +7005,13 @@ async fn get_work_item_saved_view_by_id(
         return Ok(None);
     };
     let cycle_name = match cycle_id {
-        Some(cycle_id) => sqlx::query_scalar::<_, String>(
-            "SELECT name FROM project_cycles WHERE id = ?1",
-        )
-        .bind(cycle_id)
-        .fetch_optional(pool)
-        .await?
-        .unwrap_or_default(),
+        Some(cycle_id) => {
+            sqlx::query_scalar::<_, String>("SELECT name FROM project_cycles WHERE id = ?1")
+                .bind(cycle_id)
+                .fetch_optional(pool)
+                .await?
+                .unwrap_or_default()
+        }
         None => String::new(),
     };
 
@@ -7093,6 +7187,276 @@ pub fn work_item_comment_plain_text(body: &str, body_format: &str) -> String {
     }
 }
 
+pub fn work_item_primary_post<'a>(
+    comments: &'a [WorkItemCommentSummary],
+    primary_post_comment_id: Option<i64>,
+    reporter_username: &str,
+    description: &str,
+) -> Option<&'a WorkItemCommentSummary> {
+    if let Some(primary_post_comment_id) = primary_post_comment_id {
+        return comments
+            .iter()
+            .find(|comment| comment.id == primary_post_comment_id);
+    }
+    let description = normalized_plain_summary(description);
+    comments.iter().find(|comment| {
+        !comment.is_flow
+            && !comment.is_draft
+            && comment.parent_comment_id.is_none()
+            && comment.body_format == COMMENT_BODY_FORMAT_HTML
+            && comment.author_username == reporter_username
+            && (description == normalized_plain_summary("见首条图文说明")
+                || (!description.is_empty()
+                    && normalized_plain_summary(&work_item_primary_post_summary(
+                        &comment.body,
+                        &comment.body_format,
+                    )) == description))
+    })
+}
+
+pub fn work_item_primary_post_summary(body: &str, body_format: &str) -> String {
+    let plain = work_item_comment_plain_text(body, body_format);
+    if plain.trim().is_empty() {
+        return "见首条图文说明".to_string();
+    }
+    plain.chars().take(5000).collect()
+}
+
+pub async fn upsert_work_item_primary_post(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    legacy_comment_id: Option<i64>,
+    body: &str,
+    actor_display_name_snapshot: &str,
+) -> AppResult<WorkItemCommentSummary> {
+    let prepared = prepare_work_item_comment_body(body, COMMENT_BODY_FORMAT_HTML)?;
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(actor_display_name_snapshot);
+    let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+            SELECT wi.id, wi.project_id, p.status
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            WHERE wi.item_key = ?1
+              AND wi.deleted_at IS NULL
+            "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let mention_usernames =
+        extract_comment_mention_usernames(&prepared.body, &prepared.body_format)?;
+    let mention_targets =
+        resolve_project_mention_targets(pool, project_id, &mention_usernames).await?;
+
+    let mut tx = pool.begin().await?;
+    let locked = sqlx::query(
+        "UPDATE work_items SET updated_at = updated_at WHERE id = ?1 AND deleted_at IS NULL",
+    )
+    .bind(work_item_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if locked == 0 {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    }
+    let persisted_comment_id = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT primary_post_comment_id FROM work_items WHERE id = ?1",
+    )
+    .bind(work_item_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let candidate_comment_id = persisted_comment_id.or(legacy_comment_id);
+    let existing = if let Some(comment_id) = candidate_comment_id {
+        sqlx::query_as::<_, (i64, String, String)>(
+            r#"
+            SELECT c.id, c.body, c.body_format
+            FROM work_item_comments c
+            WHERE c.id = ?1
+              AND c.work_item_id = ?2
+              AND c.author_user_id = ?3
+              AND c.parent_comment_id IS NULL
+              AND c.body NOT LIKE ?4
+              AND c.is_draft = 0
+              AND c.deleted_at IS NULL
+            "#,
+        )
+        .bind(comment_id)
+        .bind(work_item_id)
+        .bind(actor_user_id)
+        .bind(format!("{WORK_ITEM_FLOW_COMMENT_PREFIX}%"))
+        .fetch_optional(&mut *tx)
+        .await?
+    } else {
+        None
+    };
+    let previous_mentions = existing
+        .as_ref()
+        .map(|(_, body, body_format)| extract_comment_mention_usernames(body, body_format))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let created = existing.is_none();
+    let comment_id = if let Some((comment_id, _, _)) = existing {
+        sqlx::query(
+            r#"
+            UPDATE work_item_comments
+            SET body = ?2,
+                body_format = ?3,
+                updated_at = datetime('now')
+            WHERE id = ?1
+            "#,
+        )
+        .bind(comment_id)
+        .bind(&prepared.body)
+        .bind(&prepared.body_format)
+        .execute(&mut *tx)
+        .await?;
+        comment_id
+    } else {
+        sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO work_item_comments (
+                work_item_id,
+                author_user_id,
+                actor_display_name_snapshot,
+                body,
+                body_format
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            RETURNING id
+            "#,
+        )
+        .bind(work_item_id)
+        .bind(actor_user_id)
+        .bind(&actor_display_name_snapshot)
+        .bind(&prepared.body)
+        .bind(&prepared.body_format)
+        .fetch_one(&mut *tx)
+        .await?
+    };
+    ensure_comment_body_attachment_references_in_transaction(&mut tx, comment_id, &prepared.body)
+        .await?;
+    let summary = work_item_primary_post_summary(&prepared.body, &prepared.body_format);
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET description = ?2,
+            primary_post_comment_id = ?3,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(&summary)
+    .bind(comment_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            actor_display_name_snapshot,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, ?3, ?4, 'comment', ?5, ?6)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
+    .bind(if created {
+        "work_item.commented"
+    } else {
+        "work_item.comment.updated"
+    })
+    .bind(comment_id.to_string())
+    .bind(if created {
+        format!("评论工作项 {item_key}")
+    } else {
+        format!("编辑工作项 {item_key} 评论")
+    })
+    .execute(&mut *tx)
+    .await?;
+    for target in &mention_targets {
+        if target.user_id == actor_user_id || previous_mentions.contains(&target.username) {
+            continue;
+        }
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id: target.user_id,
+                actor_user_id,
+                actor_display_name_snapshot: &actor_display_name_snapshot,
+                kind: "comment_mentioned",
+                work_item_id,
+                comment_id: Some(comment_id),
+                title: &format!("你在 {item_key} 中被提及"),
+                body: &prepared.plain_text,
+            },
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    for target in &mention_targets {
+        if target.user_id != actor_user_id && !previous_mentions.contains(&target.username) {
+            realtime::publish_topbar_refresh_for_user(target.user_id);
+        }
+    }
+    realtime::publish_work_item_discussion_refresh(item_key);
+    get_work_item_comment(pool, work_item_id, comment_id).await
+}
+
+pub async fn bind_work_item_primary_post(
+    pool: &SqlitePool,
+    item_key: &str,
+    comment_id: i64,
+    description: &str,
+) -> AppResult<WorkItemDetail> {
+    let result = sqlx::query(
+        r#"
+        UPDATE work_items
+        SET description = ?2,
+            primary_post_comment_id = ?3,
+            updated_at = datetime('now')
+        WHERE item_key = ?1
+          AND EXISTS (
+              SELECT 1
+              FROM work_item_comments c
+              WHERE c.id = ?3
+                AND c.work_item_id = work_items.id
+                AND c.deleted_at IS NULL
+                AND c.is_draft = 0
+          )
+        "#,
+    )
+    .bind(item_key)
+    .bind(description)
+    .bind(comment_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("工作项或所属主帖不存在".to_string()));
+    }
+    get_work_item_detail(pool, item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
+}
+
+fn normalized_plain_summary(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 pub fn work_item_comment_inline_attachment_ids(
     comment_id: i64,
     body: &str,
@@ -7109,6 +7473,124 @@ pub fn work_item_comment_inline_attachment_ids(
             (referenced_comment_id == comment_id).then_some(attachment_id)
         })
         .collect()
+}
+
+pub async fn archive_work_item_comment_inline_attachment(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+    attachment_id: i64,
+    file_object_id: i64,
+) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
+    let Some((body, body_format)) = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT body, body_format
+        FROM work_item_comments
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Err(AppError::NotFound("评论不存在".to_string()));
+    };
+    let prepared =
+        prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id)?;
+    if let Some(prepared) = &prepared {
+        sqlx::query(
+            r#"
+            UPDATE work_item_comments
+            SET body = ?3,
+                updated_at = datetime('now')
+            WHERE id = ?1
+              AND work_item_id = ?2
+              AND deleted_at IS NULL
+            "#,
+        )
+        .bind(comment_id)
+        .bind(work_item_id)
+        .bind(&prepared.body)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'deleted',
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND status <> 'deleted'
+        "#,
+    )
+    .bind(file_object_id)
+    .execute(&mut *tx)
+    .await?;
+    let primary_post_summary = prepared
+        .as_ref()
+        .map(|prepared| work_item_primary_post_summary(&prepared.body, &prepared.body_format));
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET description = CASE
+                WHEN primary_post_comment_id = ?2 AND ?3 IS NOT NULL THEN ?3
+                ELSE description
+            END,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(comment_id)
+    .bind(primary_post_summary)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn ensure_work_item_comment_inline_attachment_can_be_removed(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+    attachment_id: i64,
+) -> AppResult<()> {
+    let Some((body, body_format)) = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT body, body_format
+        FROM work_item_comments
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("评论不存在".to_string()));
+    };
+    prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id)?;
+    Ok(())
+}
+
+fn prepare_work_item_comment_body_without_attachment(
+    body: &str,
+    body_format: &str,
+    attachment_id: i64,
+) -> AppResult<Option<PreparedWorkItemCommentBody>> {
+    if body_format != COMMENT_BODY_FORMAT_HTML {
+        return Ok(None);
+    }
+    let next_body = strip_inline_attachment_node(body, attachment_id);
+    (next_body != body)
+        .then(|| prepare_work_item_comment_body(&next_body, body_format))
+        .transpose()
 }
 
 fn sanitize_comment_html(body: &str) -> String {
@@ -7259,10 +7741,7 @@ async fn resolve_project_mention_targets(
         .fetch_all(pool)
         .await?
         .into_iter()
-        .map(|(user_id, username, _display_name)| WorkItemMentionTarget {
-            user_id,
-            username,
-        })
+        .map(|(user_id, username, _display_name)| WorkItemMentionTarget { user_id, username })
         .collect::<Vec<_>>();
     let missing = usernames
         .iter()
@@ -7496,6 +7975,54 @@ fn strip_inline_attachment_nodes(value: &str) -> String {
     output
 }
 
+fn strip_inline_attachment_node(value: &str, attachment_id: i64) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    while let Some((start, end)) = next_inline_attachment_range_for_id(remaining, attachment_id) {
+        output.push_str(&remaining[..start]);
+        remaining = &remaining[end..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+fn next_inline_attachment_range_for_id(value: &str, attachment_id: i64) -> Option<(usize, usize)> {
+    let figure = rich_attachment_tag_range_for_id(value, "figure", attachment_id);
+    let link = rich_attachment_tag_range_for_id(value, "a", attachment_id);
+    match (figure, link) {
+        (Some(left), Some(right)) => Some(if left.0 <= right.0 { left } else { right }),
+        (Some(range), None) | (None, Some(range)) => Some(range),
+        (None, None) => None,
+    }
+}
+
+fn rich_attachment_tag_range_for_id(
+    value: &str,
+    tag: &str,
+    attachment_id: i64,
+) -> Option<(usize, usize)> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut search_from = 0;
+    while let Some(relative_start) = value[search_from..].find(&open) {
+        let start = search_from + relative_start;
+        let after_start = &value[start..];
+        let relative_tag_end = after_start.find('>')?;
+        let tag_end = start + relative_tag_end + 1;
+        let open_tag = &value[start..tag_end];
+        let matches_id = html_attribute_value(open_tag, "data-yuance-attachment-id")
+            .and_then(|value| value.parse::<i64>().ok())
+            == Some(attachment_id);
+        if !matches_id {
+            search_from = tag_end;
+            continue;
+        }
+        let relative_close_start = value[tag_end..].find(&close)?;
+        return Some((start, tag_end + relative_close_start + close.len()));
+    }
+    None
+}
+
 fn next_inline_attachment_range(value: &str) -> Option<(usize, usize)> {
     let figure = rich_attachment_tag_range(value, "figure");
     let link = rich_attachment_tag_range(value, "a");
@@ -7603,6 +8130,39 @@ async fn ensure_comment_body_attachment_references(
         .bind(attachment_id)
         .bind(comment_id)
         .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("评论附件引用不存在".to_string()))?;
+        if status != "uploaded" {
+            return Err(AppError::BadRequest(
+                "只能引用已上传完成的评论附件".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn ensure_comment_body_attachment_references_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    comment_id: i64,
+    body: &str,
+) -> AppResult<()> {
+    for (referenced_comment_id, attachment_id) in extract_comment_attachment_references(body)? {
+        if referenced_comment_id != comment_id {
+            return Err(AppError::BadRequest("不能引用其他评论的附件".to_string()));
+        }
+        let status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT fo.status
+            FROM file_attachments fa
+            JOIN file_objects fo ON fo.id = fa.file_object_id
+            WHERE fa.id = ?1
+              AND fa.target_type = 'comment'
+              AND fa.target_id = ?2
+            "#,
+        )
+        .bind(attachment_id)
+        .bind(comment_id)
+        .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(|| AppError::BadRequest("评论附件引用不存在".to_string()))?;
         if status != "uploaded" {
@@ -8087,21 +8647,13 @@ pub fn normalize_work_item_status(status: &str) -> AppResult<&'static str> {
     validate_work_item_status(status)
 }
 
-fn ensure_work_item_status_supported_for_type(
-    item_type: &str,
-    status: &str,
-) -> AppResult<()> {
+fn ensure_work_item_status_supported_for_type(item_type: &str, status: &str) -> AppResult<()> {
     let item_type = validate_work_item_type(item_type)?;
     let status = validate_work_item_status(status)?;
     let allowed = match item_type {
         "bug" => matches!(
             status,
-            "open"
-                | "in_progress"
-                | "pending_confirmation"
-                | "resolved"
-                | "verified"
-                | "closed"
+            "open" | "in_progress" | "pending_confirmation" | "resolved" | "verified" | "closed"
         ),
         "requirement" | "task" => matches!(
             status,
@@ -8170,9 +8722,7 @@ fn normalize_batch_work_item_keys(item_keys: Vec<String>) -> AppResult<Vec<Strin
         }
     }
     if normalized.is_empty() {
-        return Err(AppError::BadRequest(
-            "请至少选择一个工作项".to_string(),
-        ));
+        return Err(AppError::BadRequest("请至少选择一个工作项".to_string()));
     }
     if normalized.len() > 100 {
         return Err(AppError::BadRequest(
@@ -8509,7 +9059,54 @@ async fn seed_demo_activities(pool: &SqlitePool, owner_user_id: i64) -> AppResul
 
 #[cfg(test)]
 mod tests {
-    use super::{work_item_comment_body_html_for_display, work_item_description_html_for_display};
+    use super::{
+        WorkItemCommentSummary, strip_inline_attachment_node,
+        work_item_comment_body_html_for_display, work_item_description_html_for_display,
+        work_item_primary_post, work_item_primary_post_summary,
+    };
+
+    #[test]
+    fn inline_attachment_removal_only_removes_the_target_node() {
+        let html = concat!(
+            "<p>正文</p>",
+            "<figure data-yuance-attachment-id=\"7\" data-yuance-attachment-kind=\"image\"><img src=\"/seven\"></figure>",
+            "<a data-yuance-attachment-id=\"17\" data-yuance-attachment-kind=\"file\" href=\"/seventeen\">17</a>",
+            "<a data-yuance-attachment-id=\"7\" data-yuance-attachment-kind=\"file\" href=\"/seven\">7</a>"
+        );
+
+        let updated = strip_inline_attachment_node(html, 7);
+
+        assert_eq!(
+            updated,
+            "<p>正文</p><a data-yuance-attachment-id=\"17\" data-yuance-attachment-kind=\"file\" href=\"/seventeen\">17</a>"
+        );
+    }
+
+    #[test]
+    fn work_item_primary_post_matches_a_truncated_long_summary() {
+        let body = format!("<p>{}</p>", "长".repeat(6000));
+        let summary = work_item_primary_post_summary(&body, "html");
+        let comments = vec![WorkItemCommentSummary {
+            id: 17,
+            parent_comment_id: None,
+            parent_author_display_name: String::new(),
+            body,
+            body_format: "html".to_string(),
+            author_user_id: Some(3),
+            author_username: "reporter".to_string(),
+            author_display_name: "报告人".to_string(),
+            created_at: "2026-08-08T00:00:00Z".to_string(),
+            updated_at: "2026-08-08T00:00:00Z".to_string(),
+            is_flow: false,
+            is_draft: false,
+        }];
+
+        assert_eq!(summary.chars().count(), 5000);
+        assert_eq!(
+            work_item_primary_post(&comments, None, "reporter", &summary).map(|comment| comment.id),
+            Some(17)
+        );
+    }
 
     #[test]
     fn work_item_description_treats_table_html_as_rich_text() {

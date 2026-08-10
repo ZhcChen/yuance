@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yuance.local/schemas/desktop-release-manifest-v1.json",
+  "title": "Yuance Desktop Internal Release Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "channel",
+    "version",
+    "tag",
+    "source",
+    "signing",
+    "assets"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "channel": { "const": "internal" },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^desktop-v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit", "repository", "workflow_run"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "repository": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$" },
+        "workflow_run": { "type": "string", "pattern": "^[1-9][0-9]*$" }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id"],
+      "properties": {
+        "algorithm": { "const": "minisign" },
+        "key_id": { "type": "string", "pattern": "^[0-9A-F]{16}$" }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/asset" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "safeFilename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,254}$"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "platform",
+        "architecture",
+        "byte_size",
+        "sha256",
+        "content_type",
+        "os_signature",
+        "integrity_signature",
+        "sbom",
+        "provenance"
+      ],
+      "properties": {
+        "filename": { "$ref": "#/$defs/safeFilename" },
+        "platform": { "enum": ["macos", "windows", "linux"] },
+        "architecture": { "enum": ["x64", "arm64"] },
+        "byte_size": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "content_type": {
+          "enum": [
+            "application/x-apple-diskimage",
+            "application/x-msdownload",
+            "application/octet-stream"
+          ]
+        },
+        "os_signature": { "enum": ["adhoc", "none"] },
+        "integrity_signature": { "$ref": "#/$defs/safeFilename" },
+        "sbom": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["filename", "sha256"],
+          "properties": {
+            "filename": { "$ref": "#/$defs/safeFilename" },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reference", "subject_sha256"],
+          "properties": {
+            "reference": {
+              "type": "string",
+              "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/attestations/[1-9][0-9]*$"
+            },
+            "subject_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    }
+  }
+}

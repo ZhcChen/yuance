@@ -2,6 +2,7 @@ use tokio::net::TcpListener;
 
 use crate::{
     app::ServeArgs,
+    domains::device_sessions,
     platform::{config::Settings, db, error::AppResult, telemetry},
     web::router::{AppState, build_router},
 };
@@ -12,18 +13,64 @@ pub async fn run(args: ServeArgs) -> AppResult<()> {
 
     let listener = TcpListener::bind(settings.http_addr).await?;
     let pool = db::connect_pool(&settings).await?;
+    spawn_device_credential_cleanup(pool.clone());
     tracing::info!(
         addr = %settings.http_addr,
         env = %settings.env,
         "yuance-api listening"
     );
 
-    let app = build_router(AppState::new(settings, Some(pool)));
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    let state = AppState::new(settings, Some(pool));
+    let shutdown_state = state.clone();
+    let app = build_router(state);
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        shutdown_state.shutdown_device_streams();
+    })
+    .await?;
 
     Ok(())
+}
+
+fn spawn_device_credential_cleanup(pool: sqlx::SqlitePool) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            let now = chrono::Utc::now();
+            match device_sessions::cleanup_expired_authorizations(&pool, now, 500).await {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(cleaned, "cleaned expired device authorizations");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "failed to clean expired device authorizations");
+                }
+            }
+            match device_sessions::erase_expired_exchange_results(&pool, now).await {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(cleaned, "cleaned expired device exchange results");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "failed to clean expired device exchange results");
+                }
+            }
+            match device_sessions::cleanup_expired_rotation_results(&pool, now, 500).await {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(cleaned, "cleaned expired device rotation results");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "failed to clean expired device rotation results");
+                }
+            }
+        }
+    });
 }
 
 pub(crate) fn settings_from_args(args: ServeArgs) -> AppResult<Settings> {

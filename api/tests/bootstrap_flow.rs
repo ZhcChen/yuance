@@ -3,6 +3,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
+use std::{fs, time::SystemTime};
 use tower::ServiceExt;
 use yuance_api::{
     domains::{auth, bootstrap, rbac},
@@ -365,7 +366,23 @@ async fn web_redirects_to_bootstrap_when_database_is_empty() {
 }
 
 #[tokio::test]
-async fn web_renders_dashboard_after_bootstrap_with_session() {
+async fn web_serves_shared_app_after_bootstrap_with_session() {
+    let dist_dir = std::env::temp_dir().join(format!(
+        "yuance-bootstrap-shared-web-{}",
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("system time should move forward")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&dist_dir).expect("temporary Web dist should be created");
+    fs::write(
+        dist_dir.join("index.html"),
+        "<!doctype html><html><body><div id=\"root\" data-shared-react-entry></div></body></html>",
+    )
+    .expect("temporary Web entry should be written");
+    let previous_dist = std::env::var("YUANCE_WEB_DIST_DIR").ok();
+    unsafe { std::env::set_var("YUANCE_WEB_DIST_DIR", &dist_dir) };
+
     let pool = test_pool().await;
     let initialized = bootstrap::bootstrap_init(
         &pool,
@@ -392,6 +409,14 @@ async fn web_renders_dashboard_after_bootstrap_with_session() {
         .await
         .expect("router should respond");
 
+    unsafe {
+        match previous_dist {
+            Some(value) => std::env::set_var("YUANCE_WEB_DIST_DIR", value),
+            None => std::env::remove_var("YUANCE_WEB_DIST_DIR"),
+        }
+    }
+    fs::remove_dir_all(dist_dir).expect("temporary Web dist should be removed");
+
     assert_eq!(response.status(), StatusCode::OK);
     let body = response
         .into_body()
@@ -401,19 +426,9 @@ async fn web_renders_dashboard_after_bootstrap_with_session() {
         .to_bytes();
     let body = std::str::from_utf8(&body).expect("body should be utf-8");
 
-    assert!(body.contains("系统管理员"));
-    assert!(!body.contains("我的工作项"));
-    assert!(body.contains("我的待处理"));
-    assert!(body.contains("href=\"/favicon.ico\""));
-    assert!(body.contains("/static/brand/yuance-logo.svg"));
-    assert!(body.contains("data-page-transition"));
-    assert!(body.contains("class=\"topnav\""));
-    assert!(body.contains("aria-label=\"系统管理员，打开用户菜单\""));
-    assert!(body.contains("data-user-avatar"));
-    assert!(body.contains("data-avatar-name=\"系统管理员\""));
-    assert!(body.contains("个人中心"));
-    assert!(!body.contains("class=\"global-search\""));
-    assert!(!body.contains("class=\"sidebar\""));
+    assert!(body.contains("data-shared-react-entry"));
+    assert!(!body.contains("class=\"topnav\""));
+    assert!(!body.contains("data-user-avatar"));
 }
 
 #[tokio::test]
@@ -507,6 +522,8 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 

@@ -3,11 +3,16 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use crate::{
     domains::auth,
-    platform::error::{AppError, AppResult},
+    platform::{
+        crypto,
+        error::{AppError, AppResult},
+    },
 };
 
 pub const RESOURCE_BODY_FORMAT_PLAIN: &str = "plain";
@@ -15,6 +20,17 @@ pub const RESOURCE_BODY_FORMAT_HTML: &str = "html";
 pub const RESOURCE_ACCESS_PASSWORD_ACTION_KEEP: &str = "keep";
 pub const RESOURCE_ACCESS_PASSWORD_ACTION_SET: &str = "set";
 pub const RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR: &str = "clear";
+const RESOURCE_ACCESS_AAD: &[u8] = b"yuance:project-resource-access:v1";
+const RESOURCE_ACCESS_TTL_SECONDS: i64 = 15 * 60;
+const RESOURCE_ACCESS_TOKEN_MAX_LENGTH: usize = 4096;
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ResourceAccessGrant {
+    resource_id: i64,
+    user_id: i64,
+    password_hash: String,
+    expires_at: i64,
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectResourceFilter {
@@ -449,14 +465,7 @@ pub async fn create_resource(
         .await?;
     }
 
-    sync_resource_tags(
-        &mut tx,
-        input.project_id,
-        actor_user_id,
-        resource_id,
-        &tags,
-    )
-    .await?;
+    sync_resource_tags(&mut tx, input.project_id, actor_user_id, resource_id, &tags).await?;
     sync_resource_relations(
         &mut tx,
         input.project_id,
@@ -647,6 +656,7 @@ pub async fn reset_resource_access_password(
     let existing = get_resource(pool, resource_id)
         .await?
         .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))?;
+    ensure_resource_accepts_writes(&existing)?;
     let access_password_action =
         normalize_access_password_reset_action(&input.access_password_action)?;
     let access_password_hash = match access_password_action {
@@ -725,6 +735,65 @@ pub async fn verify_resource_password(
     }
 
     auth::verify_password(password, &password_hash)
+}
+
+pub async fn verify_resource_password_and_issue_access_token(
+    pool: &SqlitePool,
+    security_master_key: &str,
+    user_id: i64,
+    resource_id: i64,
+    password: &str,
+) -> AppResult<(bool, Option<String>)> {
+    let password_hash = resource_access_password_hash(pool, resource_id).await?;
+    if password_hash.trim().is_empty() {
+        return Ok((true, None));
+    }
+    if password.trim().is_empty() || !auth::verify_password(password, &password_hash)? {
+        return Ok((false, None));
+    }
+    let grant = ResourceAccessGrant {
+        resource_id,
+        user_id,
+        password_hash,
+        expires_at: Utc::now().timestamp() + RESOURCE_ACCESS_TTL_SECONDS,
+    };
+    let plaintext = serde_json::to_string(&grant)
+        .map_err(|error| AppError::Crypto(format!("资料访问凭证序列化失败：{error}")))?;
+    Ok((
+        true,
+        Some(crypto::encrypt_secret(
+            security_master_key,
+            &plaintext,
+            RESOURCE_ACCESS_AAD,
+        )?),
+    ))
+}
+
+pub async fn verify_resource_access_token(
+    pool: &SqlitePool,
+    security_master_key: &str,
+    token: &str,
+    user_id: i64,
+    resource_id: i64,
+) -> AppResult<bool> {
+    if token.trim().is_empty() || token.len() > RESOURCE_ACCESS_TOKEN_MAX_LENGTH {
+        return Ok(false);
+    }
+    let plaintext = match crypto::decrypt_secret(security_master_key, token, RESOURCE_ACCESS_AAD) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    let grant = match serde_json::from_str::<ResourceAccessGrant>(&plaintext) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    if grant.user_id != user_id
+        || grant.resource_id != resource_id
+        || grant.expires_at <= Utc::now().timestamp()
+    {
+        return Ok(false);
+    }
+    Ok(grant.password_hash == resource_access_password_hash(pool, resource_id).await?)
 }
 
 pub async fn ensure_resource_attachment_references(
@@ -877,7 +946,10 @@ async fn populate_resource_summary_metadata(
     pool: &SqlitePool,
     resources: &mut [ProjectResourceSummary],
 ) -> AppResult<()> {
-    let resource_ids = resources.iter().map(|resource| resource.id).collect::<Vec<_>>();
+    let resource_ids = resources
+        .iter()
+        .map(|resource| resource.id)
+        .collect::<Vec<_>>();
     let tags_map = load_resource_tags_map(pool, &resource_ids).await?;
     let work_item_map = load_resource_work_item_relations_map(pool, &resource_ids).await?;
     let cycle_map = load_resource_cycle_relations_map(pool, &resource_ids).await?;
@@ -1377,7 +1449,10 @@ fn normalize_status_filter(status: &str) -> AppResult<String> {
 }
 
 fn normalize_tag_filter(tag: &str) -> AppResult<String> {
-    match normalize_resource_tags(&[tag.to_string()])?.into_iter().next() {
+    match normalize_resource_tags(&[tag.to_string()])?
+        .into_iter()
+        .next()
+    {
         Some(tag) => Ok(tag.normalized_name),
         None => Ok(String::new()),
     }

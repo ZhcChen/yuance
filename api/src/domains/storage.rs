@@ -920,6 +920,47 @@ pub async fn read_object(
     Ok((content_type, content.to_vec()))
 }
 
+pub async fn stat_object(
+    pool: &SqlitePool,
+    settings: &Settings,
+    object_key: &str,
+) -> AppResult<(String, u64)> {
+    let object_key = normalize_object_key(object_key)?;
+    let operator = build_operator_from_active_config(pool, settings)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let metadata = operator
+        .stat(&object_key)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取对象存储元数据失败：{error}")))?;
+    Ok((
+        metadata
+            .content_type()
+            .unwrap_or("application/octet-stream")
+            .to_string(),
+        metadata.content_length(),
+    ))
+}
+
+pub async fn read_object_range(
+    pool: &SqlitePool,
+    settings: &Settings,
+    object_key: &str,
+    start: u64,
+    end_exclusive: u64,
+) -> AppResult<Vec<u8>> {
+    let object_key = normalize_object_key(object_key)?;
+    let operator = build_operator_from_active_config(pool, settings)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let content = operator
+        .read_with(&object_key)
+        .range(start..end_exclusive)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取对象存储文件范围失败：{error}")))?;
+    Ok(content.to_vec())
+}
+
 pub async fn presign_upload_url(
     pool: &SqlitePool,
     settings: &Settings,

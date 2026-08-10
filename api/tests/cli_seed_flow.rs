@@ -95,6 +95,7 @@ fn run_local_admin_seed(root: &Path, database_url: &str, env: &str) -> Output {
         .env("YUANCE_ENV", env)
         .env("YUANCE_SESSION_SECRET", "cli-test-session-secret")
         .env("YUANCE_SECURITY_MASTER_KEY", "cli-test-master-key-2026")
+        .env("YUANCE_SERVER_INSTANCE_ID", "cli-seed-test")
         .env("YUANCE_LOG_LEVEL", "off")
         .output()
         .expect("seed command should run")
@@ -114,6 +115,8 @@ fn settings(root: &Path, database_url: &str, env: &str) -> Settings {
         log_level: "off".to_string(),
         env: env.to_string(),
         security_master_key: "cli-test-master-key-2026".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 

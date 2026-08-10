@@ -1,22 +1,14 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
-import {
-  mkdtemp,
-  readFile,
-  readdir,
-  rm,
-  stat,
-} from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  normalizeDesktopVersion,
-  parseReleaseAssetName,
-  releaseAssetContentType,
-  validateReleaseAssets,
-} from "../desktop/src/release-assets.mjs";
+import { normalizeDesktopVersion, releaseAssetContentType } from "../desktop/src/release-assets.mjs";
+import { sha256File, verifyReleaseEvidence } from "../desktop/src/release-evidence.mjs";
+import { verifyMinisignSignature, verifyMinisignVersion } from "../desktop/src/release-tools.mjs";
 
 const args = process.argv.slice(2);
 const versionArgument = args.find((argument) => !argument.startsWith("--"));
@@ -24,9 +16,7 @@ const dryRun = process.env.YUANCE_DRY_RUN === "1" || args.includes("--dry-run");
 
 function requiredEnvironment(name) {
   const value = String(process.env[name] || "").trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable ${name}.`);
-  }
+  if (!value) throw new Error(`Missing required environment variable ${name}.`);
   return value;
 }
 
@@ -35,40 +25,23 @@ function releaseVersion() {
 }
 
 function systemApiBaseUrl() {
-  const value = requiredEnvironment("YUANCE_API_BASE_URL");
-  const parsed = new URL(value);
+  const parsed = new URL(requiredEnvironment("YUANCE_API_BASE_URL"));
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new Error("YUANCE_API_BASE_URL must use http or https.");
   }
-  return parsed.toString().replace(/\/$/, "");
+  return parsed.toString().replace(/\/$/u, "");
 }
 
-async function walkFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const entryPath = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...(await walkFiles(entryPath)));
-    } else if (entry.isFile()) {
-      files.push(entryPath);
-    }
-  }
-  return files;
-}
-
-async function resolveReleaseAssetDirectory(version) {
+async function resolveReleaseEvidenceDirectory(version) {
   const localDirectory = String(process.env.YUANCE_DESKTOP_ASSET_DIR || "").trim();
-  if (localDirectory) {
-    return { directory: path.resolve(localDirectory), cleanup: false };
-  }
+  if (localDirectory) return { directory: path.resolve(localDirectory), cleanup: false };
 
   const repository = String(
     process.env.YUANCE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || "",
   ).trim();
   if (!repository) {
     throw new Error(
-      "Set YUANCE_DESKTOP_ASSET_DIR or YUANCE_GITHUB_REPOSITORY to locate build artifacts.",
+      "Set YUANCE_DESKTOP_ASSET_DIR or YUANCE_GITHUB_REPOSITORY to locate release evidence.",
     );
   }
   const tag = String(process.env.YUANCE_DESKTOP_RELEASE_TAG || `desktop-v${version}`).trim();
@@ -79,49 +52,93 @@ async function resolveReleaseAssetDirectory(version) {
     ["release", "download", tag, "--repo", repository, "--dir", directory],
     {
       stdio: "inherit",
-      env: {
-        ...process.env,
-        ...(token ? { GH_TOKEN: token } : {}),
-      },
+      env: { ...process.env, ...(token ? { GH_TOKEN: token } : {}) },
     },
   );
-  if (result.error) {
-    throw new Error(`Unable to start gh: ${result.error.message}`);
-  }
+  if (result.error) throw new Error(`Unable to start gh: ${result.error.message}`);
   if (result.status !== 0) {
     throw new Error(`Failed to download GitHub Release ${tag} from ${repository}.`);
   }
   return { directory, cleanup: true };
 }
 
-async function collectReleaseAssets(directory, version) {
-  const files = await walkFiles(directory);
-  const assets = [];
-  for (const filePath of files) {
-    const descriptor = parseReleaseAssetName(path.basename(filePath), version);
-    if (!descriptor) {
-      continue;
-    }
-    const fileStat = await stat(filePath);
-    assets.push({
-      ...descriptor,
-      filePath,
-      byteSize: fileStat.size,
-      contentType: releaseAssetContentType(descriptor.canonicalName),
-    });
+function evidenceContentType(filename) {
+  if (filename.endsWith(".json")) return "application/json";
+  if (filename === "SHA256SUMS" || filename.endsWith(".minisig")) return "text/plain";
+  return releaseAssetContentType(filename);
+}
+
+async function evidenceArtifact(directory, descriptor) {
+  const filePath = path.join(directory, descriptor.filename);
+  const digest = await sha256File(filePath);
+  if (descriptor.sha256 && descriptor.sha256 !== digest.sha256) {
+    throw new Error(`Release evidence digest mismatch: ${descriptor.filename}.`);
   }
-  return [...validateReleaseAssets(assets).values()].sort((left, right) =>
-    left.key.localeCompare(right.key),
+  return Object.freeze({
+    ...descriptor,
+    key: descriptor.filename,
+    canonicalName: descriptor.filename,
+    filePath,
+    byteSize: digest.byteSize,
+    sha256: digest.sha256,
+    contentType: evidenceContentType(descriptor.filename),
+  });
+}
+
+export async function collectManifestEvidence(directory, manifest) {
+  const descriptors = [];
+  for (const asset of manifest.assets) {
+    descriptors.push(
+      { filename: asset.filename, platform: asset.platform, architecture: asset.architecture, artifactKind: "installer", sha256: asset.sha256 },
+      { filename: asset.integrity_signature, platform: asset.platform, architecture: asset.architecture, artifactKind: "signature" },
+      { filename: asset.sbom.filename, platform: asset.platform, architecture: asset.architecture, artifactKind: "sbom", sha256: asset.sbom.sha256 },
+    );
+  }
+  descriptors.push(
+    { filename: "release-manifest.json", platform: "linux", architecture: "universal", artifactKind: "manifest" },
+    { filename: "release-manifest.json.minisig", platform: "linux", architecture: "universal", artifactKind: "signature" },
+    { filename: "SHA256SUMS", platform: "linux", architecture: "universal", artifactKind: "checksums" },
+    { filename: "SHA256SUMS.minisig", platform: "linux", architecture: "universal", artifactKind: "signature" },
   );
+  return Promise.all(descriptors.map((descriptor) => evidenceArtifact(directory, descriptor)));
+}
+
+export async function preflightReleaseEvidence({
+  directory,
+  version,
+  publicKeyPath,
+  minisignBinary = "minisign",
+  expectedTag,
+  expectedCommit,
+  expectedRepository,
+  verifyToolVersion = verifyMinisignVersion,
+  verifySignature = verifyMinisignSignature,
+}) {
+  await verifyToolVersion(minisignBinary);
+  const manifest = await verifyReleaseEvidence({
+    directory,
+    publicKeyPath,
+    expectedVersion: version,
+    verifySignature: (messagePath, signaturePath, keyPath) =>
+      verifySignature(messagePath, signaturePath, keyPath, minisignBinary),
+  });
+  if (manifest.tag !== expectedTag) throw new Error("Manifest source tag does not match publication tag.");
+  if (manifest.source.commit !== expectedCommit) {
+    throw new Error("Manifest source commit does not match publication commit.");
+  }
+  if (manifest.source.repository !== expectedRepository) {
+    throw new Error("Manifest source repository does not match publication repository.");
+  }
+  const artifacts = await collectManifestEvidence(directory, manifest);
+  const manifestDigest = await sha256File(path.join(directory, "release-manifest.json"));
+  return Object.freeze({ manifest, manifestDigest: manifestDigest.sha256, artifacts });
 }
 
 function releaseNotes() {
   const notesFile = String(process.env.YUANCE_RELEASE_NOTES_FILE || "").trim();
-  if (notesFile) {
-    return readFile(path.resolve(notesFile), "utf8");
-  }
+  if (notesFile) return readFile(path.resolve(notesFile), "utf8");
   const notes = String(process.env.YUANCE_RELEASE_NOTES || "").trim();
-  return Promise.resolve(notes || "桌面端版本已发布。");
+  return Promise.resolve(notes || "桌面端内部开发版本已发布。");
 }
 
 class SystemReleaseApi {
@@ -131,13 +148,8 @@ class SystemReleaseApi {
   }
 
   async request(method, pathname, body) {
-    const headers = {
-      accept: "application/json",
-      authorization: `Bearer ${this.token}`,
-    };
-    if (body !== undefined) {
-      headers["content-type"] = "application/json";
-    }
+    const headers = { accept: "application/json", authorization: `Bearer ${this.token}` };
+    if (body !== undefined) headers["content-type"] = "application/json";
     const response = await fetch(`${this.baseUrl}${pathname}`, {
       method,
       headers,
@@ -157,60 +169,37 @@ class SystemReleaseApi {
     while (true) {
       const result = await this.request("GET", `/api/v1/system/releases?page=${page}&per_page=100`);
       const matched = (result.items || []).find((item) => item.version_name === version);
-      if (matched) {
-        return this.request("GET", `/api/v1/system/releases/${matched.id}`);
-      }
-      if (!result.pagination || page >= result.pagination.total_pages) {
-        return null;
-      }
+      if (matched) return this.request("GET", `/api/v1/system/releases/${matched.id}`);
+      if (!result.pagination || page >= result.pagination.total_pages) return null;
       page += 1;
     }
   }
 
-  createRelease(input) {
-    return this.request("POST", "/api/v1/system/releases", input);
-  }
-
-  createAsset(releaseId, input) {
-    return this.request("POST", `/api/v1/system/releases/${releaseId}/assets`, input);
-  }
-
-  uploadUrl(releaseId, assetId) {
-    return this.request("GET", `/api/v1/system/releases/${releaseId}/assets/${assetId}/upload-url`);
-  }
-
-  markUploaded(releaseId, assetId) {
-    return this.request("POST", `/api/v1/system/releases/${releaseId}/assets/${assetId}/uploaded`);
-  }
-
-  updateRelease(releaseId, input) {
-    return this.request("PATCH", `/api/v1/system/releases/${releaseId}`, input);
-  }
+  createRelease(input) { return this.request("POST", "/api/v1/system/releases", input); }
+  createAsset(releaseId, input) { return this.request("POST", `/api/v1/system/releases/${releaseId}/assets`, input); }
+  uploadUrl(releaseId, assetId) { return this.request("GET", `/api/v1/system/releases/${releaseId}/assets/${assetId}/upload-url`); }
+  downloadUrl(releaseId, assetId) { return this.request("GET", `/api/v1/system/releases/${releaseId}/assets/${assetId}/download-url`); }
+  markUploaded(releaseId, assetId) { return this.request("POST", `/api/v1/system/releases/${releaseId}/assets/${assetId}/uploaded`); }
+  verifyRelease(releaseId) { return this.request("POST", `/api/v1/system/releases/${releaseId}/verify`); }
+  updateRelease(releaseId, input) { return this.request("PATCH", `/api/v1/system/releases/${releaseId}`, input); }
 }
 
 export function signedUploadHeaders(requestHeaders, asset) {
   const headers = new Headers();
   for (const entry of requestHeaders || []) {
-    const [name, value] = Array.isArray(entry)
-      ? entry
-      : [entry?.name, entry?.value];
-    if (name && value != null) {
-      headers.set(name, value);
-    }
+    const [name, value] = Array.isArray(entry) ? entry : [entry?.name, entry?.value];
+    if (name && value != null) headers.set(name, value);
   }
-  if (!headers.has("content-type")) {
-    headers.set("content-type", asset.contentType);
-  }
+  if (!headers.has("content-type")) headers.set("content-type", asset.contentType);
   headers.set("content-length", String(asset.byteSize));
   return headers;
 }
 
 async function uploadSignedAsset(asset, signed) {
   const request = signed?.request || {};
-  const headers = signedUploadHeaders(request.headers, asset);
   const response = await fetch(request.url, {
     method: request.method || "PUT",
-    headers,
+    headers: signedUploadHeaders(request.headers, asset),
     body: createReadStream(asset.filePath),
     duplex: "half",
   });
@@ -220,59 +209,117 @@ async function uploadSignedAsset(asset, signed) {
   }
 }
 
-export function existingAssetFor(asset, release) {
-  const matches = (release.assets || []).filter(
-    (item) => item.platform === asset.platform && item.architecture === asset.architecture,
-  );
-  if (matches.length > 1) {
-    throw new Error(`Existing draft has duplicate assets for ${asset.key}. Clean it up before publishing.`);
+async function sha256Response(response, filename) {
+  if (!response.ok) throw new Error(`OSS readback failed for ${filename}: ${response.status}.`);
+  if (!response.body) throw new Error(`OSS readback returned no body for ${filename}.`);
+  const hash = createHash("sha256");
+  let byteSize = 0;
+  for await (const chunk of response.body) {
+    byteSize += chunk.byteLength;
+    hash.update(chunk);
   }
+  return { byteSize, sha256: hash.digest("hex") };
+}
+
+export function existingAssetFor(asset, release) {
+  const matches = (release.assets || []).filter((item) => item.filename === asset.canonicalName);
+  if (matches.length > 1) throw new Error(`Existing release has duplicate asset ${asset.canonicalName}.`);
   const existing = matches[0] || null;
-  if (
-    existing &&
-    (existing.filename !== asset.canonicalName ||
-      existing.status !== "uploaded" ||
-      Number(existing.byte_size) !== asset.byteSize)
-  ) {
-    throw new Error(
-      `Existing draft asset for ${asset.key} does not match ${asset.canonicalName}. Clean it up before retrying.`,
-    );
+  if (existing && (
+    existing.platform !== asset.platform
+    || existing.architecture !== asset.architecture
+    || existing.artifact_kind !== asset.artifactKind
+    || existing.status !== "uploaded"
+    || Number(existing.byte_size) !== asset.byteSize
+    || existing.checksum_sha256 !== asset.sha256
+  )) {
+    throw new Error(`Existing release asset ${asset.canonicalName} does not match the verified evidence.`);
   }
   return existing;
 }
 
 export function planReleaseAssetUploads(assets, release) {
+  const expectedNames = new Set(assets.map((asset) => asset.canonicalName));
+  const unexpected = (release.assets || []).filter((asset) => !expectedNames.has(asset.filename));
+  if (unexpected.length > 0) {
+    throw new Error(`Existing release contains unexpected asset ${unexpected[0].filename}.`);
+  }
   return assets.map((asset) => ({ asset, existing: existingAssetFor(asset, release) }));
 }
 
-async function publishRelease(api, version, assets, title, notes) {
+function assertReleaseIdentity(release, preflight, version) {
+  const expected = {
+    version_name: version,
+    channel: "internal",
+    manifest_sha256: preflight.manifestDigest,
+    signing_key_id: preflight.manifest.signing.key_id,
+    source_commit: preflight.manifest.source.commit,
+    source_tag: preflight.manifest.tag,
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (release[name] !== value) throw new Error(`Existing release ${name} conflicts with verified evidence.`);
+  }
+}
+
+async function readBackAsset(api, releaseId, remoteAsset, expected) {
+  const signed = await api.downloadUrl(releaseId, remoteAsset.id);
+  if (signed.checksum_sha256 !== expected.sha256) {
+    throw new Error(`System checksum metadata mismatch for ${expected.canonicalName}.`);
+  }
+  const actual = await sha256Response(await fetch(signed.request.url), expected.canonicalName);
+  if (actual.byteSize !== expected.byteSize || actual.sha256 !== expected.sha256) {
+    throw new Error(`OSS readback digest mismatch for ${expected.canonicalName}.`);
+  }
+}
+
+export async function publishRelease(api, version, preflight, title, notes) {
   let detail = await api.findRelease(version);
-  if (detail?.release?.status === "published") {
-    throw new Error(`Version ${version} is already published and cannot be modified.`);
-  }
-  if (!detail) {
-    detail = await api.createRelease({ version_name: version, title, notes });
-  }
-
-  const uploadPlan = planReleaseAssetUploads(assets, detail);
-  for (const { asset, existing } of uploadPlan) {
-    if (existing) {
-      console.log(`Reusing uploaded asset ${asset.canonicalName}.`);
-      continue;
-    }
-    console.log(`Uploading ${asset.canonicalName}.`);
-    const created = await api.createAsset(detail.release.id, {
-      platform: asset.platform,
-      architecture: asset.architecture,
-      original_filename: asset.canonicalName,
-      content_type: asset.contentType,
-      byte_size: asset.byteSize,
+  if (detail) {
+    if (detail.release.status === "withdrawn") throw new Error(`Version ${version} was withdrawn and cannot be reused.`);
+    assertReleaseIdentity(detail.release, preflight, version);
+  } else {
+    detail = await api.createRelease({
+      version_name: version,
+      title,
+      notes,
+      channel: "internal",
+      manifest_sha256: preflight.manifestDigest,
+      signing_key_id: preflight.manifest.signing.key_id,
+      source_commit: preflight.manifest.source.commit,
+      source_tag: preflight.manifest.tag,
     });
-    const signed = await api.uploadUrl(detail.release.id, created.id);
-    await uploadSignedAsset(asset, signed);
-    await api.markUploaded(detail.release.id, created.id);
   }
 
+  const uploadPlan = planReleaseAssetUploads(preflight.artifacts, detail);
+  if (detail.release.status === "published" && uploadPlan.some(({ existing }) => !existing)) {
+    throw new Error(`Published version ${version} does not contain the complete verified evidence set.`);
+  }
+
+  for (const { asset, existing } of uploadPlan) {
+    let remote = existing;
+    if (!remote) {
+      console.log(`Uploading ${asset.canonicalName}.`);
+      remote = await api.createAsset(detail.release.id, {
+        platform: asset.platform,
+        architecture: asset.architecture,
+        artifact_kind: asset.artifactKind,
+        original_filename: asset.canonicalName,
+        content_type: asset.contentType,
+        byte_size: asset.byteSize,
+        checksum_sha256: asset.sha256,
+      });
+      await uploadSignedAsset(asset, await api.uploadUrl(detail.release.id, remote.id));
+      remote = await api.markUploaded(detail.release.id, remote.id);
+    } else {
+      console.log(`Reusing verified asset ${asset.canonicalName}.`);
+    }
+    await readBackAsset(api, detail.release.id, remote, asset);
+  }
+
+  if (detail.release.status === "published") return detail;
+  if (detail.release.verification_status !== "verified") {
+    detail = await api.verifyRelease(detail.release.id);
+  }
   return api.updateRelease(detail.release.id, {
     version_name: version,
     title,
@@ -283,33 +330,42 @@ async function publishRelease(api, version, assets, title, notes) {
 
 async function main() {
   const version = releaseVersion();
-  const source = await resolveReleaseAssetDirectory(version);
+  const source = await resolveReleaseEvidenceDirectory(version);
   try {
-    const assets = await collectReleaseAssets(source.directory, version);
-    console.log(`Resolved ${assets.length} release assets for desktop version ${version}.`);
-    for (const asset of assets) {
-      console.log(`- ${asset.platform}/${asset.architecture}: ${asset.canonicalName}`);
+    const expectedTag = String(process.env.YUANCE_DESKTOP_RELEASE_TAG || `desktop-v${version}`).trim();
+    const expectedCommit = String(process.env.YUANCE_DESKTOP_SOURCE_COMMIT || process.env.GITHUB_SHA || "").trim();
+    if (!/^[0-9a-f]{40}$/u.test(expectedCommit)) {
+      throw new Error("YUANCE_DESKTOP_SOURCE_COMMIT or GITHUB_SHA must be a lowercase 40-character commit SHA.");
     }
-    if (dryRun) {
-      return;
-    }
+    const expectedRepository = String(
+      process.env.YUANCE_GITHUB_REPOSITORY || process.env.GITHUB_REPOSITORY || "",
+    ).trim();
+    if (!expectedRepository) throw new Error("YUANCE_GITHUB_REPOSITORY or GITHUB_REPOSITORY is required.");
+    const publicKeyPath = path.resolve(requiredEnvironment("YUANCE_MINISIGN_PUBLIC_KEY_FILE"));
+    const preflight = await preflightReleaseEvidence({
+      directory: source.directory,
+      version,
+      publicKeyPath,
+      minisignBinary: process.env.MINISIGN_BIN || "minisign",
+      expectedTag,
+      expectedCommit,
+      expectedRepository,
+    });
+    console.log(`Verified ${preflight.artifacts.length} evidence files for ${preflight.manifest.tag}.`);
+    if (dryRun) return;
 
-    const baseUrl = systemApiBaseUrl();
-    const token = requiredEnvironment("YUANCE_SYSTEM_API_TOKEN");
     const title = String(process.env.YUANCE_RELEASE_TITLE || `元策桌面端 v${version}`).trim();
     const notes = await releaseNotes();
     const published = await publishRelease(
-      new SystemReleaseApi(baseUrl, token),
+      new SystemReleaseApi(systemApiBaseUrl(), requiredEnvironment("YUANCE_SYSTEM_API_TOKEN")),
       version,
-      assets,
+      preflight,
       title,
       notes,
     );
     console.log(`Published system release ${published.release.version_name} (id=${published.release.id}).`);
   } finally {
-    if (source.cleanup) {
-      await rm(source.directory, { recursive: true, force: true });
-    }
+    if (source.cleanup) await rm(source.directory, { recursive: true, force: true });
   }
 }
 

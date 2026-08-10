@@ -5,7 +5,7 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{api_tokens, auth, bootstrap, projects},
+    domains::{auth, bootstrap, users},
     platform::{
         config::Settings,
         db,
@@ -41,12 +41,770 @@ async fn login_page_sets_csrf_cookie_and_hidden_field() {
 
     let body = response_body(response).await;
     assert!(body.contains(&format!("name=\"{CSRF_FIELD_NAME}\"")));
-    assert!(body.contains("data-page-transition"));
+    assert!(body.contains("href=\"/static/auth.css\""));
+    assert!(!body.contains("/static/app.js"));
     assert!(body.contains("登录"));
     assert!(body.contains("placeholder=\"请输入用户名\""));
     assert!(!body.contains("placeholder=\"yuance_admin\""));
     assert!(!body.contains("env-badge"));
     assert!(!body.contains("统一入口 /web"));
+}
+
+#[tokio::test]
+async fn login_page_preserves_safe_return_to_for_web_app() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/login?return_to=%2Fweb%2Fapp%2Fmessages%3Ftab%3Drecent")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("name=\"return_to\" value=\"/web/app/messages?tab=recent\""));
+}
+
+#[tokio::test]
+async fn login_submit_redirects_to_safe_return_to_when_present() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf(
+                    "username=admin&password=AdminPass2026%21&return_to=%2Fweb%2Fapp%2Fmessages%3Ftab%3Drecent",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/app/messages?tab=recent"
+    );
+}
+
+#[tokio::test]
+async fn login_submit_rejects_cross_origin_return_to() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf(
+                    "username=admin&password=AdminPass2026%21&return_to=https%3A%2F%2Fevil.example",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/web");
+}
+
+#[tokio::test]
+async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?filter=unread&page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fmessages%3Ffilter%3Dunread%26page%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_owner_redirects_unauthenticated_request_with_safe_return_to() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_users_owner_redirects_unauthenticated_request_with_safe_return_to() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users?page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fusers%3Fpage%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_roles_owners_preserve_unauthenticated_return_paths() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    for (uri, expected) in [
+        (
+            "/web/system/roles?role=member&page=2&per_page=20",
+            "/web/login?return_to=%2Fweb%2Fsystem%2Froles%3Frole%3Dmember%26page%3D2%26per_page%3D20",
+        ),
+        (
+            "/web/system/roles/member/permissions?per_page=20",
+            "/web/login?return_to=%2Fweb%2Fsystem%2Froles%2Fmember%2Fpermissions%3Fper_page%3D20",
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.headers().get(header::LOCATION).unwrap(), expected);
+    }
+}
+
+#[tokio::test]
+async fn web_app_system_storage_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/storage?page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fstorage%3Fpage%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_releases_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/releases?page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Freleases%3Fpage%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_openapi_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/openapi")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fopenapi"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_openapi_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_openapi_denied".to_string(),
+            display_name: "系统 Token 拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/openapi")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_permissions_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/permissions?q=roles")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fpermissions%3Fq%3Droles"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_permissions_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_permissions_denied".to_string(),
+            display_name: "权限目录拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/permissions")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_database_stats_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/database-stats")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fdatabase-stats"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_database_stats_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_database_stats_denied".to_string(),
+            display_name: "数据库统计拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/database-stats")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_audit_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/audit?action=auth.login&page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Faudit%3Faction%3Dauth.login%26page%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_audit_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_audit_denied".to_string(),
+            display_name: "审计日志拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/audit")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_api_docs_owner_preserves_unauthenticated_return_path() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/api-docs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fapi-docs"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_api_docs_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_api_docs_denied".to_string(),
+            display_name: "系统文档拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/api-docs")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_denied".to_string(),
+            display_name: "系统拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_users_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_users_denied".to_string(),
+            display_name: "用户管理拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_system_roles_owners_keep_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_roles_denied".to_string(),
+            display_name: "角色管理拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    for uri in ["/web/system/roles", "/web/system/roles/member/permissions"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header(
+                        header::COOKIE,
+                        auth::session_cookie_header(&session.raw_token, false),
+                    )
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+}
+
+#[tokio::test]
+async fn web_app_system_storage_owner_keeps_rust_permission_gate() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_storage_denied".to_string(),
+            display_name: "存储管理拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/storage")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn web_app_project_owner_preserves_deep_link_query_for_unauthenticated_request() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE/resources/9?access=opaque-token")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fprojects%2FYCE%2Fresources%2F9%3Faccess%3Dopaque-token"
+    );
+}
+
+#[tokio::test]
+async fn web_app_work_item_list_owner_preserves_filter_query_for_unauthenticated_request() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks?status=pending&priority=P0&page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Ftasks%3Fstatus%3Dpending%26priority%3DP0%26page%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
+async fn web_app_work_item_detail_owner_preserves_deep_link_query_for_unauthenticated_request() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2?focus=comment-7")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fwork-items%2FYCE-TASK-2%3Ffocus%3Dcomment-7"
+    );
 }
 
 #[tokio::test]
@@ -127,30 +885,6 @@ async fn login_submit_with_invalid_credentials_renders_login_page_error() {
 }
 
 #[tokio::test]
-async fn htmx_role_permission_update_can_use_csrf_header() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/member/permissions")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header("HX-Request", "true")
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from("permission_keys=project.view"))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn system_page_redirects_expired_login_to_login_page() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
@@ -169,82 +903,8 @@ async fn system_page_redirects_expired_login_to_login_page() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fusers"
     );
-}
-
-#[tokio::test]
-async fn system_post_redirects_expired_login_to_login_page() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, csrf_cookie())
-                .body(Body::from(with_csrf(
-                    "username=member1&display_name=%E6%88%90%E5%91%98%E4%B8%80&email=member1%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=member",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
-    );
-}
-
-#[tokio::test]
-async fn htmx_system_post_uses_hx_redirect_when_login_expired() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/member/permissions")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, csrf_cookie())
-                .header("HX-Request", "true")
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from("permission_keys=project.view"))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert_eq!(response.headers().get("HX-Redirect").unwrap(), "/web/login");
-}
-
-#[tokio::test]
-async fn htmx_partial_uses_hx_redirect_when_login_expired() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/partials/work-items")
-                .header("HX-Request", "true")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert_eq!(response.headers().get("HX-Redirect").unwrap(), "/web/login");
 }
 
 #[tokio::test]
@@ -724,7 +1384,7 @@ async fn logout_revokes_session_and_clears_cookies() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
+        "/web/login?return_to=%2Fweb"
     );
 }
 
@@ -870,312 +1530,30 @@ async fn api_token_scope_is_enforced_for_bearer_requests() {
 }
 
 #[tokio::test]
-async fn me_page_creates_api_token_and_renders_plaintext_once() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Alpha 项目".to_string(),
-            description: "用于验证 Token 项目范围多选".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project A should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Beta 项目".to_string(),
-            description: "用于验证 Token 项目范围多选".to_string(),
-            status: "not_started".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project B should create");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+async fn retired_personal_web_mutation_routes_are_not_registered() {
+    let app = build_router(AppState::for_tests());
 
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/me")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("Personal Access Token"));
-    assert!(page_body.contains("创建访问 Token"));
-    assert!(page_body.contains("可用 Token 0/100"));
-    assert!(page_body.contains(r#"name="project_scope_projects" value="all" checked"#));
-    assert!(page_body.contains("全部项目（包含后续新增）"));
-    assert!(page_body.contains("Alpha 项目"));
-    assert!(page_body.contains("Beta 项目"));
-
-    let create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "name=Agent%20UI&project_scope_projects=all&scopes=project%3Aread&scopes=work_item%3Aread",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(create_response.status(), StatusCode::OK);
-    let create_body = response_body(create_response).await;
-    assert!(create_body.contains("点击复制"));
-    assert!(create_body.contains("yuance_pat_"));
-    assert!(create_body.contains("Agent UI"));
-    assert!(create_body.contains("Token 名称（归属人）"));
-    assert!(create_body.contains("全部项目（含后续新增）"));
-
-    let scoped_body = format!(
-        "name=Agent%20Scoped&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread",
-        project_a.project_key, project_b.project_key
-    );
-    let scoped_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&scoped_body)))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(scoped_response.status(), StatusCode::OK);
-    let scoped_page = response_body(scoped_response).await;
-    assert!(scoped_page.contains("Agent Scoped"));
-    assert!(scoped_page.contains(&format!(
-        "{}、{}",
-        project_a.project_key, project_b.project_key
-    )));
-
-    let stored_scope = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT project_scope
-        FROM api_tokens
-        WHERE user_id = ?1
-          AND name = 'Agent Scoped'
-        "#,
-    )
-    .bind(initialized.user_id)
-    .fetch_one(&pool)
-    .await
-    .expect("scoped token should persist");
-    assert_eq!(
-        stored_scope,
-        format!("{},{}", project_a.project_key, project_b.project_key)
-    );
-}
-
-#[tokio::test]
-async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Alpha 项目".to_string(),
-            description: "第一个项目".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project a should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Beta 项目".to_string(),
-            description: "第二个项目".to_string(),
-            status: "acceptance".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project b should create");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "name=Agent%20Editable&project_scope_projects={}&scopes=project%3Aread&scopes=resource%3Aread&expires_at=2026-12-31",
-                    project_a.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(create_response.status(), StatusCode::OK);
-
-    let token_id = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT id
-        FROM api_tokens
-        WHERE user_id = ?1
-          AND name = 'Agent Editable'
-        ORDER BY id DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(initialized.user_id)
-    .fetch_one(&pool)
-    .await
-    .expect("token should exist");
-
-    let update_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/web/me/api-tokens/{token_id}/edit"))
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "name=Agent%20Updated&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread&scopes=work_item%3Awrite&scopes=notification%3Aread",
-                    project_a.project_key, project_b.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(update_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        update_response.headers().get(header::LOCATION).unwrap(),
-        "/web/me"
-    );
-
-    let stored = sqlx::query_as::<_, (String, String, String)>(
-        r#"
-        SELECT name, scopes, project_scope
-        FROM api_tokens
-        WHERE id = ?1
-        "#,
-    )
-    .bind(token_id)
-    .fetch_one(&pool)
-    .await
-    .expect("updated token should load");
-    assert_eq!(stored.0, "Agent Updated");
-    assert_eq!(
-        stored.2,
-        format!("{},{}", project_a.project_key, project_b.project_key)
-    );
-    assert!(stored.1.contains("project:read"));
-    assert!(stored.1.contains("work_item:write"));
-    assert!(stored.1.contains("notification:read"));
-    assert!(!stored.1.contains("resource:read"));
-
-    let expires_at = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT expires_at
-        FROM api_tokens
-        WHERE id = ?1
-        "#,
-    )
-    .bind(token_id)
-    .fetch_one(&pool)
-    .await
-    .expect("expires_at should remain");
-    assert_eq!(expires_at, "2026-12-31");
-
-    let page_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/me")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("编辑访问 Token"));
-    assert!(page_body.contains("Agent Updated"));
-    assert!(page_body.contains("工作项写入"));
-    assert!(page_body.contains("消息读取"));
-    assert!(page_body.contains(&format!(r#"action="/web/me/api-tokens/{token_id}/edit""#)));
-}
-
-#[tokio::test]
-async fn api_token_creation_rejects_more_than_100_unrevoked_tokens() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    for index in 0..api_tokens::MAX_ACTIVE_TOKENS_PER_USER {
-        sqlx::query(
-            r#"
-            INSERT INTO api_tokens (
-                user_id,
-                name,
-                token_hash,
-                token_suffix,
-                scopes,
-                project_scope
+    for (uri, method) in [
+        ("/web/me/profile", "POST"),
+        ("/web/me/password", "POST"),
+        ("/web/me/api-tokens", "POST"),
+        ("/web/me/api-tokens/7/edit", "POST"),
+        ("/web/me/api-tokens/7/delete", "POST"),
+        ("/web/me/device-sessions/family-7/revoke", "POST"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
             )
-            VALUES (?1, ?2, ?3, ?4, '["project:read"]', 'all')
-            "#,
-        )
-        .bind(initialized.user_id)
-        .bind(format!("Token {index}"))
-        .bind(format!("hash-{index}"))
-        .bind(format!("{index:08}"))
-        .execute(&pool)
-        .await
-        .expect("token fixture should insert");
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {uri}");
     }
-
-    let create_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "name=Overflow&project_scope_projects=all&scopes=project%3Aread",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(create_response.status(), StatusCode::BAD_REQUEST);
-    let body = response_body(create_response).await;
-    assert!(body.contains("最多可同时保留 100 个访问 Token"));
 }
 
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
@@ -1192,13 +1570,11 @@ async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     .expect("bootstrap should initialize");
 
     InitializedAdmin {
-        user_id: result.user_id,
         cookie: auth::session_cookie_header(&result.session.raw_token, false),
     }
 }
 
 struct InitializedAdmin {
-    user_id: i64,
     cookie: String,
 }
 
@@ -1239,6 +1615,8 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 

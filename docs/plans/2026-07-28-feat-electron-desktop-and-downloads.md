@@ -1,6 +1,6 @@
 ---
 title: feat: Electron 桌面端与版本下载分发
-status: active
+status: completed
 date: 2026-07-28
 origin: 用户口头需求：以 Electron 初始化 0.1.0 桌面端，接入跨平台原生通知、GitHub Actions 构建、system OpenAPI 发布及 Web 下载页
 ---
@@ -103,3 +103,8 @@ origin: 用户口头需求：以 Electron 初始化 0.1.0 桌面端，接入跨�
 - `npm --prefix desktop run check`
 - `node --check scripts/publish-desktop-release.mjs`
 - `git diff --check`
+
+## Completion Notes
+
+- Unit 1-6 已全部完成，覆盖系统版本资产架构、公开下载页、Electron 0.1.0 桌面工程、GitHub Actions、system OpenAPI 发布脚本、开发态隔离、登录页精简和默认最大化启动。
+- 后续自动更新、生产签名信任链和内置 renderer 安全宿主不属于本计划，继续由 `docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md` 的 D1/D2/G-DIST 阶段承接。

@@ -3,6 +3,7 @@ pub mod audit;
 pub mod auth;
 pub mod bootstrap;
 pub mod database_stats;
+pub mod device_sessions;
 pub mod files;
 pub mod notifications;
 pub mod project_resources;

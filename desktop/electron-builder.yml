@@ -1,11 +1,14 @@
 appId: com.quanxinfu.yuance
 productName: 元策
 asar: true
+asarUnpack:
+  - src/native/*.node
 icon: build/icon.svg
 artifactName: Yuance-${version}-${os}-${arch}.${ext}
 
 files:
   - src/**
+  - renderer-dist/**
   - package.json
 
 extraResources:

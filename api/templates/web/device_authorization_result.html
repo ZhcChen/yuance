@@ -1,0 +1,26 @@
+{% extends "layouts/auth.html" %}
+
+{% block title %}设备授权结果 - 元策{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+  <div class="auth-hero" aria-label="设备授权结果">
+    <div class="auth-brand">
+      <img class="brand-mark" src="/static/brand/yuance-logo.svg" alt="" width="32" height="32">
+      <div><strong>元策</strong><span>设备安全授权</span></div>
+    </div>
+    <div class="device-authorization-summary">
+      <span class="form-eyebrow">Authorization result</span>
+      <h1>{{ title }}</h1>
+      <p>{{ message }}</p>
+    </div>
+  </div>
+  <div class="auth-form device-authorization-form">
+    <div class="form-head">
+      <span class="form-eyebrow">设备授权码</span>
+      <h1>{{ user_code }}</h1>
+      <p>现在可以关闭此页面并返回桌面客户端。</p>
+    </div>
+  </div>
+</section>
+{% endblock %}

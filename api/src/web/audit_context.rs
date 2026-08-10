@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use axum::http::HeaderMap;
 
 use crate::domains::audit::AuditContext;
@@ -7,6 +9,12 @@ pub fn from_headers(headers: &HeaderMap) -> AuditContext {
         ip: client_ip(headers),
         user_agent: header_value(headers, "user-agent", 256),
     }
+}
+
+pub fn from_headers_with_client_ip(headers: &HeaderMap, client_ip: Option<IpAddr>) -> AuditContext {
+    let mut context = from_headers(headers);
+    context.ip = client_ip.map_or_else(String::new, |ip| ip.to_string());
+    context
 }
 
 fn client_ip(headers: &HeaderMap) -> String {

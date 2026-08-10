@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yuance.local/schemas/main-web-visual-contract.schema.json",
+  "title": "main Web 视觉一致性合同",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "baseline", "viewports", "tokens", "breakpoints", "globalShell", "pages", "hostExceptions"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "version": { "const": 1 },
+    "baseline": { "$ref": "#/$defs/baseline" },
+    "viewports": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/viewport" } },
+    "tokens": { "$ref": "#/$defs/tokens" },
+    "breakpoints": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 1 }, "uniqueItems": true },
+    "globalShell": { "$ref": "#/$defs/globalShell" },
+    "pages": { "type": "array", "minItems": 30, "maxItems": 30, "items": { "$ref": "#/$defs/page" } },
+    "hostExceptions": { "type": "array", "items": { "$ref": "#/$defs/hostException" } }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "nonEmptyStrings": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+    "baseline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["branch", "commit", "stylesheet", "layoutTemplate"],
+      "properties": {
+        "branch": { "const": "main" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "stylesheet": { "const": "api/static/app.css" },
+        "layoutTemplate": { "const": "api/templates/layouts/web.html" }
+      }
+    },
+    "viewport": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "width", "height"],
+      "properties": {
+        "name": { "enum": ["mobile", "tablet", "desktop", "wide"] },
+        "width": { "type": "integer", "minimum": 320 },
+        "height": { "type": "integer", "minimum": 600 }
+      }
+    },
+    "tokens": {
+      "type": "object", "additionalProperties": false,
+      "required": ["topbarHeight", "controlHeight", "controlHeightSmall", "controlRadius", "cardRadius", "light", "dark"],
+      "properties": {
+        "topbarHeight": { "const": "58px" },
+        "controlHeight": { "const": "40px" },
+        "controlHeightSmall": { "const": "32px" },
+        "controlRadius": { "const": "8px" },
+        "cardRadius": { "const": "16px" },
+        "light": { "$ref": "#/$defs/themeTokens" },
+        "dark": { "$ref": "#/$defs/themeTokens" }
+      }
+    },
+    "themeTokens": {
+      "type": "object", "additionalProperties": false,
+      "required": ["background", "panel", "text", "muted", "line", "brand", "accent", "danger"],
+      "properties": {
+        "background": { "$ref": "#/$defs/nonEmptyString" }, "panel": { "$ref": "#/$defs/nonEmptyString" },
+        "text": { "$ref": "#/$defs/nonEmptyString" }, "muted": { "$ref": "#/$defs/nonEmptyString" },
+        "line": { "$ref": "#/$defs/nonEmptyString" }, "brand": { "$ref": "#/$defs/nonEmptyString" },
+        "accent": { "$ref": "#/$defs/nonEmptyString" }, "danger": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "globalShell": {
+      "type": "object", "additionalProperties": false,
+      "required": ["regionOrder", "mainScrollContainer", "geometryTolerancePx", "computedStyleProperties"],
+      "properties": {
+        "regionOrder": { "$ref": "#/$defs/nonEmptyStrings" },
+        "mainScrollContainer": { "const": ".main" },
+        "geometryTolerancePx": { "const": 2 },
+        "computedStyleProperties": { "$ref": "#/$defs/nonEmptyStrings" }
+      }
+    },
+    "fixture": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "actor", "dataSet"],
+      "properties": {
+        "status": { "enum": ["stable", "required", "not-applicable"] },
+        "actor": { "$ref": "#/$defs/nonEmptyString" },
+        "dataSet": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "responsiveExpectations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mobile", "tablet", "desktop", "wide"],
+      "properties": {
+        "mobile": { "$ref": "#/$defs/nonEmptyString" }, "tablet": { "$ref": "#/$defs/nonEmptyString" },
+        "desktop": { "$ref": "#/$defs/nonEmptyString" }, "wide": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "dynamicMask": {
+      "type": "object", "additionalProperties": false,
+      "required": ["selector", "kind", "reason"],
+      "properties": {
+        "selector": { "type": "string", "minLength": 2, "not": { "enum": ["body", "main"] } },
+        "kind": { "enum": ["text", "attribute", "element"] },
+        "reason": { "enum": ["clock", "generated-id", "cursor", "platform-native"] }
+      }
+    },
+    "page": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "route", "family", "visualUnit", "baselineSources", "fixture", "evidenceMode", "regionOrder", "stableAnchors", "geometryAnchors", "computedStyleProperties", "responsiveExpectations", "states", "dynamicMasks", "severity", "status"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^page\\.[a-z0-9.-]+$" },
+        "route": { "type": "string", "pattern": "^/web(?:/|$)" },
+        "family": { "enum": ["boundary", "shell", "personal", "project", "work-item-list", "work-item-detail", "message-search", "system"] },
+        "visualUnit": { "enum": ["V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10"] },
+        "baselineSources": { "$ref": "#/$defs/nonEmptyStrings" },
+        "fixture": { "$ref": "#/$defs/fixture" },
+        "evidenceMode": { "enum": ["runtime", "static", "boundary", "no-baseline"] },
+        "regionOrder": { "$ref": "#/$defs/nonEmptyStrings" },
+        "stableAnchors": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "geometryAnchors": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "computedStyleProperties": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "responsiveExpectations": { "$ref": "#/$defs/responsiveExpectations" },
+        "states": { "$ref": "#/$defs/nonEmptyStrings" },
+        "dynamicMasks": { "type": "array", "items": { "$ref": "#/$defs/dynamicMask" } },
+        "severity": { "enum": ["S1", "S2", "S3", "N/A"] },
+        "status": { "enum": ["pending", "in-progress", "matched", "boundary-only"] }
+      }
+    },
+    "hostException": {
+      "type": "object", "additionalProperties": false,
+      "required": ["code", "pages", "reason"],
+      "properties": {
+        "code": { "enum": ["font-rendering", "native-scrollbar", "desktop-window-frame"] },
+        "pages": { "$ref": "#/$defs/nonEmptyStrings" },
+        "reason": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    }
+  }
+}

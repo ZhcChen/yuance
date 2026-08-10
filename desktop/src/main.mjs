@@ -1,6 +1,21 @@
-import { app, BrowserWindow, Notification, ipcMain, nativeImage, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Notification,
+  ipcMain,
+  nativeImage,
+  protocol,
+  powerMonitor,
+  session,
+  shell,
+} from "electron";
+import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { notificationTargetPath } from "@yuance/frontend-app-core";
 
 import {
   resolvePngBrandIconPath,
@@ -8,23 +23,173 @@ import {
 } from "./branding.mjs";
 import {
   isDevelopmentRuntime,
-  isSafeExternalUrl,
-  isTrustedAppUrl,
-  normalizeNotificationPayload,
   resolveDesktopAppIdentity,
+  resolveDesktopNetworkOrigin,
+  resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
-  resolveWebUrl,
 } from "./config.mjs";
+import { loadOrCreateInstallationId } from "./auth/installation-id.mjs";
+import { createCredentialRuntime } from "./auth/credential-runtime.mjs";
+import { createHostStatePublisher } from "./ipc/host-state.mjs";
+import { registerAuthCommandHandlers } from "./ipc/auth-commands.mjs";
+import { createNetworkStatePublisher } from "./ipc/network-state.mjs";
+import { registerFileCommandHandlers } from "./ipc/file-commands.mjs";
+import { registerBusinessCommandHandlers } from "./ipc/business-commands.mjs";
+import { registerAppearanceCommandHandlers } from "./ipc/appearance-commands.mjs";
+import { createAppearanceStore } from "./preferences/appearance-store.mjs";
+import { registerDatabaseStatsCacheCommandHandlers } from "./ipc/database-stats-cache-commands.mjs";
+import {
+  createRendererReadyController,
+  registerRendererReadyHandler,
+} from "./ipc/renderer-ready.mjs";
+import { createDatabaseStatsCacheStore } from "./preferences/database-stats-cache-store.mjs";
+import { createFileStateController } from "./ipc/file-state.mjs";
+import {
+  createIpcSenderPolicy,
+  createRendererReadinessTracker,
+} from "./ipc/sender-policy.mjs";
+import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
+import { enrollDesktop } from "./network/enrollment-client.mjs";
+import { createTrustedNetworkSession } from "./network/network-session.mjs";
+import { createNetworkCoordinator } from "./network/network-coordinator.mjs";
+import { bindNetworkPowerLifecycle } from "./network/power-lifecycle.mjs";
+import { createRestTransport } from "./network/rest-transport.mjs";
+import { createSseClient } from "./network/sse-client.mjs";
+import { createOperationRegistry } from "./network/operation-registry.mjs";
+import { createNotificationController } from "./notifications/notification-controller.mjs";
+import { createFileCapabilityVault } from "./files/file-capability-vault.mjs";
+import { createFileSpool } from "./files/file-spool.mjs";
+import { createFileDialog } from "./files/file-dialog.mjs";
+import { createTransferGrantVault } from "./files/transfer-grant-vault.mjs";
+import { createRevealDownloadVault } from "./files/reveal-download-vault.mjs";
+import { createRevealDownloadController } from "./files/reveal-download-controller.mjs";
+import { parseTransferContract } from "./files/transfer-contract.mjs";
+import { createUploadExecutor } from "./files/upload-executor.mjs";
+import { createDownloadExecutor } from "./files/download-executor.mjs";
+import { createBusinessAttachmentCoordinator } from "./files/business-attachment-coordinator.mjs";
+import { createPreviewCapabilityVault } from "./files/preview-capability-vault.mjs";
+import { createPreviewSpool } from "./files/preview-spool.mjs";
+import { createPreviewContentLoader } from "./files/preview-content-loader.mjs";
+import { createProjectAttachmentPreviewCoordinator } from "./files/project-attachment-preview-coordinator.mjs";
+import { createPreviewProtocolHandler } from "./protocol/preview-protocol-handler.mjs";
+import { createAttachmentOperationRegistry } from "./network/attachment-operation-registry.mjs";
+import { createDownloadTargetManager } from "./files/download-target.mjs";
+import { loadWindowsFileGuard } from "./files/windows-file-guard.mjs";
+import {
+  browserWindowWebPreferences,
+  decideNavigation,
+  isTrustedRendererUrl,
+  normalizeSafeExternalUrl,
+  resolveRendererTarget,
+} from "./window/security-policy.mjs";
+
+const UI_ATTACHMENT_TIMEOUT_MS = 60_000;
+const UI_MUTATION_TIMEOUT_MS = 60_000;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "app",
+    privileges: { standard: true, secure: true },
+  },
+]);
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDevRuntime = isDevelopmentRuntime({
   isPackaged: app.isPackaged,
-  channel: process.env.YUANCE_DESKTOP_CHANNEL,
 });
 const appIdentity = resolveDesktopAppIdentity(isDevRuntime);
-const webConfig = resolveWebUrl();
+const rendererTarget = resolveRendererTarget({
+  isPackaged: app.isPackaged,
+  rawDevServerUrl: process.env.YUANCE_DESKTOP_RENDERER_URL,
+});
+const appProtocolSmoke = app.isPackaged && process.argv.includes("--app-protocol-smoke");
+const appProtocolSmokeTheme = appProtocolSmoke
+  ? process.argv.find((value) => value.startsWith("--app-protocol-smoke-theme="))?.split("=", 2)[1] ?? "light"
+  : undefined;
+const desktopNetworkSmokePhase = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-network-smoke-phase="))?.split("=", 2)[1]
+  : undefined;
+const desktopNetworkSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-network-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
+const desktopFileSmokePhase = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-file-smoke-phase="))?.split("=", 2)[1]
+  : undefined;
+const desktopFileSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-file-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
+const desktopBusinessFileSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-business-file-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
+const desktopFeatureParityUiSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-feature-parity-ui-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
+const desktopFeatureParityUiSmokeProfile = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-feature-parity-ui-smoke-profile="))?.split("=", 2)[1]
+  : undefined;
+const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
+const appProtocolSmokeRequests = [];
+const appProtocolSmokeResponses = [];
+const windowsFileGuard = loadWindowsFileGuard();
+const secureCredentialDirectory = windowsFileGuard?.securePrivateDirectory;
+let appProtocolSmokePermissionChecks = 0;
+let appProtocolSmokeDataPath;
+let appProtocolSmokeInitialRenderer;
+let appProtocolSmokePhase = "initial";
+let appProtocolSmokeRendererReadinessCount = 0;
+let appProtocolSmokeMainDocumentNavigationCount = 0;
+let featureParityUiSmokeStarted = false;
+let featureParityUiSmokeMainDocumentNavigationCount = 0;
+const featureParityUiSmokeOperations = [];
+let featureParityUiSmokeActiveOperations = 0;
+let featureParityUiSmokeLastOperationAt = 0;
 const activeNotifications = new Set();
 let mainWindow = null;
+let credentialRuntime = null;
+let networkCoordinator = null;
+let notificationController = null;
+let fileRuntime = null;
+let businessTransport = null;
+let credentialRuntimeGeneration = 0;
+const hostStatePublisher = createHostStatePublisher();
+const networkStatePublisher = createNetworkStatePublisher();
+let disposeAuthCommands = () => {};
+let disposeNetworkPowerLifecycle = () => {};
+let disposeFileCommands = () => {};
+let disposeFilePowerLifecycle = () => {};
+let disposeBusinessCommands = () => {};
+let disposeAppearanceCommands = () => {};
+let disposeDatabaseStatsCacheCommands = () => {};
+let disposeRendererReadyHandler = () => {};
+let quitCleanupStarted = false;
+let quitCleanupComplete = false;
+const rendererReadiness = createRendererReadinessTracker(rendererTarget);
+const assertTrustedIpcSender = createIpcSenderPolicy({
+  getMainWindow: () => mainWindow,
+  isNavigationPending: rendererReadiness.isPending,
+  rendererTarget,
+});
+let mainWindowChromiumReady = false;
+let mainWindowPresentationReady = false;
+let mainWindowShown = false;
+let mainWindowRevealPending = false;
+const rendererPresentationReadiness = createRendererReadyController({
+  getMainWindow: () => mainWindow,
+  rendererTarget,
+  onReady: () => {
+    if (appProtocolSmoke) appProtocolSmokeRendererReadinessCount += 1;
+    mainWindowPresentationReady = true;
+    showMainWindowIfReady();
+  },
+});
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function settleWithin(promise, timeoutMs) {
+  return Promise.race([promise, delay(timeoutMs)]);
+}
 
 function resolveCurrentPngBrandIconPath() {
   return resolvePngBrandIconPath({
@@ -47,15 +212,21 @@ function applyRuntimeBrandIcon() {
 }
 
 function openExternalIfSafe(value) {
-  if (!isSafeExternalUrl(value)) {
-    return false;
-  }
-  shell.openExternal(value).catch(() => {});
+  const safeUrl = normalizeSafeExternalUrl(value, {
+    isDevelopment: isDevRuntime,
+    devOrigin: rendererTarget.kind === "dev-server" ? rendererTarget.origin : undefined,
+  });
+  if (!safeUrl) return false;
+  shell.openExternal(safeUrl).catch(() => {});
   return true;
 }
 
-function revealWindow(targetPath) {
+function revealWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (!mainWindowChromiumReady || !mainWindowPresentationReady) {
+    mainWindowRevealPending = true;
     return;
   }
   if (mainWindow.isMinimized()) {
@@ -63,18 +234,59 @@ function revealWindow(targetPath) {
   }
   mainWindow.show();
   mainWindow.focus();
-  mainWindow.webContents.send("yuance:notification-click", targetPath);
 }
 
-function handleInAppNavigation(event, targetUrl) {
-  if (isTrustedAppUrl(targetUrl, webConfig.origin)) {
-    return;
+function showMainWindowIfReady() {
+  if (appProtocolSmoke || !mainWindow || mainWindow.isDestroyed() || !mainWindowChromiumReady || !mainWindowPresentationReady) return false;
+  if (!mainWindowShown) {
+    mainWindowShown = true;
+    mainWindow.maximize();
   }
-  event.preventDefault();
-  openExternalIfSafe(targetUrl);
+  mainWindow.show();
+  if (mainWindowRevealPending || !mainWindow.isFocused()) mainWindow.focus();
+  mainWindowRevealPending = false;
+  return true;
 }
 
-function createMainWindow() {
+function publishBusinessFact(fact) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("yuance:business-fact", fact);
+}
+
+function showNativeNotification({ title, body, onClick }) {
+  const notification = new Notification({ title, body, silent: false });
+  activeNotifications.add(notification);
+  notification.once("click", onClick);
+  notification.once("close", () => activeNotifications.delete(notification));
+  notification.show();
+}
+
+function invalidateNotifications() {
+  notificationController?.invalidate();
+  for (const notification of activeNotifications) {
+    try { notification.close(); } catch {}
+  }
+  activeNotifications.clear();
+}
+
+function handleNavigation(event) {
+  const decision = decideNavigation({
+    url: event.url,
+    isMainFrame: event.isMainFrame,
+    rendererTarget,
+  });
+  if (decision.action === "allow") return;
+  event.preventDefault();
+  if (decision.action === "external") openExternalIfSafe(event.url);
+}
+
+function createMainWindow(initialTheme = "light") {
+  rendererReadiness.reset();
+  rendererPresentationReadiness.reset();
+  mainWindowChromiumReady = false;
+  mainWindowPresentationReady = false;
+  mainWindowShown = false;
+  mainWindowRevealPending = true;
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -83,83 +295,1479 @@ function createMainWindow() {
     show: false,
     backgroundColor: "#f4f7f8",
     title: appIdentity.displayName,
-    webPreferences: {
-      preload: path.join(moduleDir, "preload.cjs"),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      webviewTag: false,
-    },
+    webPreferences: browserWindowWebPreferences({
+      preloadPath: path.join(moduleDir, "preload.cjs"),
+      partition: rendererTarget.partition,
+      additionalArguments: [`--yuance-startup-theme=${initialTheme === "dark" ? "dark" : "light"}`],
+    }),
   });
 
   window.once("ready-to-show", () => {
-    window.maximize();
-    window.show();
+    mainWindowChromiumReady = true;
+    showMainWindowIfReady();
   });
-  window.webContents.on("will-navigate", handleInAppNavigation);
-  window.webContents.on("will-redirect", handleInAppNavigation);
+  window.webContents.on("will-navigate", handleNavigation);
+  window.webContents.on("will-redirect", handleNavigation);
+  window.webContents.on("will-frame-navigate", (event) => {
+    if (!event.isMainFrame) handleNavigation(event);
+  });
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfSafe(url);
     return { action: "deny" };
   });
-  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.session.setPermissionCheckHandler(() => {
+    if (appProtocolSmoke) appProtocolSmokePermissionChecks += 1;
+    return false;
+  });
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
     callback(false);
   });
-  window.on("closed", () => {
-    if (mainWindow === window) {
-      mainWindow = null;
+  window.webContents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
+    const navigation = { url, isInPlace, isMainFrame };
+    rendererReadiness.didStart(navigation);
+    if (rendererPresentationReadiness.didStart(navigation)) {
+      if (appProtocolSmoke) appProtocolSmokeMainDocumentNavigationCount += 1;
+      if (desktopFeatureParityUiSmokeOrigin) featureParityUiSmokeMainDocumentNavigationCount += 1;
     }
   });
-  window.loadURL(webConfig.url).catch((error) => {
-    console.error("Failed to load Yuance web application:", error);
+  window.webContents.on("dom-ready", () => {
+    rendererPresentationReadiness.didCommit(window.webContents.getURL());
+  });
+  window.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) rendererReadiness.didCommit(url);
+  });
+  window.webContents.on("did-finish-load", () => {
+    if (rendererReadiness.didCommit(window.webContents.getURL())) {
+      hostStatePublisher.publishTo(window);
+      networkStatePublisher.publishTo(window);
+      if (appProtocolSmoke) {
+        runAppProtocolSmoke(window).catch((error) => {
+          process.stderr.write(`app protocol smoke failed: ${error.message}\n`, () => app.exit(1));
+        });
+      }
+      if (desktopFeatureParityUiSmokeOrigin && !featureParityUiSmokeStarted) {
+        featureParityUiSmokeStarted = true;
+        runFeatureParityUiSmoke(window).catch((error) => {
+          process.stderr.write(`desktop feature parity UI smoke failed: ${error.stack || error.message}\n`, () => app.quit());
+        });
+      }
+    }
+  });
+  window.webContents.on("did-fail-load", (_event, _code, _description, _url, isMainFrame) => {
+    if (isMainFrame) rendererReadiness.didCancelOrFail();
+  });
+  window.webContents.on("render-process-gone", () => {
+    rendererReadiness.reset();
+    rendererPresentationReadiness.reset();
+    fileRuntime?.state.invalidateAll().catch(() => {});
+  });
+  window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) fileRuntime?.state.invalidateAll().catch(() => {});
+  });
+  window.on("closed", () => {
+    rendererPresentationReadiness.reset();
+    mainWindowChromiumReady = false;
+    mainWindowPresentationReady = false;
+    mainWindowShown = false;
+    mainWindowRevealPending = false;
+    rendererReadiness.reset();
+    if (mainWindow === window) {
+      mainWindow = null;
+      invalidateNotifications();
+      networkCoordinator?.stop();
+      fileRuntime?.state.invalidateAll().catch(() => {});
+    }
+  });
+  window.loadURL(rendererTarget.url).catch((error) => {
+    console.error("Failed to load Yuance renderer:", error);
+    if (!window.isDestroyed()) window.destroy();
+    if (appProtocolSmoke) app.exit(1);
+    else {
+      dialog.showErrorBox("元策无法启动", "应用界面加载失败，请重新启动或重新安装后再试。");
+      app.quit();
+    }
   });
   return window;
 }
 
-function notifyFromRenderer(event, payload) {
-  if (!isTrustedAppUrl(event.sender.getURL(), webConfig.origin)) {
-    throw new Error("Untrusted renderer attempted to create a native notification.");
-  }
-  if (!Notification.isSupported() || (mainWindow && mainWindow.isFocused())) {
-    return { shown: false };
-  }
-
-  const notificationPayload = normalizeNotificationPayload(payload, webConfig.origin);
-  const notification = new Notification({
-    title: notificationPayload.title,
-    body: notificationPayload.body,
-    silent: false,
-  });
-  activeNotifications.add(notification);
-  notification.once("click", () => revealWindow(notificationPayload.targetPath));
-  notification.once("close", () => activeNotifications.delete(notification));
-  notification.show();
-  return { shown: true };
+async function rendererSmokeSnapshot(window) {
+  return window.webContents.executeJavaScript(`(async () => {
+    const resourceUrls = performance.getEntriesByType("resource").map((entry) => entry.name);
+    const bridge = window.yuanceDesktop;
+    const frame = document.createElement("iframe");
+    frame.id = "yuance-smoke-subframe";
+    frame.hidden = true;
+    document.body.append(frame);
+    const subframeBridgeExposed = Boolean(frame.contentWindow && frame.contentWindow.yuanceDesktop);
+    const invalidPayloadRejected = !bridge.notifications
+      && Object.keys(bridge.events).length === 1
+      && typeof bridge.events.subscribe === "function";
+    const permissionResult = await Promise.race([
+      navigator.permissions.query({ name: "geolocation" }).then((result) => result.state, () => "error"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 500)),
+    ]);
+    const networkProbeRejected = await fetch("https://127.0.0.1:9/yuance-smoke", {
+      cache: "no-store",
+      credentials: "omit",
+    }).then(() => false, () => true);
+    return {
+      url: location.href,
+      title: document.title,
+      bodyText: document.body.innerText,
+      desktopStage: document.querySelector(".desktop-root-shell")?.dataset.desktopStage ?? "missing",
+      theme: document.documentElement.dataset.theme ?? "missing",
+      rootBackgroundColor: getComputedStyle(document.querySelector('.desktop-root-shell')).backgroundColor,
+      bridgeSchemaVersion: bridge.schemaVersion,
+      bridgeState: bridge.hostState.getSnapshot().status,
+      resourceUrls,
+      subframeBridgeExposed,
+      invalidPayloadRejected,
+      permissionResult,
+      networkProbeRejected,
+      windowOpenDenied: window.open("app://other/") === null,
+    };
+  })()`);
 }
 
-app.setName(appIdentity.displayName);
+async function probeAppProtocolStatus(url) {
+  const probeWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      webviewTag: false,
+      partition: rendererTarget.partition,
+    },
+  });
+  const webContentsId = probeWindow.webContents.id;
+  try {
+    await settleWithin(probeWindow.loadURL(url).catch(() => {}), 500);
+    await delay(50);
+    return appProtocolSmokeResponses.findLast((entry) => entry.webContentsId === webContentsId)?.statusCode ?? 0;
+  } finally {
+    if (!probeWindow.isDestroyed()) probeWindow.destroy();
+  }
+}
+
+async function finishAppProtocolSmoke(window) {
+  const renderer = await rendererSmokeSnapshot(window);
+  const subframe = window.webContents.mainFrame.frames.find((frame) => frame !== window.webContents.mainFrame);
+  const subframeObserved = Boolean(subframe);
+  let subframeIpcRejected = false;
+  try {
+    assertTrustedIpcSender({ sender: window.webContents, senderFrame: subframe });
+  } catch (error) {
+    subframeIpcRejected = error.message === "Untrusted renderer IPC sender.";
+  }
+  await window.webContents.executeJavaScript('document.querySelector("#yuance-smoke-subframe")?.remove()');
+  await settleWithin(window.webContents.executeJavaScript('location.href = "app://other/"'), 500);
+  await delay(100);
+  const navigationDenied = window.webContents.getURL() === "app://yuance/projects/smoke";
+  const protocolStatuses = {
+    missing: await probeAppProtocolStatus("app://yuance/assets/missing.js"),
+    traversal: await probeAppProtocolStatus("app://yuance/%252e%252e/index.html"),
+    wrongHost: await probeAppProtocolStatus("app://other/"),
+  };
+  await delay(APP_PROTOCOL_SMOKE_STABILITY_MS);
+  const documentResponse = appProtocolSmokeResponses.find((entry) => entry.url === "app://yuance/");
+  const result = {
+    kind: "yuance-app-protocol-smoke",
+    url: renderer.url,
+    hostState: hostStatePublisher.snapshot().status,
+    externalRequestCount: appProtocolSmokeRequests.length,
+    csp: documentResponse?.csp || "",
+    initialRenderer: appProtocolSmokeInitialRenderer,
+    reloadedRenderer: renderer,
+    stageSequence: [appProtocolSmokeInitialRenderer?.desktopStage, renderer.desktopStage],
+    rendererReadinessCount: appProtocolSmokeRendererReadinessCount,
+    mainDocumentNavigationCount: appProtocolSmokeMainDocumentNavigationCount,
+    requestedTheme: appProtocolSmokeTheme,
+    navigationDenied,
+    permissionCheckCount: appProtocolSmokePermissionChecks,
+    subframeObserved,
+    subframeIpcRejected,
+    protocolStatuses,
+    resourceResponses: [...new Set(
+      appProtocolSmokeResponses
+        .filter((entry) => entry.url.startsWith("app://yuance/assets/") && entry.statusCode === 200)
+        .map((entry) => entry.url),
+    )],
+    runtime: {
+      isPackaged: app.isPackaged,
+      rendererKind: rendererTarget.kind,
+      partition: rendererTarget.partition,
+      isolatedProfile: app.getPath("userData") === appProtocolSmokeDataPath
+        && app.getPath("sessionData") === path.join(appProtocolSmokeDataPath, "Session Data"),
+    },
+  };
+  if (appProtocolSmokeDataPath) {
+    await fs.rm(appProtocolSmokeDataPath, { recursive: true, force: true }).catch(() => {});
+  }
+  await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result)}\n`, resolve));
+  app.exit(result.externalRequestCount === 0 ? 0 : 1);
+}
+
+async function runAppProtocolSmoke(window) {
+  if (appProtocolSmokePhase === "initial") {
+    appProtocolSmokePhase = "reloading";
+    appProtocolSmokeInitialRenderer = await rendererSmokeSnapshot(window);
+    await window.webContents.executeJavaScript('history.pushState({}, "", "/projects/smoke")');
+    window.webContents.reload();
+    return;
+  }
+  if (appProtocolSmokePhase !== "reloading") return;
+  appProtocolSmokePhase = "finishing";
+  await finishAppProtocolSmoke(window);
+}
+
+async function runFeatureParityUiSmoke(window) {
+  process.stderr.write("desktop feature parity UI smoke stage: authorization\n");
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+      const button = [...document.querySelectorAll("button")].find((value) => value.textContent.trim() === "开始授权");
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    })()`), 10_000, "authorization action");
+  } catch (error) {
+    const diagnostic = await window.webContents.executeJavaScript(`(() => ({
+      url: location.href,
+      hostState: window.yuanceDesktop?.hostState?.getSnapshot?.()?.status ?? "missing",
+      networkState: window.yuanceDesktop?.network?.getSnapshot?.()?.status ?? "missing",
+      bodyText: document.body?.innerText?.slice(0, 256) ?? "",
+    }))()`);
+    throw new Error(`${error.message}: ${JSON.stringify(diagnostic)}`);
+  }
+  process.stderr.write("desktop feature parity UI smoke stage: shared-app\n");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")))()`), 30_000, "shared app load");
+  process.stderr.write("desktop feature parity UI smoke stage: business\n");
+  const business = await runFeatureParityBusinessUiSmoke(window);
+  process.stderr.write("desktop feature parity UI smoke stage: resilience\n");
+  const resilience = await runFeatureParityResilienceSmoke(window);
+  process.stderr.write("desktop feature parity UI smoke stage: report\n");
+  window.focus();
+  window.webContents.focus();
+  await window.webContents.executeJavaScript("document.body.focus()");
+  for (let index = 0; index < 12; index += 1) {
+    window.webContents.sendInputEvent({ type: "keyDown", keyCode: "Tab" });
+    window.webContents.sendInputEvent({ type: "keyUp", keyCode: "Tab" });
+    await delay(50);
+    const focused = await window.webContents.executeJavaScript(`(() => {
+      const active = document.activeElement;
+      return Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName));
+    })()`);
+    if (focused) break;
+  }
+  const resources = desktopUiSmokeResourceMetrics();
+  const report = await window.webContents.executeJavaScript(`(() => {
+    const bridge = window.yuanceDesktop;
+    const active = document.activeElement;
+    return {
+      kind: "yuance-desktop-feature-parity-ui-smoke",
+      sharedApp: !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")),
+      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,lifecycle,network,schemaVersion,startup" && bridge.schemaVersion === 14,
+      semanticMain: document.querySelectorAll("main").length === 1,
+      semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
+      mainDocumentNavigationCount: ${featureParityUiSmokeMainDocumentNavigationCount},
+      workItemDetail: ${business.workItemDetail},
+      workItemEdited: ${business.workItemEdited},
+      workItemHandedOff: ${business.workItemHandedOff},
+      commentCreated: ${business.commentCreated},
+      commentEdited: ${business.commentEdited},
+      workItemAttachmentUploaded: ${business.workItemAttachmentUploaded},
+      workItemAttachmentDownloaded: ${business.workItemAttachmentDownloaded},
+      workItemAttachmentRevealed: ${business.workItemAttachmentRevealed},
+      commentAttachmentUploaded: ${business.commentAttachmentUploaded},
+      commentAttachmentDownloaded: ${business.commentAttachmentDownloaded},
+      commentAttachmentRevealed: ${business.commentAttachmentRevealed},
+      messageTargetOpened: ${business.messageTargetOpened},
+      messageTargetFocused: ${business.messageTargetFocused},
+      permissionDenied: ${business.permissionDenied},
+      permissionInputPreserved: ${business.permissionInputPreserved},
+      validationError: ${business.validationError},
+      validationFocused: ${business.validationFocused},
+      notFoundVisible: ${business.notFoundVisible},
+      offlineWorkspaceRetained: ${business.offlineWorkspaceRetained},
+      offlineWorkspaceRecovered: ${business.offlineWorkspaceRecovered},
+      interruptionRecovered: ${business.interruptionRecovered},
+      interruptionCycles: ${business.interruptionCycles},
+      processCount: ${resources.processCount},
+      workingSetKb: ${resources.workingSetKb},
+      cpuPercent: ${resources.cpuPercent},
+      hiddenWindow: ${resilience.hiddenWindow},
+      lifecycleCycles: ${resilience.lifecycleCycles},
+      networkRecovered: ${resilience.networkRecovered},
+      postResumeRefresh: ${resilience.postResumeRefresh},
+      liveRegions: document.querySelectorAll("[aria-live]").length,
+      accessibilityViolations: (() => {
+        const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+        const duplicateIds = ids.length - new Set(ids).size;
+        const unnamedControls = [...document.querySelectorAll("button, a[href], input, select, textarea")].filter((element) => {
+          if (element instanceof HTMLInputElement && element.type === "hidden") return false;
+          const labelledBy = element.getAttribute("aria-labelledby");
+          const hasLabelledBy = labelledBy?.split(/\s+/u).every((id) => Boolean(document.getElementById(id)));
+          const hasLabel = Boolean(element.getAttribute("aria-label") || hasLabelledBy || element.closest("label") || element.id && document.querySelector('label[for="' + CSS.escape(element.id) + '"]') || element.textContent?.trim() || element.getAttribute("title"));
+          return !hasLabel;
+        }).length;
+        return duplicateIds + unnamedControls + (document.querySelectorAll("main").length === 1 ? 0 : 1) + (document.querySelectorAll("h1").length === 1 ? 0 : 1);
+      })(),
+      keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
+      genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
+    };
+  })()`);
+  await new Promise((resolve) => process.stdout.write(`${JSON.stringify(report)}\n`, resolve));
+  app.quit();
+}
+
+async function runFeatureParityResilienceSmoke(window) {
+  window.hide();
+  await delay(500);
+  const hiddenWindow = !window.isVisible();
+  for (let index = 0; index < 3; index += 1) {
+    networkCoordinator?.suspend();
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "suspended", 5_000, "network suspend");
+    networkCoordinator?.resume();
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 15_000, "network resume");
+  }
+  window.show();
+  window.focus();
+  await window.webContents.executeJavaScript(`document.querySelector('nav[aria-label="应用导航"] a[href$="/tasks"]')?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('button[aria-label="刷新"]:not(:disabled)'))`), 30_000, "post-resume refresh route");
+  await window.webContents.executeJavaScript(`document.querySelector('button[aria-label="刷新"]')?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('button[aria-label="刷新"]:not(:disabled)'))`), 30_000, "post-resume refresh");
+  return Object.freeze({ hiddenWindow, lifecycleCycles: 3, networkRecovered: true, postResumeRefresh: true });
+}
+
+function desktopUiSmokeResourceMetrics() {
+  const metrics = app.getAppMetrics();
+  return Object.freeze({
+    processCount: metrics.length,
+    workingSetKb: Math.ceil(metrics.reduce((total, value) => total + (value.memory?.workingSetSize || 0), 0)),
+    cpuPercent: Math.ceil(metrics.reduce((total, value) => total + (value.cpu?.percentCPUUsage || 0), 0)),
+  });
+}
+
+async function runFeatureParityBusinessUiSmoke(window) {
+  process.stderr.write("desktop feature parity UI business stage: detail\n");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const link = [...document.querySelectorAll('a[href]')].find((value) => value.textContent.trim() === "任务");
+    if (!link) return false;
+    link.click();
+    return true;
+  })()`), 10_000, "task navigation");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-row')].find((value) => value.querySelector('.work-table-key code')?.textContent.startsWith("YCE-TASK-2"));
+    const link = row?.querySelector('a[href]');
+    if (!link) return false;
+    link.click();
+    return true;
+  })()`), 30_000, "work item link");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-hero h1')?.getAttribute('aria-label')?.startsWith("YCE-TASK-2")`), 30_000, "work item detail");
+
+  process.stderr.write("desktop feature parity UI business stage: comments\n");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "work item detail transport settlement");
+  await waitForFeatureParityStableElement(window, ".work-item-comment-form", 1_000, UI_MUTATION_TIMEOUT_MS, "comment form");
+  await replaceFeatureParityEditorText(window, '[contenteditable="true"][aria-label="新增评论"]', "@yuance_admin Desktop packaged UI comment", "comment create input");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const editor = document.querySelector('[contenteditable="true"][aria-label="新增评论"]');
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
+    return Boolean(editor?.textContent === "@yuance_admin Desktop packaged UI comment" && button && !button.disabled);
+  })()`), 10_000, "comment create input state");
+  await delay(2_000);
+  const commentSubmit = await executeFeatureParityUiScript(window, `(() => {
+    const form = document.querySelector('.work-item-comment-form');
+    const button = form?.querySelector('button[type="submit"]');
+    if (!form || !button || button.textContent.trim() !== "发布评论") return {
+      ok: false,
+      form: Boolean(form),
+      button: button?.textContent.trim() || "",
+      disabled: button?.disabled ?? null,
+      path: location.pathname,
+      heading: document.querySelector("h1")?.textContent || "",
+      hostState: Boolean(document.querySelector(".host-status-shell")),
+      main: document.querySelector("main")?.textContent?.slice(0, 300) || "",
+    };
+    form.addEventListener("submit", () => { form.dataset.uiSmokeSubmitted = "true"; }, { capture: true, once: true });
+    form.requestSubmit(button);
+    return { ok: true };
+  })()`, "comment create submit");
+  if (!commentSubmit.ok) throw new Error(`UI smoke comment create submit is unavailable: ${JSON.stringify(commentSubmit)}`);
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-row .yc-rich-text-content')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), UI_MUTATION_TIMEOUT_MS, "comment create");
+  } catch (error) {
+    const diagnostic = await window.webContents.executeJavaScript(`(() => ({
+      comments: [...document.querySelectorAll('.work-item-comment-row .yc-rich-text-content')].map((value) => value.textContent).slice(-4),
+      alerts: [...document.querySelectorAll('[role="alert"]')].map((value) => value.textContent).slice(-4),
+      statuses: [...document.querySelectorAll('[role="status"]')].map((value) => value.textContent).slice(-4),
+      submit: [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论")?.disabled ?? null,
+      submitEvent: document.querySelector('.work-item-comment-form')?.dataset.uiSmokeSubmitted ?? "missing",
+    }))()`);
+    throw new Error(`${error.message}: ${JSON.stringify({ ...diagnostic, operations: featureParityUiSmokeOperations.slice(-8) })}`);
+  }
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment");
+    const button = row?.querySelector('button[data-comment-edit]');
+    return Boolean(button && !button.disabled);
+  })()`), UI_MUTATION_TIMEOUT_MS, "comment edit action");
+
+  await executeFeatureParityUiScript(window, `(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment");
+    const button = row?.querySelector('button[data-comment-edit]');
+    if (!button) throw new Error("comment edit action is unavailable");
+    button.click();
+  })()`, "comment edit open");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-comment-edit-form [contenteditable="true"][aria-label="编辑评论"]'))`), 10_000, "comment edit form");
+  await replaceFeatureParityEditorText(window, '.work-item-comment-edit-form [contenteditable="true"][aria-label="编辑评论"]', "@yuance_admin Desktop packaged UI comment updated", "comment edit input");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const editor = document.querySelector('.work-item-comment-edit-form [contenteditable="true"][aria-label="编辑评论"]');
+    const button = [...document.querySelectorAll('.work-item-comment-edit-form button')].find((value) => value.textContent.trim() === "保存评论");
+    return Boolean(editor?.textContent === "@yuance_admin Desktop packaged UI comment updated" && button && !button.disabled);
+  })()`), 10_000, "comment edit input state");
+  await executeFeatureParityUiScript(window, `(() => {
+    const form = document.querySelector('.work-item-comment-edit-form');
+    const button = form?.querySelector('button[type="submit"]');
+    if (!form || !button || button.textContent.trim() !== "保存评论") throw new Error("comment edit submit is unavailable");
+    form.requestSubmit(button);
+  })()`, "comment edit submit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-row .yc-rich-text-content')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), UI_MUTATION_TIMEOUT_MS, "comment edit");
+
+  process.stderr.write("desktop feature parity UI business stage: work-item-attachments\n");
+  let workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt(window);
+  if (!workItemAttachmentUploaded) workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt(window);
+  if (!workItemAttachmentUploaded) throw new Error("UI smoke work item attachment retry failed");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].find((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt");
+    row?.querySelector('button[aria-label^="下载附件"]')?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-attachments-panel .work-item-attachment-row button:not([aria-label])'))`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment download");
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row button')].find((value) => value.textContent.trim() === "在文件夹中显示")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-attachments-panel .work-item-attachment-status')?.textContent.includes("已在文件夹中定位")`), 10_000, "work item attachment reveal");
+
+  process.stderr.write("desktop feature parity UI business stage: comment-attachments\n");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "选择评论附件")?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    return [...(row?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
+  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment upload");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    row?.querySelector('button[aria-label^="下载评论附件"]')?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    return [...(row?.querySelectorAll('button') || [])].some((value) => value.textContent.trim() === "在文件夹中显示");
+  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment download");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "在文件夹中显示")?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
+  })()`), 10_000, "comment attachment reveal");
+
+  process.stderr.write("desktop feature parity UI business stage: edit\n");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "comment attachment transport settlement");
+  await executeFeatureParityUiScript(window, `(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
+    const input = panel?.querySelector('input[name="title"]');
+    const button = panel?.querySelector('button[type="submit"]');
+    if (!input || !button) throw new Error("work item edit form is unavailable");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, "Desktop packaged UI edit");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`, "work item edit submit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-hero h1')?.textContent.includes("Desktop packaged UI edit")`), UI_MUTATION_TIMEOUT_MS, "work item edit");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "work item edit transport settlement");
+  await executeFeatureParityUiScript(window, `[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "指派 / 流转")?.click()`, "work item handoff open");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
+    const button = panel?.querySelector('button[type="submit"]');
+    return Boolean(button && !button.disabled);
+  })()`), UI_MUTATION_TIMEOUT_MS, "work item handoff action");
+
+  process.stderr.write("desktop feature parity UI business stage: handoff\n");
+  const workItemStatusBeforeHandoff = await executeFeatureParityUiScript(window, `(() => {
+    const status = document.querySelector('.work-item-title-tags .status');
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
+    const select = panel?.querySelector('select[name="status"]');
+    const textarea = panel?.querySelector('textarea[name="body"]');
+    const button = panel?.querySelector('button[type="submit"]');
+    if (!status || !select || !textarea || !button) throw new Error("work item handoff form is unavailable");
+    const currentStatus = status.textContent;
+    const nextStatus = select.value === "in_progress" ? "pending_confirmation" : "in_progress";
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, nextStatus);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI handoff");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+    return currentStatus;
+  })()`, "work item handoff submit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const currentStatus = document.querySelector('.work-item-title-tags .status')?.textContent;
+    return Boolean(currentStatus && currentStatus !== ${JSON.stringify(workItemStatusBeforeHandoff)});
+  })()`), UI_MUTATION_TIMEOUT_MS, "work item handoff");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "work item handoff transport settlement");
+
+  process.stderr.write("desktop feature parity UI business stage: interruptions\n");
+  for (let index = 0; index < 3; index += 1) {
+    networkCoordinator?.invalidate();
+    networkStatePublisher.update({ status: "offline" });
+    networkStatePublisher.publishTo(mainWindow);
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, `network interruption ${index + 1}`);
+    if (index === 0) {
+      await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+        const root = document.querySelector('.desktop-root-shell[data-desktop-stage="workspace"]');
+        return Boolean(root && !document.querySelector('.host-status-shell') && root.querySelector('main') && root.querySelector('.work-item-action-form'));
+      })()`), 10_000, "offline workspace retention");
+    }
+    networkStatePublisher.update({ status: "online" });
+    networkStatePublisher.publishTo(mainWindow);
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
+  }
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
+    return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
+  })()`), 30_000, "offline shared app recovery");
+
+  process.stderr.write("desktop feature parity UI business stage: member-authorization\n");
+  await executeFeatureParityUiScript(window, `(() => {
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
+    if (!button) throw new Error("logout button is unavailable");
+    button.click();
+  })()`, "logout");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "开始授权")`), 30_000, "member authorization shell");
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "开始授权")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.host-status-shell') && Boolean(document.querySelector('nav[aria-label="应用导航"]') && document.querySelector('summary[aria-label="打开消息通知"]'))`), 30_000, "member shared app load");
+  process.stderr.write("desktop feature parity UI business stage: messages\n");
+  await executeFeatureParityUiScript(window, `(() => {
+    document.querySelector('summary[aria-label="打开消息通知"]')?.click();
+    const link = [...document.querySelectorAll('.global-nav-notification-panel a')].find((value) => value.textContent.includes("消息中心"));
+    if (!link) throw new Error("message navigation is unavailable");
+    link.click();
+  })()`, "message navigation");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.message-row button'))`), 30_000, "message list");
+  await window.webContents.executeJavaScript(`document.querySelector('.message-row button')?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.message-list') && document.querySelector('h1') === document.activeElement`), 30_000, "message target focus");
+  process.stderr.write("desktop feature parity UI business stage: permission\n");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
+    return Boolean(!panel && document.querySelector('.work-item-hero h1')?.textContent.includes("Desktop packaged UI edit") && !document.querySelector('.shell-banner[role="alert"]'));
+  })()`), 30_000, "permission denied edit surface");
+  process.stderr.write("desktop feature parity UI business stage: validation\n");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('[contenteditable="true"][aria-label="新增评论"]')?.textContent === ""`), 10_000, "comment validation input state");
+  await executeFeatureParityUiScript(window, `(() => {
+    const form = document.querySelector('.work-item-comment-form');
+    const button = form?.querySelector('button[type="submit"]');
+    if (!form || !button || button.textContent.trim() !== "发布评论") throw new Error("validation test comment submit is unavailable");
+    form.requestSubmit(button);
+  })()`, "comment validation submit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const editor = document.querySelector('[contenteditable="true"][aria-label="新增评论"]');
+    return Boolean(document.querySelector('.work-item-comments-panel [role="alert"]') && editor?.textContent === "" && document.activeElement === editor);
+  })()`), 10_000, "comment validation focus");
+  process.stderr.write("desktop feature parity UI business stage: not-found\n");
+  await window.webContents.executeJavaScript(`history.pushState({}, "", "/work-items/YCE-TASK-999999"); dispatchEvent(new Event("popstate"))`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const alert = document.querySelector('.shell-banner[role="alert"]');
+    return Boolean(alert?.textContent.includes("加载失败") && document.querySelector('.page-heading h1')?.textContent === "工作项详情" && location.pathname.endsWith("/work-items/YCE-TASK-999999"));
+  })()`), 30_000, "work item not found");
+  await window.webContents.executeJavaScript(`history.pushState({}, "", "/work-items/YCE-TASK-2"); dispatchEvent(new Event("popstate"))`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-hero h1')?.getAttribute('aria-label')?.startsWith("YCE-TASK-2") && !document.querySelector('.shell-banner[role="alert"]')`), 30_000, "work item recovery after not found");
+  return Object.freeze({
+    workItemDetail: true,
+    workItemEdited: true,
+    workItemHandedOff: true,
+    commentCreated: true,
+    commentEdited: true,
+    workItemAttachmentUploaded: true,
+    workItemAttachmentDownloaded: true,
+    workItemAttachmentRevealed: true,
+    commentAttachmentUploaded: true,
+    commentAttachmentDownloaded: true,
+    commentAttachmentRevealed: true,
+    messageTargetOpened: true,
+    messageTargetFocused: true,
+    permissionDenied: true,
+    permissionInputPreserved: true,
+    validationError: true,
+    validationFocused: true,
+    notFoundVisible: true,
+    offlineWorkspaceRetained: true,
+    offlineWorkspaceRecovered: true,
+    interruptionRecovered: true,
+    interruptionCycles: 3,
+  });
+}
+
+async function runWorkItemAttachmentUploadAttempt(window) {
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件");
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`), 10_000, "work item attachment select action");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+      const panel = document.querySelector('.work-item-attachments-panel');
+      const uploaded = [...(panel?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
+      return uploaded || Boolean(panel?.querySelector('.work-item-action-error'));
+    })()`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment upload");
+  } catch (error) {
+    if (error.message === "UI smoke work item attachment upload timed out") return false;
+    throw error;
+  }
+  return window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`);
+}
+
+async function executeFeatureParityUiScript(window, source, label) {
+  try { return await window.webContents.executeJavaScript(source); }
+  catch (error) { throw new Error(`UI smoke ${label} script failed: ${error.message}`); }
+}
+
+async function replaceFeatureParityEditorText(window, selector, value, label) {
+  await executeFeatureParityUiScript(window, `(() => {
+    const editor = document.querySelector(${JSON.stringify(selector)});
+    if (!editor) throw new Error(${JSON.stringify(`${label} editor is unavailable`)});
+    editor.focus();
+    document.execCommand("selectAll", false);
+  })()`, `${label} focus`);
+  for (const character of value) window.webContents.sendInputEvent({ type: "char", keyCode: character });
+  await delay(50);
+}
+
+async function waitForFeatureParityStableElement(window, selector, stableMs, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const marker = crypto.randomUUID();
+    const marked = await window.webContents.executeJavaScript(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!element) return false;
+      element.dataset.uiSmokeStabilityMarker = ${JSON.stringify(marker)};
+      return true;
+    })()`);
+    if (!marked) { await delay(50); continue; }
+    await delay(stableMs);
+    const stable = await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)})?.dataset.uiSmokeStabilityMarker === ${JSON.stringify(marker)}`);
+    if (stable) return;
+  }
+  throw new Error(`UI smoke ${label} did not stabilize`);
+}
+
+async function waitForFeatureParityBusinessIdle(stableMs, timeoutMs, label) {
+  await waitForUiSmoke(
+    () => featureParityUiSmokeActiveOperations === 0 && Date.now() - featureParityUiSmokeLastOperationAt >= stableMs,
+    timeoutMs,
+    label,
+  );
+}
+
+async function waitForUiSmoke(operation, timeoutMs = 10_000, label = "condition") {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { if (await operation()) return; } catch {}
+    await delay(50);
+  }
+  throw new Error(`UI smoke ${label} timed out`);
+}
+
+function validatePackagedLoopbackOrigin(value) {
+  const origin = new URL(value);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || !origin.port || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") {
+    throw new Error("desktop feature parity UI smoke origin must be an exact loopback HTTP origin");
+  }
+  return origin.origin;
+}
+
+async function installationId(userDataPath) {
+  const filePath = path.join(userDataPath, "Device Credentials", "installation-id");
+  return loadOrCreateInstallationId({ fs, filePath, platform: process.platform });
+}
+
+async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", openExternal = true } = {}) {
+  const endpoint = resolveDeviceAuthEndpoint({ isDevRuntime });
+  const network = await createTrustedNetworkSession({
+    electronSession: session,
+    mode: "development",
+    allowedOrigin: endpoint,
+  });
+  const enrolled = await enrollDesktop({
+    origin: endpoint,
+    mode: "development",
+    fetchImpl: network.fetch,
+    expectedServerInstanceId: serverInstanceId,
+  });
+  const userDataPath = app.getPath("userData");
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    secureDirectory: secureCredentialDirectory,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: () => installationId(userDataPath),
+    deviceName: `${appIdentity.displayName} (${process.platform})`,
+    clientVersion: app.getVersion(),
+  });
+  const initialized = await runtime.initialize();
+  if (initialized.status === "authenticated") {
+    if (action === "logout") {
+      const loggedOut = await runtime.logout();
+      process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true })}\n`);
+      return;
+    }
+    process.stdout.write(`${JSON.stringify({ status: initialized.status, recovered: true })}\n`);
+    return;
+  }
+  if (action === "logout" && ["locked", "reauthorization_required"].includes(initialized.status)) {
+    const loggedOut = await runtime.logout();
+    process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true, recovered: true })}\n`);
+    return;
+  }
+  if (initialized.status === "locked" || initialized.status === "reauthorization_required") {
+    throw new Error(`credential runtime is ${initialized.status}`);
+  }
+  const result = await runtime.authorize({
+    onUserCode: (userCode) => process.stdout.write(`user_code=${userCode}\n`),
+    openExternal: openExternal
+      ? (verificationUrl) => shell.openExternal(verificationUrl)
+      : async () => {},
+  });
+  process.stdout.write(`${JSON.stringify({ status: result.status })}\n`);
+}
+
+async function runDesktopNetworkSmoke() {
+  if (!["authorize", "verify"].includes(desktopNetworkSmokePhase) || !desktopNetworkSmokeOrigin) {
+    throw new Error("packaged network smoke arguments are invalid");
+  }
+  const origin = new URL(desktopNetworkSmokeOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") {
+    throw new Error("packaged network smoke origin must be an exact loopback HTTP origin");
+  }
+  writeDesktopNetworkSmokeStage("ready");
+  const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
+  writeDesktopNetworkSmokeStage("session-created");
+  const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
+  writeDesktopNetworkSmokeStage("enrolled");
+  let activeController;
+  const authStates = [];
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile, fetchImpl: network.fetch, fs,
+    userDataPath: app.getPath("userData"), platform: process.platform,
+    secureDirectory: secureCredentialDirectory,
+    installationId: () => installationId(app.getPath("userData")),
+    deviceName: "Yuance Packaged Network Smoke", clientVersion: app.getVersion(),
+    onNetworkInvalidated: () => activeController?.abort(),
+    onPublicState: (state) => authStates.push(state.status),
+  });
+  const initialized = await runtime.initialize();
+  writeDesktopNetworkSmokeStage("credential-initialized");
+  if (desktopNetworkSmokePhase === "authorize") {
+    if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial smoke state: ${initialized.status}`);
+    await runtime.authorize({
+      openExternal: async () => {},
+      onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-user-code", userCode })}\n`),
+    });
+    process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-authorized", status: runtime.snapshot().status })}\n`);
+    return;
+  }
+  let credentialRestart = "recovered";
+  if (initialized.status !== "authenticated") {
+    if (process.platform !== "darwin" || initialized.status !== "unauthenticated") throw new Error(`packaged credential recovery failed: ${initialized.status}`);
+    credentialRestart = "reauthorized";
+    await runtime.authorize({
+      openExternal: async () => {},
+      onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-user-code", userCode })}\n`),
+    });
+  }
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const sse = createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch });
+  const streamFacts = [];
+  const messageFacts = [];
+  const nativeNotifications = [];
+  let messageQueryCompleted = false;
+  const messages = createNotificationController({
+    execute: async (operation, input) => {
+      try { return await rest.execute(operation, input); }
+      finally { if (operation === "notification.list") messageQueryCompleted = true; }
+    },
+    publishFact: (fact) => messageFacts.push(fact),
+    isWindowFocused: () => true,
+    isWindowMinimized: () => false,
+    isNativeNotificationSupported: () => true,
+    showNativeNotification: (value) => nativeNotifications.push(value),
+    focusWindow: () => {},
+    resolveTargetPath: () => notificationTargetPath(null, "app"),
+  });
+  await rest.execute("session.probe", {});
+  const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => streamFacts.push(fact));
+  const messageEvidence = process.platform === "darwin" ? "packaged-sse" : "integration-fallback";
+  if (messageEvidence === "packaged-sse") {
+    await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
+      && streamFacts.some((fact) => fact.type === "release-version"), "SSE facts");
+    writeDesktopNetworkSmokeStage("sse-facts-received");
+    for (const fact of streamFacts) await messages.handleFact(fact);
+    writeDesktopNetworkSmokeStage("message-controller-handled");
+    await waitForSmokeCondition(() => messageQueryCompleted
+      && messageFacts.some((fact) => fact.type === "topbar")
+      && messageFacts.some((fact) => fact.type === "release-version"), "message controller facts");
+    writeDesktopNetworkSmokeStage("message-facts-published");
+  }
+  await runtime.refreshAccess(first.epoch);
+  await first.completion;
+  await rest.execute("session.probe", {});
+  const second = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; });
+  const revokeStartedAt = performance.now();
+  await runtime.logout();
+  await second.completion;
+  const revokeResponseToEofMs = performance.now() - revokeStartedAt;
+  if (revokeResponseToEofMs >= 5_000) throw new Error("packaged revoke-to-EOF deadline exceeded");
+  messages.invalidate();
+  process.stdout.write(`${JSON.stringify({
+    kind: "yuance-desktop-network-smoke", credentialRestart, probe: true, firstStream: true,
+    rotated: true, secondStream: true, loggedOut: true, revokeResponseToEofMs: Math.round(revokeResponseToEofMs),
+    messageRefresh: messageEvidence === "packaged-sse" && messageFacts.some((fact) => fact.type === "topbar"),
+    releaseVersion: messageEvidence === "packaged-sse" && messageFacts.some((fact) => fact.type === "release-version"),
+    messageEvidence,
+    foregroundSuppressed: nativeNotifications.length === 0,
+    publicAuthStates: authStates,
+  })}\n`);
+}
+
+async function runDesktopFileSmoke() {
+  if (!["authorize", "verify"].includes(desktopFileSmokePhase) || !desktopFileSmokeOrigin) throw new Error("packaged file smoke arguments are invalid");
+  const origin = new URL(desktopFileSmokeOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") throw new Error("packaged file smoke origin must be an exact loopback HTTP origin");
+  const userDataPath = app.getPath("userData");
+  const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
+  const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
+  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, fs, userDataPath, platform: process.platform, secureDirectory: secureCredentialDirectory, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged File Smoke", clientVersion: app.getVersion() });
+  const initialized = await runtime.initialize();
+  if (desktopFileSmokePhase === "authorize") {
+    if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial file smoke state: ${initialized.status}`);
+    await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-user-code", userCode })}\n`) });
+    const spool = createFileSpool({ rootDirectory: path.join(userDataPath, "File Spool"), platform: process.platform, windowsGuard: loadWindowsFileGuard() });
+    const sourcePath = path.join(userDataPath, "file-smoke-source.txt");
+    await fs.writeFile(sourcePath, "yuance-desktop-file-canary-v1-data", { mode: 0o600 });
+    const snapshot = await spool.capture(sourcePath, { filename: "canary.txt", contentType: "text/plain" });
+    const stale = createFileCapabilityVault().issue(snapshot, { ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose: "upload" });
+    await fs.writeFile(path.join(userDataPath, "file-smoke-stale.json"), JSON.stringify({ capability: stale.capability }), { mode: 0o600 });
+    await runtime.logout();
+    runtime.dispose();
+    process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-authorized", prepared: true })}\n`);
+    return;
+  }
+  if (initialized.status !== "authenticated") await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-user-code", userCode })}\n`) });
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(userDataPath, "File Spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  await spool.cleanupOrphans();
+  const stale = JSON.parse(await fs.readFile(path.join(userDataPath, "file-smoke-stale.json"), "utf8"));
+  let staleCapabilityRejected = false;
+  try { createFileCapabilityVault().consume(stale.capability, { ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose: "upload" }); }
+  catch (error) { staleCapabilityRejected = error?.code === "file_capability_invalid"; }
+  await fs.rm(path.join(userDataPath, "file-smoke-stale.json"), { force: true });
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const registry = createOperationRegistry();
+  const binding = (purpose) => Object.freeze({ ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose });
+  const sourcePath = path.join(userDataPath, "file-smoke-source.txt");
+  const downloadPath = path.join(userDataPath, "file-smoke-download.txt");
+  const selected = await createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sourcePath] }) }, spool, vault: fileVault }).choose({ binding: binding("upload") });
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const uploadContract = parseTransferContract(await rest.execute("file.canaryupload", {}), { apiOrigin: enrolled.profile.origin, expectedPurpose: "upload", allowLoopbackHttp: true });
+  const uploadGrant = grantVault.issue(uploadContract, binding("upload")).grant;
+  const uploaded = await createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot }).execute({ fileCapability: selected.capability, transferGrant: uploadGrant, binding: binding("upload") });
+  const downloadContract = parseTransferContract(await rest.execute("file.canarydownload", {}), { apiOrigin: enrolled.profile.origin, expectedPurpose: "download", allowLoopbackHttp: true });
+  const downloadGrant = grantVault.issue(downloadContract, binding("download")).grant;
+  const downloaded = await createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog: { showSaveDialog: async () => ({ canceled: false, filePath: downloadPath }) }, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry }).execute({ suggestedFilename: "canary.txt", transferGrant: downloadGrant, binding: binding("download") });
+  const sourceBytes = await fs.readFile(sourcePath);
+  const downloadedBytes = await fs.readFile(downloadPath);
+  await runtime.logout();
+  runtime.dispose();
+  await fileVault.invalidateAll();
+  const spoolFiles = (await fs.readdir(spoolRoot).catch(() => [])).filter((name) => /^(?:snapshot-|\.capture-)/u.test(name));
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-smoke", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: sourceBytes.length, hashMatch: createHash("sha256").update(sourceBytes).digest("hex") === createHash("sha256").update(downloadedBytes).digest("hex"), staleCapabilityRejected, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
+}
+
+async function runDesktopBusinessFileSmoke() {
+  if (!desktopBusinessFileSmokeOrigin) throw new Error("packaged business file smoke arguments are invalid");
+  const origin = new URL(desktopBusinessFileSmokeOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") throw new Error("packaged business file smoke origin must be an exact loopback HTTP origin");
+  const userDataPath = app.getPath("userData");
+  const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
+  const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
+  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, fs, userDataPath, platform: process.platform, secureDirectory: secureCredentialDirectory, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged Business File Smoke", clientVersion: app.getVersion() });
+  await runtime.initialize();
+  await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-business-file-user-code", userCode })}\n`) });
+
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const attachmentRest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: createAttachmentOperationRegistry() });
+  const workItems = await rest.execute("workitem.list", { projectKey: "YCE", page: 1, perPage: 20 });
+  const itemKey = workItems.items.find((item) => item.key === "YCE-TASK-2")?.key;
+  if (!itemKey) throw new Error("packaged business file work item is unavailable");
+  const comments = await rest.execute("workitem.comments", { itemKey });
+  const commentId = comments.find((comment) => !comment.is_flow && !comment.is_draft)?.id;
+  if (!commentId) throw new Error("packaged business file comment is unavailable");
+
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(userDataPath, "Business File Spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const revealVault = createRevealDownloadVault();
+  const previewVault = createPreviewCapabilityVault();
+  const previewSpool = createPreviewSpool({ rootDirectory: path.join(app.getPath("userData"), "Preview Spool"), platform: process.platform, windowsGuard });
+  await previewSpool.cleanupOrphans();
+  const registry = createOperationRegistry();
+  const baseBinding = Object.freeze({ ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1 });
+  const binding = (purpose) => Object.freeze({ ...baseBinding, purpose });
+  const contents = [Buffer.from("yuance-packaged-business-item-v1"), Buffer.from("yuance-packaged-business-comment-v1")];
+  const sources = [path.join(userDataPath, "business-item.txt"), path.join(userDataPath, "business-comment.txt")];
+  await Promise.all(sources.map((source, index) => fs.writeFile(source, contents[index], { mode: 0o600 })));
+  let sourceIndex = 0;
+  const chooser = createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sources[sourceIndex++]] }) }, spool, vault: fileVault });
+  const selected = await Promise.all([chooser.choose({ binding: binding("upload") }), chooser.choose({ binding: binding("upload") })]);
+
+  const downloads = [path.join(userDataPath, "business-item-download.txt"), path.join(userDataPath, "business-comment-download.txt")];
+  let downloadIndex = 0;
+  const targetManager = createDownloadTargetManager({ dialog: { showSaveDialog: async () => downloadIndex < downloads.length ? { canceled: false, filePath: downloads[downloadIndex++] } : { canceled: true } }, platform: process.platform, windowsGuard });
+  const coordinator = createBusinessAttachmentCoordinator({
+    restTransport: attachmentRest,
+    fileVault,
+    grantVault,
+    revealVault,
+    uploadExecutor: createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot }),
+    downloadExecutor: createDownloadExecutor({ grantVault, targetManager, fetchImpl: network.transferFetch, registry }),
+    apiOrigin: enrolled.profile.origin,
+    allowLoopbackHttp: true,
+    allowedRelativePaths: { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" },
+  });
+  const stages = [];
+  const itemUpload = await coordinator.uploadWorkItemAttachment({ itemKey, fileCapability: selected[0].capability, binding: baseBinding, signal: undefined, onStage: (stage) => stages.push(`item:${stage}`) });
+  const commentUpload = await coordinator.uploadWorkItemCommentAttachment({ itemKey, commentId, fileCapability: selected[1].capability, binding: baseBinding, signal: undefined, onStage: (stage) => stages.push(`comment:${stage}`) });
+  const itemDownload = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const commentDownload = await coordinator.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const cancelled = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  let revealCount = 0;
+  const revealController = createRevealDownloadController({ vault: revealVault, shell: { showItemInFolder: (target) => { revealCount += 1; shell.showItemInFolder(target); } } });
+  await revealController.reveal(itemDownload.revealCapability, binding("reveal-download"));
+  await revealController.reveal(commentDownload.revealCapability, binding("reveal-download"));
+  const downloaded = await Promise.all(downloads.map((target) => fs.readFile(target)));
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  await runtime.logout();
+  runtime.dispose();
+  await fileVault.invalidateAll();
+  revealVault.invalidateAll();
+  const spoolFiles = (await fs.readdir(spoolRoot).catch(() => [])).filter((name) => /^(?:snapshot-|\.capture-)/u.test(name));
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-business-file-smoke", itemUploaded: itemUpload.uploaded.status === "uploaded", commentUploaded: commentUpload.uploaded.status === "uploaded", downloadsMatch: hash(downloaded[0]) === hash(contents[0]) && hash(downloaded[1]) === hash(contents[1]), revealCount, cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability, stageCount: stages.length, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
+}
+
+function writeDesktopNetworkSmokeStage(stage) {
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-stage", stage })}\n`);
+}
+
+async function openSmokeStream(runtime, sse, setController, onFact = () => {}) {
+  const controller = new AbortController();
+  setController(controller);
+  let connectedResolve;
+  let connectedReject;
+  const connected = new Promise((resolve, reject) => { connectedResolve = resolve; connectedReject = reject; });
+  let epoch;
+  const completion = runtime.withAccessLease(({ accessToken, epoch: leaseEpoch }) => {
+    epoch = leaseEpoch;
+    return sse.subscribe({ accessToken, signal: controller.signal, onControl: (event) => {
+      if (event.type === "connected") connectedResolve();
+      else if (["topbar", "release-version"].includes(event.type)) onFact(Object.freeze({ ...event, epoch: leaseEpoch }));
+    } });
+  }).catch((error) => {
+    if (controller.signal.aborted) return;
+    connectedReject(error);
+    return;
+  });
+  await waitForSmokeConnected(connected);
+  return Object.freeze({ epoch, completion });
+}
+
+async function waitForSmokeCondition(predicate, label) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await delay(10);
+  }
+  throw new Error(`packaged ${label} smoke timed out`);
+}
+
+async function waitForSmokeConnected(connected) {
+  let timer;
+  try {
+    await Promise.race([connected, new Promise((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("packaged SSE connect timed out")), 15_000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+async function initializeDesktopCredentialRuntime() {
+  const generation = ++credentialRuntimeGeneration;
+  businessTransport = null;
+  invalidateNotifications();
+  notificationController = null;
+  const mode = isDevRuntime || desktopFeatureParityUiSmokeOrigin ? "development" : "production";
+  const origin = desktopFeatureParityUiSmokeOrigin
+    ? validatePackagedLoopbackOrigin(desktopFeatureParityUiSmokeOrigin)
+    : resolveDesktopNetworkOrigin({
+        isDevRuntime,
+        rawUrl: process.env.YUANCE_DESKTOP_WEB_URL,
+      });
+  const network = await createTrustedNetworkSession({
+    electronSession: session,
+    mode,
+    allowedOrigin: origin,
+  });
+  const enrolled = await enrollDesktop({ origin, mode, fetchImpl: network.fetch });
+  if (generation !== credentialRuntimeGeneration) return;
+  const userDataPath = app.getPath("userData");
+  let coordinator;
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    secureDirectory: secureCredentialDirectory,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: () => installationId(userDataPath),
+    deviceName: `${appIdentity.displayName} (${process.platform})`,
+    clientVersion: app.getVersion(),
+    onNetworkInvalidated: () => {
+      coordinator?.invalidate();
+      invalidateNotifications();
+      fileRuntime?.state.invalidateAll().catch(() => {});
+    },
+    onPublicState: (state) => {
+      hostStatePublisher.update(state);
+      hostStatePublisher.publishTo(mainWindow);
+      if (state.status === "authenticated") coordinator?.start();
+      else {
+        invalidateNotifications();
+        fileRuntime?.state.invalidateAll().catch(() => {});
+      }
+    },
+  });
+  const restTransport = createRestTransport({
+    profile: enrolled.profile,
+    credentialRuntime: runtime,
+    fetchImpl: network.fetch,
+  });
+  const notifications = createNotificationController({
+    execute: (operation, input) => restTransport.execute(operation, input),
+    publishFact: publishBusinessFact,
+    isWindowFocused: () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
+    isWindowMinimized: () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()),
+    isNativeNotificationSupported: () => Notification.isSupported(),
+    showNativeNotification,
+    focusWindow: revealWindow,
+    resolveTargetPath: (target) => notificationTargetPath(target, "app"),
+  });
+  coordinator = createNetworkCoordinator({
+    credentialRuntime: runtime,
+    sseClient: createSseClient({
+      profile: enrolled.profile,
+      fetchImpl: network.fetch,
+      ...(desktopFeatureParityUiSmokeOrigin ? { connectTimeoutMs: 5_000, idleMs: 45_000 } : {}),
+    }),
+    probe: () => restTransport.execute("session.probe", {}),
+    onState: (state) => {
+      networkStatePublisher.update(state);
+      networkStatePublisher.publishTo(mainWindow);
+    },
+    onFact: (fact) => notifications.handleFact(fact),
+    onReauthorizationRequired: () => runtime.discardLocalSession(),
+  });
+  credentialRuntime = runtime;
+  networkCoordinator = coordinator;
+  let initialized;
+  try { initialized = await runtime.initialize(); }
+  catch (error) {
+    coordinator.stop();
+    runtime.dispose();
+    if (credentialRuntime === runtime) credentialRuntime = null;
+    if (networkCoordinator === coordinator) networkCoordinator = null;
+    throw error;
+  }
+  if (generation !== credentialRuntimeGeneration) {
+    notifications.invalidate();
+    coordinator.stop();
+    runtime.dispose();
+    if (credentialRuntime === runtime) credentialRuntime = null;
+    if (networkCoordinator === coordinator) networkCoordinator = null;
+  } else if (initialized.status === "authenticated") {
+    coordinator.start();
+  }
+  if (generation === credentialRuntimeGeneration) notificationController = notifications;
+  if (generation === credentialRuntimeGeneration) businessTransport = restTransport;
+  if (generation === credentialRuntimeGeneration) await initializeFileRuntime({ generation, runtime, network, profile: enrolled.profile, restTransport });
+}
+
+async function initializeFileRuntime({ generation, runtime, network, profile, restTransport }) {
+  await disposeCurrentFileRuntime();
+  if (generation !== credentialRuntimeGeneration) return;
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(app.getPath("userData"), "File Spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  await spool.cleanupOrphans();
+  if (generation !== credentialRuntimeGeneration) return;
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const revealVault = createRevealDownloadVault();
+  const previewVault = createPreviewCapabilityVault();
+  const previewSpool = createPreviewSpool({
+    rootDirectory: path.join(app.getPath("userData"), "Preview Spool"),
+    platform: process.platform,
+    windowsGuard,
+  });
+  await previewSpool.cleanupOrphans();
+  if (generation !== credentialRuntimeGeneration) return;
+  let smokeDownloadIndex = 0;
+  const runtimeDialog = desktopFeatureParityUiSmokeProfile
+    ? {
+        showOpenDialog: async () => ({ canceled: false, filePaths: [path.join(desktopFeatureParityUiSmokeProfile, "fixture-upload.txt")] }),
+        showSaveDialog: async () => ({ canceled: false, filePath: path.join(desktopFeatureParityUiSmokeProfile, "Downloads", `attachment-${++smokeDownloadIndex}.bin`) }),
+      }
+    : dialog;
+  const runtimeShell = desktopFeatureParityUiSmokeProfile ? { showItemInFolder: () => {} } : shell;
+  const revealController = createRevealDownloadController({ vault: revealVault, shell: runtimeShell });
+  const registry = createOperationRegistry();
+  const state = createFileStateController({ fileVault, grantVault, revealVault, previewVault, registry });
+  const fileDialog = createFileDialog({ dialog: runtimeDialog, spool, vault: fileVault });
+  const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
+  const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog: runtimeDialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
+  const attachmentRestTransport = createRestTransport({ profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: createAttachmentOperationRegistry() });
+  const attachmentCoordinator = createBusinessAttachmentCoordinator({
+    restTransport: attachmentRestTransport,
+    fileVault,
+    grantVault,
+    uploadExecutor,
+    downloadExecutor,
+    revealVault,
+    apiOrigin: profile.origin,
+    allowLoopbackHttp: isDevRuntime || Boolean(desktopFeatureParityUiSmokeOrigin),
+    allowedRelativePaths: isDevRuntime || desktopFeatureParityUiSmokeOrigin ? { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" } : {},
+  });
+  const previewCoordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport,
+    loader: createPreviewContentLoader({ profile, credentialRuntime: runtime, fetchImpl: network.fetch, spool: previewSpool }),
+    vault: previewVault,
+  });
+  const getBinding = (event, purpose) => Object.freeze({
+    ...runtime.fileBindingVersion(),
+    webContentsId: event.sender.id,
+    frameRoutingId: event.senderFrame.routingId,
+    purpose,
+  });
+  const issueTransferGrant = async (purpose, binding) => {
+    const raw = await restTransport.execute(`file.canary${purpose}`, {});
+    const contract = parseTransferContract(raw, { apiOrigin: profile.origin, expectedPurpose: purpose, allowLoopbackHttp: isDevRuntime || Boolean(desktopFeatureParityUiSmokeOrigin) });
+    return grantVault.issue(contract, binding).grant;
+  };
+  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, previewCoordinator, revealController });
+  const onSuspend = () => { state.invalidateAll().catch(() => {}); };
+  powerMonitor.on("suspend", onSuspend);
+  disposeFilePowerLifecycle = () => powerMonitor.removeListener("suspend", onSuspend);
+  fileRuntime = Object.freeze({ state, preview: Object.freeze({ runtime, vault: previewVault }) });
+}
+
+async function disposeCurrentFileRuntime() {
+  disposeFileCommands();
+  disposeFileCommands = () => {};
+  disposeFilePowerLifecycle();
+  disposeFilePowerLifecycle = () => {};
+  const current = fileRuntime;
+  fileRuntime = null;
+  await current?.state.invalidateAll();
+}
+
+app.setName(desktopNetworkSmokePhase ? `${appIdentity.displayName} Network Smoke` : desktopFileSmokePhase ? `${appIdentity.displayName} Network Smoke` : desktopFeatureParityUiSmokeOrigin ? `${appIdentity.displayName} Feature Parity Smoke` : appIdentity.displayName);
 app.setAppUserModelId(appIdentity.appUserModelId);
 if (isDevRuntime) {
   const developmentDataPaths = resolveDevelopmentDataPaths(app.getPath("appData"));
   app.setPath("userData", developmentDataPaths.userData);
   app.setPath("sessionData", developmentDataPaths.sessionData);
 }
-ipcMain.handle("yuance:notify", notifyFromRenderer);
-
-app.whenReady().then(() => {
-  applyRuntimeBrandIcon();
-  mainWindow = createMainWindow();
-  app.on("activate", () => {
-    if (!mainWindow) {
-      mainWindow = createMainWindow();
-    }
+if (appProtocolSmoke) {
+  if (appProtocolSmokeTheme !== "light" && appProtocolSmokeTheme !== "dark") throw new Error("app protocol smoke theme is invalid");
+  appProtocolSmokeDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-app-protocol-smoke-"));
+  app.setPath("userData", appProtocolSmokeDataPath);
+  app.setPath("sessionData", path.join(appProtocolSmokeDataPath, "Session Data"));
+  const appearanceDirectory = path.join(appProtocolSmokeDataPath, "Preferences");
+  await fs.mkdir(appearanceDirectory, { recursive: true, mode: 0o700 });
+  await fs.writeFile(path.join(appearanceDirectory, "appearance.json"), `${JSON.stringify({ theme: appProtocolSmokeTheme })}\n`, { mode: 0o600 });
+}
+if (desktopFeatureParityUiSmokeOrigin || desktopFeatureParityUiSmokeProfile) {
+  if (!desktopFeatureParityUiSmokeOrigin || !desktopFeatureParityUiSmokeProfile || !path.isAbsolute(desktopFeatureParityUiSmokeProfile)) throw new Error("desktop feature parity UI smoke arguments are invalid");
+  validatePackagedLoopbackOrigin(desktopFeatureParityUiSmokeOrigin);
+  app.setPath("userData", desktopFeatureParityUiSmokeProfile);
+  app.setPath("sessionData", path.join(desktopFeatureParityUiSmokeProfile, "Session Data"));
+}
+const headlessUserDataPath = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--user-data-path="))?.slice("--user-data-path=".length)
+  : undefined;
+if (headlessUserDataPath) {
+  if (!path.isAbsolute(headlessUserDataPath)) throw new Error("--user-data-path must be absolute");
+  app.setPath("userData", headlessUserDataPath);
+  app.setPath("sessionData", path.join(headlessUserDataPath, "Session Data"));
+}
+const deviceAuthHeadless = !app.isPackaged && process.argv.includes("--device-auth-headless");
+const headlessServerInstanceId = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--server-instance-id="))?.slice("--server-instance-id=".length)
+  : undefined;
+const headlessAction = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--device-auth-action="))?.slice("--device-auth-action=".length)
+  : undefined;
+const singleInstanceProbe = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--single-instance-lock-probe="))
+  : undefined;
+if (singleInstanceProbe) {
+  const markerPath = singleInstanceProbe.slice(singleInstanceProbe.indexOf("=") + 1);
+  const hasProbeLock = app.requestSingleInstanceLock();
+  if (!hasProbeLock) {
+    app.exit(2);
+  } else {
+    app.whenReady().then(async () => {
+      await fs.writeFile(markerPath, "acquired", { mode: 0o600 });
+      if (!process.argv.includes("--hold-lock-probe")) app.exit(0);
+    });
+  }
+} else if (deviceAuthHeadless) {
+  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!hasSingleInstanceLock) {
+    app.exit(2);
+  } else {
+    app.whenReady().then(async () => {
+      try {
+        if (!headlessServerInstanceId) throw new Error("--server-instance-id is required");
+        if (headlessAction && !["authorize", "logout"].includes(headlessAction)) {
+          throw new Error("--device-auth-action must be authorize or logout");
+        }
+        await runDeviceAuthHeadless(headlessServerInstanceId, {
+          action: headlessAction || "authorize",
+          openExternal: !process.argv.includes("--no-open-external"),
+        });
+        app.quit();
+      } catch (error) {
+        process.stderr.write(`device auth headless failed: ${error.message}\n`);
+        app.exit(1);
+      }
+    });
+  }
+} else if (desktopNetworkSmokePhase) {
+  const smokeProfile = process.argv.find((value) => value.startsWith("--desktop-network-smoke-profile="))?.split("=", 2)[1];
+  if (!smokeProfile || !path.isAbsolute(smokeProfile)) throw new Error("packaged network smoke profile must be absolute");
+  app.setPath("userData", smokeProfile);
+  app.setPath("sessionData", path.join(smokeProfile, "Session Data"));
+  app.whenReady().then(async () => {
+    try { await runDesktopNetworkSmoke(); app.quit(); }
+    catch (error) { process.stderr.write(`desktop network smoke failed: ${error.message}\n`); app.exit(1); }
   });
-});
+} else if (desktopFileSmokePhase) {
+  const smokeProfile = process.argv.find((value) => value.startsWith("--desktop-file-smoke-profile="))?.split("=", 2)[1];
+  if (!smokeProfile || !path.isAbsolute(smokeProfile)) throw new Error("packaged file smoke profile must be absolute");
+  app.setPath("userData", smokeProfile);
+  app.setPath("sessionData", path.join(smokeProfile, "Session Data"));
+  app.whenReady().then(async () => {
+    try { await runDesktopFileSmoke(); app.quit(); }
+    catch (error) { process.stderr.write(`desktop file smoke failed: ${error.message}\n`); app.exit(1); }
+  });
+} else if (desktopBusinessFileSmokeOrigin) {
+  const smokeProfile = process.argv.find((value) => value.startsWith("--desktop-business-file-smoke-profile="))?.split("=", 2)[1];
+  if (!smokeProfile || !path.isAbsolute(smokeProfile)) throw new Error("packaged business file smoke profile must be absolute");
+  app.setPath("userData", smokeProfile);
+  app.setPath("sessionData", path.join(smokeProfile, "Session Data"));
+  app.whenReady().then(async () => {
+    try { await runDesktopBusinessFileSmoke(); app.quit(); }
+    catch (error) { process.stderr.write(`desktop business file smoke failed: ${error.message}\n`); app.exit(1); }
+  });
+} else {
+  const appearanceStore = createAppearanceStore({
+    fs,
+    filePath: path.join(app.getPath("userData"), "Preferences", "appearance.json"),
+    platform: process.platform,
+  });
+  disposeAppearanceCommands = registerAppearanceCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    store: appearanceStore,
+  });
+  disposeRendererReadyHandler = registerRendererReadyHandler({ ipcMain, controller: rendererPresentationReadiness });
+  disposeDatabaseStatsCacheCommands = registerDatabaseStatsCacheCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    store: createDatabaseStatsCacheStore({
+      fs,
+      filePath: path.join(app.getPath("userData"), "Preferences", "database-stats.json"),
+      platform: process.platform,
+    }),
+  });
+  disposeBusinessCommands = registerBusinessCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    execute: async (operation, input) => {
+      if (!businessTransport) throw Object.assign(new Error("Business transport is unavailable"), { code: "business_unavailable" });
+      if (desktopFeatureParityUiSmokeOrigin) {
+        featureParityUiSmokeActiveOperations += 1;
+        featureParityUiSmokeLastOperationAt = Date.now();
+      }
+      try {
+        const result = await businessTransport.execute(operation, input);
+        if (desktopFeatureParityUiSmokeOrigin) featureParityUiSmokeOperations.push({ operation, result: "resolved" });
+        return result;
+      } catch (error) {
+        if (desktopFeatureParityUiSmokeOrigin) featureParityUiSmokeOperations.push({
+          operation,
+          result: typeof error?.code === "string" ? error.code : "rejected",
+          status: Number.isSafeInteger(error?.status) ? error.status : null,
+          message: typeof error?.message === "string" ? error.message.slice(0, 160) : "",
+        });
+        throw error;
+      } finally {
+        if (desktopFeatureParityUiSmokeOrigin) {
+          featureParityUiSmokeActiveOperations -= 1;
+          featureParityUiSmokeLastOperationAt = Date.now();
+        }
+      }
+    },
+  });
+  disposeAuthCommands = registerAuthCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    getRuntime: () => credentialRuntime,
+    getNetworkCoordinator: () => networkCoordinator,
+    openExternal: desktopFeatureParityUiSmokeOrigin ? async () => {} : (verificationUrl) => shell.openExternal(verificationUrl),
+    onUserCode: desktopFeatureParityUiSmokeOrigin
+      ? (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-feature-parity-ui-user-code", userCode })}\n`)
+      : undefined,
+  });
+  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!hasSingleInstanceLock) {
+    app.quit();
+  } else {
+    app.on("second-instance", () => revealWindow());
+    app.whenReady().then(async () => {
+      try {
+        const initialTheme = await appearanceStore.getTheme().catch(() => "light");
+        if (rendererTarget.kind === "app-protocol") {
+          const rendererRoot = path.join(moduleDir, "..", "renderer-dist");
+          const rendererSession = session.fromPartition(rendererTarget.partition);
+          await registerAppProtocol({
+            protocol: rendererSession.protocol,
+            fs,
+            rendererRoot,
+            manifestPath: path.join(rendererRoot, "resource-manifest.json"),
+            previewHandler: createPreviewProtocolHandler({ resolveSnapshot: (capability) => {
+              const current = fileRuntime?.preview;
+              const window = mainWindow;
+              if (!current || !window || window.isDestroyed()) throw new Error("preview unavailable");
+              return current.vault.resolve(capability, Object.freeze({ ...current.runtime.fileBindingVersion(), webContentsId: window.webContents.id, frameRoutingId: window.webContents.mainFrame.routingId }));
+            } }),
+          });
+          if (appProtocolSmoke) {
+            rendererSession.webRequest.onBeforeRequest((details, callback) => {
+              if (!details.url.startsWith("app:") && !details.url.startsWith("about:")) {
+                appProtocolSmokeRequests.push(details.url);
+                callback({ cancel: true });
+                return;
+              }
+              callback({ cancel: !details.url.startsWith("app:") && !details.url.startsWith("about:") });
+            });
+            rendererSession.webRequest.onHeadersReceived((details, callback) => {
+              appProtocolSmokeResponses.push({
+                webContentsId: details.webContentsId,
+                url: details.url,
+                statusCode: details.statusCode,
+                csp: details.responseHeaders?.["Content-Security-Policy"]?.[0]
+                  || details.responseHeaders?.["content-security-policy"]?.[0]
+                  || "",
+              });
+              callback({ responseHeaders: details.responseHeaders });
+            });
+          }
+        }
+        applyRuntimeBrandIcon();
+        mainWindow = createMainWindow(initialTheme);
+        disposeNetworkPowerLifecycle = bindNetworkPowerLifecycle({
+          powerEvents: powerMonitor,
+          getCoordinator: () => networkCoordinator,
+          onSuspend: invalidateNotifications,
+        });
+        if (appProtocolSmoke) {
+          hostStatePublisher.update({ status: "unauthenticated" });
+        } else {
+          initializeDesktopCredentialRuntime().catch(() => {
+            hostStatePublisher.update({ status: "fatal" });
+            hostStatePublisher.publishTo(mainWindow);
+          });
+        }
+      } catch (error) {
+        console.error("Failed to initialize Yuance renderer:", error);
+        if (appProtocolSmoke) app.exit(1);
+        else {
+          dialog.showErrorBox("元策无法启动", "应用资源校验失败，请重新安装后再试。");
+          app.quit();
+        }
+        return;
+      }
+      app.on("activate", async () => {
+        if (!mainWindow) {
+          const initialTheme = await appearanceStore.getTheme().catch(() => "light");
+          mainWindow = createMainWindow(initialTheme);
+          networkCoordinator?.start();
+        }
+      });
+    });
+  }
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", (event) => {
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  if (quitCleanupStarted) return;
+  quitCleanupStarted = true;
+  credentialRuntimeGeneration += 1;
+  businessTransport = null;
+  invalidateNotifications();
+  notificationController = null;
+  disposeBusinessCommands();
+  disposeBusinessCommands = () => {};
+  disposeAppearanceCommands();
+  disposeAppearanceCommands = () => {};
+  disposeDatabaseStatsCacheCommands();
+  disposeDatabaseStatsCacheCommands = () => {};
+  disposeRendererReadyHandler();
+  disposeRendererReadyHandler = () => {};
+  disposeNetworkPowerLifecycle();
+  disposeNetworkPowerLifecycle = () => {};
+  networkCoordinator?.stop();
+  networkCoordinator = null;
+  disposeAuthCommands();
+  credentialRuntime?.dispose();
+  credentialRuntime = null;
+  disposeCurrentFileRuntime()
+    .catch(() => {})
+    .finally(() => {
+      quitCleanupComplete = true;
+      app.quit();
+    });
 });

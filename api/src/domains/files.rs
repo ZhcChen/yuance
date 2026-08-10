@@ -165,9 +165,19 @@ pub async fn create_file_object(
     storage_config: &StorageConfig,
     input: CreateFileObjectInput,
 ) -> AppResult<FileObject> {
+    create_file_object_with_checksum(pool, storage_config, input, "").await
+}
+
+pub async fn create_file_object_with_checksum(
+    pool: &SqlitePool,
+    storage_config: &StorageConfig,
+    input: CreateFileObjectInput,
+    checksum_sha256: &str,
+) -> AppResult<FileObject> {
     let original_filename = validate_filename(&input.original_filename)?;
     let content_type = validate_content_type(&input.content_type)?;
     validate_byte_size(input.byte_size)?;
+    let checksum_sha256 = validate_checksum_sha256(checksum_sha256)?;
 
     let object_key = generate_object_key(&original_filename);
     let id = sqlx::query_scalar::<_, i64>(
@@ -181,10 +191,11 @@ pub async fn create_file_object(
             original_filename,
             content_type,
             byte_size,
+            checksum_sha256,
             status,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)
         RETURNING id
         "#,
     )
@@ -196,6 +207,7 @@ pub async fn create_file_object(
     .bind(&original_filename)
     .bind(&content_type)
     .bind(input.byte_size)
+    .bind(checksum_sha256)
     .bind(input.created_by_user_id)
     .fetch_one(pool)
     .await?;
@@ -207,6 +219,15 @@ pub async fn create_attachment(
     pool: &SqlitePool,
     storage_config: &StorageConfig,
     input: CreateAttachmentInput,
+) -> AppResult<FileAttachmentSummary> {
+    create_attachment_with_checksum(pool, storage_config, input, "").await
+}
+
+pub async fn create_attachment_with_checksum(
+    pool: &SqlitePool,
+    storage_config: &StorageConfig,
+    input: CreateAttachmentInput,
+    checksum_sha256: &str,
 ) -> AppResult<FileAttachmentSummary> {
     let target_type = validate_target_type(&input.target_type)?;
     if input.target_id <= 0 {
@@ -227,6 +248,7 @@ pub async fn create_attachment(
     let created_by_display_name_snapshot =
         normalize_display_name_snapshot(&input.created_by_display_name_snapshot);
     validate_byte_size(input.byte_size)?;
+    let checksum_sha256 = validate_checksum_sha256(checksum_sha256)?;
     if let Some(folder_id) = input.folder_id {
         let folder = get_folder(pool, folder_id).await?;
         let Some(project_id) = input.project_id else {
@@ -250,10 +272,11 @@ pub async fn create_attachment(
             original_filename,
             content_type,
             byte_size,
+            checksum_sha256,
             status,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)
         RETURNING id
         "#,
     )
@@ -265,6 +288,7 @@ pub async fn create_attachment(
     .bind(&original_filename)
     .bind(&content_type)
     .bind(input.byte_size)
+    .bind(checksum_sha256)
     .bind(input.created_by_user_id)
     .fetch_one(&mut *tx)
     .await?;
@@ -894,6 +918,19 @@ fn validate_byte_size(byte_size: i64) -> AppResult<()> {
         )));
     }
     Ok(())
+}
+
+fn validate_checksum_sha256(value: &str) -> AppResult<String> {
+    let value = value.trim();
+    if !value.is_empty()
+        && (value.len() != 64
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
+    {
+        return Err(AppError::BadRequest("SHA-256 校验值无效".to_string()));
+    }
+    Ok(value.to_string())
 }
 
 fn validate_cleanup_age_hours(older_than_hours: i64) -> AppResult<()> {

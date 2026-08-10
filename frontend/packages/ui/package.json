@@ -1,0 +1,28 @@
+{
+  "name": "@yuance/frontend-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./styles.css": "./src/styles.css"
+  },
+  "peerDependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "scripts": {
+    "check:source": "node ../../scripts/assert-js-only.mjs src test",
+    "check:js": "tsc -p jsconfig.json",
+    "lint": "eslint \"src/**/*.{js,jsx}\" \"test/**/*.mjs\"",
+    "test": "tsx --test test/**/*.test.mjs",
+    "check": "npm run check:source && npm run check:js && npm run lint && npm run test"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.1"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.13",
+    "marked": "^18.0.7"
+  }
+}

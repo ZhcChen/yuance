@@ -3,7 +3,7 @@
   "info": {
     "title": "元策 API",
     "summary": "元策项目、需求、任务、Bug、资料库和消息通知 API。",
-    "description": "元策 API 面向 Web 客户端、程序化集成和 Codex Skill。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。",
+    "description": "元策 API 面向 Web 客户端、程序化集成、Codex Skill 和 Desktop。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。Device access token 只允许调用 x-yuance-device-business-allowlist 显式登记的 method + path，并继续执行相同 RBAC、项目成员和业务状态校验。",
     "version": "1.0.0"
   },
   "externalDocs": {
@@ -30,6 +30,10 @@
       "description": "登录、当前用户与 Personal Access Token"
     },
     {
+      "name": "shell",
+      "description": "浏览器应用壳、顶部状态与实时刷新。"
+    },
+    {
       "name": "projects",
       "description": "项目、项目成员和当前项目上下文"
     },
@@ -54,7 +58,115 @@
       "cookieSession": []
     }
   ],
+  "x-yuance-device-business-allowlist": [
+    "GET /api/v1/auth/me",
+    "GET /api/v1/projects",
+    "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview",
+    "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
+    "HEAD /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
+    "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+    "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+    "HEAD /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+    "GET /api/v1/current-project",
+    "PATCH /api/v1/current-project",
+    "GET /api/v1/topbar/status",
+    "GET /api/v1/topbar/events",
+    "GET /api/v1/notifications",
+    "GET /api/v1/notifications/{notification_id}/target",
+    "POST /api/v1/notifications/{notification_id}/read",
+    "POST /api/v1/notifications/read-all",
+    "GET /api/v1/work-item-list-view",
+    "GET /api/v1/work-item-detail-view/{item_key}",
+    "POST /api/v1/work-item-saved-views",
+    "PATCH /api/v1/work-item-saved-views/{saved_view_id}",
+    "DELETE /api/v1/work-item-saved-views/{saved_view_id}",
+    "POST /api/v1/work-item-saved-views/{saved_view_id}/default",
+    "GET /api/v1/work-items",
+    "POST /api/v1/work-items",
+    "POST /api/v1/work-items/batch",
+    "GET /api/v1/work-items/{item_key}",
+    "PATCH /api/v1/work-items/{item_key}",
+    "PATCH /api/v1/work-items/{item_key}/primary-post",
+    "POST /api/v1/work-items/{item_key}/restore",
+    "POST /api/v1/work-items/{item_key}/handoff",
+    "GET /api/v1/work-items/{item_key}/events",
+    "GET /api/v1/work-items/{item_key}/comments",
+    "POST /api/v1/work-items/{item_key}/comments",
+    "POST /api/v1/work-items/{item_key}/comments/draft",
+    "PATCH /api/v1/work-items/{item_key}/comments/{comment_id}",
+    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/publish",
+    "DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/draft",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
+    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url",
+    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
+    "HEAD /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
+    "GET /api/v1/work-items/{item_key}/attachments",
+    "POST /api/v1/work-items/{item_key}/attachments",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url",
+    "POST /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content",
+    "HEAD /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"
+  ],
   "paths": {
+    "/.well-known/yuance-desktop": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "获取 Desktop enrollment 契约",
+        "description": "返回固定版本、服务实例和当前已启用的 Desktop capability ID，不返回 endpoint 或 credential。",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Desktop enrollment 契约",
+            "headers": {
+              "Cache-Control": {
+                "description": "禁止缓存 enrollment 响应。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopEnrollment"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "探测 Desktop enrollment 契约",
+        "description": "返回与 GET 相同的状态和响应头，但不返回响应体。",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Desktop enrollment 契约可用",
+            "headers": {
+              "Cache-Control": {
+                "description": "禁止缓存 enrollment 响应。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/openapi.json": {
       "get": {
         "tags": [
@@ -164,15 +276,78 @@
         }
       }
     },
+    "/api/v1/auth/csrf": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "刷新当前 Cookie session 的 CSRF token",
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回可用于后续写请求的 CSRF token，并同步 Cookie/header",
+            "headers": {
+              "Set-Cookie": {
+                "description": "刷新 yuance_csrf Cookie。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-yuance-csrf-token": {
+                "description": "返回给浏览器内存 transport 的 CSRF token。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfTokenEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "退出当前 Cookie session",
+        "security": [
+          {
+            "cookieSession": [],
+            "csrfHeader": []
+          }
+        ],
         "responses": {
-          "204": {
-            "description": "退出成功"
+          "200": {
+            "description": "退出成功并清空 session / refresh Cookie",
+            "headers": {
+              "Set-Cookie": {
+                "description": "清理 yuance_session 与 yuance_refresh Cookie。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutEnvelope"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -180,6 +355,400 @@
           "403": {
             "$ref": "#/components/responses/Error"
           }
+        }
+      }
+    },
+    "/api/v1/device-authorizations": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "发起设备授权",
+        "description": "为 Desktop 创建短期、单次使用的设备授权。此端点只接受 JSON body；请求携带 Cookie、PAT、device bearer 或混合凭证时确定性拒绝，不回退到其他认证方式。`verification_path` 是可信 origin 下的固定相对路径，客户端不得把它当作任意绝对 URL 打开。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceAuthorizationStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "设备授权已创建",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceAuthorizationStartEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "415": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          }
+        }
+      }
+    },
+    "/api/v1/device-authorizations/exchange": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "交换设备凭证",
+        "description": "使用一次性 device code、PKCE verifier 和预持久化 transaction ID 交换 generation 0 credential。相同 transaction 与 verifier 可恢复相同结果；此端点拒绝 Cookie、PAT、device bearer 和混合凭证。所有响应均禁止缓存。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceAuthorizationExchangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回或恢复唯一的 generation 0 credential",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceAuthorizationExchangeEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "409": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "415": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          }
+        }
+      }
+    },
+    "/api/v1/device-sessions/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "轮换设备 refresh credential",
+        "description": "使用当前 refresh token、source generation、设备/服务绑定和客户端预持久化 transaction ID 原子轮换凭证。相同 transaction 返回相同结果；旧 generation 使用不同 transaction 会撤销整个 credential family。此端点拒绝 Cookie 和 Authorization header。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRefreshRotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回或恢复下一 generation 的设备凭证",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceRefreshRotationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "409": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "415": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          }
+        }
+      }
+    },
+    "/api/v1/device-session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "探测当前设备会话",
+        "description": "校验短期 device access token，并返回当前 user/device/family/generation、access 到期时间和 authorization version。不会返回 access、refresh 或 token hint。",
+        "security": [
+          {
+            "deviceAccess": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "设备会话有效",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSessionProbeEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          }
+        }
+      }
+    },
+    "/api/v1/device-session/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "注销当前设备会话",
+        "description": "使用当前 device access token 原子撤销绑定的 credential family 及其 access/refresh credential。此操作不接受 Cookie、PAT、system token 或 device refresh token。",
+        "security": [
+          {
+            "deviceAccess": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前 credential family 已撤销",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSessionLogoutEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          }
+        }
+      }
+    },
+    "/api/v1/device-session/events": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "订阅设备会话控制流",
+        "description": "使用短期 device access token 建立受持续 authorization lease 约束的 SSE 控制流。服务端至少每秒重验 user、device、family、generation、authorization version 与 access expiry；撤销、过期、重验超时或服务关闭时结束流。",
+        "security": [
+          { "deviceAccess": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "设备控制流已建立",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
+          "500": { "$ref": "#/components/responses/DeviceSessionError" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/upload-request": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "签发 Desktop 文件上传 canary 请求",
+        "description": "使用短期 device access token 为当前 credential family 签发固定 34 字节 canary 对象的 60 秒上传请求。不接受 request body、URL、object key、header 或其它调用方可控传输字段。",
+        "security": [
+          { "deviceAccess": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定上传 canary 请求",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeviceFileTransferEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
+          "500": { "$ref": "#/components/responses/DeviceSessionError" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/download-request": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "签发 Desktop 文件下载 canary 请求",
+        "description": "使用短期 device access token 为当前 credential family 签发固定 canary 对象的 60 秒下载请求。不接受 URL、object key、header 或其它调用方可控传输字段。",
+        "security": [
+          { "deviceAccess": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定下载 canary 请求",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeviceFileTransferEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
+          "500": { "$ref": "#/components/responses/DeviceSessionError" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/upload": {
+      "put": {
+        "tags": ["auth"],
+        "summary": "执行已签发的 Desktop canary 上传",
+        "description": "仅接受 upload-request 返回的短期加密 grant 和固定 34 字节 canary 内容。此请求不接受 Cookie、Authorization 或其它 ambient credential。",
+        "security": [],
+        "parameters": [
+          {
+            "name": "grant",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 32 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain; charset=utf-8": {
+              "schema": { "type": "string", "minLength": 34, "maxLength": 34 }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "固定 canary 内容已写入",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/download": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "执行已签发的 Desktop canary 下载",
+        "description": "仅接受 download-request 返回的短期加密 grant，返回当前 credential family 的固定 canary 内容。此请求不接受 Cookie、Authorization 或其它 ambient credential。",
+        "security": [],
+        "parameters": [
+          {
+            "name": "grant",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 32 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定 34 字节 canary 内容",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" },
+              "Content-Type": {
+                "schema": { "type": "string", "const": "text/plain; charset=utf-8" }
+              }
+            },
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": { "type": "string", "minLength": 34, "maxLength": 34 }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" }
         }
       }
     },
@@ -599,6 +1168,34 @@
         }
       }
     },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/password/reset": {
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "超级管理员重置项目资料访问密码",
+        "description": "仅超级管理员可调用。动作只允许 set 或 clear，并记录高风险审计。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ResetProjectResourcePassword"
+        },
+        "responses": {
+          "200": {
+            "description": "密码策略已更新"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/v1/work-items": {
       "get": {
         "tags": [
@@ -660,6 +1257,27 @@
             }
           },
           {
+            "name": "cycle_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated_desc",
+                "created_desc",
+                "priority_desc",
+                "due_date_asc"
+              ]
+            }
+          },
+          {
             "$ref": "#/components/parameters/Page"
           },
           {
@@ -691,6 +1309,100 @@
           "201": {
             "description": "创建成功"
           }
+        }
+      }
+    },
+    "/api/v1/work-item-list-view": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取共享工作项列表完整视图",
+        "description": "供 Web 与 Desktop 共享页面原子读取列表、指标、已解析筛选、候选项、保存视图和管理权限。",
+        "parameters": [
+          {"name": "item_type", "in": "query", "required": true, "schema": {"type": "string", "enum": ["requirement", "task", "bug"]}},
+          {"name": "project_key", "in": "query", "schema": {"type": "string"}},
+          {"name": "q", "in": "query", "schema": {"type": "string"}},
+          {"name": "status", "in": "query", "schema": {"type": "string"}},
+          {"name": "priority", "in": "query", "schema": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}},
+          {"name": "assignee_username", "in": "query", "schema": {"type": "string"}},
+          {"name": "cycle_id", "in": "query", "schema": {"type": "integer", "minimum": 1}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["updated_desc", "created_desc", "priority_desc", "due_date_asc"]}},
+          {"name": "clear_default", "in": "query", "schema": {"type": "boolean", "default": false}},
+          {"$ref": "#/components/parameters/Page"},
+          {"$ref": "#/components/parameters/PerPage"}
+        ],
+        "responses": {
+          "200": {
+            "description": "共享工作项列表完整视图",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemListViewEnvelope"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-item-detail-view/{item_key}": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取共享工作项详情完整视图",
+        "description": "供 Web 与 Desktop 原子读取详情、周期、候选项、权限、前后项导航和首屏流转历史。",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "共享工作项详情完整视图", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemDetailViewEnvelope"}}}},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/batch": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "批量更新工作项",
+        "description": "最多接收 100 个唯一工作项编号。每个工作项独立提交，响应分别返回成功项和失败项，供共享页面仅保留失败项选择。",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BatchUpdateWorkItemsRequest"}}}},
+        "responses": {
+          "200": {"description": "批量处理结果", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BatchUpdateWorkItemsEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-item-saved-views": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "保存当前工作项列表视图",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateWorkItemSavedViewRequest"}}}},
+        "responses": {
+          "201": {"description": "视图已保存", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemSavedViewEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-item-saved-views/{saved_view_id}": {
+      "parameters": [{"name": "saved_view_id", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1}}],
+      "patch": {
+        "tags": ["work-items"],
+        "summary": "重命名保存视图",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RenameWorkItemSavedViewRequest"}}}},
+        "responses": {
+          "200": {"description": "视图已重命名", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemSavedViewEnvelope"}}}},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "delete": {
+        "tags": ["work-items"],
+        "summary": "删除保存视图",
+        "responses": {"204": {"description": "视图已删除"}, "404": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/api/v1/work-item-saved-views/{saved_view_id}/default": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "设为默认工作项视图",
+        "parameters": [{"name": "saved_view_id", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1}}],
+        "responses": {
+          "200": {"description": "默认视图已更新", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemSavedViewEnvelope"}}}},
+          "404": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -759,6 +1471,34 @@
         }
       }
     },
+    "/api/v1/work-items/{item_key}/primary-post": {
+      "patch": {
+        "tags": ["work-items"],
+        "summary": "更新工作项富文本主帖",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateWorkItemPrimaryPostRequest"}}}},
+        "responses": {
+          "200": {"description": "主帖已更新", "content": {"application/json": {"schema": {"type": "object", "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Comment"}}}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/restore": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "恢复已删除工作项",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "恢复成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemDetailEnvelope"}}}},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/api/v1/work-items/{item_key}/comments": {
       "get": {
         "tags": [
@@ -809,21 +1549,51 @@
           "notifications"
         ],
         "summary": "获取消息通知",
+        "description": "返回浏览器应用壳和消息中心共用的通知列表、筛选计数与分页信息。`filter` 支持 `all`、`unread`、`pending` 和 `read`，其中 `pending` 表示未读的讨论提及/回复。",
         "parameters": [
           {
             "name": "limit",
             "in": "query",
+            "description": "兼容通知下拉的简短窗口大小；未显式提供 `per_page` 时也会作为分页大小使用。",
             "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 100,
               "default": 5
             }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["all", "unread", "pending", "read"],
+              "default": "all"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "消息列表与未读数",
+            "description": "消息列表、筛选计数与分页信息",
             "content": {
               "application/json": {
                 "schema": {
@@ -831,6 +1601,394 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "幂等标记当前用户的全部通知为已读",
+        "security": [
+          {
+            "cookieSession": [],
+            "csrfHeader": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回本次标记影响的通知数量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationMarkAllReadEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notification_id}/target": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "读取通知的语义目标",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "通知当前的已读状态与语义目标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTargetResultEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "幂等标记单条通知为已读并返回语义目标",
+        "security": [
+          {
+            "cookieSession": [],
+            "csrfHeader": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "通知已读结果与语义目标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTargetResultEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/attachments/{attachment_id}/preview": {
+      "get": {
+        "tags": ["projects"],
+        "summary": "获取项目附件预览元数据",
+        "description": "复用项目查看权限与附件归属校验，返回预览分类、legacy flag 结果和可预览附件前后项。",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/AttachmentId"}
+        ],
+        "responses": {
+          "200": {
+            "description": "附件预览元数据",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectAttachmentPreviewEnvelope"}}}
+          },
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content": {
+      "parameters": [
+        {"$ref": "#/components/parameters/ProjectKey"},
+        {"$ref": "#/components/parameters/AttachmentId"}
+      ],
+      "get": {
+        "tags": ["projects"],
+        "summary": "读取项目附件预览内容",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "head": {
+        "tags": ["projects"],
+        "summary": "读取项目附件预览内容响应头",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取工作项评论附件预览元数据",
+        "description": "复用工作项项目成员权限、评论与附件归属校验，返回预览分类和同评论附件前后项。",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/ItemKey"},
+          {"name": "comment_id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}},
+          {"$ref": "#/components/parameters/AttachmentId"}
+        ],
+        "responses": {
+          "200": {"description": "评论附件预览元数据", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectAttachmentPreviewEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content": {
+      "parameters": [
+        {"$ref": "#/components/parameters/ItemKey"},
+        {"name": "comment_id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}},
+        {"$ref": "#/components/parameters/AttachmentId"}
+      ],
+      "get": {
+        "tags": ["work-items"],
+        "summary": "读取工作项评论附件预览内容",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "head": {
+        "tags": ["work-items"],
+        "summary": "读取工作项评论附件预览内容响应头",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取工作项附件预览元数据",
+        "description": "复用工作项项目成员权限与附件归属校验，返回预览分类和可预览附件前后项。",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/WorkItemKey"},
+          {"$ref": "#/components/parameters/AttachmentId"}
+        ],
+        "responses": {
+          "200": {"description": "附件预览元数据", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectAttachmentPreviewEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content": {
+      "parameters": [
+        {"$ref": "#/components/parameters/WorkItemKey"},
+        {"$ref": "#/components/parameters/AttachmentId"}
+      ],
+      "get": {
+        "tags": ["work-items"],
+        "summary": "读取工作项附件预览内容",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "head": {
+        "tags": ["work-items"],
+        "summary": "读取工作项附件预览内容响应头",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview": {
+      "get": {
+        "tags": ["resources"],
+        "summary": "获取资料附件预览元数据",
+        "description": "复用资料访问权限与短时 access grant，返回预览分类、受控内容地址和同资料附件前后项。",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/AttachmentId"},
+          {"name": "access", "in": "query", "required": false, "schema": {"type": "string", "maxLength": 4096}}
+        ],
+        "responses": {
+          "200": {"description": "资料附件预览元数据", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectAttachmentPreviewEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content": {
+      "parameters": [
+        {"$ref": "#/components/parameters/ProjectKey"},
+        {"$ref": "#/components/parameters/ResourceId"},
+        {"$ref": "#/components/parameters/AttachmentId"},
+        {"name": "access", "in": "query", "required": false, "schema": {"type": "string", "maxLength": 4096}}
+      ],
+      "get": {
+        "tags": ["resources"],
+        "summary": "读取资料附件预览内容",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "head": {
+        "tags": ["resources"],
+        "summary": "读取资料附件预览内容响应头",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/topbar/status": {
+      "get": {
+        "tags": [
+          "shell"
+        ],
+        "summary": "获取浏览器应用壳顶部状态",
+        "responses": {
+          "200": {
+            "description": "顶部角标、当前项目与未读通知数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopbarStatusEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/topbar/events": {
+      "get": {
+        "tags": [
+          "shell"
+        ],
+        "summary": "订阅顶部状态刷新事件",
+        "description": "`text/event-stream`。当前事件类型包含 `release-version`（版本字符串）和 `topbar`（`connected` / `refresh`）。Browser 通过同源 Cookie 建立连接；Desktop 后续改为受控 Bearer fetch-stream。",
+        "responses": {
+          "200": {
+            "description": "SSE 刷新事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -843,6 +2001,12 @@
         "scheme": "bearer",
         "bearerFormat": "Personal Access Token",
         "description": "使用个人中心创建的 yuance_pat_* token。"
+      },
+      "deviceAccess": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Yuance Device Access Token",
+        "description": "使用 yuance_dat_* 短期设备 access token。除设备会话端点外，只允许调用顶层 x-yuance-device-business-allowlist 显式登记的 method + path；未登记业务 API 默认拒绝。"
       },
       "cookieSession": {
         "type": "apiKey",
@@ -877,6 +2041,19 @@
           "default": 20
         }
       },
+      "AttachmentId": {
+        "name": "attachment_id",
+        "in": "path",
+        "required": true,
+        "schema": {"type": "integer", "format": "int64", "minimum": 1}
+      },
+      "Range": {
+        "name": "Range",
+        "in": "header",
+        "required": false,
+        "description": "单段 bytes Range，例如 bytes=0-1023。多段或不可满足范围返回 416。",
+        "schema": {"type": "string", "pattern": "^bytes=(\\d*-\\d*)(,.*)?$"}
+      },
       "ProjectKey": {
         "name": "project_key",
         "in": "path",
@@ -910,6 +2087,14 @@
         "schema": {
           "type": "integer"
         }
+      },
+      "NotificationId": {
+        "name": "notification_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
       }
     },
     "responses": {
@@ -921,6 +2106,101 @@
               "$ref": "#/components/schemas/ErrorEnvelope"
             }
           }
+        }
+      },
+      "PreviewContent": {
+        "description": "完整预览内容",
+        "headers": {
+          "Accept-Ranges": {"schema": {"type": "string", "const": "bytes"}},
+          "Content-Length": {"schema": {"type": "integer", "minimum": 0}},
+          "Content-Type": {"schema": {"type": "string"}}
+        },
+        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}
+      },
+      "PreviewPartialContent": {
+        "description": "单段 Range 预览内容",
+        "headers": {
+          "Accept-Ranges": {"schema": {"type": "string", "const": "bytes"}},
+          "Content-Length": {"schema": {"type": "integer", "minimum": 0}},
+          "Content-Range": {"schema": {"type": "string", "pattern": "^bytes [0-9]+-[0-9]+/[0-9]+$"}},
+          "Content-Type": {"schema": {"type": "string"}}
+        },
+        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}
+      },
+      "PreviewRangeNotSatisfiable": {
+        "description": "Range 不可满足",
+        "headers": {
+          "Accept-Ranges": {"schema": {"type": "string", "const": "bytes"}},
+          "Content-Range": {"schema": {"type": "string", "pattern": "^bytes \\*/[0-9]+$"}}
+        }
+      },
+      "DeviceAuthorizationError": {
+        "description": "设备授权请求被拒绝或尚不可交换",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/SensitiveNoStore"
+          },
+          "Retry-After": {
+            "description": "当授权仍在等待批准时，客户端再次轮询前至少等待的秒数。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
+            }
+          }
+        }
+      },
+      "DeviceSessionError": {
+        "description": "设备 access 无效、已过期、已撤销，或设备会话服务暂时不可用",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/SensitiveNoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
+            }
+          }
+        }
+      },
+      "DeviceAuthorizationRateLimited": {
+        "description": "设备授权请求过于频繁",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/SensitiveNoStore"
+          },
+          "Retry-After": {
+            "required": true,
+            "description": "再次请求前至少等待的秒数。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "SensitiveNoStore": {
+        "description": "敏感设备授权响应不得被客户端或中间缓存保存。",
+        "schema": {
+          "type": "string",
+          "const": "private, no-store"
         }
       }
     },
@@ -961,6 +2241,16 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/UpdateProjectResourceRequest"
+            }
+          }
+        }
+      },
+      "ResetProjectResourcePassword": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResetProjectResourcePasswordRequest"
             }
           }
         }
@@ -1007,6 +2297,592 @@
       }
     },
     "schemas": {
+      "DesktopEnrollment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "api_protocol_version",
+          "server_instance_id",
+          "capabilities"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "api_protocol_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "server_instance_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capabilities": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "device-authorization.v1"
+              },
+              {
+                "const": "device-session.probe.v1"
+              },
+              {
+                "const": "device-file-transfer.canary.v1"
+              }
+            ],
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      },
+      "DeviceAuthorizationStartRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code_challenge",
+          "code_challenge_method",
+          "installation_id",
+          "device_name",
+          "platform",
+          "client_version"
+        ],
+        "properties": {
+          "code_challenge": {
+            "type": "string",
+            "description": "RFC 7636 S256 code challenge，使用不带填充的 Base64URL 编码。",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "code_challenge_method": {
+            "type": "string",
+            "const": "S256"
+          },
+          "installation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "device_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "platform": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "client_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      },
+      "DeviceAuthorizationStartEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "device_code",
+              "user_code",
+              "verification_path",
+              "expires_in",
+              "interval",
+              "server_instance_id"
+            ],
+            "properties": {
+              "device_code": {
+                "type": "string",
+                "minLength": 32
+              },
+              "user_code": {
+                "type": "string",
+                "minLength": 6,
+                "maxLength": 32
+              },
+              "verification_path": {
+                "type": "string",
+                "description": "可信服务 origin 下的固定相对路径。",
+                "pattern": "^/[^?#]*$"
+              },
+              "expires_in": {
+                "type": "integer",
+                "minimum": 300,
+                "maximum": 900
+              },
+              "interval": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 15
+              },
+              "server_instance_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "DeviceAuthorizationExchangeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "device_code",
+          "code_verifier",
+          "exchange_transaction_id"
+        ],
+        "properties": {
+          "device_code": {
+            "type": "string",
+            "minLength": 32
+          },
+          "code_verifier": {
+            "type": "string",
+            "description": "RFC 7636 code verifier。",
+            "pattern": "^[A-Za-z0-9._~-]{43,128}$"
+          },
+          "exchange_transaction_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "DeviceAuthorizationExchangeEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "access_token",
+              "refresh_token",
+              "access_expires_in",
+              "refresh_expires_in",
+              "access",
+              "refresh"
+            ],
+            "properties": {
+              "access_token": {
+                "type": "string",
+                "pattern": "^yuance_dat_[A-Za-z0-9_-]+$"
+              },
+              "refresh_token": {
+                "type": "string",
+                "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
+              },
+              "access_expires_in": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "refresh_expires_in": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "access": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
+                  },
+                  {
+                    "properties": {
+                      "audience": {
+                        "const": "yuance-api"
+                      },
+                      "generation": {
+                        "const": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              "refresh": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
+                  },
+                  {
+                    "properties": {
+                      "audience": {
+                        "const": "yuance-device-refresh"
+                      },
+                      "generation": {
+                        "const": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "DeviceRefreshRotationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "refresh_token",
+          "generation",
+          "transaction_id",
+          "device_id",
+          "server_instance_id"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "device_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "server_instance_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "DeviceRefreshRotationEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "access_token",
+              "refresh_token",
+              "access_expires_in",
+              "refresh_expires_in",
+              "access",
+              "refresh"
+            ],
+            "properties": {
+              "access_token": {
+                "type": "string",
+                "pattern": "^yuance_dat_[A-Za-z0-9_-]+$"
+              },
+              "refresh_token": {
+                "type": "string",
+                "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
+              },
+              "access_expires_in": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "refresh_expires_in": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "access": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
+                  },
+                  {
+                    "properties": {
+                      "audience": {
+                        "const": "yuance-api"
+                      },
+                      "generation": {
+                        "minimum": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "refresh": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
+                  },
+                  {
+                    "properties": {
+                      "audience": {
+                        "const": "yuance-device-refresh"
+                      },
+                      "generation": {
+                        "minimum": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "DeviceSessionProbeEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "user_id",
+              "username",
+              "display_name",
+              "device_id",
+              "family_id",
+              "generation",
+              "authorization_version",
+              "access_expires_at",
+              "server_instance_id"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "integer"
+              },
+              "username": {
+                "type": "string"
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "device_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "family_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "authorization_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "access_expires_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "server_instance_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "DeviceSessionLogoutEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revoked",
+              "family_id"
+            ],
+            "properties": {
+              "revoked": {
+                "type": "boolean",
+                "const": true
+              },
+              "family_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      },
+      "DeviceFileTransferEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schema_version",
+              "purpose",
+              "request",
+              "expected_bytes",
+              "content_type",
+              "sha256",
+              "expires_in_seconds",
+              "expires_at"
+            ],
+            "properties": {
+              "schema_version": { "type": "integer", "const": 1 },
+              "purpose": { "type": "string", "enum": ["upload", "download"] },
+              "request": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["method", "url", "headers"],
+                "properties": {
+                  "method": { "type": "string", "enum": ["PUT", "GET"] },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(https://|/api/v1/device-file-transfer/canary/(upload|download)\\?)"
+                  },
+                  "headers": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "array",
+                      "prefixItems": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "string", "maxLength": 4096 }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  }
+                }
+              },
+              "expected_bytes": { "type": "integer", "const": 34 },
+              "content_type": { "type": "string", "const": "text/plain; charset=utf-8" },
+              "sha256": {
+                "type": "string",
+                "const": "b8cc33ab99db3adf840e78e7743d983527909af20a7a61d6e454dc15747c404b"
+              },
+              "expires_in_seconds": { "type": "integer", "const": 60 },
+              "expires_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      },
+      "DeviceAuthorizationErrorCode": {
+        "type": "string",
+        "enum": [
+          "invalid_device_request",
+          "credential_not_allowed",
+          "rate_limited",
+          "device_authorization_unavailable",
+          "device_session_unavailable",
+          "invalid_device_access",
+          "device_access_expired",
+          "device_revoked",
+          "device_session_revoked",
+          "invalid_device_refresh",
+          "device_refresh_expired",
+          "device_refresh_replay",
+          "rotation_recovery_failed",
+          "invalid_code_challenge",
+          "invalid_device_code",
+          "invalid_code_verifier",
+          "authorization_pending",
+          "slow_down",
+          "authorization_denied",
+          "authorization_expired",
+          "authorization_consumed",
+          "exchange_transaction_conflict",
+          "idempotency_expired",
+          "user_inactive"
+        ]
+      },
+      "DeviceAuthorizationErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/DeviceAuthorizationErrorCode"
+              },
+              "message": {
+                "type": "string"
+              },
+              "retry_after": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "authorization_pending 或 slow_down 时再次轮询前至少等待的秒数。"
+              }
+            }
+          }
+        }
+      },
+      "DeviceAuthorizationStatus": {
+        "type": "string",
+        "enum": ["pending", "approved", "denied", "expired", "consumed"]
+      },
+      "DeviceCredentialMetadata": {
+        "type": "object",
+        "description": "服务端在设备认证响应中返回的元数据；opaque token 本身不包含可由客户端声明或解码的 claims。",
+        "required": [
+          "token_type",
+          "issuer",
+          "audience",
+          "device_id",
+          "family_id",
+          "generation",
+          "authorization_version"
+        ],
+        "properties": {
+          "token_type": {
+            "type": "string",
+            "const": "Bearer"
+          },
+          "issuer": {
+            "type": "string",
+            "const": "yuance-device-session"
+          },
+          "audience": {
+            "type": "string",
+            "enum": ["yuance-api", "yuance-device-refresh"]
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "family_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "authorization_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
       "Envelope": {
         "type": "object",
         "required": [
@@ -1113,6 +2989,19 @@
           }
         }
       },
+      "CsrfTokenEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "csrf_token": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
       "AuthUserEnvelope": {
         "type": "object",
         "properties": {
@@ -1135,6 +3024,19 @@
           },
           "is_super_admin": {
             "type": "boolean"
+          }
+        }
+      },
+      "LogoutEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "revoked": {
+                "type": "boolean"
+              }
+            }
           }
         }
       },
@@ -1291,6 +3193,75 @@
           }
         }
       },
+      "ProjectAttachmentPreviewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {"$ref": "#/components/schemas/ProjectAttachmentPreview"}
+        }
+      },
+      "ProjectAttachmentPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["attachment", "preview", "navigation", "content_url", "download_url"],
+        "properties": {
+          "attachment": {"$ref": "#/components/schemas/Attachment"},
+          "preview": {"$ref": "#/components/schemas/AttachmentPreviewCapability"},
+          "navigation": {"$ref": "#/components/schemas/AttachmentPreviewNavigation"},
+          "content_url": {"type": "string"},
+          "download_url": {"type": "string"}
+        }
+      },
+      "Attachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "filename", "content_type", "byte_size", "status", "created_by", "created_at"],
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "filename": {"type": "string"},
+          "content_type": {"type": "string"},
+          "byte_size": {"type": "integer", "format": "int64", "minimum": 0},
+          "status": {"type": "string"},
+          "created_by": {"type": "string"},
+          "created_at": {"type": "string"}
+        }
+      },
+      "AttachmentPreviewCapability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "strategy", "file_type", "kind_label", "is_experimental", "legacy_preview_enabled", "content_enabled"],
+        "properties": {
+          "kind": {"type": ["string", "null"], "enum": ["image", "video", "document", null]},
+          "strategy": {"type": ["string", "null"]},
+          "file_type": {"type": ["string", "null"]},
+          "kind_label": {"type": ["string", "null"]},
+          "is_experimental": {"type": "boolean"},
+          "legacy_preview_enabled": {"type": "boolean"},
+          "content_enabled": {"type": "boolean"}
+        }
+      },
+      "AttachmentPreviewNavigation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["position", "total", "previous", "next"],
+        "properties": {
+          "position": {"type": "integer", "minimum": 0},
+          "total": {"type": "integer", "minimum": 0},
+          "previous": {"oneOf": [{"$ref": "#/components/schemas/AttachmentPreviewNavigationLink"}, {"type": "null"}]},
+          "next": {"oneOf": [{"$ref": "#/components/schemas/AttachmentPreviewNavigationLink"}, {"type": "null"}]}
+        }
+      },
+      "AttachmentPreviewNavigationLink": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "url"],
+        "properties": {
+          "id": {"type": "integer", "format": "int64"},
+          "title": {"type": "string"},
+          "url": {"type": "string"}
+        }
+      },
       "ProjectPageEnvelope": {
         "type": "object",
         "properties": {
@@ -1386,6 +3357,13 @@
           "is_protected": {
             "type": "boolean"
           },
+          "access_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "仅密码解锁成功时返回的短时、用户与资料绑定访问凭证。"
+          },
           "created_by": {
             "type": "string"
           },
@@ -1455,6 +3433,26 @@
           }
         }
       },
+      "ResetProjectResourcePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "access_password_action"
+        ],
+        "properties": {
+          "access_password_action": {
+            "type": "string",
+            "enum": [
+              "set",
+              "clear"
+            ]
+          },
+          "access_password": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      },
       "WorkItem": {
         "type": "object",
         "properties": {
@@ -1506,6 +3504,161 @@
           }
         }
       },
+      "WorkItemListFilter": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_type", "q", "status", "priority", "project_key", "assignee_username", "cycle_id", "sort"],
+        "properties": {
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "q": {"type": "string"},
+          "status": {"type": "string"},
+          "priority": {"type": "string"},
+          "project_key": {"type": "string"},
+          "assignee_username": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "sort": {"type": "string", "enum": ["updated_desc", "created_desc", "priority_desc", "due_date_asc"]}
+        }
+      },
+      "WorkItemListViewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["items", "pagination", "summary", "filters", "assignees", "cycles", "parent_options", "saved_views", "can_manage_work_items"],
+            "properties": {
+              "items": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItem"}},
+              "pagination": {"$ref": "#/components/schemas/Pagination"},
+              "summary": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["total_items", "active_items", "high_priority_items"],
+                "properties": {
+                  "total_items": {"type": "integer"},
+                  "active_items": {"type": "integer"},
+                  "high_priority_items": {"type": "integer"}
+                }
+              },
+              "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
+              "assignees": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["username", "display_name"],
+                  "properties": {"username": {"type": "string"}, "display_name": {"type": "string"}}
+                }
+              },
+              "cycles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "name", "is_closed"],
+                  "properties": {"id": {"type": "integer"}, "name": {"type": "string"}, "is_closed": {"type": "boolean"}}
+                }
+              },
+              "parent_options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["key", "title"],
+                  "properties": {"key": {"type": "string"}, "title": {"type": "string"}}
+                }
+              },
+              "saved_views": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemSavedView"}},
+              "can_manage_work_items": {"type": "boolean"}
+            }
+          }
+        }
+      },
+      "WorkItemSavedView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "filters", "per_page", "is_default"],
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
+          "per_page": {"type": "integer"},
+          "is_default": {"type": "boolean"}
+        }
+      },
+      "BatchUpdateWorkItemsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["project_key", "item_type", "item_keys", "action"],
+        "properties": {
+          "project_key": {"type": "string"},
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "item_keys": {"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": {"type": "string"}},
+          "action": {"type": "string", "enum": ["assignee", "status", "priority", "cycle"]},
+          "status": {"type": "string"},
+          "assignee_username": {"type": "string"},
+          "priority": {"type": "string", "enum": ["", "P0", "P1", "P2", "P3"]},
+          "cycle_id": {"type": ["integer", "null"], "minimum": 1}
+        }
+      },
+      "BatchUpdateWorkItemsEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["updated_count", "updated_item_keys", "failed_count", "failed_items"],
+            "properties": {
+              "updated_count": {"type": "integer", "minimum": 0, "maximum": 100},
+              "updated_item_keys": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
+              "failed_count": {"type": "integer", "minimum": 0, "maximum": 100},
+              "failed_items": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["item_key", "code", "message"],
+                  "properties": {"item_key": {"type": "string"}, "code": {"type": "string"}, "message": {"type": "string"}}
+                }
+              }
+            }
+          }
+        }
+      },
+      "WorkItemSavedViewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {"data": {"$ref": "#/components/schemas/WorkItemSavedView"}}
+      },
+      "CreateWorkItemSavedViewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["project_key", "item_type", "name", "per_page"],
+        "properties": {
+          "project_key": {"type": "string"},
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "name": {"type": "string", "minLength": 1, "maxLength": 40},
+          "q": {"type": "string"},
+          "status": {"type": "string"},
+          "priority": {"type": "string"},
+          "assignee_username": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "sort": {"type": "string"},
+          "per_page": {"type": "integer", "minimum": 1, "maximum": 100},
+          "is_default": {"type": "boolean"}
+        }
+      },
+      "RenameWorkItemSavedViewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 40}}
+      },
       "WorkItemDetailEnvelope": {
         "type": "object",
         "properties": {
@@ -1513,6 +3666,41 @@
             "$ref": "#/components/schemas/WorkItemDetail"
           }
         }
+      },
+      "WorkItemDetailViewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item", "primary_post", "cycle", "assignees", "parent_options", "status_options", "permissions", "navigation", "flow_history"],
+            "properties": {
+              "item": {"$ref": "#/components/schemas/WorkItemDetail"},
+              "primary_post": {"oneOf": [{"$ref": "#/components/schemas/Comment"}, {"type": "null"}]},
+              "cycle": {"oneOf": [{"$ref": "#/components/schemas/WorkItemDetailOption"}, {"type": "null"}]},
+              "assignees": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemDetailOption"}},
+              "parent_options": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["key", "title"], "properties": {"key": {"type": "string"}, "title": {"type": "string"}}}},
+              "status_options": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemDetailOption"}},
+              "permissions": {"type": "object", "additionalProperties": false, "required": ["can_manage_work_items", "can_edit_primary_post", "can_close_work_item", "can_reopen_work_item", "can_restore_work_item"], "properties": {"can_manage_work_items": {"type": "boolean"}, "can_edit_primary_post": {"type": "boolean"}, "can_close_work_item": {"type": "boolean"}, "can_reopen_work_item": {"type": "boolean"}, "can_restore_work_item": {"type": "boolean"}}},
+              "navigation": {"type": "object", "additionalProperties": false, "required": ["previous", "next"], "properties": {"previous": {"$ref": "#/components/schemas/NullableWorkItemNavigationLink"}, "next": {"$ref": "#/components/schemas/NullableWorkItemNavigationLink"}}},
+              "flow_history": {"type": "object", "additionalProperties": false, "required": ["items", "pagination"], "properties": {"items": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_kind", "actor", "created_at", "summary"], "properties": {"source_kind": {"type": "string", "enum": ["flow", "edit"]}, "actor": {"type": "string"}, "created_at": {"type": "string"}, "summary": {"type": "string"}}}}, "pagination": {"$ref": "#/components/schemas/Pagination"}}}
+            }
+          }
+        }
+      },
+      "WorkItemDetailOption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "label"],
+        "properties": {"value": {"type": "string"}, "label": {"type": "string"}}
+      },
+      "NullableWorkItemNavigationLink": {
+        "oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["item_key", "title"], "properties": {"item_key": {"type": "string"}, "title": {"type": "string"}}},
+          {"type": "null"}
+        ]
       },
       "WorkItemDetail": {
         "allOf": [
@@ -1549,6 +3737,7 @@
       },
       "CreateWorkItemRequest": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "project_key",
           "item_type",
@@ -1583,6 +3772,10 @@
           },
           "assignee_username": {
             "type": "string"
+          },
+          "cycle_id": {
+            "type": ["integer", "null"],
+            "minimum": 1
           }
         }
       },
@@ -1666,6 +3859,9 @@
           "author": {
             "type": "string"
           },
+          "author_username": {
+            "type": "string"
+          },
           "created_at": {
             "type": "string"
           },
@@ -1709,6 +3905,81 @@
           }
         }
       },
+      "UpdateWorkItemPrimaryPostRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["body", "body_format"],
+        "properties": {
+          "body": {"type": "string", "minLength": 1, "maxLength": 20000},
+          "body_format": {"type": "string", "enum": ["html"]}
+        }
+      },
+      "TopbarStatusEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TopbarStatus"
+          }
+        }
+      },
+      "TopbarStatus": {
+        "type": "object",
+        "properties": {
+          "requirements_count": {
+            "type": "integer"
+          },
+          "tasks_count": {
+            "type": "integer"
+          },
+          "bugs_count": {
+            "type": "integer"
+          },
+          "notifications_count": {
+            "type": "integer"
+          },
+          "project_badges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopbarProjectBadge"
+            }
+          },
+          "current_project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TopbarCurrentProject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TopbarProjectBadge": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string"
+          },
+          "pending_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "TopbarCurrentProject": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending_count": {
+            "type": "integer"
+          }
+        }
+      },
       "NotificationFeedEnvelope": {
         "type": "object",
         "properties": {
@@ -1723,8 +3994,87 @@
               },
               "unread_count": {
                 "type": "integer"
+              },
+              "pending_count": {
+                "type": "integer"
+              },
+              "filter": {
+                "type": "string",
+                "enum": ["all", "unread", "pending", "read"]
+              },
+              "page": {
+                "type": "integer"
+              },
+              "per_page": {
+                "type": "integer"
+              },
+              "total_items": {
+                "type": "integer"
+              },
+              "total_pages": {
+                "type": "integer"
               }
             }
+          }
+        }
+      },
+      "NotificationTargetResultEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NotificationTargetResult"
+          }
+        }
+      },
+      "NotificationTargetResult": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "integer"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "NotificationMarkAllReadEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "affected": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "NotificationTarget": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["work_item"]
+          },
+          "project_key": {
+            "type": "string"
+          },
+          "work_item_key": {
+            "type": "string"
+          },
+          "comment_id": {
+            "type": ["integer", "null"]
           }
         }
       },
@@ -1753,7 +4103,18 @@
             "type": "boolean"
           },
           "open_url": {
-            "type": "string"
+            "type": "string",
+            "description": "当前仍指向 HTML 兼容路由 `/web/messages/{id}/open`；W2/W3 会迁到语义路由。"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       }

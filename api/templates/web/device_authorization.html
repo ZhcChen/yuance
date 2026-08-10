@@ -1,0 +1,55 @@
+{% extends "layouts/auth.html" %}
+
+{% block title %}设备授权 - 元策{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+  <div class="auth-hero" aria-label="设备授权信息">
+    <div class="auth-brand">
+      <img class="brand-mark" src="/static/brand/yuance-logo.svg" alt="" width="32" height="32">
+      <div>
+        <strong>元策</strong>
+        <span>设备安全授权</span>
+      </div>
+    </div>
+    <div class="device-authorization-summary">
+      <span class="form-eyebrow">Authorization request</span>
+      <h1>确认这台设备</h1>
+      <dl>
+        <div><dt>设备</dt><dd>{{ device_name }}</dd></div>
+        <div><dt>平台</dt><dd>{{ platform }}</dd></div>
+        <div><dt>客户端版本</dt><dd>{{ client_version }}</dd></div>
+        <div><dt>服务实例</dt><dd>{{ server_instance_id }}</dd></div>
+        <div><dt>发起时间</dt><dd>{{ created_at }}</dd></div>
+      </dl>
+    </div>
+  </div>
+
+  <div class="auth-form device-authorization-form">
+    <div class="form-head">
+      <span class="form-eyebrow">当前登录账户</span>
+      <h1>{{ current_user }}</h1>
+      <p>批准后，这台设备将获得独立且可随时撤销的设备会话。</p>
+    </div>
+    {% if error_message != "" %}
+    <div class="auth-message auth-message-error" role="alert">{{ error_message }}</div>
+    {% endif %}
+    <div class="device-authorization-code" aria-label="设备授权码">
+      <span>设备授权码</span>
+      <strong>{{ user_code }}</strong>
+    </div>
+    <div class="device-authorization-actions">
+      <form method="post" action="/web/device-authorization/deny">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="user_code" value="{{ user_code }}">
+        <button class="btn btn-secondary btn-block" type="submit">拒绝</button>
+      </form>
+      <form method="post" action="/web/device-authorization/approve">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="user_code" value="{{ user_code }}">
+        <button class="btn btn-primary btn-block" type="submit">批准设备</button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

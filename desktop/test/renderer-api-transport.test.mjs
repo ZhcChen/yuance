@@ -1,0 +1,339 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { ApiError, createApiClient } from "@yuance/frontend-api-client";
+import { createDesktopApiTransport } from "../src/renderer/platform/api-transport.js";
+
+const resourceFixture = { id: 9, project_key: "DEMO", title: "Release", category: "development", body: "Body", body_format: "markdown", summary: "Summary", status: "active", is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: "Alice", updated_by: "Alice", created_at: "2026-08-07T00:00:00Z", updated_at: "2026-08-07T00:00:00Z", url: "/web/projects/DEMO/resources/9" };
+const attachmentFixture = { id: 8, filename: "resource.txt", content_type: "text/plain", byte_size: 12, status: "deleted", created_by: "Alice", created_at: "2026-08-07T00:00:00Z" };
+
+test("desktop API transport maps only known read routes to domain operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: { operation } };
+  } });
+  /** @type {Array<[string, string, Record<string, unknown>]>} */
+  const cases = [
+    ["/api/v1/auth/me", "identity.current", {}],
+    ["/api/v1/me/profile", "identity.profile", {}],
+    ["/api/v1/topbar/status", "shell.topbar", {}],
+    ["/api/v1/system/dashboard", "system.dashboard", {}],
+    ["/api/v1/system/users-view?page=2&per_page=20", "system.usersview", { page: 2, perPage: 20 }],
+    ["/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20", "system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }],
+    ["/api/v1/system/storage-view?page=2&per_page=20", "system.storageview", { page: 2, perPage: 20 }],
+    ["/api/v1/system/releases-view?page=2&per_page=20", "system.releasesview", { page: 2, perPage: 20 }],
+    ["/api/v1/current-project", "project.current", {}],
+    ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
+    ["/api/v1/projects/DEMO", "project.detail", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/members", "project.members", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/cycles", "project.cycles", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/cycles/7", "project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
+    ["/api/v1/projects/DEMO/my-analysis", "project.personalanalysis", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/attachments", "project.attachments", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/resources?q=release&category=development&related_cycle_id=7", "project.resources", { projectKey: "DEMO", q: "release", category: "development", relatedCycleId: "7" }],
+    ["/api/v1/projects/DEMO/resources/9", "project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }],
+    ["/api/v1/projects/DEMO/resources/9/attachments?access=grant-token", "project.resourceattachments", { projectKey: "DEMO", resourceId: 9, accessToken: "grant-token" }],
+    ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
+    ["/api/v1/notifications?filter=unread&limit=10", "notification.list", { filter: "unread", limit: 10 }],
+    ["/api/v1/notifications/7/target", "notification.target", { notificationId: 7 }],
+    ["/api/v1/work-items?item_type=bug&q=crash&priority=P1&project_key=DEMO&cycle_id=7&sort=priority_desc", "workitem.list", { itemType: "bug", q: "crash", priority: "P1", projectKey: "DEMO", cycleId: 7, sort: "priority_desc" }],
+    ["/api/v1/work-item-list-view?item_type=bug&project_key=DEMO&page=2", "workitem.listview", { itemType: "bug", projectKey: "DEMO", page: 2 }],
+    ["/api/v1/work-item-detail-view/DEMO-1", "workitem.detailview", { itemKey: "DEMO-1" }],
+    ["/api/v1/work-items/DEMO-1", "workitem.detail", { itemKey: "DEMO-1" }],
+    ["/api/v1/work-items/DEMO-1/comments", "workitem.comments", { itemKey: "DEMO-1" }],
+    ["/api/v1/work-items/DEMO-1/attachments", "workitem.attachments", { itemKey: "DEMO-1" }],
+    ["/api/v1/work-items/DEMO-1/comments/9/attachments", "workitem.commentattachments", { itemKey: "DEMO-1", commentId: 9 }],
+  ];
+  for (const [url, operation] of cases) assert.deepEqual(await transport.request(url), { operation });
+  assert.deepEqual(calls, cases.map(([, operation, input]) => [operation, input]));
+});
+
+test("desktop API transport rejects request primitives and ambiguous routes before IPC", async () => {
+  let calls = 0;
+  const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });
+  /** @type {Array<[string, ({ method?: string, headers?: Record<string, string>, body?: string } | undefined)?]>} */
+  const rejected = [
+    ["https://evil.example/api/v1/auth/me"],
+    ["//evil.example/api/v1/auth/me"],
+    ["/api/v1/auth/me#secret"],
+    ["/api/v1/auth/me?url=https://evil.example"],
+    ["/api/v1/projects?page=1&page=2"],
+    ["/api/v1/work-items/DEMO-1?token=secret"],
+    ["/api/v1/work-items/DEMO%2f1"],
+    ["/api/v1/work-items/DEMO-1", { method: "PATCH" }],
+    ["/api/v1/work-items/DEMO-1", { method: "GET", headers: { Authorization: "Bearer forged" } }],
+    ["/api/v1/work-items/DEMO-1", { method: "GET", body: "{}" }],
+  ];
+  for (const [url, options] of rejected) await assert.rejects(transport.request(url, options), ApiError);
+  assert.equal(calls, 0);
+});
+
+test("desktop API transport validates public IPC envelopes", async () => {
+  const success = createDesktopApiTransport({ execute: async () => ({ ok: true, data: { id: 7 } }) });
+  assert.deepEqual(await success.request("/api/v1/auth/me", { method: "GET" }), { id: 7 });
+  const failure = createDesktopApiTransport({ execute: async () => ({ ok: false, error: { code: "project_access_denied", status: 403 } }) });
+  await assert.rejects(failure.request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "project_access_denied" && error.status === 403 && !error.message.includes("secret"));
+  for (const response of [null, {}, { ok: true, data: {}, token: "secret" }, { ok: false, error: { code: "bad" }, stack: "secret" }]) {
+    const invalid = createDesktopApiTransport({ execute: async () => response });
+    await assert.rejects(invalid.request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "invalid_response");
+  }
+  await assert.rejects(createDesktopApiTransport().request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "business_unavailable");
+});
+
+test("api-client mutations map to fixed domain operations without request primitives", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : ["project.resourceattachmentdelete", "workitem.commentattachmentdelete", "workitem.primarypostattachmentdelete"].includes(operation) ? attachmentFixture : {} };
+  } });
+  const client = createApiClient({ request: transport.request });
+  await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
+  await client.createProject({ name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" });
+  await client.getProject("DEMO");
+  await client.getProjectMembers("DEMO");
+  await client.updateProject("DEMO", { name: "Updated", ownerUsername: "alice" });
+  await client.addProjectMember("DEMO", { username: "bob", memberRole: "member" });
+  await client.updateProjectMemberRole("DEMO", "bob", "maintainer");
+  await client.removeProjectMember("DEMO", "bob");
+  const cycle = { name: "Sprint", goal: "Ship", description: "Cycle", ownerUsername: "alice", startDate: "2026-08-01", endDate: "2026-08-31" };
+  await client.getProjectCycles("DEMO"); await client.getProjectCycle("DEMO", 7); await client.createProjectCycle("DEMO", cycle); await client.updateProjectCycle("DEMO", 7, cycle); await client.closeProjectCycle("DEMO", 7);
+  await client.getProjectPersonalAnalysis("DEMO");
+  await client.getProjectAttachments("DEMO"); await client.archiveProjectAttachment("DEMO", 8);
+  await client.getProjectResources("DEMO", { q: "release" }); await client.getProjectResource("DEMO", 9); await client.unlockProjectResource("DEMO", 9, "vault-pass");
+  const resourcePayload = { title: "Runbook", category: "other", body: "Body", bodyFormat: "plain", accessPassword: "", tags: ["ops"], relatedWorkItemKey: "", relatedCycleId: null };
+  await client.createProjectResource("DEMO", resourcePayload); await client.updateProjectResource("DEMO", 9, { ...resourcePayload, accessPasswordAction: "keep" }); await client.archiveProjectResource("DEMO", 9); await client.resetProjectResourcePassword("DEMO", 9, { accessPasswordAction: "clear", accessPassword: "" });
+  await client.getProjectResourceAttachments("DEMO", 9, "grant-token"); await client.deleteProjectResourceAttachment("DEMO", 9, 8);
+  await client.updateOwnPassword({ currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" });
+  await client.createApiToken({ name: "Agent", scopes: ["project:read"], projectScope: "all" });
+  await client.updateApiToken(7, { name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" });
+  await client.deleteApiToken(7);
+  await client.revokeDeviceSession("family-1");
+  await client.updateCurrentProject("DEMO");
+  await client.markNotificationRead(7);
+  await client.markAllNotificationsRead();
+  await client.createWorkItem({ projectKey: "DEMO", itemType: "task", title: "Implement", description: "Body", priority: "P1", assigneeUsername: "alice", cycleId: 7, dueDate: "2026-08-31", parentItemKey: "DEMO-REQ-1" });
+  await client.batchUpdateWorkItems({ projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-2"], action: "priority", priority: "P1" });
+  await client.createWorkItemSavedView({ projectKey: "DEMO", itemType: "task", name: "Focus", status: "open", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true });
+  await client.renameWorkItemSavedView(7, "Focus 2");
+  await client.setDefaultWorkItemSavedView(7);
+  await client.deleteWorkItemSavedView(7);
+  await client.updateWorkItem("DEMO-1", { title: "Updated", description: "Body", priority: "P1" });
+  await client.updateWorkItemPrimaryPost("DEMO-1", "<p>Updated</p>");
+  await client.handoffWorkItem("DEMO-1", { status: "in_progress", assigneeUsername: "alice", body: "Please continue" });
+  await client.restoreWorkItem("DEMO-1");
+  await client.createWorkItemComment("DEMO-1", { body: "New comment" });
+  await client.createWorkItemCommentDraft("DEMO-1", { body: "", bodyFormat: "html" });
+  await client.publishWorkItemCommentDraft("DEMO-1", 9, { body: "<p>New comment</p>", bodyFormat: "html" });
+  await client.cancelWorkItemCommentDraft("DEMO-1", 9);
+  await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
+  await client.deleteWorkItemCommentAttachment("DEMO-1", 9, 7);
+  await client.deleteWorkItemPrimaryPostAttachment("DEMO-1", 9, 8);
+  assert.deepEqual(calls, [
+    ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
+    ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }],
+    ["project.detail", { projectKey: "DEMO" }],
+    ["project.members", { projectKey: "DEMO" }],
+    ["project.update", { projectKey: "DEMO", name: "Updated", ownerUsername: "alice" }],
+    ["project.memberadd", { projectKey: "DEMO", username: "bob", memberRole: "member" }],
+    ["project.memberroleupdate", { projectKey: "DEMO", username: "bob", memberRole: "maintainer" }],
+    ["project.memberremove", { projectKey: "DEMO", username: "bob" }],
+    ["project.cycles", { projectKey: "DEMO" }],
+    ["project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
+    ["project.cyclecreate", { projectKey: "DEMO", ...cycle }],
+    ["project.cycleupdate", { projectKey: "DEMO", cycleId: 7, ...cycle }],
+    ["project.cycleclose", { projectKey: "DEMO", cycleId: 7 }],
+    ["project.personalanalysis", { projectKey: "DEMO" }],
+    ["project.attachments", { projectKey: "DEMO" }],
+    ["project.attachmentarchive", { projectKey: "DEMO", attachmentId: 8 }],
+    ["project.resources", { projectKey: "DEMO", q: "release" }],
+    ["project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }],
+    ["project.resourceunlock", { projectKey: "DEMO", resourceId: 9, accessPassword: "vault-pass" }],
+    ["project.resourcecreate", { projectKey: "DEMO", ...resourcePayload }],
+    ["project.resourceupdate", { projectKey: "DEMO", resourceId: 9, ...resourcePayload, accessPasswordAction: "keep" }],
+    ["project.resourcearchive", { projectKey: "DEMO", resourceId: 9 }],
+    ["project.resourcepasswordreset", { projectKey: "DEMO", resourceId: 9, accessPasswordAction: "clear", accessPassword: "" }],
+    ["project.resourceattachments", { projectKey: "DEMO", resourceId: 9, accessToken: "grant-token" }],
+    ["project.resourceattachmentdelete", { projectKey: "DEMO", resourceId: 9, attachmentId: 8 }],
+    ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }],
+    ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }],
+    ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" }],
+    ["identity.tokendelete", { tokenId: 7 }],
+    ["identity.devicesessionrevoke", { familyId: "family-1" }],
+    ["project.select", { projectKey: "DEMO" }],
+    ["notification.read", { notificationId: 7 }],
+    ["notification.readall", {}],
+    ["workitem.create", { projectKey: "DEMO", itemType: "task", title: "Implement", description: "Body", priority: "P1", assigneeUsername: "alice", cycleId: 7, dueDate: "2026-08-31", parentItemKey: "DEMO-REQ-1" }],
+    ["workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-2"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }],
+    ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: "Focus", q: "", status: "open", priority: "", assigneeUsername: "", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true }],
+    ["workitem.savedviewrename", { savedViewId: 7, name: "Focus 2" }],
+    ["workitem.savedviewdefault", { savedViewId: 7 }],
+    ["workitem.savedviewdelete", { savedViewId: 7 }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", priority: "P1" } }],
+    ["workitem.primarypostupdate", { itemKey: "DEMO-1", payload: { body: "<p>Updated</p>", bodyFormat: "html" } }],
+    ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Please continue" } }],
+    ["workitem.restore", { itemKey: "DEMO-1" }],
+    ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "New comment", bodyFormat: "plain" } }],
+    ["workitem.commentdraftcreate", { itemKey: "DEMO-1", payload: { body: "", bodyFormat: "html" } }],
+    ["workitem.commentdraftpublish", { itemKey: "DEMO-1", commentId: 9, payload: { body: "<p>New comment</p>", bodyFormat: "html" } }],
+    ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 9 }],
+    ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }],
+    ["workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }],
+    ["workitem.primarypostattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 8 }],
+  ]);
+  assert.equal(JSON.stringify(calls).includes("content-type"), false);
+  assert.equal(JSON.stringify(calls).includes("/api/v1/"), false);
+});
+
+test("system user mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: { id: 7, username: "alice", display_name: "Alice", email: "", mobile: "", status: "active", is_super_admin: false, role_code: "member", role_names: "项目成员", created_at: "2026-08-08", updated_at: "2026-08-08" } };
+  } });
+  const api = createApiClient({ request: transport.request });
+  await api.createSystemUser({ username: "alice", displayName: "Alice", password: "AlicePass2026!", roleCode: "member" });
+  await api.updateSystemUserStatus("alice", "disabled");
+  await api.updateSystemUserRole("alice", "viewer");
+  await api.resetSystemUserPassword("alice", "NewAlicePass2026!");
+  assert.deepEqual(calls, [
+    ["system.usercreate", { username: "alice", displayName: "Alice", email: "", mobile: "", password: "AlicePass2026!", roleCode: "member" }],
+    ["system.userstatusupdate", { username: "alice", status: "disabled" }],
+    ["system.userroleupdate", { username: "alice", roleCode: "viewer" }],
+    ["system.userpasswordreset", { username: "alice", password: "NewAlicePass2026!" }],
+  ]);
+});
+
+test("system user project mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: {
+      id: 7, username: "alice", display_name: "Alice", email: "", mobile: "", status: "active", is_super_admin: false,
+      role_code: "member", role_names: "项目成员", created_at: "2026-08-08", updated_at: "2026-08-08",
+      assigned_projects: [{ key: "OPS", name: "Operations", status: "in_progress", role_code: "maintainer", active_assigned_count: 0, can_remove: true, can_update_role: true, remove_block_reason: "" }],
+    } };
+  } });
+  const api = createApiClient({ request: transport.request });
+  await api.assignSystemUserProjects("alice", ["YCE", "OPS"], "viewer");
+  await api.removeSystemUserProjects("alice", ["OPS"]);
+  await api.removeSystemUserProject("alice", "YCE");
+  await api.updateSystemUserProjectRole("alice", "OPS", "maintainer");
+  assert.deepEqual(calls, [
+    ["system.userprojectsassign", { username: "alice", projectKeys: ["YCE", "OPS"], memberRole: "viewer" }],
+    ["system.userprojectsremove", { username: "alice", projectKeys: ["OPS"] }],
+    ["system.userprojectremove", { username: "alice", projectKey: "YCE" }],
+    ["system.userprojectroleupdate", { username: "alice", projectKey: "OPS", memberRole: "maintainer" }],
+  ]);
+});
+
+test("system role mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.createSystemRole("qa_lead", "质量负责人", "all");
+  await api.updateSystemRoleStatus("qa_lead", "disabled");
+  await api.updateSystemRolePermissions("qa_lead", ["system.dashboard.view"]);
+  assert.deepEqual(calls, [
+    ["system.rolecreate", { roleCode: "qa_lead", roleName: "质量负责人", dataScopeType: "all" }],
+    ["system.rolestatusupdate", { roleCode: "qa_lead", status: "disabled" }],
+    ["system.rolepermissionsupdate", { roleCode: "qa_lead", permissionKeys: ["system.dashboard.view"] }],
+  ]);
+});
+
+test("system storage mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  await transport.request("/api/v1/storage/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", access_key_id: "AKIAEXAMPLE", access_key_secret: "SecretValue", activate: true }) });
+  await transport.request("/api/v1/storage/config/probe", { method: "POST" });
+  await transport.request("/api/v1/storage/config/initialize", { method: "POST" });
+  await transport.request("/api/v1/storage/config/versions/7/rollback", { method: "POST" });
+  assert.deepEqual(calls, [
+    ["system.storagesave", { endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", accessKeyId: "AKIAEXAMPLE", accessKeySecret: "SecretValue", activate: true }],
+    ["system.storageprobe", {}], ["system.storageinitialize", {}], ["system.storagerollback", { version: 7 }],
+  ]);
+});
+
+test("system OpenAPI token lifecycle maps to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemOpenApiView();
+  await api.createSystemApiToken("Release robot", ["system_release:read", "system_release:write"]);
+  await api.updateSystemApiToken(7, "Release reader", ["system_release:read"]);
+  await api.deleteSystemApiToken(7);
+  assert.deepEqual(calls, [
+    ["system.openapiview", {}],
+    ["system.apitokencreate", { name: "Release robot", scopes: ["system_release:read", "system_release:write"] }],
+    ["system.apitokenupdate", { tokenId: 7, name: "Release reader", scopes: ["system_release:read"] }],
+    ["system.apitokendelete", { tokenId: 7 }],
+  ]);
+});
+
+test("system permissions map to one fixed Desktop read operation", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: [] }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemPermissions();
+  assert.deepEqual(calls, [["system.permissions", {}]]);
+});
+
+test("system database stats map to one fixed Desktop read operation", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: { refreshed_at: "2026-08-08T00:00:00Z", tables: [] } }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemDatabaseStats();
+  assert.deepEqual(calls, [["system.databasestats", {}]]);
+});
+
+test("system audit filters map to one fixed Desktop read operation", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: { items: [], pagination: { page: 2, per_page: 20, total_items: 0, total_pages: 1 } } }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemAuditLogs({ actor: "Alice", action: "auth.login", targetType: "user", targetId: "7", page: 2, perPage: 20 });
+  assert.deepEqual(calls, [["system.audit", { actor: "Alice", action: "auth.login", targetType: "user", targetId: "7", page: 2, perPage: 20 }]]);
+});
+
+test("system API docs map to one fixed Desktop read operation", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: { source: '{}' } }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemApiDocs();
+  assert.deepEqual(calls, [["system.apidocs", {}]]);
+});
+
+test("system release mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.updateSystemReleaseSettings(8);
+  await api.createSystemRelease({ versionName: "v2.1.0", title: "桌面版本", notes: "内部验证", channel: "internal", manifestSha256: "a".repeat(64), signingKeyId: "release-key-1", sourceCommit: "b".repeat(40), sourceTag: "desktop-v2.1.0" });
+  await api.updateSystemRelease(7, { versionName: "v2.1.0", title: "桌面版本修订", notes: "准备发布", publish: true });
+  await api.verifySystemRelease(7);
+  await api.withdrawSystemRelease(7, "发现阻断缺陷");
+  assert.deepEqual(calls, [
+    ["system.releasesettingsupdate", { retentionCount: 8 }],
+    ["system.releasecreate", { versionName: "v2.1.0", title: "桌面版本", notes: "内部验证", channel: "internal", manifestSha256: "a".repeat(64), signingKeyId: "release-key-1", sourceCommit: "b".repeat(40), sourceTag: "desktop-v2.1.0" }],
+    ["system.releaseupdate", { releaseId: 7, versionName: "v2.1.0", title: "桌面版本修订", notes: "准备发布", publish: true }],
+    ["system.releaseverify", { releaseId: 7 }],
+    ["system.releasewithdraw", { releaseId: 7, reason: "发现阻断缺陷" }],
+  ]);
+});
+
+test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
+  let calls = 0;
+  const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });
+  const json = (body, headers = { "content-type": "application/json" }) => ({ method: "PATCH", headers, body });
+  /** @type {Array<[string, { method: string, headers?: Record<string, string>, body?: string }]>} */
+  const rejected = [
+    ["/api/v1/current-project", json("not-json")],
+    ["/api/v1/current-project", json('{"project_key":"DEMO","url":"https://evil.example"}')],
+    ["/api/v1/current-project", json('{"project_key":"DEMO"}', { "content-type": "text/plain" })],
+    ["/api/v1/work-items/DEMO-1", { ...json('{"title":"x"}'), headers: { "content-type": "application/json", Authorization: "Bearer forged" } }],
+    ["/api/v1/work-items/DEMO-1/comments/draft", { method: "POST", headers: { "content-type": "application/json" }, body: '{"body":"x","url":"https://evil.example"}' }],
+    ["/api/v1/work-items/DEMO-1/comments/9/attachments/7", { method: "DELETE", headers: { "x-yuance-editor-context": "forged" } }],
+    ["/api/v1/work-items/DEMO-1/comments/9/attachments/7", { method: "DELETE", headers: { "x-yuance-editor-context": "work-item-comment-edit", Authorization: "Bearer forged" } }],
+  ];
+  for (const [url, options] of rejected) await assert.rejects(transport.request(url, options), (error) => error instanceof ApiError);
+  assert.equal(calls, 0);
+});

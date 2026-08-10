@@ -1,0 +1,10 @@
+:root {
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+html, body, #root, .desktop-root-shell, .desktop-stage { min-height: 100%; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--yc-bg, #f4f7f8); }
+.desktop-root-shell, .desktop-stage { min-height: 100vh; background: var(--yc-bg, #f4f7f8); }
+.desktop-stage:focus { outline: none; }
+button, input { font: inherit; }

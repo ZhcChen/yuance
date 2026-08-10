@@ -3,6 +3,12 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
+use std::{
+    fs,
+    future::Future,
+    sync::{Mutex, OnceLock},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tower::ServiceExt;
 use yuance_api::{
     platform::{config::Settings, db},
@@ -191,33 +197,6 @@ async fn api_docs_page_embeds_scalar_and_skill_setup_summary() {
 }
 
 #[tokio::test]
-async fn system_api_docs_page_embeds_scalar_and_system_token_summary() {
-    let app = build_router(AppState::for_tests());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/api-docs")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "text/html; charset=utf-8"
-    );
-
-    let body = response_body(response).await;
-    assert!(body.contains("Scalar.createApiReference"));
-    assert!(body.contains("url: '/api/system/openapi.json'"));
-    assert!(body.contains("系统版本管理 API"));
-    assert!(body.contains("进入系统 Token 管理"));
-}
-
-#[tokio::test]
 async fn static_logo_is_bundled_as_svg() {
     let app = build_router(AppState::for_tests());
 
@@ -282,15 +261,15 @@ async fn favicon_uses_bundled_logo_svg() {
     assert!(body.contains("<title id=\"title\">元策 Logo</title>"));
     assert!(body.contains("纯色策印"));
 }
-
 #[tokio::test]
-async fn static_app_css_is_bundled() {
+async fn auth_css_is_bundled_without_retired_business_selectors() {
     let app = build_router(AppState::for_tests());
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .uri("/static/app.css")
+                .uri("/static/auth.css")
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -302,170 +281,255 @@ async fn static_app_css_is_bundled() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "text/css; charset=utf-8"
     );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        "no-store, max-age=0, must-revalidate"
-    );
-
     let body = response_body(response).await;
-    assert!(body.contains("data-theme"));
-    assert!(body.contains("modal"));
-    assert!(body.contains("project-switcher"));
-    assert!(body.contains(".auth-form input"));
-    assert!(body.contains("letter-spacing: 0"));
-    assert!(body.contains("word-spacing: normal"));
-    assert!(body.contains(".rich-text-editor:focus-within"));
-    assert!(body.contains(".rich-attachment"));
-    assert!(body.contains(".rich-attachment[data-upload-state=\"queued\"]"));
-    assert!(body.contains(".work-item-rich-create"));
-    assert!(body.contains(".rich-attachment-menu"));
-    assert!(body.contains("cursor: context-menu"));
-    assert!(body.contains(".discussion-reply-form"));
-    assert!(body.contains(".discussion-reply-target"));
-    assert!(!body.contains(".discussion-post[data-reply-depth"));
-    assert!(body.contains(".discussion-flow-event"));
-    assert!(body.contains(".flow-event-body"));
-    assert!(body.contains("grid-column: 1 / -1"));
-    assert!(body.matches(".discussion-reply-form {").count() >= 1);
-    assert!(body.contains(".discussion-assign-status .select-control"));
-    assert!(body.contains("min-width: 168px"));
-    assert!(body.contains(".select-control-option-label"));
-    assert!(body.contains("white-space: nowrap"));
-    assert!(body.contains("text-overflow: ellipsis"));
-    assert!(body.contains(".image-viewer-stage video {"));
-    assert!(body.contains("pointer-events: auto;"));
-    assert!(body.contains(".pager-controls .select-control"));
-    assert!(body.contains("flex: 0 0 76px"));
-    assert!(body.contains(".content-tabs[data-content-tabs-pending]"));
-    assert!(body.contains("0 0 0 3px"));
-    assert!(body.contains(".toast-close"));
-    assert!(body.contains("place-items: center"));
-    assert!(body.contains(".role-status-form"));
-    assert!(!body.contains(".role-status-button"));
+    assert!(body.contains(".auth-panel"));
+    assert!(body.contains(".visual-workspace-grid"));
+    assert!(body.contains(".setup-dashboard"));
+    assert!(body.contains(".device-authorization-actions"));
+    assert!(!body.contains(".work-item"));
+    assert!(!body.contains(".system-"));
+    assert!(!body.contains(".project-"));
+    assert!(!body.contains(".modal"));
+    assert!(!body.contains(".toast"));
+
+    for uri in ["/static/app.css", "/static/app.js"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+    }
 }
 
 #[tokio::test]
-async fn static_app_js_redirects_api_unauthorized_to_login() {
+async fn server_rendered_boundaries_use_versioned_styles_without_inline_css() {
     let app = build_router(AppState::for_tests());
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/app.js")
-                .body(Body::empty())
-                .expect("request should build"),
+    for (uri, marker) in [
+        ("/static/desktop-downloads.css", ".platform-grid"),
+        ("/static/document-preview.css", ".preview-page"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/css; charset=utf-8"
+        );
+        assert!(response_body(response).await.contains(marker));
+    }
+
+    for template in [
+        include_str!("../templates/web/desktop_downloads.html"),
+        include_str!("../templates/web/document_preview.html"),
+    ] {
+        assert!(!template.contains("<style>"));
+        assert!(template.contains("/static/auth.css"));
+    }
+}
+
+#[tokio::test]
+async fn web_app_entry_serves_index_and_deep_links_without_cache() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/web/app/assets/index-abc123.js\"></script></body></html>",
         )
-        .await
-        .expect("router should respond");
+        .expect("index should write");
+        fs::write(dist_dir.join("manifest.json"), "{}")
+            .expect("manifest should write");
+        fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
+            .expect("asset should write");
 
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/javascript; charset=utf-8"
-    );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        "no-store, max-age=0, must-revalidate"
-    );
+        let app = build_router(AppState::for_tests());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
 
-    let body = response
-        .into_body()
-        .collect()
-        .await
-        .expect("body should collect")
-        .to_bytes();
-    let body = std::str::from_utf8(&body).expect("body should be utf-8");
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store, max-age=0, must-revalidate"
+        );
+        let body = response_body(response).await;
+        assert!(body.contains("/web/app/assets/index-abc123.js"));
 
-    assert!(body.contains("response.status === 401"));
-    assert!(body.contains("payload.error.code === \"unauthorized\""));
-    assert!(body.contains("window.location.href = \"/web/login\""));
-    assert!(body.contains("window.__YUANCE_APP_RELEASE_VERSION__ ="));
-    assert!(body.contains("window.__YUANCE_APP_UPDATE_MANIFEST_URL__ = \"/version.json\""));
-    assert!(body.contains("function toggleTheme()"));
-    assert!(body.contains("function currentReleaseVersion()"));
-    assert!(body.contains("function fetchReleaseVersionManifest()"));
-    assert!(body.contains("function checkForAppUpdate()"));
-    assert!(body.contains("function initAppUpdatePrompt()"));
-    assert!(body.contains("data-app-update-modal"));
-    assert!(body.contains("window.location.reload()"));
-    assert!(body.contains("data-theme-toggle"));
-    assert!(body.contains("function notificationText(value, fallback)"));
-    assert!(body.contains("function notificationMetaText(item)"));
-    assert!(body.contains("notificationText(item.actor, \"系统\")"));
-    assert!(body.contains("notificationText(item.created_at, \"未知时间\")"));
-    assert!(body.contains("notificationText(item.open_url, \"/web/messages\")"));
-    assert!(body.contains("function filterProjectOptions"));
-    assert!(body.contains("data-project-search-input"));
-    assert!(body.contains("function openModal"));
-    assert!(body.contains("function closeModal"));
-    assert!(body.contains("data-modal-open"));
-    assert!(body.contains("select.dataset.selectAutofocus"));
-    assert!(body.contains("select.removeAttribute(\"autofocus\")"));
-    assert!(body.contains("trigger.setAttribute(\"autofocus\", \"\")"));
-    assert!(body.contains("select.dataset.selectPanelMinWidth"));
-    assert!(body.contains("var defaultMinWidth = searchable ? 320 : 168"));
-    assert!(body.contains("function renderSelectOptions(control)"));
-    assert!(body.contains("new MutationObserver(function (mutations)"));
-    assert!(body.contains("optionsChanged"));
-    assert!(body.contains("control.selectObserver.disconnect()"));
-    assert!(body.contains("function webFormResultFromHtml"));
-    assert!(body.contains(r#"querySelector(".inline-result")"#));
-    assert!(body.contains("htmlResult?.message"));
-    assert!(body.contains("avatar.style.color = \"#fff\""));
-    assert!(body.contains("event.key === \"Escape\""));
-    assert!(body.contains("function openConfirmModal"));
-    assert!(body.contains("data-confirm-submit-form"));
-    assert!(body.contains("data-confirm-submit"));
-    assert!(body.contains("function syncTabUrl"));
-    assert!(body.contains("data-tabs-sync-url"));
-    assert!(body.contains("function clearContentTabNavigation"));
-    assert!(body.contains("function clearPageTransitionState"));
-    assert!(body.contains("document.body.classList.remove(\"page-leaving\")"));
-    assert!(body.contains("contentTabNavigationControl"));
-    assert!(body.contains("document.fonts.ready"));
-    assert!(body.contains("candidate.setAttribute(\"aria-current\", \"page\")"));
-    assert!(body.contains("setContentTabsPending(contentTabNavigationControl, true)"));
-    assert!(body.contains("async function submitDirectUpload"));
-    assert!(body.contains("data-direct-upload"));
-    assert!(body.contains("function syncDirectUploadMetadata"));
-    assert!(body.contains("fileInput.multiple && !form.dataset.existingAttachmentId"));
-    assert!(body.contains("var uploadEntries = entries.length"));
-    assert!(body.contains("group.dataset.uploadBusy === \"true\""));
-    assert!(body.contains("item.status !== \"deleted\""));
-    assert!(body.contains("已归档"));
-    assert!(body.contains("data-confirm-title=\"归档项目文件\""));
-    assert!(body.contains("data-confirm-action=\"归档\""));
-    assert!(!body.contains("data-confirm-title=\"删除项目文件\""));
-    assert!(!body.contains("确认删除文件"));
-    assert!(body.contains("async function submitBugReport"));
-    assert!(body.contains("async function publishBugReportRichText"));
-    assert!(body.contains("function syncBugReportRichDescription"));
-    assert!(body.contains("function ensureBugReportItemForRichUpload"));
-    assert!(body.contains("function ensureProjectResourceForRichUpload"));
-    assert!(body.contains("function removeRichAttachmentNode"));
-    assert!(body.contains("data-bug-report-form"));
-    assert!(body.contains("/comments/"));
-    assert!(body.contains("function setDiscussionBusy(form, busy, activeSubmitter)"));
-    assert!(body.contains("function isDiscussionControlLocked(form, control)"));
-    assert!(body.contains("control.disabled = busy || isDiscussionControlLocked(form, control);"));
-    assert!(body.contains("control.matches(\"[data-discussion-assign]\")"));
-    assert!(
-        body.contains("selectControl.selectElement.matches(\"[data-discussion-assign-status]\")")
-    );
-    assert!(body.contains("form.dataset.discussionPendingAssign = \"true\""));
-    assert!(body.contains("内容已发表，未完成的指派或附件可直接重试。"));
-    assert!(body.contains("function reloadDiscussionAtComment(itemKey, commentId)"));
-    assert!(body.contains("function openRichAttachmentMenu"));
-    assert!(body.contains("function handleRichAttachmentMenuAction"));
-    assert!(body.contains("data-rich-attachment-menu-action"));
-    assert!(body.contains(".discussion-rich-body a[data-yuance-attachment-kind='file']"));
-    assert!(body.contains("window.location.hash = targetHash"));
-    assert!(body.contains("reloadDiscussionAtComment(itemKey, commentId)"));
-    assert!(body.contains("button === activeSubmitter"));
-    assert!(body.contains("submitter.matches(\"[data-discussion-submit]\")"));
-    assert!(body.contains("USERNAME_INPUT_SELECTOR"));
-    assert!(body.contains("function normalizeUsernameInput"));
-    assert!(body.contains("compactUsernameValue(original)"));
+        let deep_link = app
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/messages/inbox")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(deep_link.status(), StatusCode::OK);
+        assert_eq!(response_body(deep_link).await, body);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/web/app/assets/index-abc123.js\"></script></body></html>",
+        )
+        .expect("index should write");
+        fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
+            .expect("asset should write");
+
+        let app = build_router(AppState::for_tests());
+        let root_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        let messages_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web/messages?filter=unread&page=2&per_page=20")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        let mut migrated_route_responses = Vec::new();
+        for uri in [
+            "/web/projects?status=in_progress&page=2&per_page=20",
+            "/web/projects/YCE?tab=library",
+            "/web/projects/YCE/cycles/7",
+            "/web/projects/YCE/resources/9?access=opaque-token",
+            "/web/projects/YCE/my-analysis",
+            "/web/requirements?status=pending&page=2&per_page=20",
+            "/web/tasks?q=release&sort=priority_desc",
+            "/web/bugs?assignee_username=yuance_admin",
+            "/web/work-items/YCE-TASK-2?focus=comment-7",
+            "/web/system",
+            "/web/system/users?page=2&per_page=20",
+            "/web/system/roles?role=member&page=2&per_page=20",
+            "/web/system/roles/member/permissions",
+            "/web/system/permissions?q=roles",
+            "/web/system/database-stats",
+            "/web/system/audit?actor=admin&action=auth.login&target_type=user&target_id=7&page=2&per_page=20",
+            "/web/system/storage?page=2&per_page=20",
+            "/web/system/openapi",
+            "/web/system/releases?page=2&per_page=20",
+        ] {
+            migrated_route_responses.push(
+                app.clone()
+                    .oneshot(
+                        Request::builder()
+                            .uri(uri)
+                            .body(Body::empty())
+                            .expect("request should build"),
+                    )
+                    .await
+                    .expect("router should respond"),
+            );
+        }
+
+        assert_eq!(root_response.status(), StatusCode::OK);
+        assert_eq!(messages_response.status(), StatusCode::OK);
+        assert!(migrated_route_responses
+            .iter()
+            .all(|response| response.status() == StatusCode::OK));
+        assert_eq!(
+            root_response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store, max-age=0, must-revalidate"
+        );
+        let root_body = response_body(root_response).await;
+        assert_eq!(response_body(messages_response).await, root_body);
+        for response in migrated_route_responses {
+            assert_eq!(response_body(response).await, root_body);
+        }
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn web_app_assets_use_immutable_cache_and_missing_assets_404() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div></body></html>",
+        )
+        .expect("index should write");
+        fs::write(
+            dist_dir.join("assets/index-abc123.js"),
+            "console.log('ok');",
+        )
+        .expect("asset should write");
+
+        let app = build_router(AppState::for_tests());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/assets/index-abc123.js")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "public, max-age=31536000, immutable"
+        );
+
+        let missing = app
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/assets/missing.js")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -795,13 +859,70 @@ async fn unknown_route_returns_not_found() {
 }
 
 #[tokio::test]
-async fn web_renders_dashboard_shell() {
-    let app = build_router(AppState::for_tests());
+async fn retired_web_business_pages_share_one_app_entry() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div></body></html>",
+        )
+        .expect("index should write");
 
+        let app = build_router(AppState::for_tests());
+        let mut bodies = Vec::new();
+        for uri in [
+            "/web",
+            "/web/me",
+            "/web/search?q=release&page=2",
+            "/web/messages?filter=unread&page=2",
+            "/web/projects?status=in_progress",
+            "/web/projects/YCE?tab=library",
+            "/web/projects/YCE/cycles/7",
+            "/web/projects/YCE/resources/9?access=opaque-token",
+            "/web/projects/YCE/my-analysis",
+            "/web/requirements?project_key=YCE",
+            "/web/tasks?status=in_progress",
+            "/web/bugs?priority=P0",
+            "/web/work-items/YCE-TASK-2",
+            "/web/system",
+            "/web/system/users?page=2&per_page=20",
+            "/web/system/roles?role=member",
+            "/web/system/roles/member/permissions",
+            "/web/system/permissions",
+            "/web/system/storage?page=2",
+            "/web/system/openapi",
+            "/web/system/releases?page=2",
+            "/web/system/database-stats",
+            "/web/system/audit?actor=admin",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(uri)
+                        .body(Body::empty())
+                        .expect("request should build"),
+                )
+                .await
+                .expect("router should respond");
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            bodies.push(response_body(response).await);
+        }
+
+        assert!(bodies.iter().all(|body| body == &bodies[0]));
+        assert!(bodies[0].contains(r#"<div id="root"></div>"#));
+        assert!(!bodies[0].contains("data-project-create-form"));
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn system_api_docs_keep_an_independent_document_boundary() {
+    let app = build_router(AppState::for_tests());
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/web")
+                .uri("/web/system/api-docs")
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -809,26 +930,50 @@ async fn web_renders_dashboard_shell() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::OK);
-    let body = response
-        .into_body()
-        .collect()
-        .await
-        .expect("body should collect")
-        .to_bytes();
-    let body = std::str::from_utf8(&body).expect("body should be utf-8");
+    let body = response_body(response).await;
+    assert!(body.contains("元策系统 API"));
+    assert!(body.contains("/api/system/openapi.json"));
+    assert!(body.contains("Scalar.createApiReference"));
+    assert!(!body.contains(r#"<div id="root"></div>"#));
+}
 
-    assert!(body.contains("元策"));
-    assert!(body.contains("href=\"/favicon.ico\""));
-    assert!(!body.contains("我的工作项"));
-    assert!(body.contains("我的待处理"));
-    assert!(body.contains("/my-analysis"));
-    assert!(body.contains("/web/system/storage"));
-    assert!(body.contains(r#"id="app-update-modal""#));
-    assert!(body.contains(r#"data-app-update-modal"#));
-    assert!(body.contains(r#"data-app-update-refresh"#));
-    assert!(body.contains(r#"id="confirm-action-modal""#));
-    assert!(body.contains(r#"data-confirm-modal"#));
-    assert!(body.contains(r#"class="account-menu-action" type="submit">退出登录</button>"#));
+#[tokio::test]
+async fn retired_system_web_mutation_routes_are_not_registered() {
+    let app = build_router(AppState::for_tests());
+
+    for (uri, expected) in [
+        ("/web/system/users", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/users/member/status", StatusCode::NOT_FOUND),
+        ("/web/system/users/member/role", StatusCode::NOT_FOUND),
+        ("/web/system/users/member/password", StatusCode::NOT_FOUND),
+        ("/web/system/users/member/projects", StatusCode::NOT_FOUND),
+        ("/web/system/roles", StatusCode::METHOD_NOT_ALLOWED),
+        (
+            "/web/system/roles/member/permissions",
+            StatusCode::METHOD_NOT_ALLOWED,
+        ),
+        ("/web/system/storage", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/storage/probe", StatusCode::NOT_FOUND),
+        ("/web/system/storage/initialize", StatusCode::NOT_FOUND),
+        ("/web/system/openapi", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/openapi/tokens/7/edit", StatusCode::NOT_FOUND),
+        ("/web/system/releases", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/releases/settings", StatusCode::NOT_FOUND),
+        ("/web/system/releases/7/edit", StatusCode::NOT_FOUND),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), expected, "POST {uri}");
+    }
 }
 
 #[test]
@@ -933,6 +1078,8 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 
@@ -977,4 +1124,40 @@ fn extract_contract_api_v1_paths(source: &str) -> Vec<String> {
     paths.sort();
     paths.dedup();
     paths
+}
+
+async fn with_web_dist_dir<F, Fut>(action: F)
+where
+    F: FnOnce(std::path::PathBuf) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let dir = unique_temp_dir("yuance-web-dist");
+    let previous = std::env::var("YUANCE_WEB_DIST_DIR").ok();
+    unsafe {
+        std::env::set_var("YUANCE_WEB_DIST_DIR", &dir);
+    }
+
+    action(dir.clone()).await;
+
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("YUANCE_WEB_DIST_DIR", value),
+            None => std::env::remove_var("YUANCE_WEB_DIST_DIR"),
+        }
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should move forward")
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}-{nanos}"))
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    ENV_LOCK.get_or_init(|| Mutex::new(()))
 }

@@ -1,0 +1,88 @@
+name: Web Frontend
+
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  web-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
+      - name: Install shared frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install Desktop renderer dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: npm --prefix desktop ci
+
+      - name: Run frontend checks
+        run: npm run check:frontend
+
+      - name: Run route, auth, and notification contract tests
+        run: |
+          cargo test -p yuance-api --test routing_smoke
+          cargo test -p yuance-api --test auth_csrf_refresh_flow
+          cargo test -p yuance-api --test auth_security_flow api_auth_login_me_and_logout_flow_uses_json_contract
+          cargo test -p yuance-api --test auth_security_flow login_page_preserves_safe_return_to_for_web_app
+          cargo test -p yuance-api --test auth_security_flow login_submit_redirects_to_safe_return_to_when_present
+          cargo test -p yuance-api --test auth_security_flow message_open_redirects_unauthenticated_user_to_login_with_safe_return_to
+          cargo test -p yuance-api --test auth_security_flow web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to
+          cargo test -p yuance-api --test project_management_flow api_v1_notification_target_and_read_endpoints_follow_semantic_contract
+          cargo test -p yuance-api --test project_management_flow work_item_assignment_and_reply_notifications_open_and_mark_read
+          cargo test -p yuance-api --test project_management_flow api_v1_topbar_status_returns_current_project_counts_and_project_badges
+          cargo test -p yuance-api --test project_management_flow api_v1_topbar_events_returns_sse_stream_for_authenticated_user
+          cargo test -p yuance-api --test web_app_shell_flow
+
+      - name: Build web bundle
+        run: npm --prefix web run build
+
+      - name: Install Playwright browser
+        run: npm --prefix web exec playwright install --with-deps chromium
+
+      - name: Run browser E2E
+        run: npm --prefix web run test:e2e
+
+      - name: Build production-like API image
+        run: sh ./scripts/build-api-image-amd64.sh
+
+      - name: Smoke production-like image
+        env:
+          YUANCE_WEB_SMOKE_ROOT: .artifacts/web-app-smoke
+        run: sh ./scripts/smoke-web-app-image.sh
+
+      - name: Upload smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-frontend-smoke-artifacts
+          path: |
+            .artifacts/playwright-output
+            .artifacts/playwright-report
+            .artifacts/web-e2e
+            .artifacts/web-app-smoke
+            web/dist
+          if-no-files-found: ignore

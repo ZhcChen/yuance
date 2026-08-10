@@ -1,0 +1,334 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "route": "/web",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/api-docs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/app",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/app/",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/app/{*path}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/bootstrap",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/bootstrap/init",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/bugs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/device-authorization",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/device-authorization/approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/device-authorization/deny",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/downloads",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/downloads/{release_id}/assets/{asset_id}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/login",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/logout",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/messages",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/cycles/{cycle_id}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/my-analysis",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/requirements",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/search",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/api-docs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/audit",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/database-stats",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/openapi",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/permissions",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/releases",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/releases/{release_id}/assets/{asset_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/roles",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/roles/{role_code}/permissions",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/storage",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/users",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/tasks",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    }
+  ],
+  "templates": [
+    "bootstrap.html",
+    "desktop_downloads.html",
+    "device_authorization.html",
+    "device_authorization_result.html",
+    "document_preview.html",
+    "login.html"
+  ],
+  "appInteractionMarkers": [],
+  "templateInteractionMarkers": [
+    "data-document-preview-root",
+    "data-pdf-preview",
+    "data-pdf-sidebar-panel",
+    "data-pdf-sidebar-tab",
+    "data-pdf-url",
+    "data-preview-experimental",
+    "data-preview-file-type",
+    "data-preview-host",
+    "data-preview-kind-label",
+    "data-preview-metric",
+    "data-preview-nav",
+    "data-preview-reload",
+    "data-preview-status",
+    "data-preview-status-copy",
+    "data-preview-title",
+    "data-preview-type",
+    "data-preview-url"
+  ]
+}
