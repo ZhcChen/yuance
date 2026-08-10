@@ -2439,7 +2439,7 @@ async fn api_v1_work_item_saved_view_json_lifecycle_is_user_scoped() {
         serde_json::from_str(&response_body(list).await).expect("list response should be json");
     assert_eq!(listed["data"]["saved_views"][0]["id"], saved_view_id);
     assert_eq!(listed["data"]["saved_views"][0]["name"], "重点任务");
-    assert_eq!(listed["data"]["filters"]["status"], "in_progress");
+    assert_eq!(listed["data"]["filters"]["status"], "");
     assert_eq!(listed["data"]["pagination"]["per_page"], 20);
 
     let cleared = app
@@ -2447,7 +2447,7 @@ async fn api_v1_work_item_saved_view_json_lifecycle_is_user_scoped() {
         .oneshot(
             Request::builder()
                 .uri(
-                    "/api/v1/work-item-list-view?item_type=task&project_key=YCE&clear_default=true&per_page=10",
+                    "/api/v1/work-item-list-view?item_type=task&project_key=YCE&per_page=10",
                 )
                 .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())

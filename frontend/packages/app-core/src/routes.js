@@ -54,7 +54,7 @@ function routeMetaForItemType(itemType = 'task') {
   return WORK_ITEM_ROUTE_META[itemType] || WORK_ITEM_ROUTE_META.task;
 }
 
-function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', clearDefault = false, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
   const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
@@ -79,9 +79,6 @@ function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUserna
   }
   if (typeof sort === 'string' && sort.trim()) {
     params.set('sort', sort.trim());
-  }
-  if (clearDefault) {
-    params.set('clear_default', 'true');
   }
   if (normalizedPage > DEFAULT_PAGE) {
     params.set('page', String(normalizedPage));
@@ -287,10 +284,10 @@ export function buildProjectPersonalAnalysisPath({ owner = 'app', projectKey = '
   return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/my-analysis`;
 }
 
-export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', clearDefault = false, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const meta = routeMetaForItemType(itemType);
   const basePath = owner === 'app' ? meta.appPath : meta.webPath;
-  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, projectKey, cycleId, sort, clearDefault, page, perPage });
+  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, projectKey, cycleId, sort, page, perPage });
   return query ? `${basePath}?${query}` : basePath;
 }
 
@@ -508,7 +505,6 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
         projectKey: (query.get('project_key') || '').trim(),
         cycleId: normalizePositiveInt(query.get('cycle_id'), 0),
         sort: (query.get('sort') || '').trim(),
-        clearDefault: query.get('clear_default') === 'true',
         page,
         perPage,
         title: meta.title,

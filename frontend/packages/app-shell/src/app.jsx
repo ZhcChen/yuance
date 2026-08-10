@@ -978,10 +978,6 @@ export function SharedApp({ services }) {
   const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
   const [workItemCreateError, setWorkItemCreateError] = useState('');
   const [workItemCreateForm, setWorkItemCreateForm] = useState({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
-  const [workItemSavedViewForm, setWorkItemSavedViewForm] = useState(/** @type {{ id: number, name: string, isDefault: boolean } | null} */ (null));
-  const [workItemSavedViewDeleteTarget, setWorkItemSavedViewDeleteTarget] = useState(/** @type {AppWorkItemPage['saved_views'][number] | null} */ (null));
-  const [workItemSavedViewSubmitting, setWorkItemSavedViewSubmitting] = useState(false);
-  const [workItemSavedViewError, setWorkItemSavedViewError] = useState('');
   const [workItemSelection, setWorkItemSelection] = useState(/** @type {Set<string>} */ (new Set()));
   const [workItemBatchForm, setWorkItemBatchForm] = useState({ action: 'priority', value: 'P2' });
   const [workItemBatchConfirmOpen, setWorkItemBatchConfirmOpen] = useState(false);
@@ -1134,7 +1130,6 @@ export function SharedApp({ services }) {
       projectKey: workItemListRoute.projectKey,
       cycleId: workItemListRoute.cycleId,
       sort: workItemListRoute.sort,
-      clearDefault: workItemListRoute.clearDefault,
       perPage: workItemListRoute.perPage,
     }
     : {};
@@ -1452,7 +1447,6 @@ export function SharedApp({ services }) {
             projectKey: targetRoute.projectKey,
             cycleId: targetRoute.cycleId,
             sort: targetRoute.sort,
-            clearDefault: targetRoute.clearDefault,
             page: targetRoute.page,
             perPage: targetRoute.perPage,
           })
@@ -4556,7 +4550,6 @@ export function SharedApp({ services }) {
         projectKey: workItemListRoute.projectKey,
         cycleId: Number.parseInt(runtime.readFormValue(event.currentTarget, 'cycle_id'), 10) || 0,
         sort: runtime.readFormValue(event.currentTarget, 'sort'),
-        clearDefault: true,
         page: 1,
         perPage: workItemListRoute.perPage,
       }),
@@ -4569,7 +4562,7 @@ export function SharedApp({ services }) {
       return;
     }
     navigate(
-      buildWorkItemListPath({ owner: workItemOwner, itemType: workItemListRoute.itemType, projectKey: workItemListRoute.projectKey, clearDefault: true }),
+      buildWorkItemListPath({ owner: workItemOwner, itemType: workItemListRoute.itemType, projectKey: workItemListRoute.projectKey }),
       '已重置工作项筛选。',
     );
   }
@@ -4618,97 +4611,6 @@ export function SharedApp({ services }) {
     }
   }
 
-  /** @param {AppWorkItemPage['saved_views'][number]} savedView */
-  function applyWorkItemSavedView(savedView) {
-    navigate(
-      buildWorkItemListPath({
-        owner: workItemOwner,
-        itemType: savedView.filters.item_type,
-        q: savedView.filters.q,
-        status: savedView.filters.status,
-        priority: savedView.filters.priority,
-        assigneeUsername: savedView.filters.assignee_username,
-        projectKey: savedView.filters.project_key,
-        cycleId: Number.parseInt(savedView.filters.cycle_id, 10) || 0,
-        sort: savedView.filters.sort,
-        page: 1,
-        perPage: savedView.per_page,
-      }),
-      `已应用视图 ${savedView.name}。`,
-    );
-  }
-
-  /** @param {React.FormEvent<HTMLFormElement>} event */
-  async function submitWorkItemSavedView(event) {
-    event.preventDefault();
-    if (!workItemPage || !workItemSavedViewForm || workItemSavedViewSubmitting) return;
-    const name = runtime.readFormValue(event.currentTarget, 'name').trim();
-    if (!name) {
-      setWorkItemSavedViewError('请输入视图名称。');
-      return;
-    }
-    setWorkItemSavedViewSubmitting(true);
-    setWorkItemSavedViewError('');
-    try {
-      if (workItemSavedViewForm.id) {
-        await api.renameWorkItemSavedView(workItemSavedViewForm.id, name);
-      } else {
-        await api.createWorkItemSavedView({
-          projectKey: workItemPage.filters.project_key,
-          itemType: workItemPage.filters.item_type,
-          name,
-          q: workItemPage.filters.q,
-          status: workItemPage.filters.status,
-          priority: workItemPage.filters.priority,
-          assigneeUsername: workItemPage.filters.assignee_username,
-          cycleId: workItemPage.filters.cycle_id,
-          sort: workItemPage.filters.sort,
-          perPage: workItemPage.pagination.per_page,
-          isDefault: runtime.readFormValue(event.currentTarget, 'is_default') === 'on',
-        });
-      }
-      setWorkItemSavedViewForm(null);
-      setStatusMessage(workItemSavedViewForm.id ? '视图名称已更新。' : '当前视图已保存。');
-      await loadRouteState(routeRef.current, 'refresh');
-    } catch (caught) {
-      setWorkItemSavedViewError(errorMessage(/** @type {ApiError | Error} */ (caught)));
-    } finally {
-      setWorkItemSavedViewSubmitting(false);
-    }
-  }
-
-  /** @param {AppWorkItemPage['saved_views'][number]} savedView */
-  async function makeWorkItemSavedViewDefault(savedView) {
-    if (workItemSavedViewSubmitting) return;
-    setWorkItemSavedViewSubmitting(true);
-    setWorkItemSavedViewError('');
-    try {
-      await api.setDefaultWorkItemSavedView(savedView.id);
-      setStatusMessage(`已将 ${savedView.name} 设为默认视图。`);
-      await loadRouteState(routeRef.current, 'refresh');
-    } catch (caught) {
-      setWorkItemSavedViewError(errorMessage(/** @type {ApiError | Error} */ (caught)));
-    } finally {
-      setWorkItemSavedViewSubmitting(false);
-    }
-  }
-
-  async function confirmWorkItemSavedViewDelete() {
-    if (!workItemSavedViewDeleteTarget || workItemSavedViewSubmitting) return;
-    setWorkItemSavedViewSubmitting(true);
-    setWorkItemSavedViewError('');
-    try {
-      await api.deleteWorkItemSavedView(workItemSavedViewDeleteTarget.id);
-      setStatusMessage(`已删除视图 ${workItemSavedViewDeleteTarget.name}。`);
-      setWorkItemSavedViewDeleteTarget(null);
-      await loadRouteState(routeRef.current, 'refresh');
-    } catch (caught) {
-      setWorkItemSavedViewError(errorMessage(/** @type {ApiError | Error} */ (caught)));
-    } finally {
-      setWorkItemSavedViewSubmitting(false);
-    }
-  }
-
   /** @param {number} nextPage */
   function changeWorkItemPage(nextPage) {
     if (!workItemListRoute) {
@@ -4725,7 +4627,6 @@ export function SharedApp({ services }) {
         projectKey: workItemListRoute.projectKey,
         cycleId: workItemListRoute.cycleId,
         sort: workItemListRoute.sort,
-        clearDefault: workItemListRoute.clearDefault,
         page: nextPage,
         perPage: workItemListRoute.perPage,
       }),
@@ -4750,7 +4651,6 @@ export function SharedApp({ services }) {
         projectKey: workItemListRoute.projectKey,
         cycleId: workItemListRoute.cycleId,
         sort: workItemListRoute.sort,
-        clearDefault: workItemListRoute.clearDefault,
         page: 1,
         perPage: nextPerPage,
       }),
@@ -5650,18 +5550,7 @@ export function SharedApp({ services }) {
               </div>
 
               {workItemPage ? <>
-                <div className="filter-shell"><div className="filter-shell-head"><strong>筛选条件</strong><span>组合条件可快速缩小当前项目中的{route.title}范围</span></div><div className="saved-view-section"><div className="saved-view-section-head"><strong>常用视图</strong><span>保存常用筛选后可一键切换。</span></div><div className="saved-view-toolbar">
-                  <div className="shell-actions-inline" aria-label="保存的视图">
-                    {workItemPage.saved_views.map((savedView) => <div className="shell-actions-inline" key={savedView.id}>
-                      <Button variant="secondary" onClick={() => applyWorkItemSavedView(savedView)}>{savedView.name}{savedView.is_default ? ' · 默认' : ''}</Button>
-                      <Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => { setWorkItemSavedViewError(''); setWorkItemSavedViewForm({ id: savedView.id, name: savedView.name, isDefault: savedView.is_default }); }}>重命名</Button>
-                      {!savedView.is_default ? <Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => void makeWorkItemSavedViewDefault(savedView)}>设为默认</Button> : null}
-                      <Button variant="danger" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewDeleteTarget(savedView)}>删除</Button>
-                    </div>)}
-                  </div>
-                  <Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => { setWorkItemSavedViewError(''); setWorkItemSavedViewForm({ id: 0, name: '', isDefault: false }); }}>保存当前视图</Button>
-                </div></div>
-                {workItemSavedViewError ? <p className="shell-error" role="alert">{workItemSavedViewError}</p> : null}
+                <div className="filter-shell"><div className="filter-shell-head"><strong>筛选条件</strong><span>组合条件可快速缩小当前项目中的{route.title}范围</span></div>
 
               <form key={workItemPage ? JSON.stringify(workItemPage.filters) : route.id} className="work-item-filter-bar" onSubmit={submitWorkItemFilters}>
                 <label className="work-item-filter-field work-item-filter-keyword">
@@ -5749,14 +5638,6 @@ export function SharedApp({ services }) {
                   <span>当前筛选条件下没有匹配项，可以调整筛选条件或重置后查看。</span>
                 </div>
               )}
-              <Modal open={Boolean(workItemSavedViewForm)} title={workItemSavedViewForm?.id ? '重命名视图' : '保存当前视图'} onClose={() => { if (!workItemSavedViewSubmitting) setWorkItemSavedViewForm(null); }} footer={<><Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewForm(null)}>取消</Button><Button loading={workItemSavedViewSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-saved-view-form'))?.requestSubmit()}>保存</Button></>}>
-                <form id="work-item-saved-view-form" onSubmit={submitWorkItemSavedView}>
-                  <Field id="work-item-saved-view-name" label="视图名称" required><input id="work-item-saved-view-name" name="name" maxLength={40} defaultValue={workItemSavedViewForm?.name || ''} autoFocus /></Field>
-                  {!workItemSavedViewForm?.id ? <label><input name="is_default" type="checkbox" defaultChecked={workItemSavedViewForm?.isDefault || false} /> 设为默认视图</label> : null}
-                  {workItemSavedViewError ? <p className="shell-error" role="alert">{workItemSavedViewError}</p> : null}
-                </form>
-              </Modal>
-              <Modal open={Boolean(workItemSavedViewDeleteTarget)} title="删除保存视图" onClose={() => { if (!workItemSavedViewSubmitting) setWorkItemSavedViewDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemSavedViewSubmitting} onClick={() => void confirmWorkItemSavedViewDelete()}>确认删除</Button></>}><p>确认删除视图“{workItemSavedViewDeleteTarget?.name}”？</p></Modal>
               <Modal open={workItemBatchConfirmOpen} title="确认批量更新" onClose={() => { if (!workItemBatchSubmitting) setWorkItemBatchConfirmOpen(false); }} footer={<><Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemBatchConfirmOpen(false)}>取消</Button><Button loading={workItemBatchSubmitting} onClick={() => void confirmWorkItemBatchUpdate()}>确认更新</Button></>}><p>将对已选择的 {workItemSelection.size} 个工作项执行批量更新。每个工作项独立提交，未成功的项目会保留选择。</p></Modal>
               <Modal open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={() => { if (!workItemCreateSubmitting) setWorkItemCreateOpen(false); }} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting} onClick={() => setWorkItemCreateOpen(false)}>取消</Button><Button loading={workItemCreateSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
                 <form id="work-item-create-form" onSubmit={submitWorkItemCreate}>
