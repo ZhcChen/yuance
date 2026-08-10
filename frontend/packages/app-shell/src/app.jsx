@@ -989,7 +989,7 @@ export function SharedApp({ services }) {
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemDetailView, setWorkItemDetailView] = useState(/** @type {Awaited<ReturnType<AppApiService['getWorkItemDetailView']>> | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
-  const [workItemTypingUsers, setWorkItemTypingUsers] = useState(/** @type {Array<{ userId: number, displayName: string }>} */ ([]));
+  const [workItemTyping, setWorkItemTyping] = useState(/** @type {{ itemKey: string, users: Array<{ userId: number, displayName: string }> }} */ ({ itemKey: '', users: [] }));
   const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
   const [workItemCommentAttachments, setWorkItemCommentAttachments] = useState(/** @type {Record<string, AppAttachment[]>} */ ({}));
   const [workItemFormKey, setWorkItemFormKey] = useState('');
@@ -3234,15 +3234,15 @@ export function SharedApp({ services }) {
   }, [events, router]);
 
   useEffect(() => {
-    const itemKey = route.id === 'work-item-detail' ? route.itemKey : '';
-    setWorkItemTypingUsers([]);
+    const itemKey = route.id === 'work-item-detail' ? route.itemKey || '' : '';
+    setWorkItemTyping({ itemKey, users: [] });
     if (!itemKey || typeof events.openWorkItemEvents !== 'function') return undefined;
     const coordinator = createWorkItemEventCoordinator({
       itemKey,
       refresh: () => refreshWorkItemRealtimeState(itemKey),
       onTyping: (users) => {
         const current = routeRef.current;
-        if (current.id === 'work-item-detail' && current.itemKey === itemKey) setWorkItemTypingUsers([...users]);
+        if (current.id === 'work-item-detail' && current.itemKey === itemKey) setWorkItemTyping({ itemKey, users: [...users] });
       },
     });
     const clientId = workItemTypingClientIdRef.current;
@@ -5828,7 +5828,7 @@ export function SharedApp({ services }) {
                     deletingAttachmentId={workItemCommentAttachmentDeletingId}
                     replySubmitting={workItemReplySubmitting}
                     error={workItemCommentActionError}
-                    typingUsers={workItemTypingUsers}
+                    typingUsers={workItemTyping.itemKey === activeWorkItemDetail.key ? workItemTyping.users : []}
                     onTypingStart={startWorkItemTyping}
                     onTypingActivity={recordWorkItemTypingActivity}
                     onTypingStop={stopWorkItemTyping}
