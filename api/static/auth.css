@@ -1154,6 +1154,63 @@ textarea:focus-visible {
   box-shadow: none;
 }
 
+.password-field {
+  position: relative;
+  display: block;
+}
+
+.auth-form .password-field input {
+  width: 100%;
+  padding-right: 52px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--brand-line);
+  outline-offset: 1px;
+}
+
+.password-toggle svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.password-eye-off,
+.password-toggle[aria-pressed="true"] .password-eye {
+  display: none;
+}
+
+.password-toggle[aria-pressed="true"] .password-eye-off {
+  display: block;
+}
+
 .auth-form .btn-primary {
   min-height: 52px;
   margin-top: 6px;
