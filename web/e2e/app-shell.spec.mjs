@@ -527,6 +527,15 @@ test('work item lists preserve the main responsive geometry', async ({ page }) =
 
 test('work item filter select opens with motion and preserves native selection semantics', async ({ page }) => {
   await login(page, '/web/app/tasks');
+  await page.route('**/api/v1/work-item-list-view**', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.items = [];
+    payload.data.pagination.total_items = 0;
+    payload.data.pagination.total_pages = 1;
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto('/web/app/tasks');
   const statusField = page.locator('.work-item-filter-field').filter({ hasText: /^状态/u });
   const trigger = statusField.locator('.yc-select-trigger');
   const menu = statusField.locator('.yc-select-menu');
@@ -545,6 +554,9 @@ test('work item filter select opens with motion and preserves native selection s
   await trigger.press('ArrowUp');
   await trigger.press('Enter');
   await expect(trigger).toContainText('已验证');
+  await trigger.click();
+  await menu.getByRole('option', { name: '已取消' }).click();
+  await expect(trigger).toContainText('已取消');
 });
 
 test('shared work item saved views create restore rename and delete', async ({ page }) => {
