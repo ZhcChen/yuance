@@ -84,11 +84,8 @@ export function GlobalNavigation({
   const hasSyncedIndicatorRef = useRef(false);
   const displayName = user?.display_name || user?.username || '未知用户';
   const avatar = Array.from(displayName.trim())[0] || '元';
-  const totalProjectPendingCount = projectOptions.reduce((total, project) => {
-    const count = Number(project.pending_count || 0);
-    return Number.isFinite(count) && count > 0 ? total + count : total;
-  }, 0);
-  const projectBadge = formatNavigationBadge(totalProjectPendingCount);
+  const currentProjectPendingCount = Number(currentProject?.pending_count || 0);
+  const projectBadge = formatNavigationBadge(currentProjectPendingCount);
   const [projectQuery, setProjectQuery] = useState('');
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLocaleLowerCase();
@@ -171,7 +168,7 @@ export function GlobalNavigation({
           <summary role="button" aria-label="切换当前项目">
             <span className="global-nav-project-label">当前项目</span>
             <strong title={currentProject?.name || '未选择项目'}>{currentProject?.name || '未选择项目'}</strong>
-            {projectBadge ? <span className="global-nav-badge" aria-label={`全部项目待处理 ${totalProjectPendingCount}`}>{projectBadge}</span> : null}
+            {projectBadge ? <span className="global-nav-badge" aria-label={`当前项目待处理 ${currentProjectPendingCount}`}>{projectBadge}</span> : null}
             <span className="global-nav-caret global-nav-project-caret" aria-hidden="true" />
           </summary>
           <div className="global-nav-menu global-nav-project-menu">
