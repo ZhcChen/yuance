@@ -53,6 +53,23 @@ test("ignores in-page and subframe navigation without invalidating the committed
   assert.equal(value.controller.accept(value.event), true);
 });
 
+test("keeps IPC readiness after SPA query and hash navigation", () => {
+  const value = fixture();
+  value.controller.didStart({ url: "app://yuance/", isMainFrame: true });
+  value.controller.didCommit("app://yuance/");
+  assert.equal(value.controller.didStart({ url: "app://yuance/messages?filter=unread", isMainFrame: true, isInPlace: true }), false);
+  assert.equal(value.controller.didCommit("app://yuance/messages?filter=unread"), true);
+  value.mainFrame.url = "app://yuance/messages?filter=unread";
+  assert.equal(value.controller.accept(value.event), true);
+
+  const hashValue = fixture();
+  hashValue.controller.didStart({ url: "app://yuance/", isMainFrame: true });
+  hashValue.controller.didCommit("app://yuance/");
+  hashValue.mainFrame.url = "app://yuance/work-items/YCE-TASK-2#comment-42";
+  assert.equal(hashValue.controller.didCommit("app://yuance/work-items/YCE-TASK-2#comment-42"), true);
+  assert.equal(hashValue.controller.accept(hashValue.event), true);
+});
+
 test("registers and disposes the fixed readiness channel", () => {
   const listeners = new Map();
   const ipcMain = {

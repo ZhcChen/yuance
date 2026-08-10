@@ -58,15 +58,11 @@ export function isTrustedRendererUrl(value, rendererTarget) {
       url.protocol === "app:" &&
       url.hostname === APP_HOST &&
       !url.port &&
-      !url.search &&
-      !url.hash &&
       isAllowedAppRoute(url.pathname)
     );
   }
   return (
     url.origin === rendererTarget.origin &&
-    !url.search &&
-    !url.hash &&
     isAllowedAppRoute(url.pathname)
   );
 }
