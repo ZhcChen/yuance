@@ -568,7 +568,7 @@ async function runFeatureParityUiSmoke(window) {
     return {
       kind: "yuance-desktop-feature-parity-ui-smoke",
       sharedApp: !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")),
-      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,lifecycle,network,schemaVersion,startup" && bridge.schemaVersion === 14,
+      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,lifecycle,network,schemaVersion,startup" && bridge.schemaVersion === 15,
       semanticMain: document.querySelectorAll("main").length === 1,
       semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
       mainDocumentNavigationCount: ${featureParityUiSmokeMainDocumentNavigationCount},

@@ -157,3 +157,61 @@ pub fn verify_test_storage_download_grant(
     }
     Ok(grant.content_type)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::web::router::AppState;
+
+    #[test]
+    fn expired_download_grant_is_rejected() {
+        let state = AppState::for_tests();
+        let grant = TestStorageDownloadGrant {
+            object_key: "release/1/release-manifest.json".to_string(),
+            user_id: 7,
+            expires_at: Utc::now().timestamp() - 1,
+            content_type: "application/json".to_string(),
+        };
+        let plaintext = serde_json::to_string(&grant).expect("grant should serialize");
+        let encrypted = crypto::encrypt_secret(
+            &state.settings.security_master_key,
+            &plaintext,
+            TEST_STORAGE_DOWNLOAD_GRANT_AAD,
+        )
+        .expect("grant should encrypt");
+        let query = TestStorageDownloadQuery {
+            object_key: grant.object_key,
+            grant: encrypted,
+        };
+        assert!(verify_test_storage_download_grant(&state, &query).is_err());
+    }
+
+    #[test]
+    fn download_grant_round_trip_binds_key_content_type_and_user() {
+        let state = AppState::for_tests();
+        let mut request = storage::SignedObjectRequest {
+            method: "GET".to_string(),
+            url: "/api/v1/test-storage/download?".to_string(),
+            headers: Vec::new(),
+        };
+        bind_test_storage_download_grant(
+            &state,
+            "release/1/installer.dmg",
+            "application/octet-stream",
+            7,
+            300,
+            &mut request,
+        )
+        .expect("download grant should bind");
+        let query = request
+            .url
+            .strip_prefix("/api/v1/test-storage/download?")
+            .and_then(|value| serde_urlencoded::from_str::<TestStorageDownloadQuery>(value).ok())
+            .expect("download query should parse");
+        assert_eq!(
+            verify_test_storage_download_grant(&state, &query)
+                .expect("download grant should verify"),
+            "application/octet-stream"
+        );
+    }
+}

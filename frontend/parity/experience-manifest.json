@@ -1084,7 +1084,6 @@
       ],
       "controls": [
         "metrics",
-        "saved-views",
         "filters",
         "sort",
         "table",
@@ -1155,7 +1154,6 @@
       ],
       "controls": [
         "metrics",
-        "saved-views",
         "filters",
         "sort",
         "table",
@@ -1226,7 +1224,6 @@
       ],
       "controls": [
         "metrics",
-        "saved-views",
         "filters",
         "sort",
         "table",

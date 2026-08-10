@@ -1326,7 +1326,6 @@
           {"name": "assignee_username", "in": "query", "schema": {"type": "string"}},
           {"name": "cycle_id", "in": "query", "schema": {"type": "integer", "minimum": 1}},
           {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["updated_desc", "created_desc", "priority_desc", "due_date_asc"]}},
-          {"name": "clear_default", "in": "query", "schema": {"type": "boolean", "default": false}},
           {"$ref": "#/components/parameters/Page"},
           {"$ref": "#/components/parameters/PerPage"}
         ],

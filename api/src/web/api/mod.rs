@@ -1644,8 +1644,6 @@ pub struct WorkItemQuery {
     #[serde(default)]
     sort: String,
     #[serde(default)]
-    clear_default: bool,
-    #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
     per_page: Option<i64>,
@@ -3136,19 +3134,12 @@ pub async fn get_work_item_list_view(
         item_type,
     )
     .await?;
-    let default_view = if query.clear_default {
-        None
-    } else {
-        saved_views.iter().find(|view| view.is_default)
+    let mut filter = projects::WorkItemListFilter {
+        item_type: Some(item_type.to_string()),
+        project_key: project.project_key.clone(),
+        sort_by: "updated_desc".to_string(),
+        ..projects::WorkItemListFilter::default()
     };
-    let mut filter = default_view
-        .map(|view| view.filter.clone())
-        .unwrap_or_else(|| projects::WorkItemListFilter {
-            item_type: Some(item_type.to_string()),
-            project_key: project.project_key.clone(),
-            sort_by: "updated_desc".to_string(),
-            ..projects::WorkItemListFilter::default()
-        });
     if !query.q.trim().is_empty() {
         filter.keyword = query.q;
     }
@@ -3169,12 +3160,7 @@ pub async fn get_work_item_list_view(
     }
     filter.item_type = Some(item_type.to_string());
     filter.project_key = project.project_key.clone();
-    let pagination = normalize_api_pagination(
-        query.page,
-        query
-            .per_page
-            .or_else(|| default_view.map(|view| view.per_page)),
-    )?;
+    let pagination = normalize_api_pagination(query.page, query.per_page)?;
     let (page, stats, members, cycles) = tokio::try_join!(
         projects::list_work_item_summaries_filtered_for_user_paginated(
             pool,

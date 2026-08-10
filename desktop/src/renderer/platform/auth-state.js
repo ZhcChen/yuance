@@ -6,7 +6,7 @@ export { normalizeHostAuthState as normalizePublicAuthState } from "@yuance/fron
 
 /**
  * @param {{ getSnapshot?: () => unknown, subscribe?: (callback: (state: unknown) => void) => (() => void) }} [bridge]
- * @param {{ authorize?: () => Promise<unknown>, retry?: () => Promise<unknown>, logout?: () => Promise<unknown> }} [commands]
+ * @param {{ authorize?: () => Promise<unknown>, retry?: () => Promise<unknown>, logout?: () => Promise<unknown>, discardMismatchedProfile?: () => Promise<unknown> }} [commands]
  */
 export function createDesktopAuthState(bridge = {}, commands = {}) {
   const validBridge = typeof bridge.getSnapshot === "function" && typeof bridge.subscribe === "function";
@@ -24,6 +24,7 @@ export function createDesktopAuthState(bridge = {}, commands = {}) {
     authorize() { return invokeCommand(commands.authorize); },
     retry() { return invokeCommand(commands.retry); },
     logout() { return invokeCommand(commands.logout); },
+    discardMismatchedProfile() { return invokeCommand(commands.discardMismatchedProfile); },
   });
 }
 

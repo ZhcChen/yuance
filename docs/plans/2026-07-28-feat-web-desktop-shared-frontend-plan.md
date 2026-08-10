@@ -64,10 +64,10 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | W0：Web-first 边界与契约基线 | `completed` | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` 已收口；首批 route-to-contract parity 与交付基线已形成。 | 只在 W0 决策变化时同步修订。 |
 | W1：独立 Web 构建与首批 REST/SSE 契约 | `completed`（基础闭环） | `web/package.json`、`web/jsconfig.json`、`web/vite.config.js`、根 `check:frontend`、`.github/workflows/web-frontend.yml`、`api/Dockerfile`、`scripts/smoke-web-app-image.sh`、`api/tests/routing_smoke.rs`。 | 后续只做硬化：完整 rollout 控制面、bundle budget、自动 axe gate、契约 breaking-change diff。 |
 | W2：浏览器应用壳、认证衔接与消息中心 | `completed`（首批壳与消息） | `web/src/app.jsx`、`web/src/lib/api.js`、`web/src/lib/routes.js`、`web/e2e/app-shell.spec.mjs`；登录 `return_to`、通知语义目标与幂等已读已有测试覆盖。 | 继续通过 W3 feature 切片扩展应用壳能力，不再重复建设壳。 |
-| W3：浏览器端高频 Feature 迁移 | `active`（首个读写闭环已完成） | 项目列表、工作项列表、工作项详情协作闭环已接入；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已收口。 | 资料库、项目详情和文档预览继续 pending；当前不并行新建 W3 子计划。 |
+| W3：浏览器端高频 Feature 迁移 | `completed` | 项目、周期、资料、个人分析、工作项协作、附件、消息、搜索和系统管理均已迁入共享实现；最终证据见 `docs/reviews/2026-08-08-052-web-desktop-exact-experience-parity-final-review.md`。 | 后续业务功能直接在共享组件树中迭代，不再建立旧 Web 平行实现。 |
 | W4：共享 JavaScript 层提炼 | `completed` | 四个共享 package、公开 exports、Browser adapters、composition root、边界测试、19 项 Browser E2E 与生产镜像 smoke 已通过。 | 作为 D1 RFC 和后续 W3 feature 的共享边界基线维护。 |
 | D1 / D2：Electron 安全宿主与功能对齐 | `completed` | D1 安全宿主、认证网络与文件底座，以及 D2 共享业务、附件、消息通知、正式包 E2E 和四 runner Gate 均已收口。 | 后续 W3、G-DIST 与 D3/D4 分别独立规划，不能扩展 D2 范围。 |
-| G-DIST / D3 / D4：更新与离线能力 | `pending` | 未启动。 | 作为 D2 后独立 Gate 或离线专项，不阻塞 W3。 |
+| G-DIST / D3 / D4：更新与离线能力 | `active` | `G-DIST-DEV` 已完成制品证据链前半段，system release、撤回/N-1 与六 runner 最终演练仍在执行；G-UPDATE、D3、D4 未启动。 | 先完成 `G-DIST-DEV`，再分别规划 G-UPDATE 与 D3/D4，不并行扩大范围。 |
 
 ### Desktop 六阶段路线图
 
@@ -79,7 +79,7 @@ Desktop 后续工作统一按下表管理。D1-A 至 D1-C 和 D2 已完成；后
 | 2 | D1-B：Desktop Network / SSE | `completed` | D1-A 通过 review | REST Bearer transport 与 fetch-stream SSE 只由主进程受控 endpoint 发起；无 Cookie、URL token、redirect；轮换、撤销和活跃流关闭有可重复验证 | `docs/plans/2026-08-02-001-feat-d1-desktop-network-sse-plan.md`；review：`docs/reviews/2026-08-02-d1-desktop-network-sse-review.md` |
 | 3 | D1-C：文件 Capability / Transfer | `completed` | D1-B 的认证网络边界稳定 | renderer 只持短 TTL capability；主进程验证文件 identity 和 transfer grant；路径、token、重定向、替换与 symlink/reparse point 负向测试通过 | `docs/plans/2026-08-02-002-feat-d1-desktop-file-capability-transfer-plan.md`；review：`docs/reviews/2026-08-02-d1-desktop-file-capability-transfer-review.md` |
 | 4 | D2：Desktop 业务功能对齐 | `completed` | D1-A 至 D1-C 全部通过 review | 共享应用壳和选定 W3/W4 feature 在 Desktop 完成读写、通知、文件与异常恢复对齐；无第二套业务实现 | `docs/plans/2026-08-03-001-feat-d2-desktop-feature-parity-plan.md`；review：`docs/reviews/2026-08-03-d2-desktop-feature-parity-review.md` |
-| 5 | G-DIST：三平台发行 Gate | `planned` | D2 在线功能对齐、支持矩阵和发行凭证就绪 | macOS/Windows/Linux 签名、公证/验签、manifest、SBOM/provenance、安装升级卸载、撤回和 N-1 回退全部通过 | D2 收口且发行凭证可用后新建 `docs/plans/YYYY-MM-DD-*-desktop-distribution-gate-plan.md` |
+| 5 | G-DIST：三平台发行 Gate | `in-progress` | D2 在线功能对齐、支持矩阵和发行凭证就绪 | macOS/Windows/Linux 的既定签名策略、manifest、SBOM/provenance、安装升级卸载、撤回和 N-1 回退全部通过 | `docs/plans/2026-08-04-001-feat-g-dist-dev-internal-desktop-distribution-gate-plan.md` |
 | 6 | G-UPDATE：自动更新 | `planned` | G-DIST 正式发行 Gate 通过 | 签名更新源、渠道/灰度、兼容矩阵、失败恢复、强制安全升级和回退策略经过真实签名制品验证 | G-DIST 收口后新建 `docs/plans/YYYY-MM-DD-*-desktop-auto-update-plan.md` |
 
 统一顺序约束：
@@ -459,7 +459,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W3：浏览器端高频 Feature 逐步迁移
 
-**当前状态：** `active`（首个工作项协作读写闭环已完成，后续继续迁移其他高频 feature）
+**当前状态：** `completed`（高频业务与系统管理已完成共享迁移，旧业务 UI 已退役）
 
 **已落地：**
 
@@ -467,7 +467,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 工作项列表：已覆盖需求/任务/Bug 列表、筛选和打开详情路径。
 - 工作项详情：已覆盖只读基础字段、父项链接、编辑核心字段、推进并指派、普通评论新增/编辑、工作项附件与评论附件列表/下载/上传和旧版详情回退入口。
 
-**下一推荐切片：** W4 已收口，当前执行 `docs/plans/2026-08-01-001-feat-d1-device-session-credential-plan.md`。资料库、项目详情、文档预览、富文本回复、正文内附件节点、高级上传与旧版详情下线继续保持 pending，待该 D1 子计划收口后再重新排序。
+**下一推荐切片：** W4、D1、D2、正式 Web 共享切换与完整体验对齐均已收口；当前唯一 Desktop 主线是 `docs/plans/2026-08-04-001-feat-g-dist-dev-internal-desktop-distribution-gate-plan.md` 的剩余 Gate。G-UPDATE 与 D3/D4 在该计划完成后另行规划。
 
 **目标：** 以小且可回退的浏览器切片逐步迁移高频工作流，建立可作为 Desktop 功能基线的 Web feature。
 

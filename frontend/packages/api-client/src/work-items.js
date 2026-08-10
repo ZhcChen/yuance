@@ -58,7 +58,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} markWorkItemCommentAttachmentUploaded
  * @property {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemCommentAttachmentDownloadUrl
  */
-/** @typedef {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, clearDefault?: boolean, page?: number, perPage?: number }} WorkItemListQuery */
+/** @typedef {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, page?: number, perPage?: number }} WorkItemListQuery */
 /** @typedef {{ page: number, per_page: number, total_items: number, total_pages: number }} Pagination */
 /** @typedef {{ item_type: string, q: string, status: string, priority: string, project_key: string, assignee_username: string, cycle_id: string, sort: string }} WorkItemListFilter */
 /** @typedef {{ id: number, name: string, filters: WorkItemListFilter, per_page: number, is_default: boolean }} WorkItemSavedView */
@@ -196,7 +196,6 @@ function workItemListSearchParams(query) {
   if (typeof query.projectKey === 'string' && query.projectKey.trim()) params.set('project_key', query.projectKey.trim().toUpperCase());
   if (typeof query.cycleId === 'number' && Number.isInteger(query.cycleId) && query.cycleId > 0) params.set('cycle_id', String(query.cycleId));
   if (typeof query.sort === 'string' && query.sort.trim()) params.set('sort', query.sort.trim());
-  if (query.clearDefault === true) params.set('clear_default', 'true');
   if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) params.set('page', String(query.page));
   if (typeof query.perPage === 'number' && Number.isInteger(query.perPage) && query.perPage > 0) params.set('per_page', String(query.perPage));
   return params;

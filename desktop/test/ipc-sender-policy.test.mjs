@@ -29,6 +29,19 @@ test("accepts only the current trusted top-level renderer outside navigation", (
   assert.throws(() => assertSender(fixture.event), /Untrusted renderer/);
 });
 
+test("accepts canonical SPA routes with query and hash state", () => {
+  const fixture = senderFixture();
+  const assertSender = createIpcSenderPolicy({
+    getMainWindow: () => fixture.window,
+    isNavigationPending: () => false,
+    rendererTarget: resolveRendererTarget({ isPackaged: true }),
+  });
+  fixture.mainFrame.url = "app://yuance/messages?filter=unread&page=2";
+  assert.equal(assertSender(fixture.event), true);
+  fixture.mainFrame.url = "app://yuance/work-items/YCE-TASK-2#comment-42";
+  assert.equal(assertSender(fixture.event), true);
+});
+
 test("cancelled external navigation preserves the last committed trusted document", () => {
   const rendererTarget = resolveRendererTarget({ isPackaged: true });
   const tracker = createRendererReadinessTracker(rendererTarget);
@@ -71,6 +84,8 @@ test("trusted same-document routes preserve IPC while document navigations requi
   tracker.didStart({ url: "app://yuance/tasks", isMainFrame: true, isInPlace: true });
   assert.equal(tracker.isPending(), false);
   assert.equal(tracker.didCommit("app://yuance/tasks"), true);
+  assert.equal(tracker.isPending(), false);
+  assert.equal(tracker.didCommit("app://yuance/messages?filter=unread"), true);
   assert.equal(tracker.isPending(), false);
 
   tracker.didStart({ url: "app://yuance/unknown", isMainFrame: true, isInPlace: false });

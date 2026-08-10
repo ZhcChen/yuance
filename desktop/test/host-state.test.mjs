@@ -11,6 +11,13 @@ test("host state normalization strips every non-public field and fails closed", 
   assert.deepEqual(normalizePublicHostState({ status: "authenticated", token: "secret", deviceId: "d-1" }), {
     status: "authenticated",
   });
+  assert.deepEqual(normalizePublicHostState({ status: "locked", reason: "profile_mismatch" }), {
+    status: "locked",
+    reason: "profile_mismatch",
+  });
+  assert.deepEqual(normalizePublicHostState({ status: "locked", reason: "pending_revocation" }), {
+    status: "locked",
+  });
   assert.deepEqual(normalizePublicHostState({ status: "unknown" }), { status: "fatal" });
   assert.equal(Object.isFrozen(normalizePublicHostState({ status: "starting" })), true);
 });

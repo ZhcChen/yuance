@@ -52,14 +52,23 @@ test("development renderer requires an explicit loopback origin and port", () =>
 test("trusted renderer navigation is bound to origin and canonical app routes", () => {
   const production = resolveRendererTarget({ isPackaged: true });
   assert.equal(isTrustedRendererUrl("app://yuance/projects/p-1", production), true);
+  assert.equal(isTrustedRendererUrl("app://yuance/messages?filter=unread&page=2", production), true);
+  assert.equal(isTrustedRendererUrl("app://yuance/work-items/YCE-TASK-2#comment-42", production), true);
   for (const value of [
     "app://other/projects/p-1",
     "app://yuance/unknown",
     "app://yuance/projects/%61dmin",
-    "app://yuance/projects/p-1?redirect=https://example.com",
   ]) {
     assert.equal(isTrustedRendererUrl(value, production), false, value);
   }
+});
+
+test("trusted development renderer navigation keeps canonical query and hash state", () => {
+  const development = resolveRendererTarget({ isPackaged: false, rawDevServerUrl: "http://127.0.0.1:4273" });
+  assert.equal(isTrustedRendererUrl("http://127.0.0.1:4273/messages?filter=unread", development), true);
+  assert.equal(isTrustedRendererUrl("http://127.0.0.1:4273/work-items/YCE-TASK-2#comment-42", development), true);
+  assert.equal(isTrustedRendererUrl("http://127.0.0.1:4273/unknown?filter=unread", development), false);
+  assert.equal(isTrustedRendererUrl("http://127.0.0.1:4274/messages?filter=unread", development), false);
 });
 
 test("navigation policy rejects subframes and only externalizes safe links", () => {

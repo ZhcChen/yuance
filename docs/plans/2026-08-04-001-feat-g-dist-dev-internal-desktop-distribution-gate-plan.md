@@ -2,6 +2,7 @@
 title: "feat: G-DIST-DEV Desktop 内部制品发行 Gate"
 type: feat
 date: 2026-08-04
+updated: 2026-08-10
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-plan-bootstrap
@@ -327,6 +328,49 @@ git diff --check
 - 尚未完成 System/OSS 正式发布、5 分钟撤回 SLO、N-1 自动回退、最终 review 和主线回填。
 - 正式拓扑已由主线 WSL 迁移记录和 FRPS 实时日志交叉确认：`yuance.quanxinfu.com` 经 `qfy-sc-test` Caddy、FRPS `127.0.0.1:40000` 转发到 `DESKTOP-H0KSULB` 的 Ubuntu WSL，正式运行目录为 `/srv/yuance/backend`；公网服务器旧 Compose 容器仅作冷回滚。当前 `dev` 尚未部署到该 WSL 实例，且本终端现有 SSH key 无权登录 `core-wsl-ssh`，因此不得把 macOS 本地同端口进程或公网服务器旧容器当作正式后端执行迁移。
 - 当前仅配置普通 `YUANCE_API_TOKEN`，调用 system release API 返回 `403`；正式演练还需通过系统管理页创建仅含 `system_release:read` 与 `system_release:write` 的专用 token。
+
+## 剩余执行计划（2026-08-10 交接基线）
+
+后续只执行以下四个连续单元，不重新实施已通过的 U1-U3 制品生成与 GitHub 不可变发布链路。每个单元完成后按项目规则独立提交并推送 `dev`；涉及正式环境时严格使用 `docs/runbooks/production-deployment.md` 和 `./scripts/deploy-production.sh`，不得在服务器源码编译或构建镜像。
+
+### R1：复核并冻结 System/OSS 控制面实现
+
+- 对照 U4-U6 与当前代码，确认 migration、verification metadata、状态机、publisher preflight/readback、withdraw、5 分钟 TTL 和 retention/N-1 已有实现及测试；缺口只做最小补齐。
+- 运行 Rust system release、OpenAPI、Node publisher、withdrawal、retention 与前端聚焦测试；补齐未验证 publish、篡改证据、回读不一致、并发 withdraw/download 和 N-1 保护等负向场景。
+- 明确当前 GitHub Actions 已停用或仅允许 tag 触发的实际配置；不得用普通分支 push 触发发行，也不得为验收擅自恢复所有 workflow。
+- 完成信号：本地与可用 CI Gate 全绿，且发布脚本在任何副作用前 fail closed。
+
+### R2：准备受限凭证并发布 System/OSS current 与 N-1
+
+- 通过系统管理能力创建仅含 `system_release:read`、`system_release:write` 的专用 token；不得把 token 写入计划、review、日志、shell history、提交或聊天正文。
+- 使用 GitHub 已验证的 `desktop-v0.1.4` 作为 N-1、`desktop-v0.1.5` 作为 current，分别执行完整 preflight，再发布到正式 System/OSS；禁止重新生成、覆盖或 `--clobber` 既有 tag 资产。
+- 回读 GitHub、System 与 OSS 的 manifest digest、六个安装包 digest 和验证状态，证明三处消费同一证据集；任一不一致立即停止，不得 publish。
+- 若正式 WSL 仍不可达或专用 token 权限不足，将具体阻塞证据记录到 review 草稿，不得改用 `qfy-sc-test` 旧冷回滚容器、macOS 本地进程或共享高权限 token 冒充正式验收。
+- 完成信号：两个版本均为 verified，`v0.1.5` 是 current/latest，`v0.1.4` 是受 retention 保护的可恢复 N-1。
+
+### R3：执行撤回 SLO 与 N-1 恢复演练
+
+- 撤回 `desktop-v0.1.5`，记录起始时间、System 停止签发新 URL、latest 切换、GitHub 处置、旧预签名 URL 到期和审计事件。
+- 验证撤回后新下载立即拒绝，旧 URL 的最大残余暴露不超过 5 分钟；没有对象存储或边缘 deny 证据时，不宣称旧 URL 即时失效。
+- 验证 `desktop-v0.1.4` 仍保留完整 22 文件证据集，可重新复验并成为 latest；withdrawn/failed 版本不得成为回退候选。
+- 执行重复发布、证据篡改或远端集合冲突的至少一个负向演练，证明不可覆盖和零副作用失败路径。
+- 完成信号：撤回时间线、N-1 恢复、审计和负向演练均可回放。
+
+### R4：界面、文档、最终 review 与主线回填
+
+- 验证下载页、系统版本管理页、README/release notes 明确显示 `internal`、macOS ad-hoc、Windows unsigned、Linux minisign 和系统警告边界。
+- 复核整个流程未使用 macOS Keychain/`safeStorage`，未引入 Apple notarization、Windows Authenticode 或 updater metadata。
+- 新建 `docs/reviews/YYYY-MM-DD-g-dist-dev-internal-desktop-distribution-gate-review.md`，逐项映射 R1-R25、Acceptance Evidence 与下方 Definition of Done，记录 run URL、manifest digest、key ID、撤回时间线、N-1 和残余风险，但不记录任何 secret。
+- 将本计划 `execution_status` 更新为 `completed` 并勾选全部 DoD；父计划只记录 `G-DIST-DEV completed`，生产 `G-DIST` 与 `G-UPDATE` 继续保持 `pending/planned`。
+- 完成信号：最终 review 结论通过，计划与父计划状态一致，临时下载资产和测试输出未进入 Git。
+
+### 接手约束与当前本地状态
+
+- 权威入口是本计划；不要另建平行计划，除非发现产品范围变化或需要用户决策。
+- 当前开发分支为 `dev`；最近的计划收口提交为 `6b24a70`。接手时必须重新读取 `git status` 和远端状态，不假定 HEAD 未变化。
+- `.artifacts/` 与 `test-results/` 是未跟踪运行产物，不修改、不提交；需要保留的新证据继续放在忽略目录，最终结论写入 review。
+- macOS 全流程严禁 Keychain；签名仅允许 ad-hoc。Windows 不签名，Linux 仅使用 minisign 完整性签名。
+- 当前已知外部依赖是正式环境访问能力和受限 system release token。只有确实缺失时才向用户请求；不要在未验证当前环境前沿用历史阻塞判断。
 
 ---
 

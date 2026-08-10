@@ -423,7 +423,7 @@ test('app-owner task list can filter and open read-only work item detail', async
   await expect(filters.locator('select[name="cycle_id"]')).toHaveValue('');
   await expect(filters.locator('select[name="sort"]')).toHaveValue('priority_desc');
   await filters.getByRole('button', { name: '重置' }).click();
-  await expect(page).toHaveURL('/web/app/tasks?clear_default=true');
+  await expect(page).toHaveURL('/web/app/tasks');
   await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
 
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-2' }).getByRole('link', { name: '打开详情' }).click();
@@ -454,7 +454,7 @@ test('formal web task list keeps web route ownership while filtering', async ({ 
   await expect(page).not.toHaveURL(/\/web\/app\/tasks/);
 
   await filters.getByRole('button', { name: '重置' }).click();
-  await expect(page).toHaveURL('/web/tasks?clear_default=true');
+  await expect(page).toHaveURL('/web/tasks');
 });
 
 test('work item detail preserves the main responsive geometry', async ({ page }) => {
@@ -557,34 +557,6 @@ test('work item filter select opens with motion and preserves native selection s
   await trigger.click();
   await menu.getByRole('option', { name: '已取消' }).click();
   await expect(trigger).toContainText('已取消');
-});
-
-test('shared work item saved views create restore rename and delete', async ({ page }) => {
-  await login(page, '/web/app/tasks');
-  await ensureCurrentProject(page, 'YCE');
-  await page.goto('/web/app/tasks');
-
-  const filters = page.locator('.work-item-filter-bar');
-  await filters.locator('select[name="priority"]').selectOption('P0');
-  await filters.getByRole('button', { name: '筛选' }).click();
-  await expect(page).toHaveURL(/priority=P0/);
-  await page.getByRole('button', { name: '保存当前视图' }).click();
-  await page.locator('#work-item-saved-view-name').fill('重点任务');
-  await page.locator('input[name="is_default"]').check();
-  await page.getByRole('dialog').getByRole('button', { name: '保存' }).click();
-  await expect(page.getByRole('button', { name: '重点任务 · 默认' })).toBeVisible();
-
-  await page.goto('/web/app/tasks');
-  await expect(page.locator('.work-item-filter-bar select[name="priority"]')).toHaveValue('P0');
-  await page.getByRole('button', { name: '重命名' }).click();
-  await page.locator('#work-item-saved-view-name').fill('核心任务');
-  await page.getByRole('dialog').getByRole('button', { name: '保存' }).click();
-  await expect(page.getByRole('button', { name: '核心任务 · 默认' })).toBeVisible();
-
-  await page.getByRole('button', { name: '删除' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: '确认删除' }).click();
-  await expect(page.getByRole('button', { name: '核心任务 · 默认' })).toHaveCount(0);
-  await expect(page.locator('.work-item-filter-bar select[name="priority"]')).toHaveValue('');
 });
 
 test('shared work item creation covers requirement task and bug contracts', async ({ page }) => {

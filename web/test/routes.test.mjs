@@ -88,7 +88,6 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
       projectKey: '',
       cycleId: 7,
       sort: 'due_date_asc',
-      clearDefault: false,
       page: 2,
       perPage: 20,
       title: '任务列表',
