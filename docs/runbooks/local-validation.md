@@ -8,8 +8,8 @@
 |---|---|
 | 验收数据库 | `.local/validation/data/yuance.sqlite3` |
 | 本地 API | `http://127.0.0.1:33133` |
-| 本地 Web | `http://127.0.0.1:4173/web` |
-| Desktop renderer | `http://127.0.0.1:4273` |
+| 本地 Web | `http://127.0.0.1:33134/web` |
+| Desktop renderer | `http://127.0.0.1:33135` |
 
 `.local/` 已加入 `.gitignore`。运行期密钥保存在权限为 `600` 的 `.local/validation/runtime.env`，不使用 macOS Keychain 或 Electron `safeStorage`。
 
