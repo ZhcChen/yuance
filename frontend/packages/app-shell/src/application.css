@@ -32,6 +32,7 @@ button:disabled {
 }
 
 .app-shell {
+  position: relative;
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -42,34 +43,57 @@ button:disabled {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  overflow: overlay;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   padding: 18px;
 }
 
-.main::-webkit-scrollbar,
-body::-webkit-scrollbar {
+.main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.main-content {
+  min-height: 100%;
+}
+
+.app-scrollbar {
+  position: absolute;
+  z-index: 30;
+  top: calc(var(--yc-topbar-height) + 2px);
+  right: 2px;
+  bottom: 2px;
   width: 10px;
-  height: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
 
-.main::-webkit-scrollbar-track,
-body::-webkit-scrollbar-track {
-  background: transparent;
+.app-scrollbar.is-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.main::-webkit-scrollbar-thumb,
-body::-webkit-scrollbar-thumb {
+.app-scrollbar-thumb {
+  width: 100%;
   min-height: 44px;
   border: 2px solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--yc-muted) 48%, transparent);
   background-clip: padding-box;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  will-change: transform;
 }
 
-.main::-webkit-scrollbar-thumb:hover,
-body::-webkit-scrollbar-thumb:hover {
+.app-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--yc-muted-strong) 68%, transparent);
   background-clip: padding-box;
+}
+
+.app-scrollbar-thumb:active {
+  cursor: grabbing;
 }
 
 .shell-header,
@@ -1000,9 +1024,7 @@ html[data-theme="dark"] .shell-code-block {
 }
 
 @media (max-width: 860px) {
-  body { height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: auto; overflow-y: overlay; }
-  .app-shell { height: auto; min-height: 100vh; overflow: visible; }
-  .main { overflow: visible; padding: 12px; }
+  .main { padding: 12px; }
 }
 
 html[data-theme="dark"] .shell-card,
@@ -1135,6 +1157,17 @@ html[data-theme="dark"] .project-stats div {
 .project-description-section > p { margin: 0; padding: 16px 16px 0; color: var(--yc-muted-strong); line-height: 24px; }
 .project-files-section > p, .project-files-section > .attachment-list, .project-files-section > .shell-empty, .project-resources-section > form, .project-resources-section > .project-list, .project-resources-section > .shell-empty { margin-right: 16px; margin-left: 16px; }
 .project-files-section, .project-resources-section { padding-bottom: 16px; }
+.project-resources-section > .resource-list { margin: 0; padding: 16px; }
+.resource-list { display: grid; gap: 12px; list-style: none; }
+.resource-card { display: block; padding: 16px; border: 1px solid var(--yc-line); border-radius: var(--yc-card-radius); background: var(--yc-panel); color: var(--yc-text); text-decoration: none; box-shadow: 0 10px 26px rgb(22 34 50 / 5%); transition: border-color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease, transform var(--yc-motion-fast) ease; }
+.resource-card:hover { border-color: var(--yc-brand-line); box-shadow: var(--yc-card-shadow); transform: translateY(-1px); }
+.resource-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--yc-brand) 26%, transparent); outline-offset: 2px; border-color: var(--yc-brand); }
+.resource-card-main { min-width: 0; }
+.resource-card-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.resource-card h4 { margin: 0; font-size: 16px; line-height: 24px; }
+.resource-card:hover h4 { color: var(--yc-brand-strong); }
+.resource-card p { margin: 6px 0 0; color: var(--yc-muted-strong); font-size: 13px; line-height: 20px; }
+.resource-card-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; color: var(--yc-muted); font-size: 12px; line-height: 18px; }
 .cycle-detail-overview { grid-template-columns: minmax(0, 1fr) 360px; }
 .cycle-detail-description-body { display: grid; gap: 14px; padding: 16px; }
 .cycle-detail-description-body article { display: grid; gap: 6px; }

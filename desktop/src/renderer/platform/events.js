@@ -2,6 +2,8 @@
 
 export function createDesktopEvents(bridge) {
   return Object.freeze({
+    supportsTopbarPolling: false,
+    supportsWorkItemTyping: false,
     openTopbarEvents(callbacks) {
       if (typeof bridge?.subscribe !== "function") return () => {};
       const connectionId = "topbar";
@@ -21,6 +23,9 @@ export function createDesktopEvents(bridge) {
           callbacks.onEvent(Object.freeze({ type: "notification-target", path: fact.path }));
         }
       });
+    },
+    openWorkItemEvents(_itemKey, _callbacks) {
+      return () => {};
     },
   });
 }

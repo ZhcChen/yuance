@@ -195,6 +195,33 @@ test('work item paths encode item keys', () => {
   assert.equal(workItemApiPath('YCE-TASK/2'), '/api/v1/work-items/YCE-TASK%2F2');
 });
 
+test('work item typing uses the fixed CSRF-protected JSON contract', async () => {
+  const { client, calls, writes } = createRecordedClient();
+
+  await client.updateWorkItemTyping('YCE-TASK-2', { clientId: 'web:page-session_7', active: true });
+
+  assert.deepEqual(writes, ['prepare']);
+  assert.deepEqual(calls[0], {
+    url: '/api/v1/work-items/YCE-TASK-2/typing',
+    options: {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"client_id":"web:page-session_7","active":true}',
+    },
+  });
+});
+
+test('work item typing rejects invalid values before preparing a write', async () => {
+  const { client, calls, writes } = createRecordedClient();
+
+  await assert.rejects(client.updateWorkItemTyping('../escape', { clientId: 'web:session', active: true }), /work item key is invalid/u);
+  await assert.rejects(client.updateWorkItemTyping('YCE-TASK-2', { clientId: 'bad client', active: true }), /typing client id is invalid/u);
+  await assert.rejects(client.updateWorkItemTyping('YCE-TASK-2', { clientId: 'web:session', active: /** @type {any} */ ('true') }), /typing active state is invalid/u);
+
+  assert.deepEqual(writes, []);
+  assert.deepEqual(calls, []);
+});
+
 test('work item attachment preview uses the fixed path and strips private fields', async () => {
   const calls = [];
   const client = createApiClient({ request: async (url) => {

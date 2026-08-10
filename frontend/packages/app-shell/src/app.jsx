@@ -1,10 +1,12 @@
 // @ts-check
-/* global FormData, URL, clearTimeout, setTimeout */
+/* global FormData, URL, clearInterval, clearTimeout, setInterval, setTimeout */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createNotificationActionCoordinator,
   createNotificationEventCoordinator,
+  createWorkItemEventCoordinator,
+  createWorkItemTypingController,
   createProjectResourceWithAttachments,
   buildHomePath,
   buildMessagesPath,
@@ -758,13 +760,15 @@ function normalizeSystemApiDocs(payload) {
 /**
  * @param {{ services: {
  *   api: AppApiService,
- *   events: { openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void },
+ *   events: { supportsTopbarPolling?: boolean, supportsWorkItemTyping?: boolean, openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
  *   files: AppFileService,
  *   router: AppRouterService,
  *   runtime: {
  *     scheduleFrame(callback: () => void): void,
+ *     observeResize(elements: HTMLElement[], callback: () => void): () => void,
  *     getElementById(id: string): HTMLElement | null,
  *     readFormValue(form: HTMLFormElement, name: string): string,
+ *     createSessionId?(): string,
  *     readTheme?(): 'light' | 'dark',
  *     writeTheme?(theme: 'light' | 'dark'): void,
  *     readDatabaseStatsCache?(username: string): Promise<any | null>,
@@ -797,6 +801,10 @@ export function SharedApp({ services }) {
   const routeRef = useRef(route);
   const topbarRef = useRef(/** @type {AppTopbarStatus | null} */ (null));
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
+  const mainRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const mainContentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbarTrackRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbarDragRef = useRef(/** @type {{ pointerId: number, startY: number, startScrollTop: number } | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
   const accountSecurityActionRef = useRef(false);
@@ -819,6 +827,8 @@ export function SharedApp({ services }) {
   const workItemAttachmentActionRef = useRef(0);
   const workItemAttachmentMutationRef = useRef(false);
   const workItemCommentDraftRef = useRef(/** @type {{ itemKey: string, commentId: number } | null} */ (null));
+  const workItemTypingControllerRef = useRef(/** @type {ReturnType<typeof createWorkItemTypingController> | null} */ (null));
+  const workItemTypingClientIdRef = useRef('');
   const workItemBatchMutationRef = useRef(false);
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
@@ -979,6 +989,7 @@ export function SharedApp({ services }) {
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemDetailView, setWorkItemDetailView] = useState(/** @type {Awaited<ReturnType<AppApiService['getWorkItemDetailView']>> | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
+  const [workItemTyping, setWorkItemTyping] = useState(/** @type {{ itemKey: string, users: Array<{ userId: number, displayName: string }> }} */ ({ itemKey: '', users: [] }));
   const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
   const [workItemCommentAttachments, setWorkItemCommentAttachments] = useState(/** @type {Record<string, AppAttachment[]>} */ ({}));
   const [workItemFormKey, setWorkItemFormKey] = useState('');
@@ -1027,6 +1038,69 @@ export function SharedApp({ services }) {
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
   const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
+  const [scrollbar, setScrollbar] = useState({ visible: false, top: 0, height: 44 });
+  if (!workItemTypingClientIdRef.current && events.supportsWorkItemTyping) workItemTypingClientIdRef.current = runtime.createSessionId?.() || '';
+
+  function syncScrollbar() {
+    const main = mainRef.current;
+    const track = scrollbarTrackRef.current;
+    if (!main || !track) return;
+    const maxScrollTop = main.scrollHeight - main.clientHeight;
+    const trackHeight = track.clientHeight;
+    if (maxScrollTop <= 1 || trackHeight <= 0) {
+      setScrollbar((current) => current.visible ? { ...current, visible: false } : current);
+      return;
+    }
+    const height = Math.max(44, Math.min(trackHeight, (main.clientHeight / main.scrollHeight) * trackHeight));
+    const top = (main.scrollTop / maxScrollTop) * (trackHeight - height);
+    setScrollbar({ visible: true, top, height });
+  }
+
+  useEffect(() => {
+    if (!shellReady) return undefined;
+    const main = mainRef.current;
+    const content = mainContentRef.current;
+    const track = scrollbarTrackRef.current;
+    if (!main || !content || !track) return undefined;
+    const sync = () => runtime.scheduleFrame(syncScrollbar);
+    const stopObserving = runtime.observeResize([main, content, track], sync);
+    main.addEventListener('scroll', syncScrollbar, { passive: true });
+    sync();
+    return () => {
+      stopObserving();
+      main.removeEventListener('scroll', syncScrollbar);
+    };
+  }, [shellReady]);
+
+  function handleScrollbarPointerDown(event) {
+    const main = mainRef.current;
+    if (!main) return;
+    scrollbarDragRef.current = { pointerId: event.pointerId, startY: event.clientY, startScrollTop: main.scrollTop };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleScrollbarPointerMove(event) {
+    const drag = scrollbarDragRef.current;
+    const main = mainRef.current;
+    const track = scrollbarTrackRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !main || !track) return;
+    const thumbTravel = track.clientHeight - scrollbar.height;
+    const maxScrollTop = main.scrollHeight - main.clientHeight;
+    if (thumbTravel > 0) main.scrollTop = drag.startScrollTop + ((event.clientY - drag.startY) / thumbTravel) * maxScrollTop;
+  }
+
+  function handleScrollbarPointerUp(event) {
+    if (scrollbarDragRef.current?.pointerId !== event.pointerId) return;
+    scrollbarDragRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function handleScrollbarTrackPointerDown(event) {
+    if (event.target !== event.currentTarget || !mainRef.current) return;
+    const trackBounds = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - trackBounds.top) / trackBounds.height;
+    mainRef.current.scrollTop = ratio * (mainRef.current.scrollHeight - mainRef.current.clientHeight);
+  }
 
   const currentProject = topbar?.current_project || null;
   topbarRef.current = topbar;
@@ -3150,14 +3224,55 @@ export function SharedApp({ services }) {
       refresh: () => loadRouteState(routeRef.current, 'refresh'),
       onNavigate: (path) => router.assign(path),
     });
+    const pollingCoordinator = createNotificationEventCoordinator({
+      refresh: async () => {
+        const status = await baseApi.getTopbarStatus();
+        setTopbar(status);
+      },
+    });
     const close = events.openTopbarEvents({
       onEvent: (event) => coordinator.handle(event),
     });
+    const pollingTimer = events.supportsTopbarPolling
+      ? setInterval(() => pollingCoordinator.invalidate(), 30_000)
+      : null;
     return () => {
+      if (pollingTimer !== null) clearInterval(pollingTimer);
+      pollingCoordinator.dispose();
       coordinator.dispose();
       close();
     };
-  }, [events, router]);
+  }, [baseApi, events, router]);
+
+  useEffect(() => {
+    const itemKey = route.id === 'work-item-detail' ? route.itemKey || '' : '';
+    setWorkItemTyping({ itemKey, users: [] });
+    if (!itemKey || typeof events.openWorkItemEvents !== 'function') return undefined;
+    const coordinator = createWorkItemEventCoordinator({
+      itemKey,
+      refresh: () => refreshWorkItemRealtimeState(itemKey),
+      onTyping: (users) => {
+        const current = routeRef.current;
+        if (current.id === 'work-item-detail' && current.itemKey === itemKey) setWorkItemTyping({ itemKey, users: [...users] });
+      },
+    });
+    const clientId = workItemTypingClientIdRef.current;
+    const typingController = events.supportsWorkItemTyping && clientId && typeof baseApi.updateWorkItemTyping === 'function'
+      ? createWorkItemTypingController({ itemKey, clientId, send: (key, payload) => baseApi.updateWorkItemTyping(key, payload) })
+      : null;
+    workItemTypingControllerRef.current = typingController;
+    const close = events.openWorkItemEvents(itemKey, { onEvent: (event) => coordinator.handle(event) });
+    return () => {
+      if (workItemTypingControllerRef.current === typingController) workItemTypingControllerRef.current = null;
+      typingController?.dispose();
+      coordinator.dispose();
+      close();
+    };
+  }, [baseApi, events, route.id, route.itemKey]);
+
+  function startWorkItemTyping() { workItemTypingControllerRef.current?.start(); }
+  function recordWorkItemTypingActivity() { workItemTypingControllerRef.current?.activity(); }
+  function stopWorkItemTyping() { workItemTypingControllerRef.current?.stop(); }
 
   useEffect(() => {
     if (!loading) {
@@ -3405,6 +3520,35 @@ export function SharedApp({ services }) {
     }
     if (failed) {
       setWorkItemActionError(`${actionLabel}，但详情、评论或顶部状态刷新失败，请手动刷新。`);
+    }
+  }
+
+  /** @param {string} itemKey */
+  async function refreshWorkItemRealtimeState(itemKey) {
+    const commentsPromise = api.getWorkItemComments(itemKey);
+    const attachmentsPromise = api.getWorkItemAttachments(itemKey);
+    void attachmentsPromise.catch(() => {});
+    const [detailViewResult, commentsResult, attachmentBundleResult] = await Promise.allSettled([
+      api.getWorkItemDetailView(itemKey),
+      commentsPromise,
+      commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
+    ]);
+    const current = routeRef.current;
+    if (current.id !== 'work-item-detail' || current.itemKey !== itemKey) return;
+    const primaryPostId = detailViewResult.status === 'fulfilled'
+      ? detailViewResult.value.primary_post?.id
+      : workItemDetailView?.primary_post?.id || null;
+    if (detailViewResult.status === 'fulfilled') {
+      setWorkItemDetailView(detailViewResult.value);
+      setWorkItemDetail(detailViewResult.value.item);
+    }
+    if (commentsResult.status === 'fulfilled') {
+      setWorkItemComments(commentsResult.value.filter((comment) => comment.id !== primaryPostId));
+    }
+    if (attachmentBundleResult.status === 'fulfilled') {
+      setWorkItemAttachments(attachmentBundleResult.value.attachments);
+      setWorkItemCommentAttachments(attachmentBundleResult.value.commentAttachments);
+      setWorkItemAttachmentLoadWarning(attachmentBundleResult.value.loadFailed ? '部分附件列表加载失败，请刷新重试。' : '');
     }
   }
 
@@ -4743,7 +4887,8 @@ export function SharedApp({ services }) {
         onLogout={handleLogout}
       />
 
-      <main className="main">
+      <main ref={mainRef} className="main">
+      <div ref={mainContentRef} className="main-content">
 
       {loading ? (
         <section className="shell-route-loading" role="status" aria-live="polite" aria-label={`正在加载${route.title}`}>
@@ -5066,10 +5211,18 @@ export function SharedApp({ services }) {
                   </div> : '无权限' },
                 ]}
               />
-              {systemUsersView ? <div className="shell-panel-header">
-                <Pagination page={systemUsersView.pagination.page} totalPages={systemUsersView.pagination.total_pages} totalItems={systemUsersView.pagination.total_items} onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)} />
-                <label className="shell-page-size">每页<select value={systemUsersView.pagination.per_page} onChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
-              </div> : null}
+              {systemUsersView ? <Pagination
+                ariaLabel="用户列表分页"
+                page={systemUsersView.pagination.page}
+                totalPages={systemUsersView.pagination.total_pages}
+                totalItems={systemUsersView.pagination.total_items}
+                itemLabel="个用户"
+                rangeLabel={systemUsersView.pagination.total_items ? `当前显示 ${(systemUsersView.pagination.page - 1) * systemUsersView.pagination.per_page + 1}-${Math.min(systemUsersView.pagination.page * systemUsersView.pagination.per_page, systemUsersView.pagination.total_items)}` : '当前没有用户'}
+                pageSize={systemUsersView.pagination.per_page}
+                pageSizes={[10, 20, 50, 100]}
+                onPageSizeChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}
+                onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)}
+              /> : null}
               </section>
               <Modal open={systemUserCreateOpen} title="新建用户" onClose={closeSystemUserCreate} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserCreate}>取消</Button><Button loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
                 <form id="system-user-create-form" onSubmit={submitSystemUserCreate}>
@@ -5298,7 +5451,7 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'project-detail' ? (
             <section className="page-stack project-detail-page" aria-labelledby="project-detail-title">
-              <section className="page-hero detail-hero"><div><p className="shell-eyebrow">项目 / {activeProjectDetail?.key || route.projectKey}</p><h1 id="project-detail-title" ref={headingRef} tabIndex={-1}>{activeProjectDetail?.name || route.projectKey}</h1><p>{activeProjectDetail?.description || '正在加载项目详情。'}</p>{activeProjectDetail ? <div className="project-detail-meta"><Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge><span>项目负责人：{activeProjectDetail.owner || activeProjectDetail.owner_username}</span><span>创建：{dashboardTimestamp(activeProjectDetail.created_at)}</span><span>更新：{dashboardTimestamp(activeProjectDetail.updated_at)}</span></div> : null}</div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={buildProjectsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildProjectsPath({ owner: route.owner }), '已返回项目列表。')}>项目列表</a><a className="yc-button yc-button-secondary" href={personalAnalysisPath} onClick={(event) => handleNavigate(event, personalAnalysisPath, '已打开个人项目分析。')}>个人分析</a>{canManageProject ? <Button variant="secondary" onClick={openProjectEdit}>编辑项目</Button> : null}</div></section>
+              <section className="page-hero detail-hero"><div><p className="shell-eyebrow">项目 / {activeProjectDetail?.key || route.projectKey}</p><h1 id="project-detail-title" ref={headingRef} tabIndex={-1}>{activeProjectDetail?.name || route.projectKey}</h1><p>{activeProjectDetail?.description || '正在加载项目详情。'}</p>{activeProjectDetail ? <div className="project-detail-meta"><Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge><span>项目负责人：{activeProjectDetail.owner || activeProjectDetail.owner_username}</span><span>创建：{dashboardTimestamp(activeProjectDetail.created_at)}</span><span>更新：{dashboardTimestamp(activeProjectDetail.updated_at)}</span></div> : null}</div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={buildProjectsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildProjectsPath({ owner: route.owner }), '已返回项目列表。')}>项目列表</a>{canManageProject ? <Button variant="secondary" onClick={openProjectEdit}>编辑项目</Button> : null}<a className="yc-button yc-button-secondary" href={personalAnalysisPath} onClick={(event) => handleNavigate(event, personalAnalysisPath, '已打开个人项目分析。')}>个人分析</a></div></section>
               <section className="metric-grid project-detail-metrics" aria-label="项目详情概览">{[
                 ['需求', activeProjectDetail?.requirements || 0, 'info', 'doc'],
                 ['任务', activeProjectDetail?.tasks || 0, 'warning', 'tasks'],
@@ -5381,9 +5534,9 @@ export function SharedApp({ services }) {
                   </form>
                   {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
                   {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
-                  {projectResources.length ? <ul className="project-list" aria-label="项目资料列表">{projectResources.map((resource) => {
+                  {projectResources.length ? <ul className="resource-list" aria-label="项目资料列表">{projectResources.map((resource) => {
                     const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
-                    return <li className="project-row" key={resource.id}><div className="project-main"><div className="project-heading"><a className="shell-link" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a><Badge>{resource.category || '未分类'}</Badge>{resource.is_protected ? <Badge tone="warning">受保护</Badge> : null}{resource.status === 'archived' ? <Badge>已归档</Badge> : null}</div><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <p className="shell-muted">标签：{resource.tags.join('、')}</p> : null}<p className="shell-muted">{resource.related_work_item ? `关联 ${resource.related_work_item.key}` : resource.related_cycle ? `关联周期 ${resource.related_cycle.name}` : '未关联工作项或周期'} · {resource.updated_by} 更新于 {formatTimestamp(resource.updated_at)}</p></div></li>;
+                    return <li key={resource.id}><a className={`resource-card${resource.is_protected ? ' resource-card-protected' : ''}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}><div className="resource-card-main"><div className="resource-card-title-row"><span className="resource-category">{resource.category || '未分类'}</span><Badge tone={resource.status === 'archived' ? undefined : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>{resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}</div><h4>{resource.title}</h4><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}{resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">{resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}{resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}</div> : null}<div className="resource-card-meta"><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div></div></a></li>;
                   })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
                 </section>
               ) : null}
@@ -5686,6 +5839,10 @@ export function SharedApp({ services }) {
                     deletingAttachmentId={workItemCommentAttachmentDeletingId}
                     replySubmitting={workItemReplySubmitting}
                     error={workItemCommentActionError}
+                    typingUsers={workItemTyping.itemKey === activeWorkItemDetail.key ? workItemTyping.users : []}
+                    onTypingStart={startWorkItemTyping}
+                    onTypingActivity={recordWorkItemTypingActivity}
+                    onTypingStop={stopWorkItemTyping}
                     onSubmitNew={submitWorkItemComment}
                     onChangeNew={changeWorkItemNewComment}
                     onUploadNewAttachment={() => void uploadSelectedWorkItemCommentAttachment(null)}
@@ -5797,7 +5954,18 @@ export function SharedApp({ services }) {
       )}
         </>
       )}
+      </div>
       </main>
+      <div ref={scrollbarTrackRef} className={`app-scrollbar${scrollbar.visible ? ' is-visible' : ''}`} aria-hidden="true" onPointerDown={handleScrollbarTrackPointerDown}>
+        <div
+          className="app-scrollbar-thumb"
+          style={{ height: `${scrollbar.height}px`, transform: `translateY(${scrollbar.top}px)` }}
+          onPointerDown={handleScrollbarPointerDown}
+          onPointerMove={handleScrollbarPointerMove}
+          onPointerUp={handleScrollbarPointerUp}
+          onPointerCancel={handleScrollbarPointerUp}
+        />
+      </div>
     </div>
   );
 }

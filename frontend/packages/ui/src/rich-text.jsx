@@ -103,8 +103,8 @@ export function richTextAttachmentHtml(attachment) {
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
 /** @typedef {{ username: string, displayName: string }} RichTextMentionOption */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment }) {
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
@@ -247,12 +247,14 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         aria-disabled={disabled || undefined}
         data-placeholder="请输入内容..."
         suppressContentEditableWarning
+        onFocus={onFocus}
         onInput={(event) => {
           const context = mentionContext(event.currentTarget);
           mentionRangeRef.current = context?.range || null;
           setMentionQuery(context?.query ?? null);
           setMentionActiveIndex(0);
           publish(event.currentTarget);
+          onInputActivity?.();
         }}
         onKeyDown={(event) => {
           if (mentionQuery === null) return;
@@ -273,6 +275,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
             mentionRangeRef.current = null;
             setMentionQuery(null);
           }
+          onBlur?.();
         }}
         onPaste={(event) => {
           event.preventDefault();

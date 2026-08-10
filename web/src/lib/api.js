@@ -156,6 +156,7 @@ export const restoreWorkItem = apiClient.restoreWorkItem;
 export const updateWorkItemPrimaryPost = apiClient.updateWorkItemPrimaryPost;
 
 export const getWorkItemComments = /** @type {(itemKey: string) => Promise<WorkItemComment[]>} */ (apiClient.getWorkItemComments);
+export const updateWorkItemTyping = /** @type {(itemKey: string, payload: { clientId: string, active: boolean }) => Promise<void>} */ (apiClient.updateWorkItemTyping);
 
 export const updateWorkItem = /** @type {(itemKey: string, payload: WorkItemUpdatePayload) => Promise<WorkItemDetail>} */ (apiClient.updateWorkItem);
 
@@ -311,6 +312,7 @@ export const webApi = {
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,
   getWorkItemComments,
+  updateWorkItemTyping,
   getWorkItemListView,
   getWorkItems,
   createWorkItem,

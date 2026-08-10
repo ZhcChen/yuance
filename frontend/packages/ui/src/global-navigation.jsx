@@ -1,13 +1,14 @@
 // @ts-check
+/* global ResizeObserver, requestAnimationFrame */
 
-import React, { useMemo, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 const logoSrc = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"%3E%3Crect x="4" y="4" width="88" height="88" rx="22" fill="%231f5fbf"/%3E%3Cpath d="M22 22h27v14H36v38H22V22Z" fill="%23fff"/%3E%3Cpath d="M50 22h24v14H56L37 74H22l21-42c2-4 4-7 7-10Z" fill="%23fff"/%3E%3Cpath d="M57 45h17v14H50l7-14Z" fill="%23fff"/%3E%3Crect x="62" y="62" width="15" height="15" rx="4" fill="%232d8a68"/%3E%3C/svg%3E';
 
 /** @param {number} count */
 export function formatNavigationBadge(count) {
   if (!Number.isFinite(count) || count <= 0) return '';
-  return count > 99 ? '99+' : String(Math.floor(count));
+  return count > 99 ? '99' : String(Math.floor(count));
 }
 
 /** @param {{ key: string, currentTarget: HTMLDetailsElement }} event */
@@ -79,9 +80,12 @@ export function GlobalNavigation({
   onThemeChange,
   onLogout,
 }) {
+  const linksRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const hasSyncedIndicatorRef = useRef(false);
   const displayName = user?.display_name || user?.username || '未知用户';
   const avatar = Array.from(displayName.trim())[0] || '元';
-  const projectBadge = formatNavigationBadge(currentProject?.pending_count || 0);
+  const currentProjectPendingCount = Number(currentProject?.pending_count || 0);
+  const projectBadge = formatNavigationBadge(currentProjectPendingCount);
   const [projectQuery, setProjectQuery] = useState('');
   const filteredProjects = useMemo(() => {
     const query = projectQuery.trim().toLocaleLowerCase();
@@ -89,6 +93,29 @@ export function GlobalNavigation({
       ? projectOptions.filter((project) => `${project.key} ${project.name}`.toLocaleLowerCase().includes(query))
       : projectOptions;
   }, [projectOptions, projectQuery]);
+
+  useLayoutEffect(() => {
+    const navigation = linksRef.current;
+    const active = /** @type {HTMLElement | null} */ (navigation?.querySelector('.global-nav-link.active') || null);
+    const indicator = /** @type {HTMLElement | null} */ (navigation?.querySelector('.global-nav-links-indicator') || null);
+    if (!navigation || !active || !indicator) return undefined;
+
+    const syncIndicator = (animate) => {
+      const navigationBounds = navigation.getBoundingClientRect();
+      const activeBounds = active.getBoundingClientRect();
+      indicator.style.transition = animate ? '' : 'none';
+      navigation.style.setProperty('--yc-global-nav-indicator-width', `${activeBounds.width}px`);
+      navigation.style.setProperty('--yc-global-nav-indicator-x', `${activeBounds.left - navigationBounds.left + navigation.scrollLeft}px`);
+      if (!animate) requestAnimationFrame(() => { indicator.style.transition = ''; });
+    };
+
+    syncIndicator(hasSyncedIndicatorRef.current);
+    hasSyncedIndicatorRef.current = true;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => syncIndicator(true));
+    observer?.observe(navigation);
+    Array.from(navigation.querySelectorAll('.global-nav-link')).forEach((link) => observer?.observe(link));
+    return () => observer?.disconnect();
+  }, [links, systemLinks]);
 
   /** @param {React.FormEvent<HTMLFormElement>} event */
   function submitSearch(event) {
@@ -111,7 +138,8 @@ export function GlobalNavigation({
         <strong>{productName}</strong>
       </a>
 
-      <nav className="global-nav-links" aria-label="应用导航">
+      <nav ref={linksRef} className="global-nav-links" aria-label="应用导航">
+        <span className="global-nav-links-indicator" aria-hidden="true" />
         {links.map((link) => {
           const badge = formatNavigationBadge(link.badge || 0);
           return (
@@ -140,7 +168,8 @@ export function GlobalNavigation({
           <summary role="button" aria-label="切换当前项目">
             <span className="global-nav-project-label">当前项目</span>
             <strong title={currentProject?.name || '未选择项目'}>{currentProject?.name || '未选择项目'}</strong>
-            {projectBadge ? <span className="global-nav-badge">{projectBadge}</span> : null}
+            {projectBadge ? <span className="global-nav-badge" aria-label={`当前项目待处理 ${currentProjectPendingCount}`}>{projectBadge}</span> : null}
+            <span className="global-nav-caret global-nav-project-caret" aria-hidden="true" />
           </summary>
           <div className="global-nav-menu global-nav-project-menu">
             <label className="global-nav-project-search">

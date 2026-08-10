@@ -11,6 +11,7 @@ export {
   createNotificationEventState,
   reduceNotificationEvent,
 } from './notification-events.js';
+export { createWorkItemEventCoordinator, createWorkItemTypingController } from './work-item-events.js';
 export {
   buildHomePath,
   buildMessagesPath,

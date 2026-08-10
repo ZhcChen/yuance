@@ -100,3 +100,9 @@ plan: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-pla
 - macOS 凭证只使用 owner-only 文件，不使用 Keychain 或 Electron `safeStorage`。
 - 现存 6 个 Askama 模板只承载登录、初始化、设备授权、下载和文档预览边界，不承载共享业务页面状态。
 - Web 与 Desktop bundle 仍有超过 500 KB 的构建警告；这是后续性能优化项，不影响本计划的一致性与退役结论。
+
+## 2026-08-10 实时协作勘误
+
+原复核对 R15、R16 和 AE3 中“实时讨论已完成双宿主共享”的结论范围过大。当时共享层已有通知 reducer 和评论 mutation，但共享 React 工作项详情尚未接入 `/api/v1/work-items/{item_key}/events`，也没有 typing 上报与展示。
+
+`docs/plans/2026-08-10-001-feat-work-item-sse-completion-plan.md` 已补齐 Browser 的工作项 EventSource、局部最终事实刷新、草稿保护、typing 节流与迟到事件隔离。Desktop 仍维持显式 `supportsWorkItemTyping: false` 和工作项事件 noop adapter，未开放 renderer 通用网络能力。因此，本复核关于工作项实时协作的双宿主完成结论应解释为：共享 UI 和状态契约已建立，Browser 已完整接入；Desktop 独立工作项 SSE 仍需后续受控主进程链路，不能宣称已经完成体验一致。

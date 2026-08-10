@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -46,6 +47,14 @@ test('badge and tabs expose the main Web primitive structure', () => {
   assert.match(tabs, /99\+/u);
 });
 
+test('content tabs retain the sliding indicator transition after resize observation', async () => {
+  const source = await readFile(new URL('../src/primitives.jsx', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(source, /new ResizeObserver\(\(\) => syncIndicator\(true\)\)/u);
+  assert.match(styles, /\.yc-content-tabs-indicator \{[^}]*transition: width 360ms[^;]*, transform 360ms/u);
+});
+
 test('table, pagination and skeleton cover empty and boundary states', () => {
   const table = renderToStaticMarkup(createElement(DataTable, { caption: '成员列表', columns: [{ key: 'name', label: '成员', render: (row) => /** @type {{ name: string }} */ (row).name }], rows: [], rowKey: (row) => /** @type {{ name: string }} */ (row).name }));
   assert.match(table, /暂无数据/u);
@@ -54,6 +63,10 @@ test('table, pagination and skeleton cover empty and boundary states', () => {
   assert.equal((pagination.match(/disabled=""/gu) || []).length, 2);
   assert.match(pagination, /aria-label="上一页"/u);
   assert.match(pagination, /aria-label="下一页"/u);
+  const sizedPagination = renderToStaticMarkup(createElement(Pagination, { page: 1, totalPages: 1, totalItems: 6, itemLabel: '个用户', rangeLabel: '当前显示 1-6', pageSize: 10, pageSizes: [10, 20, 50, 100], onPageChange() {}, onPageSizeChange() {} }));
+  assert.match(sizedPagination, /共 <strong>6<\/strong> 个用户/u);
+  assert.match(sizedPagination, /当前显示 1-6/u);
+  assert.match(sizedPagination, /<option value="100">100<\/option>/u);
   const skeleton = renderToStaticMarkup(createElement(Skeleton, { lines: 20 }));
   assert.equal((skeleton.match(/<span/gu) || []).length, 12);
   assert.match(skeleton, /role="status"/u);

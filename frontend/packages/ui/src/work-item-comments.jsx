@@ -48,6 +48,10 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   deletingAttachmentId: number | null,
  *   replySubmitting: boolean,
  *   error: string,
+ *   typingUsers?: Array<{ userId: number, displayName: string }>,
+ *   onTypingStart?: () => void,
+ *   onTypingActivity?: () => void,
+ *   onTypingStop?: () => void,
  *   onSubmitNew: (event: import('react').FormEvent<HTMLFormElement>) => void,
  *   onChangeNew: (value: string) => void,
  *   onUploadNewAttachment: () => void,
@@ -93,6 +97,10 @@ export function WorkItemComments(props) {
     deletingAttachmentId,
     replySubmitting,
     error,
+    typingUsers = [],
+    onTypingStart,
+    onTypingActivity,
+    onTypingStop,
     onSubmitNew,
     onChangeNew,
     onUploadNewAttachment,
@@ -111,15 +119,20 @@ export function WorkItemComments(props) {
     onRevealAttachment,
     onRequestDeleteAttachment,
   } = props;
+  const typingText = workItemTypingText(typingUsers);
+  const typingCallbacks = { onFocus: onTypingStart, onInputActivity: onTypingActivity, onBlur: onTypingStop };
 
   return (
     <section id="work-item-comments" className="work-item-comments-panel discussion-section" aria-labelledby="work-item-comments-title">
       <div className="yuance-ui-panel-header">
-        <h3 id="work-item-comments-title">评论与流转</h3>
+        <div className="work-item-comments-heading">
+          <h3 id="work-item-comments-title">评论与流转</h3>
+          <span className="work-item-typing-status" aria-live="polite" aria-atomic="true">{typingText}</span>
+        </div>
         <span className="yuance-ui-meta">共 {comments.length} 条</span>
       </div>
       {canWriteComments ? <form className="work-item-comment-form" onSubmit={onSubmitNew}>
-        <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} />
+        <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} {...typingCallbacks} />
         {newCommentAttachments.length ? (
           <AttachmentList
             attachments={newCommentAttachments}
@@ -159,7 +172,7 @@ export function WorkItemComments(props) {
                   <>
                     <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" />
                     <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
-                      <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} />
+                      <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} {...typingCallbacks} />
                       <div className="work-item-form-actions work-item-comment-actions">
                         <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
                         <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
@@ -207,7 +220,7 @@ export function WorkItemComments(props) {
                 ) : null}
                 {replyingToCommentId === comment.id ? <form className="work-item-comment-reply-form" onSubmit={onSubmitReply}>
                   <p className="yuance-ui-meta">回复 {comment.author}</p>
-                  <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} />
+                  <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} {...typingCallbacks} />
                   <div className="work-item-form-actions work-item-comment-actions">
                     <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</button>
                     <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{replySubmitting ? '回复中…' : '回复评论'}</button>
@@ -220,4 +233,16 @@ export function WorkItemComments(props) {
       ) : <p className="yuance-ui-empty">当前没有评论或流转记录。</p>}
     </section>
   );
+}
+
+/** @param {Array<{ userId: number, displayName: string }>} users */
+export function workItemTypingText(users) {
+  const names = users
+    .filter((user) => Number.isSafeInteger(user.userId) && user.userId > 0 && typeof user.displayName === 'string')
+    .map((user) => user.displayName.trim())
+    .filter(Boolean);
+  if (names.length === 0) return '';
+  if (names.length === 1) return `${names[0]} 正在输入…`;
+  if (names.length === 2) return `${names[0]}、${names[1]} 正在输入…`;
+  return `${names[0]}、${names[1]} 等 ${names.length} 人正在输入…`;
 }

@@ -145,6 +145,45 @@ test('message filters slide without replacing the page or clipping badges', asyn
   expect(badgeBounds.every((badge) => badge.top >= -1 && badge.right <= 1)).toBe(true);
 });
 
+test('topbar project badge tracks the current project and polls final state', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    globalThis.EventSource = class {
+      addEventListener() {}
+      close() {}
+    };
+  });
+  let topbarRequests = 0;
+  let pollingPhase = false;
+  await page.route('**/api/v1/topbar/status', async (route) => {
+    topbarRequests += 1;
+    const currentPending = pollingPhase ? 4 : 2;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        requirements_count: 0, tasks_count: 0, bugs_count: 0, notifications_count: 0,
+        project_badges: [{ project_key: 'YCE', pending_count: currentPending }, { project_key: 'OPS', pending_count: 7 }],
+        project_options: [{ key: 'YCE', name: '元策研发', pending_count: currentPending }, { key: 'OPS', name: '交付运维台', pending_count: 7 }],
+        system_links: [],
+        current_project: { key: 'YCE', name: '元策研发', pending_count: currentPending },
+      } }),
+    });
+  });
+
+  await login(page, '/web/app');
+  const projectBadge = page.locator('.global-nav-project > summary .global-nav-badge');
+  await expect(projectBadge).toHaveText('2');
+  await expect(projectBadge).toHaveAttribute('aria-label', '当前项目待处理 2');
+
+  const requestsBeforePolling = topbarRequests;
+  pollingPhase = true;
+  await page.clock.runFor(30_000);
+  await expect.poll(() => topbarRequests).toBeGreaterThan(requestsBeforePolling);
+  await expect(projectBadge).toHaveText('4');
+  await expect(projectBadge).toHaveAttribute('aria-label', '当前项目待处理 4');
+});
+
 test('browser shell preserves the shared deep link when the session expires', async ({ page }) => {
   await login(page, '/web/app');
   await page.goto('/web/app/search?q=YCE-TASK-2');
@@ -791,6 +830,98 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.locator('.work-item-title-tags')).toContainText('待确认');
   await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('8');
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
+});
+
+test('work item realtime discussion refresh preserves the mounted page and local draft', async ({ page }) => {
+  await page.addInitScript(() => {
+    const sources = [];
+    class ControlledEventSource {
+      listeners = new Map();
+      constructor(url, options) { this.url = url; this.options = options; sources.push(this); }
+      addEventListener(type, callback) { this.listeners.set(type, callback); }
+      close() { this.closed = true; }
+    }
+    globalThis.EventSource = ControlledEventSource;
+    globalThis.__yuanceSseSources = sources;
+    globalThis.__emitYuanceSse = (url, type, data) => {
+      const source = sources.find((candidate) => candidate.url === url && !candidate.closed);
+      source?.listeners.get(type)?.({ data });
+    };
+  });
+
+  let commentRequests = 0;
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    commentRequests += 1;
+    const response = await route.fetch();
+    const payload = await response.json();
+    if (commentRequests > 1) payload.data.push(workItemCommentFixture({ id: 977, body: '来自另一会话的实时评论', author: '协作成员', author_username: 'collaborator' }));
+    await route.fulfill({ response, json: payload });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  const detail = page.locator('.work-item-detail-center');
+  await detail.evaluate((element) => { element.dataset.realtimeMarker = 'preserved'; });
+  const draft = page.getByRole('textbox', { name: '新增评论' });
+  await draft.fill('尚未发布的本地草稿');
+
+  const subscriptionUrls = await page.evaluate(() => globalThis.__yuanceSseSources.map((source) => source.url));
+  expect(subscriptionUrls).toContain('/api/v1/work-items/YCE-TASK-2/events');
+  await page.evaluate(() => globalThis.__emitYuanceSse('/api/v1/work-items/YCE-TASK-2/events', 'discussion-refresh', 'refresh'));
+
+  await expect(page.getByText('来自另一会话的实时评论')).toBeVisible();
+  await expect(draft).toContainText('尚未发布的本地草稿');
+  await expect(detail).toHaveAttribute('data-realtime-marker', 'preserved');
+  expect(commentRequests).toBeGreaterThan(1);
+});
+
+test('work item realtime typing reports bounded activity and isolates late events', async ({ page }) => {
+  await page.addInitScript(() => {
+    const sources = [];
+    class ControlledEventSource {
+      listeners = new Map();
+      constructor(url, options) { this.url = url; this.options = options; sources.push(this); }
+      addEventListener(type, callback) { this.listeners.set(type, callback); }
+      close() { this.closed = true; }
+    }
+    globalThis.EventSource = ControlledEventSource;
+    globalThis.__yuanceSseSources = sources;
+    globalThis.__emitYuanceSseAt = (index, type, data) => sources[index]?.listeners.get(type)?.({ data });
+  });
+
+  const typingRequests = [];
+  await page.route('**/api/v1/work-items/*/typing', async (route) => {
+    typingRequests.push({ url: route.request().url(), body: route.request().postDataJSON() });
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  const activeSourceIndex = await page.evaluate(() => globalThis.__yuanceSseSources.findIndex((source) => source.url === '/api/v1/work-items/YCE-TASK-2/events' && !source.closed));
+  expect(activeSourceIndex).toBeGreaterThanOrEqual(0);
+  const editor = page.getByRole('textbox', { name: '新增评论' });
+  await editor.fill('正在撰写评论');
+  await expect.poll(() => typingRequests.filter((request) => request.body.active).length).toBe(1);
+  expect(typingRequests[0].url).toContain('/api/v1/work-items/YCE-TASK-2/typing');
+  expect(typingRequests[0].body.client_id).toMatch(/^web:[0-9a-f-]+$/u);
+
+  await page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' }).click();
+  await expect.poll(() => typingRequests.at(-1)?.body.active).toBe(false);
+
+  await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [{ user_id: 7, display_name: 'Alice' }, { user_id: 8, display_name: 'Bob' }, { user_id: 9, display_name: 'Carol' }] })), activeSourceIndex);
+  await expect(page.locator('.work-item-typing-status')).toHaveText('Alice、Bob 等 3 人正在输入…');
+  await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [] })), activeSourceIndex);
+  await expect(page.locator('.work-item-typing-status')).toHaveText('');
+
+  await page.evaluate(() => {
+    globalThis.history.pushState({}, '', '/web/app/work-items/YCE-TASK-1');
+    globalThis.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-1$/u);
+  await expect.poll(() => page.evaluate(() => globalThis.__yuanceSseSources.some((source) => source.url === '/api/v1/work-items/YCE-TASK-1/events'))).toBe(true);
+  const oldClosed = await page.evaluate((index) => globalThis.__yuanceSseSources[index].closed, activeSourceIndex);
+  expect(oldClosed).toBe(true);
+  await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [{ user_id: 10, display_name: 'Late User' }] })), activeSourceIndex);
+  await expect(page.locator('.work-item-typing-status')).toHaveText('');
+  await expect(page.getByText('Late User')).toHaveCount(0);
 });
 
 test('work item edit success survives comments or topbar refresh failures', async ({ page }) => {
@@ -4136,7 +4267,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
       buttonFontSize: buttonStyle.fontSize,
     };
   });
-  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '10px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
+  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '0px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 
@@ -4144,9 +4275,24 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   await expect(page).toHaveURL(/tab=resources/);
   await expect(tabsCard).toHaveAttribute('data-tab-transition-marker', 'preserved');
   await expect(tabs.getByRole('link', { name: '资料库' })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => indicator.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
   await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
   await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
   await expect.poll(() => page.locator('.main').evaluate((element) => element.clientWidth)).toBe(initialGeometry.mainWidth);
+});
+
+test('global navigation indicator slides between application sections', async ({ page }) => {
+  await login(page, '/web/app');
+
+  const navigation = page.getByRole('navigation', { name: '应用导航' });
+  const indicator = navigation.locator('.global-nav-links-indicator');
+  const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
+
+  await navigation.getByRole('link', { name: '项目', exact: true }).click();
+  await expect(page).toHaveURL(/\/web\/app\/projects/u);
+  await expect(navigation.getByRole('link', { name: '项目', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => indicator.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
+  await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
 });
 
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {
