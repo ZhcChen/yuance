@@ -1,5 +1,5 @@
 // @ts-check
-/* global FormData, URL, clearTimeout, setTimeout */
+/* global FormData, URL, clearInterval, clearTimeout, setInterval, setTimeout */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -760,7 +760,7 @@ function normalizeSystemApiDocs(payload) {
 /**
  * @param {{ services: {
  *   api: AppApiService,
- *   events: { supportsWorkItemTyping?: boolean, openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
+ *   events: { supportsTopbarPolling?: boolean, supportsWorkItemTyping?: boolean, openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
  *   files: AppFileService,
  *   router: AppRouterService,
  *   runtime: {
@@ -3224,14 +3224,25 @@ export function SharedApp({ services }) {
       refresh: () => loadRouteState(routeRef.current, 'refresh'),
       onNavigate: (path) => router.assign(path),
     });
+    const pollingCoordinator = createNotificationEventCoordinator({
+      refresh: async () => {
+        const status = await baseApi.getTopbarStatus();
+        setTopbar(status);
+      },
+    });
     const close = events.openTopbarEvents({
       onEvent: (event) => coordinator.handle(event),
     });
+    const pollingTimer = events.supportsTopbarPolling
+      ? setInterval(() => pollingCoordinator.invalidate(), 30_000)
+      : null;
     return () => {
+      if (pollingTimer !== null) clearInterval(pollingTimer);
+      pollingCoordinator.dispose();
       coordinator.dispose();
       close();
     };
-  }, [events, router]);
+  }, [baseApi, events, router]);
 
   useEffect(() => {
     const itemKey = route.id === 'work-item-detail' ? route.itemKey || '' : '';

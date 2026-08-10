@@ -61,7 +61,7 @@ export function createBrowserEvents(dependencies = {}) {
     return () => source.close();
   }
 
-  return { supportsWorkItemTyping: true, openTopbarEvents, openWorkItemEvents };
+  return { supportsTopbarPolling: true, supportsWorkItemTyping: true, openTopbarEvents, openWorkItemEvents };
 }
 
 /** @param {string} value */

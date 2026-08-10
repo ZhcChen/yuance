@@ -19,6 +19,7 @@ test('browser events maps EventSource signals and closes the subscription', () =
   }
   const values = [];
   const events = createBrowserEvents({ EventSourceImpl: FakeEventSource });
+  assert.equal(events.supportsTopbarPolling, true);
   const close = events.openTopbarEvents({
     onEvent: (event) => values.push(event),
   });

@@ -72,6 +72,29 @@ test('刷新中的重复失效事实合并为一次后续刷新', async () => {
   assert.deepEqual(navigations, ['/web/app/work-items/YCE-TASK-1#comment-2']);
 });
 
+test('显式校准与 SSE 失效共享刷新合并逻辑', async () => {
+  const refreshes = [];
+  /** @type {(() => void) | undefined} */
+  let finishRefresh;
+  const coordinator = createNotificationEventCoordinator({
+    refresh: () => new Promise((resolve) => { refreshes.push(refreshes.length + 1); finishRefresh = resolve; }),
+  });
+
+  coordinator.invalidate();
+  coordinator.invalidate();
+  coordinator.handle(event('topbar-invalidated', 'stream-a', 1));
+  assert.deepEqual(refreshes, [1]);
+  assert.equal(coordinator.snapshot().pendingRefresh, true);
+
+  finishRefresh?.();
+  await waitFor(() => refreshes.length === 2);
+  finishRefresh?.();
+  await waitFor(() => coordinator.snapshot().refreshing === false);
+  coordinator.dispose();
+  coordinator.invalidate();
+  assert.deepEqual(refreshes, [1, 2]);
+});
+
 function event(type, connectionId, sequence, extra = {}) {
   return Object.freeze({ type, connectionId, sequence, ...extra });
 }

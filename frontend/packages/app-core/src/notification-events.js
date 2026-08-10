@@ -101,6 +101,10 @@ export function createNotificationEventCoordinator({ refresh, onReleaseVersion =
     void runRefreshLoop();
   }
 
+  function invalidate() {
+    if (!disposed) scheduleRefresh();
+  }
+
   async function runRefreshLoop() {
     do {
       pendingRefresh = false;
@@ -122,7 +126,7 @@ export function createNotificationEventCoordinator({ refresh, onReleaseVersion =
     pendingRefresh = false;
   }
 
-  return Object.freeze({ handle, snapshot, dispose });
+  return Object.freeze({ handle, invalidate, snapshot, dispose });
 }
 
 /** @param {unknown} value @returns {NotificationEvent | null} */

@@ -2,6 +2,7 @@
 
 export function createDesktopEvents(bridge) {
   return Object.freeze({
+    supportsTopbarPolling: false,
     supportsWorkItemTyping: false,
     openTopbarEvents(callbacks) {
       if (typeof bridge?.subscribe !== "function") return () => {};

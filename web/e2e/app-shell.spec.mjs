@@ -145,6 +145,45 @@ test('message filters slide without replacing the page or clipping badges', asyn
   expect(badgeBounds.every((badge) => badge.top >= -1 && badge.right <= 1)).toBe(true);
 });
 
+test('topbar project badge totals every project and polls final state', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    globalThis.EventSource = class {
+      addEventListener() {}
+      close() {}
+    };
+  });
+  let topbarRequests = 0;
+  let pollingPhase = false;
+  await page.route('**/api/v1/topbar/status', async (route) => {
+    topbarRequests += 1;
+    const opsPending = pollingPhase ? 4 : 2;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        requirements_count: 0, tasks_count: 0, bugs_count: 0, notifications_count: 0,
+        project_badges: [{ project_key: 'YCE', pending_count: 0 }, { project_key: 'OPS', pending_count: opsPending }],
+        project_options: [{ key: 'YCE', name: '元策研发', pending_count: 0 }, { key: 'OPS', name: '交付运维台', pending_count: opsPending }],
+        system_links: [],
+        current_project: { key: 'YCE', name: '元策研发', pending_count: 0 },
+      } }),
+    });
+  });
+
+  await login(page, '/web/app');
+  const projectBadge = page.locator('.global-nav-project > summary .global-nav-badge');
+  await expect(projectBadge).toHaveText('2');
+  await expect(projectBadge).toHaveAttribute('aria-label', '全部项目待处理 2');
+
+  const requestsBeforePolling = topbarRequests;
+  pollingPhase = true;
+  await page.clock.runFor(30_000);
+  await expect.poll(() => topbarRequests).toBeGreaterThan(requestsBeforePolling);
+  await expect(projectBadge).toHaveText('4');
+  await expect(projectBadge).toHaveAttribute('aria-label', '全部项目待处理 4');
+});
+
 test('browser shell preserves the shared deep link when the session expires', async ({ page }) => {
   await login(page, '/web/app');
   await page.goto('/web/app/search?q=YCE-TASK-2');
