@@ -33,6 +33,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(savedViewId: number) => Promise<void>} deleteWorkItemSavedView
  * @property {(itemKey: string) => Promise<WorkItemDetail>} getWorkItem
  * @property {(itemKey: string) => Promise<WorkItemComment[]>} getWorkItemComments
+ * @property {(itemKey: string, payload: { clientId: string, active: boolean }) => Promise<void>} updateWorkItemTyping
  * @property {(itemKey: string, payload: WorkItemUpdatePayload) => Promise<WorkItemDetail>} updateWorkItem
  * @property {(itemKey: string, body: string) => Promise<WorkItemComment>} updateWorkItemPrimaryPost
  * @property {(itemKey: string) => Promise<WorkItemDetail>} restoreWorkItem
@@ -339,6 +340,19 @@ export function createWorkItemClient({ request, prepareWrite }) {
     /** @param {string} itemKey */
     getWorkItemComments(itemKey) {
       return request(`${workItemApiPath(itemKey)}/comments`);
+    },
+
+    /** @param {string} itemKey @param {{ clientId: string, active: boolean }} payload */
+    async updateWorkItemTyping(itemKey, payload) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(itemKey)) throw new TypeError('work item key is invalid');
+      if (!payload || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(payload.clientId)) throw new TypeError('typing client id is invalid');
+      if (typeof payload.active !== 'boolean') throw new TypeError('typing active state is invalid');
+      await prepareWrite();
+      await request(`${workItemApiPath(itemKey)}/typing`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ client_id: payload.clientId, active: payload.active }),
+      });
     },
 
     /**
