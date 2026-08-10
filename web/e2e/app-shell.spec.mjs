@@ -650,6 +650,24 @@ test('shared work item lists hide creation when the atomic contract is read only
   await expect(page.getByLabel(/选择 YCE-TASK/u)).toHaveCount(0);
 });
 
+test('shared work item lists render a stable empty state for filtered results', async ({ page }) => {
+  await login(page, '/web/app/requirements');
+  await page.route('**/api/v1/work-item-list-view**', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.items = [];
+    payload.data.pagination.total_items = 0;
+    payload.data.pagination.total_pages = 1;
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto('/web/app/requirements');
+
+  const emptyState = page.locator('.work-item-list-empty');
+  await expect(emptyState).toContainText('暂无需求');
+  await expect(emptyState).toContainText('当前筛选条件下没有匹配项');
+  await expect.poll(() => emptyState.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(176);
+});
+
 test('work item detail can edit and handoff through app shell forms', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();

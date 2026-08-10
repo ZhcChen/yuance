@@ -5743,7 +5743,10 @@ export function SharedApp({ services }) {
                   <Pagination ariaLabel="工作项分页" page={workItemPage.pagination.page} totalPages={workItemPage.pagination.total_pages} totalItems={workItemPage.pagination.total_items} rangeLabel={`当前显示 ${workItemRangeStart}-${workItemRangeEnd}`} pageSize={workItemPage.pagination.per_page} onPageSizeChange={changeWorkItemPageSize} onPageChange={changeWorkItemPage} />
                 </>
               ) : (
-                <p className="shell-empty">当前筛选下没有{workItemTypeLabel(route.itemType)}。</p>
+                <div className="empty-state work-item-list-empty" role="status">
+                  <strong>暂无{workItemTypeLabel(route.itemType)}</strong>
+                  <span>当前筛选条件下没有匹配项，可以调整筛选条件或重置后查看。</span>
+                </div>
               )}
               <Modal open={Boolean(workItemSavedViewForm)} title={workItemSavedViewForm?.id ? '重命名视图' : '保存当前视图'} onClose={() => { if (!workItemSavedViewSubmitting) setWorkItemSavedViewForm(null); }} footer={<><Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewForm(null)}>取消</Button><Button loading={workItemSavedViewSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-saved-view-form'))?.requestSubmit()}>保存</Button></>}>
                 <form id="work-item-saved-view-form" onSubmit={submitWorkItemSavedView}>
