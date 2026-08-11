@@ -71,7 +71,7 @@ test('work item create pastes before title and auto-uploads after title', async 
       body: JSON.stringify({
         data: {
           attachment: { id: attachmentId, filename: 'pasted.png', content_type: 'image/png', byte_size: 4, status: 'pending', created_by: '系统管理员', created_at: '2026-08-11T00:00:00Z' },
-          request: { method: 'PUT', url: `/api/v1/test-storage/upload?target=comment-${attachmentId}`, headers: [['content-type', 'image/png']] },
+          request: { method: 'PUT', url: `/api/v1/test-storage/upload?target=comment-${attachmentId}`, headers: [['content-type', 'image/png'], ['content-length', '4']] },
           expires_in_seconds: 600,
         },
       }),

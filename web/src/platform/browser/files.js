@@ -19,7 +19,6 @@ const CONTENT_TYPES_BY_EXTENSION = new Map([
 ]);
 
 const GENERIC_CONTENT_TYPES = new Set(['', 'application/octet-stream']);
-
 /** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
 /** @typedef {import('@yuance/frontend-platform-contract').PastedFile} PastedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SelectedFile} SelectedFile */
@@ -303,7 +302,9 @@ function normalizeSignedRequest(rawRequest, baseUrl) {
 function validateSignedHeaders(headers) {
   for (const [key] of headers) {
     const normalized = key.toLowerCase();
-    if (!['content-type', 'content-md5'].includes(normalized) && !normalized.startsWith('x-oss-')) {
+    if (!['content-type', 'content-md5', 'content-length'].includes(normalized)
+      && !normalized.startsWith('x-oss-')
+      && !['x-amz-checksum-sha256', 'x-amz-content-sha256'].includes(normalized)) {
       throw new Error(`签名请求头不受支持：${key}`);
     }
   }
