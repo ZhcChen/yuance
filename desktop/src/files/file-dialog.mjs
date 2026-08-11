@@ -15,6 +15,8 @@ const CONTENT_TYPES = new Map([
   [".webp", "image/webp"],
 ]);
 
+const GENERIC_CONTENT_TYPES = new Set(["", "application/octet-stream"]);
+
 export function createFileDialog({ dialog, spool, vault } = {}) {
   const canChoose = typeof dialog?.showOpenDialog === "function" && typeof spool?.capture === "function";
   const canSelectPasted = typeof spool?.captureBuffer === "function";
@@ -54,7 +56,7 @@ export function createFileDialog({ dialog, spool, vault } = {}) {
     const safeName = safeFilename(filename);
     let snapshot;
     try {
-      snapshot = await spool.captureBuffer(data, { filename: safeName, contentType: contentType || contentTypeFor(safeName) });
+      snapshot = await spool.captureBuffer(data, { filename: safeName, contentType: resolveContentType(contentType, safeName) });
     } catch (error) {
       throw publicFileError(error);
     }
@@ -76,6 +78,16 @@ function safeFilename(filePath) {
 
 function contentTypeFor(filename) {
   return CONTENT_TYPES.get(path.extname(filename).toLowerCase()) ?? "application/octet-stream";
+}
+
+function resolveContentType(contentType, filename) {
+  const normalized = baseContentType(contentType);
+  if (normalized && !GENERIC_CONTENT_TYPES.has(normalized)) return normalized;
+  return contentTypeFor(filename);
+}
+
+function baseContentType(contentType) {
+  return contentType.split(";", 1)[0].trim().toLowerCase();
 }
 
 function publicError(code, message) { return Object.assign(new Error(message), { code }); }

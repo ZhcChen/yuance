@@ -4800,6 +4800,11 @@ async fn attachment_preview_content_response(
     )?;
     let (stored_content_type, total_u64) =
         storage::stat_object(pool, &state.settings, &attachment.object_key).await?;
+    let content_type = resolved_preview_content_type(
+        &stored_content_type,
+        &attachment.content_type,
+        &attachment.original_filename,
+    );
     let total = usize::try_from(total_u64)
         .map_err(|_| AppError::BadRequest("附件大小超出当前预览能力".to_string()))?;
     let range = match headers.get(header::RANGE) {
@@ -4834,7 +4839,7 @@ async fn attachment_preview_content_response(
     };
     let mut response = (status, body).into_response();
     let response_headers = response.headers_mut();
-    response_headers.insert(header::CONTENT_TYPE, stored_content_type.parse()?);
+    response_headers.insert(header::CONTENT_TYPE, content_type.parse()?);
     response_headers.insert(header::CONTENT_LENGTH, selected_length.to_string().parse()?);
     response_headers.insert(header::ACCEPT_RANGES, "bytes".parse()?);
     response_headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
@@ -9147,6 +9152,24 @@ fn ensure_attachment_preview_content_enabled(
         return Err(AppError::BadRequest("当前文件类型暂不支持预览".to_string()));
     }
     Ok(())
+}
+
+fn resolved_preview_content_type(
+    stored_content_type: &str,
+    registered_content_type: &str,
+    filename: &str,
+) -> String {
+    let normalized_stored = stored_content_type.trim().to_ascii_lowercase();
+    if !normalized_stored.is_empty() && normalized_stored != "application/octet-stream" {
+        return stored_content_type.to_string();
+    }
+    let normalized_registered = registered_content_type.trim().to_ascii_lowercase();
+    if !normalized_registered.is_empty() && normalized_registered != "application/octet-stream" {
+        return registered_content_type.trim().to_string();
+    }
+    attachment_preview::image_content_type_for_filename(filename)
+        .unwrap_or("application/octet-stream")
+        .to_string()
 }
 
 fn parse_single_byte_range(value: &str, total: usize) -> Option<(usize, usize)> {

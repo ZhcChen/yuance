@@ -2,6 +2,8 @@
 
 import { defineHostDelegatedAttachmentCapabilities, defineHostDelegatedFileCapabilities, defineHostDelegatedReleaseAssetCapabilities } from "@yuance/frontend-platform-contract";
 
+const GENERIC_CONTENT_TYPES = new Set(["", "application/octet-stream"]);
+
 export function createDesktopFiles(bridge) {
   return defineHostDelegatedFileCapabilities({
     chooseFile: async () => normalizeSelection(await requireOperation(bridge, "choose")()),
@@ -54,10 +56,16 @@ async function normalizePastedFile(file) {
   }
   return Object.freeze({
     filename: file.name || "pasted-file",
-    contentType: file.type || "",
+    contentType: normalizedPastedContentType(file.type),
     data: await file.arrayBuffer(),
   });
 }
+
+function normalizedPastedContentType(contentType) {
+  const normalized = contentType.split(";", 1)[0].trim().toLowerCase();
+  return GENERIC_CONTENT_TYPES.has(normalized) ? "" : normalized;
+}
+
 function normalizeSelection(value) {
   if (value === null) return null;
   if (!value || typeof value !== "object" || typeof value.capability !== "string" || typeof value.filename !== "string" || typeof value.contentType !== "string" || !Number.isSafeInteger(value.byteSize)) throw new Error("file result is invalid");

@@ -18,10 +18,13 @@ const CONTENT_TYPES_BY_EXTENSION = new Map([
   ['.webp', 'image/webp'],
 ]);
 
+const GENERIC_CONTENT_TYPES = new Set(['', 'application/octet-stream']);
+
 /** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
 /** @typedef {import('@yuance/frontend-platform-contract').PastedFile} PastedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SelectedFile} SelectedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SignedTransferCapability} SignedTransferCapability */
+/** @typedef {{ file: File, contentType: string }} BrowserFileEntry */
 
 /**
  * @typedef {object} SignedObjectRequest
@@ -55,14 +58,20 @@ export function createBrowserFilePlatform({
   const filesByCapability = new WeakMap();
   const requestsByCapability = new WeakMap();
 
-  /** @param {PastedFile} file @param {string} [checksumSha256] @returns {SelectedFile} */
-  function selectFile(file, checksumSha256) {
+  /**
+   * @param {PastedFile} file
+   * @param {string} [checksumSha256]
+   * @param {Uint8Array} [bytes]
+   * @returns {SelectedFile}
+   */
+  function selectFile(file, checksumSha256, bytes) {
     const capability = /** @type {FileCapability} */ ({});
-    filesByCapability.set(capability, file);
+    const contentType = resolveContentType(file.type, file.name, bytes);
+    filesByCapability.set(capability, /** @type {BrowserFileEntry} */ ({ file, contentType }));
     return {
       capability,
       filename: file.name || 'attachment.bin',
-      contentType: file.type || contentTypeForFilename(file.name) || 'application/octet-stream',
+      contentType,
       byteSize: file.size,
       ...(checksumSha256 ? { checksumSha256 } : {}),
     };
@@ -73,8 +82,9 @@ export function createBrowserFilePlatform({
     if (!file || typeof file.arrayBuffer !== 'function') {
       throw new Error('剪贴板文件无效。');
     }
-    const checksumSha256 = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    return selectFile(file, checksumSha256);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const checksumSha256 = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return selectFile(file, checksumSha256, bytes);
   }
 
   const transfers = defineTransferCapabilities({
@@ -99,15 +109,15 @@ export function createBrowserFilePlatform({
     },
     async uploadSignedRequest(transferCapability, fileCapability) {
       const authorization = consumeTransferCapability(requestsByCapability, transferCapability, 'upload', now());
-      const file = filesByCapability.get(fileCapability);
+      const entry = filesByCapability.get(fileCapability);
       filesByCapability.delete(fileCapability);
-      if (!file) {
+      if (!entry) {
         throw new Error('上传 capability 无效或已不属于当前 Browser adapter。');
       }
       const { request } = authorization;
       const headers = filteredHeaders(request.headers);
-      if (!headers.has('content-type') && file.type) {
-        headers.set('content-type', file.type);
+      if (!headers.has('content-type') && entry.contentType) {
+        headers.set('content-type', entry.contentType);
       }
       const url = new URL(request.url, baseUrl);
       if (url.origin === origin && !['GET', 'HEAD'].includes(request.method) && !headers.has('x-yuance-csrf-token')) {
@@ -119,7 +129,7 @@ export function createBrowserFilePlatform({
       const response = await fetchImpl(url, {
         method: request.method,
         headers,
-        body: file,
+        body: entry.file,
         credentials: url.origin === origin ? 'same-origin' : 'omit',
       });
       if (!response.ok) {
@@ -145,6 +155,48 @@ export function createBrowserFilePlatform({
 function contentTypeForFilename(filename) {
   const extension = filename.match(/\.([^.]+)$/u)?.[1]?.toLowerCase();
   return extension ? CONTENT_TYPES_BY_EXTENSION.get(`.${extension}`) : undefined;
+}
+
+/** @param {Uint8Array | undefined} bytes @returns {string | undefined} */
+function contentTypeForBytes(bytes) {
+  if (!bytes || bytes.length < 12) return undefined;
+  const head = bytes.subarray(0, 12);
+  if (
+    head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+    && head[4] === 0x0d && head[5] === 0x0a && head[6] === 0x1a && head[7] === 0x0a
+  ) return 'image/png';
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  if (head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38
+    && (head[4] === 0x37 || head[4] === 0x39) && head[5] === 0x61) return 'image/gif';
+  if (head[0] === 0x42 && head[1] === 0x4d) return 'image/bmp';
+  if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46
+    && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) return 'image/webp';
+  if (head[0] === 0x00 && head[1] === 0x00 && head[2] === 0x01 && head[3] === 0x00) return 'image/x-icon';
+  if (head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70) {
+    const brand = String.fromCharCode(head[8], head[9], head[10], head[11]);
+    if (brand === 'avif' || brand === 'avis') return 'image/avif';
+  }
+  return undefined;
+}
+
+/**
+ * @param {string} contentType
+ * @param {string} filename
+ * @param {Uint8Array} [bytes]
+ * @returns {string}
+ */
+function resolveContentType(contentType, filename, bytes) {
+  const normalized = baseContentType(contentType);
+  if (normalized && !GENERIC_CONTENT_TYPES.has(normalized)) return normalized;
+  return contentTypeForFilename(filename)
+    || contentTypeForBytes(bytes)
+    || normalized
+    || 'application/octet-stream';
+}
+
+/** @param {string} contentType @returns {string} */
+function baseContentType(contentType) {
+  return contentType.split(';', 1)[0].trim().toLowerCase();
 }
 
 function chooseFileFromDocument() {

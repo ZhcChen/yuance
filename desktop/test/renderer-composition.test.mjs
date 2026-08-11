@@ -156,6 +156,24 @@ test("desktop file adapter delegates opaque intents and normalizes results", asy
   assert.deepEqual(calls, [`yfc_${"a".repeat(32)}`]);
 });
 
+test("desktop file adapter normalizes generic clipboard MIME before delegation", async () => {
+  const calls = [];
+  const files = createDesktopFiles({
+    selectPastedFile: async (input) => {
+      calls.push(input);
+      return { capability: `yfc_${"b".repeat(32)}`, filename: "clip.png", contentType: "image/png", byteSize: 4 };
+    },
+  });
+  const selected = await files.selectPastedFile({
+    name: "clip.png",
+    type: "application/octet-stream",
+    size: 4,
+    arrayBuffer: async () => new ArrayBuffer(4),
+  });
+  assert.deepEqual(selected, { capability: `yfc_${"b".repeat(32)}`, filename: "clip.png", contentType: "image/png", byteSize: 4 });
+  assert.deepEqual(calls, [{ filename: "clip.png", contentType: "", data: new ArrayBuffer(4) }]);
+});
+
 test("desktop app file adapter delegates business attachments and rejects signed requests", async () => {
   const calls = [];
   const bridge = {

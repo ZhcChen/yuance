@@ -62,7 +62,9 @@ pub fn kind(
     content_type: &str,
     legacy_preview_enabled: bool,
 ) -> Option<&'static str> {
-    if is_previewable_image(content_type) {
+    if is_previewable_image(content_type)
+        || (is_generic_content_type(content_type) && is_previewable_image_filename(filename))
+    {
         return Some("image");
     }
     if is_previewable_video(content_type) {
@@ -78,6 +80,29 @@ pub fn is_previewable_image(content_type: &str) -> bool {
         normalized_content_type(content_type).as_str(),
         "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/bmp" | "image/avif"
     )
+}
+
+fn is_generic_content_type(content_type: &str) -> bool {
+    matches!(
+        normalized_content_type(content_type).as_str(),
+        "" | "application/octet-stream"
+    )
+}
+
+fn is_previewable_image_filename(filename: &str) -> bool {
+    image_content_type_for_filename(filename).is_some()
+}
+
+pub fn image_content_type_for_filename(filename: &str) -> Option<&'static str> {
+    match normalized_extension(filename).as_deref() {
+        Some("avif") => Some("image/avif"),
+        Some("bmp") => Some("image/bmp"),
+        Some("gif") => Some("image/gif"),
+        Some("jpeg" | "jpg") => Some("image/jpeg"),
+        Some("png") => Some("image/png"),
+        Some("webp") => Some("image/webp"),
+        _ => None,
+    }
 }
 
 pub fn is_previewable_video(content_type: &str) -> bool {
@@ -152,7 +177,21 @@ mod tests {
 
     #[test]
     fn preview_kind_covers_media_documents_and_disabled_legacy_files() {
+        assert_eq!(
+            image_content_type_for_filename("photo.png"),
+            Some("image/png")
+        );
+        assert_eq!(
+            image_content_type_for_filename("photo.jpeg"),
+            Some("image/jpeg")
+        );
+        assert_eq!(image_content_type_for_filename("photo.txt"), None);
         assert_eq!(kind("photo.png", "image/png", false), Some("image"));
+        assert_eq!(
+            kind("photo.png", "application/octet-stream", false),
+            Some("image")
+        );
+        assert_eq!(kind("photo.jpeg", "", false), Some("image"));
         assert_eq!(
             kind("clip.mp4", "video/mp4; codecs=avc1", false),
             Some("video")
