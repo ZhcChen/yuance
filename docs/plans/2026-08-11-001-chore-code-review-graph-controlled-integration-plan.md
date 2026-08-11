@@ -6,7 +6,6 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code
 execution_status: pending
-origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-plan.md
 ---
 
 # 受控引入 Code Review Graph 增强审查
@@ -20,7 +19,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 
 ## 范围
 
-- 在 `Makefile` 增加固定版本的 `crg.build`、`crg.update`、`crg.status`、`crg.review` 四个手工入口。
+- 在 `Makefile` 增加固定版本的 `crg.build`、`crg.update`、`crg.status`、`crg.review` 四个手工入口，以及独立守护目标 `crg.guard`。
 - 在 `.gitignore` 增加 `.code-review-graph/`，避免图数据库进入版本控制。
 - 在 `AGENTS.md` 增加 CRG 受控使用规则：触发矩阵、证据优先级、失败降级、禁止项。
 - 在 `docs/prompts/plan.md`、`docs/prompts/review.md` 增加可选旁路使用提示。
@@ -50,7 +49,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 
 | 来源（redcode-im） | 元策需要调整的点 | 落地位置 |
 | --- | --- | --- |
-| Makefile CRG 入口 | 元策 Makefile 目前没有 CRG 目标，需新增并加入 `.PHONY` | `Makefile` |
+| Makefile CRG 入口 | 元策 Makefile 目前没有 CRG 目标，需新增四个手工目标与独立 `crg.guard`，并加入 `.PHONY` | `Makefile` |
 | `.gitignore` | 元策未显式忽略 `.code-review-graph/`；工具自带忽略兜底，但根忽略更稳定 | `.gitignore` |
 | AGENTS.md 受控规则 | 触发模块改为 `api/`、`frontend/`、`web/`、`desktop/`、`docs/` 等元策模块 | `AGENTS.md` |
 | `docs/prompts/plan.md`、`review.md` | 按元策提示词简洁格式补 CRG 可选旁路说明 | `docs/prompts/` |
@@ -97,9 +96,9 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 
 #### U1.4 守护验证
 
-- 修改：新增 `scripts/assert-crg-guard.mjs`，并接入现有 `npm run check:frontend` 或独立验证命令。
+- 修改：新增 `scripts/assert-crg-guard.mjs`，并在 `Makefile` 增加独立 `crg.guard` 目标；不接入 `frontend-check`、`web-build` 或任何默认链。
 - 前置：U1.1-U1.3。
-- 验证：脚本断言 CRG 目标存在、`.code-review-graph/` 被忽略、自动链目标不含 CRG。
+- 验证：`make crg.guard` 断言 CRG 目标存在、`.code-review-graph/` 被忽略、`frontend-check` / `web-build` / `deploy-production` 自动链目标不含 CRG。
 - 完成标准：守护测试失败能阻止规则漂移；CRG 不进入默认测试链。
 
 ### 阶段 2：本机 MCP 与图数据
@@ -108,7 +107,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 
 - 执行：`codex mcp add code-review-graph -- uvx --from code-review-graph==2.3.7 code-review-graph serve`。
 - 前置：U1.4。
-- 验证：`codex mcp get code-review-graph` 返回 server；重启 Codex 会话后工具可用。
+- 验证：`codex mcp get code-review-graph` 返回 server；重启 Codex 会话后工具可用；在元策项目目录确认 CRG 能自动定位 `.code-review-graph/graph.db`。
 - 完成标准：通用 server 不绑定项目名；CRG 启动时按当前项目根自动检测仓库，元策不依赖 redcode-im 命名 server。
 
 通用 server 复用规则：
@@ -162,12 +161,25 @@ node scripts/assert-crg-guard.mjs
 git diff --check
 ```
 
+## 停止条件与回滚验收
+
+- 任一单元出现以下情况立即停止并回滚对应改动：
+  - CRG 自动触发、watch、daemon 或 hooks 被引入；
+  - `~/.codex/hooks.json`、Git hooks 被修改；
+  - `frontend-check`、`web-build`、`deploy-production`、测试、commit 或 push 默认链出现 CRG；
+  - CRG 构建、更新或查询阻塞 plan / review / commit / push 交付。
+- 回滚验收：
+  - `ls ~/.codex/hooks.json` 保持不存在或与接入前一致；
+  - `git rev-parse --git-path hooks` 内没有 CRG 内容；
+  - `make frontend-check -n`、`make web-build -n`、`make deploy-production -n` 不含 `crg` 或 `code-review-graph`；
+  - `codex mcp remove code-review-graph` 只移除 server 配置，不删除任何项目的 `.code-review-graph/` 数据。
+
 ## 风险 / 待确认问题
 
 - CRG 对 React JSX、Electron 渲染进程和 Rust/JS 跨语言契约的覆盖未知，必须先试点再决定保留级别。
 - 首次构建可能产生 100MB 以上图数据库，需要确认磁盘空间和增量更新耗时。
 - 全局 MCP 已存在 `code-review-graph-redcode-im`；注册通用 `code-review-graph` 后，旧 server 可保留过渡，确认无依赖后再移除，避免影响 redcode-im 当前使用。
-- 通用 server 依赖 Codex 以项目根作为启动工作目录；若 Codex 未按项目根启动，CRG 可能找不到图，此时按规则降级，不阻塞任务。
+- 通用 server 依赖 Codex 以项目根作为启动工作目录；若 U2.1 实测自动检测失败，记录原因并回退为项目级 server（显式 `--repo` 或独立名称），不阻塞普通任务。
 - CRG 静态图对动态路由、宏展开、CSS 和运行时状态不可靠，不得替代浏览器或运行时验收。
 - 如果试点无有效新增，应按计划降级为手工调用或移除，不硬性保留。
 
