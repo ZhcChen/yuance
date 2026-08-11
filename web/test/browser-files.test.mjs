@@ -111,6 +111,42 @@ test('browser file platform uploads inferred image MIME when signature omits con
   assert.equal(headers.get('content-type'), 'image/png');
 });
 
+test('browser file platform accepts storage signed headers and filters browser-managed content length', async () => {
+  const calls = [];
+  const file = new File(['content'], 'design.txt', { type: 'text/plain' });
+  const platform = createBrowserFilePlatform({
+    refreshCsrfToken: async () => '',
+    baseUrl: 'https://yuance.test/web/app/',
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return new Response(null, { status: 200 });
+    },
+  });
+  const selected = platform.selectFile(file);
+  const transfer = platform.transfers.authorizeSignedRequest({
+    purpose: 'upload',
+    expiresInSeconds: 300,
+    request: {
+      method: 'PUT',
+      url: '/storage/upload',
+      headers: [
+        ['content-length', '7'],
+        ['content-type', 'text/plain'],
+        ['x-amz-content-sha256', 'abc'],
+        ['x-oss-forbid-overwrite', 'true'],
+      ],
+    },
+  });
+
+  await platform.files.uploadSignedRequest(transfer, selected.capability);
+
+  const headers = new Headers(calls[0].options.headers);
+  assert.equal(headers.get('content-type'), 'text/plain');
+  assert.equal(headers.get('x-amz-content-sha256'), 'abc');
+  assert.equal(headers.get('x-oss-forbid-overwrite'), 'true');
+  assert.equal(headers.get('content-length'), null);
+});
+
 test('browser file platform opens validated GET downloads', async () => {
   const opened = [];
   const platform = createBrowserFilePlatform({
