@@ -1,4 +1,12 @@
-.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate
+.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review
+
+CRG_VERSION ?= 2.3.7
+CRG := uvx --from code-review-graph==$(CRG_VERSION) code-review-graph
+CRG_BASE = $(if $(strip $(BASE)),$(BASE),HEAD~1)
+
+define require_cmd
+command -v $(1) >/dev/null 2>&1 || { echo "[make] 缺少命令: $(1)"; exit 1; }
+endef
 
 help:
 	@echo "元策开发命令"
@@ -24,6 +32,10 @@ help:
 	@echo "  make validation-status"
 	@echo "  make deploy-production"
 	@echo "  make deploy-validate"
+	@echo "  make crg.build"
+	@echo "  make crg.update"
+	@echo "  make crg.status"
+	@echo "  make crg.review BASE=<git-ref>"
 
 frontend-check:
 	npm run check:frontend
@@ -104,3 +116,20 @@ deploy-production:
 
 deploy-validate:
 	./scripts/validate-deploy-templates.sh
+
+crg.build: ## 手工完整构建 Code Review Graph 本地图数据
+	@$(call require_cmd,uvx)
+	@$(CRG) build --repo "$(CURDIR)"
+
+crg.update: ## 手工增量更新 Code Review Graph 本地图数据
+	@$(call require_cmd,uvx)
+	@$(CRG) update --repo "$(CURDIR)"
+
+crg.status: ## 手工查看 Code Review Graph 本地图状态
+	@$(call require_cmd,uvx)
+	@$(CRG) status --repo "$(CURDIR)"
+
+crg.review: ## 手工审查当前改动影响（可传 BASE=<git-ref>，默认 HEAD~1）
+	@$(call require_cmd,uvx)
+	@echo "[crg] 审查基线: $(CRG_BASE)"
+	@$(CRG) detect-changes --repo "$(CURDIR)" --base "$(CRG_BASE)" --brief
