@@ -74,6 +74,7 @@ import {
 } from '@yuance/frontend-ui';
 import { errorMessage, globalApiErrorMessage } from './errors.js';
 import { createApiErrorWrappingProxy } from './api-proxy.js';
+import { AppShellSkeleton } from './app-skeleton.jsx';
 
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 /** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
@@ -5269,16 +5270,7 @@ export function SharedApp({ services }) {
   }
 
   if (loading && !shellReady) {
-    return (
-      <main className="app-shell" aria-busy="true">
-        <p className="shell-live-region" role="status" aria-live="polite">正在加载元策浏览器工作台。</p>
-        <section className="shell-loading">
-          <p className="shell-eyebrow">Web App</p>
-          <h1>正在恢复当前会话</h1>
-          <p>正在通过 REST / SSE 恢复用户、项目上下文和消息状态。</p>
-        </section>
-      </main>
-    );
+    return <AppShellSkeleton />;
   }
 
   return (
