@@ -5,6 +5,7 @@ import { defineHostDelegatedAttachmentCapabilities, defineHostDelegatedFileCapab
 export function createDesktopFiles(bridge) {
   return defineHostDelegatedFileCapabilities({
     chooseFile: async () => normalizeSelection(await requireOperation(bridge, "choose")()),
+    selectPastedFile: async (file) => normalizeSelection(await requireOperation(bridge, "selectPastedFile")(await normalizePastedFile(file))),
     uploadCanary: async (capability) => normalizeResult(await requireOperation(bridge, "uploadCanary")(capability)),
     downloadCanary: async () => normalizeResult(await requireOperation(bridge, "downloadCanary")()),
   });
@@ -33,6 +34,7 @@ export function createDesktopAppFiles(bridge, hostFiles = createDesktopFiles(bri
     downloadSystemReleaseAsset: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadSystemReleaseAsset")(input)),
   });
   return Object.freeze({
+    selectPastedFile: hostFiles.selectPastedFile,
     files: Object.freeze({ chooseFile: hostFiles.chooseFile, uploadSignedRequest: unavailable }),
     downloads: Object.freeze({ downloadSignedRequest: unavailable }),
     transfers: Object.freeze({ authorizeSignedRequest: unavailable }),
@@ -45,6 +47,16 @@ function requireOperation(bridge, name) {
   const operation = bridge?.[name];
   if (typeof operation !== "function") throw new Error("file operation is unavailable");
   return operation;
+}
+async function normalizePastedFile(file) {
+  if (!file || typeof file.name !== "string" || typeof file.type !== "string" || typeof file.arrayBuffer !== "function") {
+    throw new Error("pasted file is invalid");
+  }
+  return Object.freeze({
+    filename: file.name || "pasted-file",
+    contentType: file.type || "application/octet-stream",
+    data: await file.arrayBuffer(),
+  });
 }
 function normalizeSelection(value) {
   if (value === null) return null;

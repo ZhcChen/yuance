@@ -2223,6 +2223,30 @@ test('work item attachments can list download and upload for item and comments',
   await expect.poll(() => commentDraftCancelRequests).toEqual([951]);
   await expect(newCommentEditor).toHaveText('');
   await expect(page.getByRole('button', { name: '取消草稿' })).toHaveCount(0);
+
+  const pastedCommentCreateBefore = commentCreateRequests.length;
+  await newCommentEditor.click();
+  await newCommentEditor.evaluate((editor) => {
+    const file = new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' });
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
+    editor.dispatchEvent(event);
+  });
+  await expect.poll(() => commentDraftRequests.length).toBe(3);
+  await expect.poll(() => commentCreateRequests.length).toBe(pastedCommentCreateBefore + 1);
+  const pastedCreate = commentCreateRequests[commentCreateRequests.length - 1];
+  expect(pastedCreate.commentId).toBe(952);
+  expect(pastedCreate.payload).toMatchObject({
+    original_filename: 'pasted.png',
+    content_type: 'image/png',
+    byte_size: 4,
+  });
+  const pastedImage = newCommentEditor.getByRole('img', { name: 'pasted.png' });
+  await expect(pastedImage).toBeVisible();
+  await expect(pastedImage).toHaveAttribute('src', /\/comments\/952\/attachments\/\d+\/preview\/content$/u);
+  await expect(pastedImage.locator('xpath=ancestor::*[@data-yuance-attachment-id][1]')).toHaveAttribute('data-yuance-attachment-id', /\d+/u);
 });
 
 test('work item attachments share preview navigation fallback download and stale-route protection', async ({ page }) => {

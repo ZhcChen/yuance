@@ -1,5 +1,6 @@
 export const FILE_CHANNELS = Object.freeze({
   choose: "yuance:file-choose",
+  selectPasted: "yuance:file-select-pasted",
   uploadCanary: "yuance:file-upload-canary",
   downloadCanary: "yuance:file-download-canary",
   uploadWorkItemAttachment: "yuance:file-upload-work-item-attachment",
@@ -29,7 +30,7 @@ const RELEASE_ARTIFACT_KINDS = new Set(["installer", "signature", "sbom", "manif
 
 export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding, getWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, previewCoordinator, revealController } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function" || typeof ipcMain.removeHandler !== "function") throw new TypeError("ipcMain is required");
-  if (typeof assertSender !== "function" || typeof getBinding !== "function" || typeof getWindow !== "function" || typeof fileDialog?.choose !== "function" || typeof issueTransferGrant !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || !hasAttachmentOperations(attachmentCoordinator) || !hasPreviewOperations(previewCoordinator) || typeof revealController?.reveal !== "function") {
+  if (typeof assertSender !== "function" || typeof getBinding !== "function" || typeof getWindow !== "function" || typeof fileDialog?.choose !== "function" || typeof fileDialog?.selectPasted !== "function" || typeof issueTransferGrant !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || !hasAttachmentOperations(attachmentCoordinator) || !hasPreviewOperations(previewCoordinator) || typeof revealController?.reveal !== "function") {
     throw new TypeError("file command dependencies are required");
   }
 
@@ -38,6 +39,10 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
       assertSender(event);
       rejectPayload(payload);
       return normalizeSelection(await fileDialog.choose({ window: getWindow(), binding: getBinding(event, "upload") }));
+    },
+    [FILE_CHANNELS.selectPasted]: async (event, payload) => {
+      assertSender(event);
+      return normalizeSelection(await fileDialog.selectPasted(parsePastedFile(payload), getBinding(event, "upload")));
     },
     [FILE_CHANNELS.uploadCanary]: async (event, capability) => {
       assertSender(event);
@@ -167,6 +172,14 @@ function parseAttachmentUpload(value, target) {
   if (!isPlainObject(value) || !sameKeys(value, ["input", "operationId"]) || !OPERATION_ID.test(value.operationId) || !isPlainObject(value.input) || (!sameKeys(value.input, inputKeys) && !validRetryKeys) || typeof value.input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(value.input.fileCapability) || (actualKeys.includes("attachmentId") && (!Number.isSafeInteger(value.input.attachmentId) || value.input.attachmentId < 1))) throw new TypeError("attachment upload request is invalid");
   if (target === "release") validateReleaseReference(value.input, false);
   return Object.freeze({ operationId: value.operationId, fileCapability: value.input.fileCapability, reference: attachmentReference(value.input, target, actualKeys.includes("attachmentId")) });
+}
+function parsePastedFile(value) {
+  if (!isPlainObject(value) || !sameKeys(value, ["contentType", "data", "filename"]) || typeof value.filename !== "string" || value.filename.length < 1 || value.filename.length > 255 || typeof value.contentType !== "string" || value.contentType.length > 255) throw new TypeError("pasted file request is invalid");
+  const data = value.data;
+  const validData = data instanceof ArrayBuffer
+    || (ArrayBuffer.isView(data) && !(data instanceof DataView));
+  if (!validData || data.byteLength > 100 * 1024 * 1024) throw new TypeError("pasted file request is invalid");
+  return Object.freeze({ filename: value.filename, contentType: value.contentType, data });
 }
 function parseAttachmentDownload(value, target) {
   const keys = target === "comment" ? ["attachmentId", "commentId", "itemKey", "suggestedFilename"] : target === "project" ? ["attachmentId", "projectKey", "suggestedFilename"] : target === "resource" ? ["accessToken", "attachmentId", "projectKey", "resourceId", "suggestedFilename"] : target === "release" ? ["attachmentId", "releaseId", "suggestedFilename"] : ["attachmentId", "itemKey", "suggestedFilename"];

@@ -36,6 +36,20 @@ posixTest("streams an immutable private snapshot with size and sha256", async (t
   }
 });
 
+posixTest("captures pasted bytes into a private snapshot and removes the temp source", async (t) => {
+  const { root, spool } = await fixture(t);
+  const bytes = Buffer.from("pasted png");
+  const snapshot = await spool.captureBuffer(bytes, { filename: "clip.png", contentType: "image/png" });
+  t.after(() => snapshot.remove());
+
+  assert.equal(snapshot.byteSize, bytes.length);
+  assert.equal(snapshot.sha256, "9172eed1203658fc8de284965e312f6ad69295a686bc773903f8cdea426442f2");
+  assert.equal(snapshot.filename, "clip.png");
+  assert.equal(snapshot.contentType, "image/png");
+  assert.deepEqual(await fs.readFile(snapshot.privatePath), bytes);
+  assert.deepEqual((await fs.readdir(spool.rootDirectory)).filter((name) => name.startsWith(".paste-")), []);
+});
+
 posixTest("preserves canonical MIME parameters and rejects injected values", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-mime-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

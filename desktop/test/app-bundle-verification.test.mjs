@@ -52,7 +52,7 @@ async function createBundleFixture({
   await fs.mkdir(path.join(renderer, "assets"), { recursive: true });
   await fs.writeFile(path.join(source, "src", "main.mjs"), "export {};\n");
   await fs.writeFile(path.join(source, "src", "preload.cjs"), preloadSource ?? [
-    'const channels = ["yuance:file-choose", "yuance:file-upload-work-item-attachment",',
+    'const channels = ["yuance:file-choose", "yuance:file-select-pasted", "yuance:file-upload-work-item-attachment",',
     '  "yuance:file-upload-work-item-comment-attachment", "yuance:file-download-work-item-attachment",',
     '  "yuance:file-download-work-item-comment-attachment", "yuance:file-upload-project-resource-attachment",',
     '  "yuance:file-download-project-resource-attachment", "yuance:file-open-project-resource-attachment-preview",',
@@ -209,7 +209,7 @@ test("rejects renderer file capabilities, signed requests, and local path fixtur
 });
 
 test("rejects preload network, filesystem, external navigation, and private transfer capabilities", async (context) => {
-  const markers = '"yuance:file-choose yuance:file-upload-work-item-attachment yuance:file-upload-work-item-comment-attachment yuance:file-download-work-item-attachment yuance:file-download-work-item-comment-attachment yuance:file-upload-project-resource-attachment yuance:file-download-project-resource-attachment yuance:file-open-project-resource-attachment-preview yuance:file-open-work-item-comment-attachment-preview yuance:file-reveal-download";';
+  const markers = '"yuance:file-choose yuance:file-select-pasted yuance:file-upload-work-item-attachment yuance:file-upload-work-item-comment-attachment yuance:file-download-work-item-attachment yuance:file-download-work-item-comment-attachment yuance:file-upload-project-resource-attachment yuance:file-download-project-resource-attachment yuance:file-open-project-resource-attachment-preview yuance:file-open-work-item-comment-attachment-preview yuance:file-reveal-download";';
   for (const source of [
     `${markers}\nfetch('/api/v1/projects');`,
     `${markers}\nrequire('node:fs');`,

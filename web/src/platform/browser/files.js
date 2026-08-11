@@ -7,6 +7,7 @@ import {
 } from '@yuance/frontend-platform-contract';
 
 /** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
+/** @typedef {import('@yuance/frontend-platform-contract').PastedFile} PastedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SelectedFile} SelectedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SignedTransferCapability} SignedTransferCapability */
 
@@ -42,7 +43,7 @@ export function createBrowserFilePlatform({
   const filesByCapability = new WeakMap();
   const requestsByCapability = new WeakMap();
 
-  /** @param {File} file @param {string} [checksumSha256] @returns {SelectedFile} */
+  /** @param {PastedFile} file @param {string} [checksumSha256] @returns {SelectedFile} */
   function selectFile(file, checksumSha256) {
     const capability = /** @type {FileCapability} */ ({});
     filesByCapability.set(capability, file);
@@ -53,6 +54,15 @@ export function createBrowserFilePlatform({
       byteSize: file.size,
       ...(checksumSha256 ? { checksumSha256 } : {}),
     };
+  }
+
+  /** @param {PastedFile} file @returns {Promise<SelectedFile | null>} */
+  async function selectPastedFile(file) {
+    if (!file || typeof file.arrayBuffer !== 'function') {
+      throw new Error('剪贴板文件无效。');
+    }
+    const checksumSha256 = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    return selectFile(file, checksumSha256);
   }
 
   const transfers = defineTransferCapabilities({
@@ -73,8 +83,7 @@ export function createBrowserFilePlatform({
     async chooseFile() {
       const file = await chooseFile();
       if (!file) return null;
-      const checksumSha256 = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
-      return selectFile(file, checksumSha256);
+      return selectPastedFile(file);
     },
     async uploadSignedRequest(transferCapability, fileCapability) {
       const authorization = consumeTransferCapability(requestsByCapability, transferCapability, 'upload', now());
@@ -117,7 +126,7 @@ export function createBrowserFilePlatform({
     },
   });
 
-  return { files, downloads, transfers, selectFile };
+  return { files, downloads, transfers, selectFile, selectPastedFile };
 }
 
 function chooseFileFromDocument() {

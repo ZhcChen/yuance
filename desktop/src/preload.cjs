@@ -124,6 +124,7 @@ const bridge = Object.freeze({
   }),
   files: Object.freeze({
     choose() { return ipcRenderer.invoke("yuance:file-choose"); },
+    selectPastedFile(file) { return ipcRenderer.invoke("yuance:file-select-pasted", file); },
     uploadCanary(capability) { return ipcRenderer.invoke("yuance:file-upload-canary", capability); },
     downloadCanary() { return ipcRenderer.invoke("yuance:file-download-canary"); },
     uploadWorkItemAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-work-item-attachment", input, onStage); },

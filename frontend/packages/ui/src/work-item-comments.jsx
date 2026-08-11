@@ -69,6 +69,7 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRequestDeleteAttachment: (commentId: number, attachment: Attachment) => void,
+ *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
  *   resolveAttachmentSource?: (commentId: number, attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (commentId: number, attachmentId: number) => void,
  * }} props
@@ -120,6 +121,7 @@ export function WorkItemComments(props) {
     onDownloadAttachment,
     onRevealAttachment,
     onRequestDeleteAttachment,
+    onPasteFile,
     resolveAttachmentSource,
     onAttachmentActivate,
   } = props;
@@ -136,7 +138,7 @@ export function WorkItemComments(props) {
         <span className="yuance-ui-meta">共 {comments.length} 条</span>
       </div>
       {canWriteComments ? <form className="work-item-comment-form" onSubmit={onSubmitNew}>
-        <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} {...typingCallbacks} />
+        <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('new', null, file) : undefined} {...typingCallbacks} />
         {newCommentAttachments.length ? (
           <AttachmentList
             attachments={newCommentAttachments}
@@ -176,7 +178,7 @@ export function WorkItemComments(props) {
                   <>
                     <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />
                     <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
-                      <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} {...typingCallbacks} />
+                      <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('edit', comment.id, file) : undefined} {...typingCallbacks} />
                       <div className="work-item-form-actions work-item-comment-actions">
                         <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
                         <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
@@ -224,7 +226,7 @@ export function WorkItemComments(props) {
                 ) : null}
                 {replyingToCommentId === comment.id ? <form className="work-item-comment-reply-form" onSubmit={onSubmitReply}>
                   <p className="yuance-ui-meta">回复 {comment.author}</p>
-                  <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} {...typingCallbacks} />
+                  <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('reply', comment.id, file) : undefined} {...typingCallbacks} />
                   <div className="work-item-form-actions work-item-comment-actions">
                     <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</button>
                     <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{replySubmitting ? '回复中…' : '回复评论'}</button>

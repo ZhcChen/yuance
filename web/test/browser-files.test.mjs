@@ -15,6 +15,16 @@ test('browser file chooser converts the selected File into an opaque capability'
   assert.equal(await cancelled.files.chooseFile(), null);
 });
 
+test('browser pasted file converts a clipboard File into an opaque capability', async () => {
+  const platform = createBrowserFilePlatform({ refreshCsrfToken: async () => '' });
+  const selected = await platform.selectPastedFile(new File(['clip'], 'clip.png', { type: 'image/png' }));
+  assert.equal(selected?.filename, 'clip.png');
+  assert.equal(selected?.contentType, 'image/png');
+  assert.equal(selected?.byteSize, 4);
+  assert.match(selected?.checksumSha256 || '', /^[0-9a-f]{64}$/u);
+  assert.deepEqual(Object.keys(selected?.capability || {}), []);
+});
+
 test('browser file platform uploads through opaque capabilities', async () => {
   const calls = [];
   const file = new File(['content'], 'design.txt', { type: 'text/plain' });

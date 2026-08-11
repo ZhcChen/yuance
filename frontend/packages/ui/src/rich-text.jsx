@@ -103,10 +103,11 @@ export function richTextAttachmentHtml(attachment) {
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
 /** @typedef {{ username: string, displayName: string }} RichTextMentionOption */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment, onFocus, onInputActivity, onBlur }) {
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onPasteFile?: (file: File) => Promise<RichTextAttachmentOption | null> | RichTextAttachmentOption | null, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment, onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
+  const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
@@ -278,8 +279,38 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           onBlur?.();
         }}
         onPaste={(event) => {
+          const file = firstPastedFile(event.clipboardData);
+          if (file && onPasteFile && !disabled) {
+            event.preventDefault();
+            const input = event.currentTarget;
+            pasteRangeRef.current = currentInsertionRange(input);
+            const insertFallback = () => {
+              const target = inputRef.current;
+              if (!target || !target.isConnected || disabled) return;
+              insertAtSelection(target, target.ownerDocument.createTextNode(file.name), pasteRangeRef.current);
+              publish(target);
+            };
+            void Promise.resolve(onPasteFile(file))
+              .then((attachment) => {
+                const target = inputRef.current;
+                if (!target || !target.isConnected || disabled) return;
+                if (attachment) {
+                  const node = createAttachmentNode(target.ownerDocument, attachment);
+                  insertAtSelection(target, node, pasteRangeRef.current);
+                  publish(target);
+                  return;
+                }
+                insertFallback();
+              })
+              .catch((error) => {
+                inputRef.current?.ownerDocument.defaultView?.console?.error('粘贴附件上传失败，已回退为文件名文本。', error);
+                insertFallback();
+              })
+              .finally(() => { pasteRangeRef.current = null; });
+            return;
+          }
           event.preventDefault();
-          event.currentTarget.ownerDocument.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+          event.currentTarget.ownerDocument.execCommand('insertText', false, file ? file.name : event.clipboardData.getData('text/plain'));
           publish(event.currentTarget);
         }}
       />
@@ -370,20 +401,42 @@ function escapeAttribute(value) {
   return escapeText(value).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
-/** @param {HTMLDivElement} input @param {Element} node */
-function insertAtSelection(input, node) {
+/** @param {HTMLDivElement} input @param {Element | Text} node @param {Range | null} [insertRange] */
+function insertAtSelection(input, node, insertRange = null) {
   const selection = input.ownerDocument.getSelection();
-  if (!selection || selection.rangeCount === 0 || !selection.anchorNode || !input.contains(selection.anchorNode)) input.appendChild(node);
+  const currentRange = selection?.rangeCount && selection.anchorNode && input.contains(selection.anchorNode)
+    ? selection.getRangeAt(0).cloneRange()
+    : null;
+  const range = insertRange || currentRange;
+  if (!range || !input.contains(range.startContainer)) input.appendChild(node);
   else {
-    const range = selection.getRangeAt(0);
     range.deleteContents();
     range.insertNode(node);
     range.setStartAfter(node);
     range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
   }
   input.appendChild(input.ownerDocument.createElement('p')).appendChild(input.ownerDocument.createElement('br'));
+}
+
+/** @param {DataTransfer | null} clipboardData */
+function firstPastedFile(clipboardData) {
+  if (!clipboardData) return null;
+  const items = clipboardData.items;
+  for (let index = 0; items && index < items.length; index += 1) {
+    const item = items[index];
+    if (item?.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
+  }
+  const files = clipboardData.files;
+  for (let index = 0; files && index < files.length; index += 1) {
+    const file = files[index];
+    if (file) return file;
+  }
+  return null;
 }
 
 /** @param {HTMLDivElement} input @param {string} html */

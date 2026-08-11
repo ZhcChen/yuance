@@ -13,7 +13,7 @@ function fixture() {
     assertSender: (actual) => { calls.push(["sender", actual]); if (actual !== event) throw new Error("untrusted secret"); },
     getBinding: (_event, purpose) => ({ profileEpoch: 1, authorizationVersion: 2, webContentsId: 7, frameRoutingId: 11, purpose }),
     getWindow: () => ({ id: "window" }),
-    fileDialog: { choose: async (input) => { calls.push(["choose", input]); return { capability: `yfc_${"a".repeat(32)}`, filename: "canary.txt", contentType: "text/plain", byteSize: 34, privatePath: "/secret" }; } },
+    fileDialog: { choose: async (input) => { calls.push(["choose", input]); return { capability: `yfc_${"a".repeat(32)}`, filename: "canary.txt", contentType: "text/plain", byteSize: 34, privatePath: "/secret" }; }, selectPasted: async (input, binding) => { calls.push(["selectPasted", input, binding]); return { capability: `yfc_${"a".repeat(32)}`, filename: input.filename, contentType: input.contentType, byteSize: input.data.byteLength, privatePath: "/secret" }; } },
     issueTransferGrant: async (purpose, binding) => { calls.push(["grant", purpose, binding]); return `ytg_${purpose}`; },
     uploadExecutor: { execute: async (input) => { calls.push(["upload", input]); return { status: "completed", byteSize: 34, url: "https://secret" }; } },
     downloadExecutor: { execute: async (input) => { calls.push(["download", input]); return { status: "completed", byteSize: 34, filename: "canary.txt", path: "/secret" }; } },
@@ -45,6 +45,8 @@ test("file commands bind fixed intents and return only public fields", async () 
   const value = fixture();
   const capability = `yfc_${"a".repeat(32)}`;
   assert.deepEqual(await value.handlers.get(FILE_CHANNELS.choose)(value.event), { capability, filename: "canary.txt", contentType: "text/plain", byteSize: 34 });
+  const pasted = { filename: "clip.png", contentType: "image/png", data: new ArrayBuffer(4) };
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.selectPasted)(value.event, pasted), { capability, filename: "clip.png", contentType: "image/png", byteSize: 4 });
   assert.deepEqual(await value.handlers.get(FILE_CHANNELS.uploadCanary)(value.event, capability), { status: "completed", byteSize: 34 });
   assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadCanary)(value.event), { status: "completed", byteSize: 34, filename: "canary.txt" });
   assert.equal(JSON.stringify(value.calls).includes("/secret"), false);
@@ -64,6 +66,7 @@ test("file commands reject extensible payloads and invalid opaque IDs", async ()
   await assert.rejects(value.handlers.get(FILE_CHANNELS.choose)(value.event, {}), (error) => error.code === "file_unavailable");
   await assert.rejects(value.handlers.get(FILE_CHANNELS.downloadCanary)(value.event, {}), (error) => error.code === "file_unavailable");
   await assert.rejects(value.handlers.get(FILE_CHANNELS.uploadCanary)(value.event, "C:\\secret"), (error) => error.code === "file_capability_invalid");
+  await assert.rejects(value.handlers.get(FILE_CHANNELS.selectPasted)(value.event, { filename: "clip.png", contentType: "image/png", data: "secret" }), (error) => error.code === "file_unavailable");
   assert.equal(value.calls.some(([name]) => ["choose", "grant", "upload", "download"].includes(name)), false);
 });
 
