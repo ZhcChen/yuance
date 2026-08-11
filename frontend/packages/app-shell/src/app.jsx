@@ -5343,7 +5343,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
+      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -6074,7 +6074,7 @@ export function SharedApp({ services }) {
               <section className="panel work-list-panel">
               <div className="panel-head work-item-center-header">
                 <div>
-                  <h2 id="work-item-center-title">{route.title}列表</h2>
+                  <h2 id="work-item-center-title">{workItemTypeLabel(route.itemType)}列表</h2>
                   <p>当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}，支持按关键词、状态、优先级和处理人筛选。</p>
                 </div>
                 <div className="toolbar-actions">
@@ -6083,7 +6083,7 @@ export function SharedApp({ services }) {
               </div>
 
               {workItemPage ? <>
-                <div className="filter-shell"><div className="filter-shell-head"><strong>筛选条件</strong><span>组合条件可快速缩小当前项目中的{route.title}范围</span></div>
+                <div className="filter-shell"><div className="filter-shell-head"><strong>筛选条件</strong><span>组合条件可快速缩小当前项目中的{workItemTypeLabel(route.itemType)}范围</span></div>
 
               <form key={workItemPage ? JSON.stringify(workItemPage.filters) : route.id} className="work-item-filter-bar" onSubmit={submitWorkItemFilters}>
                 <label className="work-item-filter-field work-item-filter-keyword">

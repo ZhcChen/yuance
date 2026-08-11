@@ -27,7 +27,7 @@ test('session recovery shows the shared app shell skeleton before the app render
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
   await page.goto('/web/app/bugs');
-  await expect(page.getByRole('heading', { level: 1, name: '缺陷列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '缺陷列表' })).toBeVisible();
 
   await page.route('**/api/**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
