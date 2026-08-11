@@ -6079,6 +6079,67 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
         )
         .await
         .expect("router should respond");
+    let initial_item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(initial_item.cycle_id, Some(cycle_id));
+
+    let replacement_cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "API 更新周期".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: String::new(),
+            start_date: "2026-09-01".to_string(),
+            end_date: "2026-09-30".to_string(),
+        },
+    )
+    .await
+    .expect("replacement cycle should create");
+    let cycle_update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/work-items/{item_key}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"cycle_id":{}}}"#,
+                    replacement_cycle.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cycle_update_response.status(), StatusCode::OK);
+    let cycle_updated_item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(cycle_updated_item.cycle_id, Some(replacement_cycle.id));
+
+    let cycle_clear_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/work-items/{item_key}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"cycle_id":null}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cycle_clear_response.status(), StatusCode::OK);
+
     let comment_response = app
         .oneshot(
             Request::builder()
@@ -6114,7 +6175,7 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
     assert_eq!(item.priority, "P1");
     assert_eq!(item.assignee_username, "admin");
     assert_eq!(item.due_date, "2026-07-20");
-    assert_eq!(item.cycle_id, Some(cycle_id));
+    assert_eq!(item.cycle_id, None);
     let linked_activity_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM project_activities WHERE action = 'work_item.cycle.linked' AND target_id = ?1",
     )

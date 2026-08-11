@@ -371,6 +371,9 @@ test('updateWorkItem uses injected transport and JSON payload without CSRF logic
     title: '更新标题',
     priority: 'p1',
   });
+
+  await client.updateWorkItem('YCE-TASK/2', { cycleId: null });
+  assert.deepEqual(JSON.parse(String(calls[1].options.body)), { cycle_id: null });
 });
 
 test('createProject uses the shared write contract', async () => {

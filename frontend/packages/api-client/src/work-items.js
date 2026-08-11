@@ -12,7 +12,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
 /** @typedef {{ method: string, url: string, headers: Array<[string, string]> }} SignedObjectRequest */
 /** @typedef {{ attachment: Attachment, request: SignedObjectRequest, expires_in_seconds: number, checksum_sha256?: string }} AttachmentSignedUrl */
 /** @typedef {{ attachment: Attachment, preview: { kind: 'image' | 'video' | 'document' | null, strategy: string | null, file_type: string | null, kind_label: string | null, is_experimental: boolean, legacy_preview_enabled: boolean, content_enabled: boolean }, navigation: { position: number, total: number, previous: { id: number, title: string, url: string } | null, next: { id: number, title: string, url: string } | null }, content_url: string, download_url: string }} AttachmentPreview */
-/** @typedef {{ title?: string, description?: string, status?: string, priority?: string, assigneeUsername?: string, dueDate?: string, parentItemKey?: string }} WorkItemUpdatePayload */
+/** @typedef {{ title?: string, description?: string, status?: string, priority?: string, assigneeUsername?: string, dueDate?: string, parentItemKey?: string, cycleId?: number | null }} WorkItemUpdatePayload */
 /** @typedef {{ projectKey: string, itemType: string, title: string, description?: string, priority?: string, assigneeUsername?: string, cycleId?: number | null, dueDate?: string, parentItemKey?: string }} WorkItemCreatePayload */
 /** @typedef {{ projectKey: string, itemType: string, itemKeys: string[], action: 'assignee' | 'status' | 'priority' | 'cycle', status?: string, assigneeUsername?: string, priority?: string, cycleId?: number | null }} WorkItemBatchUpdatePayload */
 /** @typedef {{ updated_count: number, updated_item_keys: string[], failed_count: number, failed_items: { item_key: string, code: string, message: string }[] }} WorkItemBatchUpdateResult */
@@ -373,6 +373,7 @@ export function createWorkItemClient({ request, prepareWrite }) {
           assignee_username: payload.assigneeUsername,
           due_date: payload.dueDate,
           parent_item_key: payload.parentItemKey,
+          cycle_id: payload.cycleId,
         })),
       });
     },
