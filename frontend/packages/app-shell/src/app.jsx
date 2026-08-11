@@ -1,5 +1,5 @@
 // @ts-check
-/* global FormData, URL, clearInterval, clearTimeout, setInterval, setTimeout */
+/* global FormData, URL, btoa, clearInterval, clearTimeout, setInterval, setTimeout */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -80,6 +80,7 @@ import { createApiErrorWrappingProxy } from './api-proxy.js';
 
 /** @typedef {ReturnType<typeof import('@yuance/frontend-api-client').createApiClient> & { restorePendingReturnToHash(): void }} AppApiService */
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} AppRichTextAttachmentOption */
+/** @typedef {import('@yuance/frontend-platform-contract').SelectedFile & { tempId: number, previewUrl: string }} WorkItemCreatePendingPaste */
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities, releaseAssets?: import('@yuance/frontend-platform-contract').HostDelegatedReleaseAssetCapabilities, selectPastedFile?: (file: import('@yuance/frontend-platform-contract').PastedFile) => Promise<import('@yuance/frontend-platform-contract').SelectedFile | null> }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
@@ -844,6 +845,7 @@ export function SharedApp({ services }) {
   const workItemTypingClientIdRef = useRef('');
   const workItemBatchMutationRef = useRef(false);
   const workItemCreateAttachmentMutationRef = useRef(false);
+  const workItemCreatePasteTempIdRef = useRef(0);
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
   const [shellReady, setShellReady] = useState(false);
@@ -992,7 +994,7 @@ export function SharedApp({ services }) {
   const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
   const [workItemCreateError, setWorkItemCreateError] = useState('');
   const [workItemCreatePasteHint, setWorkItemCreatePasteHint] = useState('');
-  const [workItemCreatePendingPastes, setWorkItemCreatePendingPastes] = useState(/** @type {Array<import('@yuance/frontend-platform-contract').SelectedFile>} */ ([]));
+  const [workItemCreatePendingPastes, setWorkItemCreatePendingPastes] = useState(/** @type {WorkItemCreatePendingPaste[]} */ ([]));
   const [workItemCreateForm, setWorkItemCreateForm] = useState({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
   const [workItemCreateCheckpoint, setWorkItemCreateCheckpoint] = useState(/** @type {{ item: AppWorkItemDetail, primaryPostId: number | null } | null} */ (null));
   const [workItemCreatePasteUploading, setWorkItemCreatePasteUploading] = useState(false);
@@ -4765,6 +4767,7 @@ export function SharedApp({ services }) {
     setWorkItemCreateError('');
     setWorkItemCreatePasteHint('');
     setWorkItemCreatePendingPastes([]);
+    workItemCreatePasteTempIdRef.current = 0;
     setWorkItemCreateCheckpoint(null);
     setWorkItemCreatePasteUploading(false);
     setWorkItemCreateAttachmentStatus('');
@@ -4798,7 +4801,7 @@ export function SharedApp({ services }) {
       projectKey: currentProject.key,
       itemType,
       title: workItemCreateForm.title.trim(),
-      description: richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '',
+      description: richTextHasContent(workItemCreateForm.description) ? workItemCreateBackendBody(workItemCreateForm.description) : '',
       priority: workItemCreateForm.priority,
       assigneeUsername: workItemCreateForm.assigneeUsername,
       cycleId: Number.parseInt(workItemCreateForm.cycleId, 10) || null,
@@ -4822,11 +4825,37 @@ export function SharedApp({ services }) {
   async function ensureWorkItemCreatePrimaryPost(checkpoint) {
     if (checkpoint.primaryPostId) return checkpoint.primaryPostId;
     // 附件必须挂在已存在的主帖下；标题为空时先写入占位正文，上传成功后随即替换为图片 HTML。
-    const body = richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '<p>图片上传中…</p>';
+    const body = workItemCreateBackendBody(workItemCreateForm.description);
     const primaryPost = await api.updateWorkItemPrimaryPost(checkpoint.item.key, body);
     const next = { ...checkpoint, primaryPostId: primaryPost.id };
     setWorkItemCreateCheckpoint(next);
     return primaryPost.id;
+  }
+
+  /** @param {string} description @returns {string} 临时本地图片不能提交后端，先替换为占位正文。 */
+  function workItemCreateBackendBody(description) {
+    let body = description;
+    for (const entry of workItemCreatePendingPastes) {
+      if (!entry.tempId) continue;
+      body = body.replace(workItemCreateTempNodePattern(entry.tempId), '<p>图片上传中…</p>');
+    }
+    return richTextHasContent(body) ? body : '<p>图片上传中…</p>';
+  }
+
+  /** @param {import('@yuance/frontend-platform-contract').PastedFile} file @param {string} contentType */
+  async function pastedFileDataUrl(file, contentType) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    }
+    return `data:${contentType || 'application/octet-stream'};base64,${btoa(binary)}`;
+  }
+
+  /** @param {number} tempId */
+  function workItemCreateTempNodePattern(tempId) {
+    return new RegExp(`<(?:figure|a)\\b[^>]*\\bdata-yuance-attachment-id="${tempId}"[^>]*>.*?<\\/(?:figure|a)>`, 'is');
   }
 
   /** @param {import('@yuance/frontend-platform-contract').PastedFile} file @returns {Promise<AppRichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE>} */
@@ -4848,10 +4877,29 @@ export function SharedApp({ services }) {
       return DEFER_RICH_TEXT_PASTE;
     }
     if (!workItemCreateForm.title.trim()) {
-      setWorkItemCreatePendingPastes((current) => [...current, selected]);
-      setWorkItemCreatePasteHint(`已暂存 ${workItemCreatePendingPastes.length + 1} 个图片，填写标题后将自动上传。`);
+      if (!selected.contentType.startsWith('image/')) {
+        setWorkItemCreatePendingPastes((current) => [...current, { ...selected, tempId: 0, previewUrl: '' }]);
+        setWorkItemCreatePasteHint(`已暂存 ${workItemCreatePendingPastes.length + 1} 个文件，填写标题后将自动上传。`);
+        runtime.getElementById('work-item-create-title')?.focus();
+        return DEFER_RICH_TEXT_PASTE;
+      }
+      let previewUrl;
+      try { previewUrl = await pastedFileDataUrl(file, selected.contentType); }
+      catch (caught) {
+        setWorkItemCreateError(errorMessage(caught instanceof Error ? caught : new Error('读取剪贴板图片失败。')));
+        return DEFER_RICH_TEXT_PASTE;
+      }
+      const tempId = -(++workItemCreatePasteTempIdRef.current);
+      const entry = /** @type {WorkItemCreatePendingPaste} */ ({ ...selected, tempId, previewUrl });
+      setWorkItemCreatePendingPastes((current) => [...current, entry]);
+      setWorkItemCreatePasteHint(`图片已加入正文，填写标题后将自动上传。`);
       runtime.getElementById('work-item-create-title')?.focus();
-      return DEFER_RICH_TEXT_PASTE;
+      return {
+        id: entry.tempId,
+        filename: entry.filename,
+        contentType: entry.contentType,
+        url: entry.previewUrl,
+      };
     }
     setWorkItemCreatePasteHint('');
     workItemCreateAttachmentMutationRef.current = true;
@@ -4921,13 +4969,17 @@ export function SharedApp({ services }) {
       let checkpoint = workItemCreateCheckpoint;
       if (!checkpoint) checkpoint = await ensureWorkItemCreateCheckpoint();
       const primaryPostId = await ensureWorkItemCreatePrimaryPost(checkpoint);
-      for (const selected of pending) {
+      for (const entry of pending) {
+        if (entry.tempId && !description.includes(`data-yuance-attachment-id="${entry.tempId}"`)) {
+          processed.push(entry);
+          continue;
+        }
         const result = await uploadWorkItemCommentAttachment({
           api,
           platform: files,
           itemKey: checkpoint.item.key,
           commentId: primaryPostId,
-          file: selected,
+          file: entry,
           lifecycle: {
             isCurrent: () => workItemCreateOpen && !workItemCreateSubmitting,
             onStage: (stage) => {
@@ -4937,7 +4989,7 @@ export function SharedApp({ services }) {
                 uploading: '正在上传到对象存储',
                 confirming: '正在确认上传结果',
               };
-              setWorkItemCreateAttachmentStatus(`${selected.filename} ${labels[stage]}`);
+              setWorkItemCreateAttachmentStatus(`${entry.filename} ${labels[stage]}`);
             },
             onCreated: () => {},
             onUploaded: () => {},
@@ -4948,17 +5000,20 @@ export function SharedApp({ services }) {
           throw new Error('粘贴文件上传未完成，请重试。');
         }
         const attachmentOption = workItemCommentAttachmentOption(checkpoint.item.key, primaryPostId, result.uploaded);
-        description += richTextAttachmentHtml({
+        const realHtml = richTextAttachmentHtml({
           id: result.uploaded.id,
           filename: result.uploaded.filename,
           contentType: result.uploaded.content_type,
           url: attachmentOption.url,
         });
+        description = entry.tempId
+          ? description.replace(workItemCreateTempNodePattern(entry.tempId), realHtml)
+          : `${description}${realHtml}`;
         await api.updateWorkItemPrimaryPost(checkpoint.item.key, description);
-        processed.push(selected);
+        processed.push(entry);
         setWorkItemCreatePendingPastes((current) => current.filter((entry) => !processed.includes(entry)));
         setWorkItemCreateForm((current) => ({ ...current, description }));
-        setWorkItemCreateAttachmentStatus(`${selected.filename} 上传完成。`);
+        setWorkItemCreateAttachmentStatus(`${entry.filename} 上传完成。`);
       }
       setWorkItemCreateCheckpoint({ ...checkpoint, primaryPostId });
       setWorkItemCreateAttachmentStatus('');
@@ -5010,13 +5065,17 @@ export function SharedApp({ services }) {
         const primaryPostId = await ensureWorkItemCreatePrimaryPost(checkpoint);
         const processed = [];
         try {
-          for (const selected of pendingPastes) {
+          for (const entry of pendingPastes) {
+            if (entry.tempId && !description.includes(`data-yuance-attachment-id="${entry.tempId}"`)) {
+              processed.push(entry);
+              continue;
+            }
             const result = await uploadWorkItemCommentAttachment({
               api,
               platform: files,
               itemKey: checkpoint.item.key,
               commentId: primaryPostId,
-              file: selected,
+              file: entry,
               lifecycle: {
                 isCurrent: () => workItemCreateOpen && workItemCreateSubmitting,
                 onStage: (stage) => {
@@ -5026,7 +5085,7 @@ export function SharedApp({ services }) {
                     uploading: '正在上传到对象存储',
                     confirming: '正在确认上传结果',
                   };
-                  setWorkItemCreateAttachmentStatus(`${selected.filename} ${labels[stage]}`);
+                  setWorkItemCreateAttachmentStatus(`${entry.filename} ${labels[stage]}`);
                 },
                 onCreated: () => {},
                 onUploaded: () => {},
@@ -5037,17 +5096,20 @@ export function SharedApp({ services }) {
               throw new Error('粘贴文件上传未完成，请重试。');
             }
             const attachmentOption = workItemCommentAttachmentOption(checkpoint.item.key, primaryPostId, result.uploaded);
-            description += richTextAttachmentHtml({
+            const realHtml = richTextAttachmentHtml({
               id: result.uploaded.id,
               filename: result.uploaded.filename,
               contentType: result.uploaded.content_type,
               url: attachmentOption.url,
             });
+            description = entry.tempId
+              ? description.replace(workItemCreateTempNodePattern(entry.tempId), realHtml)
+              : `${description}${realHtml}`;
             await api.updateWorkItemPrimaryPost(checkpoint.item.key, description);
-            processed.push(selected);
+            processed.push(entry);
             setWorkItemCreatePendingPastes((current) => current.filter((entry) => !processed.includes(entry)));
             setWorkItemCreateForm((current) => ({ ...current, description }));
-            setWorkItemCreateAttachmentStatus(`${selected.filename} 上传完成。`);
+            setWorkItemCreateAttachmentStatus(`${entry.filename} 上传完成。`);
           }
         } catch (caught) {
           setWorkItemCreatePendingPastes((current) => current.filter((entry) => !processed.includes(entry)));
@@ -6126,7 +6188,7 @@ export function SharedApp({ services }) {
                     <Field id="work-item-create-due-date" label="截止日期"><input id="work-item-create-due-date" type="date" value={workItemCreateForm.dueDate} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, dueDate: event.target.value }))} /></Field>
                     <Field id="work-item-create-assignee" label="处理人"><select id="work-item-create-assignee" value={workItemCreateForm.assigneeUsername} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, assigneeUsername: event.target.value }))}><option value="">默认指派给我</option>{(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</select></Field>
                     {route.itemType === 'task' ? <Field id="work-item-create-parent" label="父级需求"><select id="work-item-create-parent" value={workItemCreateForm.parentItemKey} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, parentItemKey: event.target.value }))}><option value="">不关联</option>{(workItemPage?.parent_options || []).map((item) => <option key={item.key} value={item.key}>{item.key} · {item.title}</option>)}</select></Field> : null}
-                    <Field id="work-item-create-title" label="标题" required><input id="work-item-create-title" maxLength={160} value={workItemCreateForm.title} disabled={workItemCreateSubmitting} autoFocus onChange={(event) => { setWorkItemCreateForm((current) => ({ ...current, title: event.target.value })); if (event.target.value.trim() && workItemCreatePendingPastes.length) setWorkItemCreatePasteHint(`已暂存 ${workItemCreatePendingPastes.length} 个图片，正在自动上传…`); }} /></Field>
+                    <Field id="work-item-create-title" label="标题" required><input id="work-item-create-title" maxLength={160} value={workItemCreateForm.title} disabled={workItemCreateSubmitting} autoFocus onChange={(event) => { setWorkItemCreateForm((current) => ({ ...current, title: event.target.value })); if (event.target.value.trim() && workItemCreatePendingPastes.length) setWorkItemCreatePasteHint(`正在自动上传 ${workItemCreatePendingPastes.length} 个图片…`); }} /></Field>
                   </div>
                   <div className="yc-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} label="说明内容" onPasteFile={pasteWorkItemCreateFile} onChange={(description) => setWorkItemCreateForm((current) => ({ ...current, description }))} /></div>
                   {workItemCreateAttachmentStatus ? <p className="work-item-attachment-status" role="status">{workItemCreateAttachmentStatus}</p> : null}
