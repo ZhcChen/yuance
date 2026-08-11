@@ -1,4 +1,4 @@
-.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review
+.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review crg.guard
 
 CRG_VERSION ?= 2.3.7
 CRG := uvx --from code-review-graph==$(CRG_VERSION) code-review-graph
@@ -36,6 +36,7 @@ help:
 	@echo "  make crg.update"
 	@echo "  make crg.status"
 	@echo "  make crg.review BASE=<git-ref>"
+	@echo "  make crg.guard"
 
 frontend-check:
 	npm run check:frontend
@@ -133,3 +134,6 @@ crg.review: ## 手工审查当前改动影响（可传 BASE=<git-ref>，默认 H
 	@$(call require_cmd,uvx)
 	@echo "[crg] 审查基线: $(CRG_BASE)"
 	@$(CRG) detect-changes --repo "$(CURDIR)" --base "$(CRG_BASE)" --brief
+
+crg.guard: ## 守护 CRG 受控边界（独立手工目标，不进入默认链）
+	@node scripts/assert-crg-guard.mjs
