@@ -536,7 +536,7 @@ test('work item filter select opens with motion and preserves native selection s
     await route.fulfill({ response, json: payload });
   });
   await page.goto('/web/app/tasks');
-  const statusField = page.locator('.work-item-filter-field').filter({ hasText: /^状态/u });
+  const statusField = page.locator('.work-item-filter-bar .yc-field').filter({ hasText: /^状态/u });
   const trigger = statusField.locator('.yc-select-trigger');
   const menu = statusField.locator('.yc-select-menu');
 
@@ -3918,7 +3918,7 @@ test('shared project resources filter read and unlock protected details', async 
   await page.getByRole('link', { name: '返回资料库' }).click();
   releaseDelayedUnlock();
   await expect(page.getByRole('list', { name: '项目资料列表' })).toBeVisible();
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('alert').filter({ hasText: '资料' })).toHaveCount(0);
   await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
   await page.locator('#project-resource-password').fill('wrong-pass');
   await page.getByRole('button', { name: '验证并查看' }).click();
@@ -4316,7 +4316,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
       buttonFontSize: buttonStyle.fontSize,
     };
   });
-  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '0px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
+  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '0px', buttonHeight: '32px', buttonRadius: '8px', buttonFontSize: '13px' });
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 

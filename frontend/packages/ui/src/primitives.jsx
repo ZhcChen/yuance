@@ -3,9 +3,20 @@
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
-/** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
-export function Button({ children, variant = 'primary', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
-  return <button className={`yc-button yc-button-${variant}`} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
+/** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', size?: 'md' | 'sm', className?: string, loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
+export function Button({ children, variant = 'primary', size = 'md', className = '', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
+  const buttonClass = ['yc-button', `yc-button-${variant}`, size === 'sm' ? 'yc-button-sm' : '', className].filter(Boolean).join(' ');
+  return <button className={buttonClass} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
+}
+
+/** @param {React.InputHTMLAttributes<HTMLInputElement> & { className?: string }} props */
+export function TextInput({ className = '', ...inputProps }) {
+  return <input className={`yc-text-input${className ? ` ${className}` : ''}`} {...inputProps} />;
+}
+
+/** @param {React.TextareaHTMLAttributes<HTMLTextAreaElement> & { className?: string }} props */
+export function TextArea({ className = '', rows = 5, ...textareaProps }) {
+  return <textarea className={`yc-textarea${className ? ` ${className}` : ''}`} rows={rows} {...textareaProps} />;
 }
 
 /** @param {React.ReactNode} children @returns {React.ReactElement[]} */
@@ -122,6 +133,21 @@ export function Field({ id, label, hint, error, required = false, children }) {
       {hint || error ? <p id={descriptionId} role={error ? 'alert' : undefined}>{error || hint}</p> : null}
     </div>
   );
+}
+
+/** @param {{ children?: React.ReactNode, actions?: React.ReactNode, className?: string, ariaLabel?: string, role?: string, onSubmit?: React.FormEventHandler<HTMLFormElement> }} props */
+export function FilterBar({ children, actions, className = '', ariaLabel, role, onSubmit }) {
+  return (
+    <form className={`yc-filter-bar${className ? ` ${className}` : ''}`} aria-label={ariaLabel} role={role} onSubmit={onSubmit}>
+      {children}
+      {actions ? <div className="yc-filter-actions">{actions}</div> : null}
+    </form>
+  );
+}
+
+/** @param {{ id: string, label: string, hint?: string, error?: string, required?: boolean, children?: React.ReactElement }} props */
+export function FilterField({ id, label, hint, error, required = false, children }) {
+  return <Field id={id} label={label} hint={hint} error={error} required={required}>{children}</Field>;
 }
 
 /** @param {{ tone?: 'info' | 'success' | 'warning' | 'danger', title: string, children?: React.ReactNode, action?: React.ReactNode }} props */

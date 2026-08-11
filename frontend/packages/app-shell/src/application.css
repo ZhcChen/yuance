@@ -293,7 +293,7 @@ button:disabled {
 
 .system-permissions-panel { overflow: hidden; padding: 0; }
 .system-permissions-panel > .shell-panel-header { padding: 16px; margin: 0; }
-.system-permissions-panel > .shell-filters { margin: 0 16px 16px; }
+.system-permissions-panel > .yc-filter-bar { margin: 0 16px 16px; }
 .permission-tree { display: grid; gap: 12px; padding: 16px; }
 .permission-group { overflow: hidden; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-panel); }
 .permission-group-head { padding: 12px 14px; border-bottom: 1px solid var(--yc-line); background: var(--yc-table-head); }
@@ -491,7 +491,6 @@ button:disabled {
 .dashboard-status-ok { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .dashboard-status-warning { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
 .dashboard-status-danger { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
-.dashboard-view-button { min-height: var(--yc-control-height-sm); height: var(--yc-control-height-sm); padding: 0 9px; font-size: 12px; }
 .dashboard-table-empty { color: var(--yc-muted); text-align: center !important; }
 .inspector-panel { padding-bottom: 6px; }
 .discussion-reminder-list { display: grid; border: 1px solid var(--yc-line); border-radius: 12px; overflow: hidden; background: var(--yc-panel); }
@@ -957,43 +956,6 @@ html[data-theme="dark"] .shell-code-block {
   padding: 14px 16px 16px;
 }
 
-.work-item-filter-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: #475569;
-  font-size: 13px;
-}
-
-.work-item-filter-field input {
-  height: 32px;
-  min-height: 32px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 0 10px;
-  font-size: 13px;
-  line-height: 20px;
-}
-.work-item-filter-field .yc-select {
-  height: 32px;
-  font-size: 13px;
-}
-
-.work-item-filter-actions {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
-
-.work-item-filter-actions .yc-button {
-  height: 32px;
-  min-height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-}
-
 .work-item-list-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .work-list-panel { min-width: 0; overflow: visible; }
 .work-item-list-empty { min-height: 176px; align-content: center; border-top: 1px solid var(--yc-line); background: var(--yc-panel); }
@@ -1087,15 +1049,38 @@ html[data-theme="dark"] .shell-code-block {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  color: #475569;
+  color: var(--yc-muted-strong);
+  font-size: var(--yc-control-font-size);
 }
 
 .page-size-control select {
-  min-height: 36px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
+  min-height: var(--yc-control-height);
+  height: var(--yc-control-height);
+  border: 1px solid var(--yc-line-strong);
+  border-radius: var(--yc-control-radius);
+  background: var(--yc-panel);
+  color: var(--yc-text);
   padding: 0 10px;
+  font-size: var(--yc-control-font-size);
+}
+
+.shell-page-size {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--yc-muted);
+  font-size: 12px;
+}
+
+.shell-page-size select {
+  min-height: var(--yc-control-height);
+  height: var(--yc-control-height);
+  border: 1px solid var(--yc-line-strong);
+  border-radius: var(--yc-control-radius);
+  background: var(--yc-panel);
+  color: var(--yc-text);
+  padding: 0 10px;
+  font-size: var(--yc-control-font-size);
 }
 
 .personal-analysis-page { max-width: 1380px; margin: 0 auto; }
@@ -1129,7 +1114,7 @@ html[data-theme="dark"] .shell-code-block {
   .project-row,
   .project-actions,
   .work-item-row,
-  .work-item-filter-actions {
+  .yc-filter-actions {
     flex-direction: column;
     align-items: stretch;
   }
@@ -1190,14 +1175,12 @@ html[data-theme="dark"] .shell-meta,
 html[data-theme="dark"] .shell-empty,
 html[data-theme="dark"] .shell-copy,
 html[data-theme="dark"] .app-topbar-meta,
-html[data-theme="dark"] .work-item-filter-field,
 html[data-theme="dark"] .page-size-control {
   color: var(--yc-muted);
 }
 
-html[data-theme="dark"] .work-item-filter-field input,
-html[data-theme="dark"] .work-item-filter-field .yc-select-trigger,
 html[data-theme="dark"] .page-size-control select,
+html[data-theme="dark"] .shell-page-size select,
 html[data-theme="dark"] .project-stats div {
   border-color: var(--yc-line);
   background: var(--yc-panel-soft);

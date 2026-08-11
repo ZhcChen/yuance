@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, Modal, Pagination, Select, Skeleton } from '@yuance/frontend-ui';
+import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, Pagination, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
@@ -12,6 +12,23 @@ test('button exposes loading and disabled semantics', () => {
   assert.match(html, /aria-busy="true"/u);
   assert.match(html, /form="editor"/u);
   assert.match(html, /处理中/u);
+});
+
+test('button supports compact size and extra classes', () => {
+  const html = renderToStaticMarkup(createElement(Button, { size: 'sm', className: 'row-action', onClick() {} }, '打开'));
+  assert.match(html, /class="yc-button yc-button-primary yc-button-sm row-action"/u);
+});
+
+test('text input and textarea keep native form semantics', () => {
+  const input = renderToStaticMarkup(createElement(TextInput, { name: 'q', defaultValue: 'bug', placeholder: '搜索' }));
+  assert.match(input, /class="yc-text-input"/u);
+  assert.match(input, /name="q"/u);
+  assert.match(input, /value="bug"/u);
+  const textarea = renderToStaticMarkup(createElement(TextArea, { name: 'notes', rows: 4, defaultValue: '说明' }));
+  assert.match(textarea, /class="yc-textarea"/u);
+  assert.match(textarea, /name="notes"/u);
+  assert.match(textarea, /rows="4"/u);
+  assert.match(textarea, /说明/u);
 });
 
 test('error toast exposes an assertive, dismissible global failure notice', () => {
@@ -44,6 +61,18 @@ test('select preserves native form semantics inside the shared control', () => {
     createElement(Select, null, createElement('option', { value: '' }, '请选择'))));
   assert.match(fieldHtml, /<select[^>]*id="priority-native"[^>]*required=""/u);
   assert.match(fieldHtml, /<button id="priority"[^>]*aria-describedby="priority-description" aria-invalid="true"/u);
+});
+
+test('filter bar and filter field compose compact filter forms', () => {
+  const html = renderToStaticMarkup(createElement(FilterBar, { ariaLabel: '筛选工作项', actions: createElement(Button, { type: 'submit' }, '筛选') },
+    createElement(FilterField, { id: 'keyword', label: '关键词' }, createElement(TextInput, { name: 'q' }))));
+  assert.match(html, /<form class="yc-filter-bar"/u);
+  assert.match(html, /aria-label="筛选工作项"/u);
+  assert.match(html, /class="yc-filter-actions"/u);
+  assert.match(html, /for="keyword"/u);
+  assert.match(html, /id="keyword"/u);
+  assert.match(html, /class="yc-text-input"/u);
+  assert.match(html, /筛选/u);
 });
 
 test('feedback and modal expose bounded semantic states', () => {

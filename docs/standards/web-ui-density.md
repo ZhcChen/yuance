@@ -1,47 +1,62 @@
 ---
-title: Web UI 密度与交互规范
+title: Web UI 组件与密度规范
 type: standard
 status: active
-date: 2026-06-26
+date: 2026-08-11
 ---
 
-# Web UI 密度与交互规范
+# Web UI 组件与密度规范
 
-## 页面原则
+## 架构
 
-- 元策是企业项目管理系统，页面优先服务高频操作和信息扫描。
-- 使用 `/web` 统一入口；系统管理作为权限菜单嵌入，不做独立后台。
-- 完整页面用 Askama 模板，局部刷新使用 htmx partial。
-- 不引入独立前端工程、React、Vue、Tailwind 或 Ant Design。
+- Web 与 Desktop 共用同一套 React 共享前端：
+  - `frontend/packages/ui`：基础组件与设计 token（`styles.css`）。
+  - `frontend/packages/app-shell`：页面组合、路由与业务表单。
+  - `frontend/packages/app-core`：路由、契约与用例。
+- 顶部导航栏（`.global-nav*`）按独立设计维护，不受本规范的表单密度约束。
 
-## 视觉约定
+## 设计 token
 
-- 保持高密度、低噪声、偏研发协作工具的视觉语言。
-- 主内容区优先使用 panel、data-table、metric、status 等现有样式。
-- 状态展示使用英文状态值到中文标签的 view model 映射。
-- 页面展示不得直接暴露内部枚举码：工作项优先级 `P0/P1/P2/P3` 展示为 `紧急/高/中/低`，附件状态 `pending/uploaded/deleted` 展示为 `待上传/已上传/已归档`，项目成员角色展示为 `项目负责人/项目管理员/项目成员/只读成员`；表单 value 和 API 契约仍保留稳定英文或代码枚举。
-- 项目 owner 统一叫“项目负责人”；工作项 assignee 统一叫“处理人”，避免和项目负责人混淆。
-- 表单字段保持两列栅格；复杂配置页可使用主表单 + 侧栏说明。
-- 宽屏详情摘要不要使用“单列字段 + 大面积空白”的布局；3 项及以上配置摘要优先使用 `config-summary-grid` 这类自适应栅格，让字段在 panel 内均衡铺开。
-- 详情摘要字段应统一由 `dt` 承载短标签、`dd` 承载值，值内容需要支持 `overflow-wrap: anywhere`，避免 endpoint、key hint、文件名等长文本撑破容器。
-- panel 内信息分隔优先使用浅色分隔线或 1px gap，不额外增加重边框；卡片仍保持无框边 + 阴影的主视觉。
+```css
+--yc-control-height: 32px;
+--yc-control-height-sm: 32px;
+--yc-control-radius: 8px;
+--yc-control-font-size: 13px;
+```
 
-## 交互约定
+- 表单控件、按钮、下拉框统一使用紧凑密度：控件高度 32px、字体 13px。
+- 颜色、边框、焦点态必须引用 `--yc-*` 变量，保证亮暗主题自动切换。
+- 不在业务页面硬编码 `#fff`、`#cbd5e1` 等固定色值。
 
-- 普通表单 POST 必须带隐藏 `_csrf`。
-- htmx POST 必须由 `app.js` 注入 `x-yuance-csrf-token`。
-- 写操作成功后优先返回 redirect 或完整页面。
-- Web 表单和弹窗错误不得把页面直接导航到 JSON；前端应拦截 JSON 错误并用会自动消失的 Toast 或局部错误区提示。
-- 创建、编辑、配置、重置、添加成员、登记附件、发表评论等写操作表单默认使用统一 modal 承载，页面主体优先展示列表、详情和上下文信息。
-- 登录、首次初始化、搜索、列表筛选、权限树授权等页面主任务或主控件可以保留页面内表单。
-- modal 统一使用 `data-modal-open`、`data-modal`、`data-modal-close` 约定，保留原 POST action、CSRF 和后端权限校验，不为弹窗另建业务绕路。
-- 高风险启停、移除、删除、回滚等动作必须通过统一确认 modal 二次确认；按钮可以保留在行内，但表单需要接入 `data-confirm-submit-form`。
+## 基础组件
 
-## 权限约定
+`frontend/packages/ui` 提供以下共享组件：
 
-- 菜单隐藏只做体验优化，不作为安全边界。
-- 每个系统页面和写操作 handler 必须调用具体权限点。
-- 普通用户直接访问系统 URL 应返回 403 或重定向登录。
-- 工作项创建、更新、推进、评论和工作项 / 评论附件写入采用“`work_item.view` 功能入口 + 项目内容写入权限”口径；不要再用系统级 `work_item.manage` 阻断普通项目成员提交 Bug、需求或任务。
-- `work_item.manage` 保留给历史工作项恢复、项目附件 / 文件夹维护等更偏系统维护或高风险动作；工作项、评论和讨论附件不提供删除入口。无论是否具备 RBAC 权限，项目 `viewer` 和非成员都不能写入项目内容。
-- 流程记录属于系统生成评论，页面和 API 都不能提供编辑、删除或添加附件入口。
+- `Button`：`variant` 支持 `primary / secondary / danger / ghost`；`size="sm"` 用于行内密集操作。
+- `TextInput`：统一文本输入，直接用于 `Field` 或 `FilterField`。
+- `TextArea`：统一多行文本输入。
+- `Select`：原生表单语义 + 自定义下拉视觉，列表筛选下拉统一使用；Modal 表单原生 `select` 由 `Field` 样式统一收敛。
+- `Field`：标签、提示、错误与必填语义。
+- `FilterBar` / `FilterField`：列表筛选条组合。
+- `Modal`、`DataTable`、`Pagination`、`Badge`、`Feedback`、`Skeleton`、`ContentTabs`：页面级共享原语。
+
+## 表单约定
+
+- 创建、编辑、配置、重置等写操作默认放在统一 `Modal` 中；搜索与列表筛选保留页面内表单。
+- 表单字段使用 `Field`，文本子控件使用 `TextInput` / `TextArea`；列表筛选下拉使用 `Select`，Modal 表单原生 `select` 保持真实原生语义并共享紧凑样式。
+- 字段标签使用 13px、700 权重；提示和错误信息使用 12px。
+- 表单控件聚焦态统一使用品牌色边框 + 3px 光晕。
+- 弹窗表单按业务字段分组排列，不强制固定两列；复杂配置页可使用主表单 + 侧栏说明。
+
+## 列表筛选约定
+
+- 列表、搜索、系统筛选表单统一使用 `FilterBar`，字段统一使用 `FilterField`，操作按钮放在 `actions` 中。
+- 默认栅格为 `repeat(auto-fit, minmax(180px, 1fr))`，页面可按 `className` 覆盖列数，例如工作项筛选的 7 列栅格。
+- 筛选按钮与重置按钮使用共享 `Button`，自动获得紧凑密度。
+- 分页每页数量等原生 `select` 使用 `.shell-page-size` 或 `.page-size-control`，与表单控件保持 32px / 13px。
+
+## 主题与可访问性
+
+- 所有表单控件必须保留原生语义：真实 `input`、`textarea`、`select` 必须存在，禁用态、必填态和错误态同步到可访问属性。
+- 筛选区提供可读的 `aria-label`；字段使用 `label` 与 `htmlFor` 绑定。
+- 明暗主题只通过 `html[data-theme="dark"]` 切换变量，不复制一套业务样式。
