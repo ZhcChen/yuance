@@ -424,6 +424,7 @@ pub struct UpdateWorkItemInput {
     pub assignee_username: String,
     pub due_date: String,
     pub parent_item_key: String,
+    pub cycle_id: Option<i64>,
     pub actor_display_name_snapshot: String,
 }
 
@@ -4725,7 +4726,20 @@ pub async fn update_work_item(
         current_status,
         current_assignee_user_id,
         reporter_user_id,
-    )) = sqlx::query_as::<_, (i64, i64, String, String, String, Option<i64>, Option<i64>)>(
+        current_cycle_id,
+    )) = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            String,
+            String,
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        ),
+    >(
         r#"
         SELECT
             wi.id,
@@ -4734,7 +4748,8 @@ pub async fn update_work_item(
             wi.item_type,
             wi.status,
             wi.assignee_user_id,
-            wi.reporter_user_id
+            wi.reporter_user_id,
+            wi.cycle_id
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
         WHERE wi.item_key = ?1
@@ -4767,6 +4782,13 @@ pub async fn update_work_item(
     } else {
         Some(resolve_project_member_user_id(pool, project_id, assignee_username).await?)
     };
+    let cycle = resolve_project_cycle(pool, project_id, input.cycle_id).await?;
+    let cycle_id = cycle.as_ref().map(|(cycle_id, _)| *cycle_id);
+    let cycle_name = cycle
+        .as_ref()
+        .map(|(_, name)| name.clone())
+        .unwrap_or_default();
+    let cycle_changed = current_cycle_id != cycle_id;
 
     let mut tx = pool.begin().await?;
     sqlx::query(
@@ -4779,6 +4801,7 @@ pub async fn update_work_item(
             assignee_user_id = ?6,
             due_date = NULLIF(?7, ''),
             parent_work_item_id = ?8,
+            cycle_id = ?9,
             completed_at = CASE
                 WHEN ?4 IN ('done', 'closed', 'resolved', 'verified') THEN datetime('now')
                 ELSE NULL
@@ -4795,8 +4818,61 @@ pub async fn update_work_item(
     .bind(assignee_user_id)
     .bind(&due_date)
     .bind(parent_work_item_id)
+    .bind(cycle_id)
     .execute(&mut *tx)
     .await?;
+
+    if cycle_changed {
+        let (cycle_action, cycle_summary) = if current_cycle_id.is_none() && cycle_id.is_some() {
+            (
+                "work_item.cycle.linked",
+                format!("将工作项 {item_key} 关联到周期 {cycle_name}"),
+            )
+        } else if current_cycle_id.is_some() && cycle_id.is_none() {
+            (
+                "work_item.cycle.unlinked",
+                format!("取消工作项 {item_key} 的周期关联"),
+            )
+        } else {
+            (
+                "work_item.cycle.updated",
+                format!("调整工作项 {item_key} 的所属周期"),
+            )
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                actor_display_name_snapshot,
+                action,
+                target_type,
+                target_id,
+                summary,
+                metadata
+            )
+            VALUES (?1, ?2, ?3, ?4, 'work_item', ?5, ?6, ?7)
+            "#,
+        )
+        .bind(project_id)
+        .bind(actor_user_id)
+        .bind(&actor_display_name_snapshot)
+        .bind(cycle_action)
+        .bind(&item_key)
+        .bind(cycle_summary)
+        .bind(format!(
+            r#"{{"previous_cycle_id":{},"cycle_id":{},"cycle_name":"{}"}}"#,
+            current_cycle_id
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "null".to_string()),
+            cycle_id
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "null".to_string()),
+            cycle_name.replace('"', "'"),
+        ))
+        .execute(&mut *tx)
+        .await?;
+    }
 
     sqlx::query(
         r#"

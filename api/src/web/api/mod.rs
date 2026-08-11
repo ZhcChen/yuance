@@ -1787,6 +1787,18 @@ pub struct UpdateWorkItemRequest {
     due_date: Option<String>,
     #[serde(default)]
     parent_item_key: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_cycle_id")]
+    cycle_id: Option<Option<i64>>,
+}
+
+fn deserialize_optional_cycle_id<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match Option::<Option<i64>>::deserialize(deserializer)? {
+        Some(value) => Ok(Some(value)),
+        None => Ok(Some(None)),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -3730,6 +3742,7 @@ pub async fn update_work_item(
     let assignee_username = payload
         .assignee_username
         .unwrap_or_else(|| item.assignee_username.clone());
+    let cycle_id = payload.cycle_id.unwrap_or_else(|| item.cycle_id);
     let updated = projects::update_work_item(
         pool,
         user.id,
@@ -3746,6 +3759,7 @@ pub async fn update_work_item(
             parent_item_key: payload
                 .parent_item_key
                 .unwrap_or_else(|| item.parent_item_key.clone()),
+            cycle_id,
             actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )

@@ -3806,6 +3806,10 @@
           },
           "parent_item_key": {
             "type": "string"
+          },
+          "cycle_id": {
+            "type": ["integer", "null"],
+            "minimum": 1
           }
         }
       },
