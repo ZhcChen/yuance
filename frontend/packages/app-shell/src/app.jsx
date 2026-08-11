@@ -4847,9 +4847,8 @@ export function SharedApp({ services }) {
       return DEFER_RICH_TEXT_PASTE;
     }
     if (!workItemCreateForm.title.trim()) {
-      const nextPending = [...workItemCreatePendingPastes, selected];
-      setWorkItemCreatePendingPastes(nextPending);
-      setWorkItemCreatePasteHint(`已暂存 ${nextPending.length} 个图片，填写标题后点击“创建”即可上传。`);
+      setWorkItemCreatePendingPastes((current) => [...current, selected]);
+      setWorkItemCreatePasteHint(`已暂存 ${workItemCreatePendingPastes.length + 1} 个图片，填写标题后将自动上传。`);
       runtime.getElementById('work-item-create-title')?.focus();
       return DEFER_RICH_TEXT_PASTE;
     }
@@ -4906,6 +4905,79 @@ export function SharedApp({ services }) {
       setWorkItemCreatePasteUploading(false);
     }
   }
+
+  /** @returns {Promise<void>} */
+  async function flushWorkItemCreatePendingPastes() {
+    const pending = workItemCreatePendingPastes;
+    if (!pending.length || workItemCreateSubmitting || workItemCreateAttachmentMutationRef.current) return;
+    workItemCreateAttachmentMutationRef.current = true;
+    setWorkItemCreatePasteUploading(true);
+    setWorkItemCreateError('');
+    setWorkItemCreatePasteHint('');
+    let description = workItemCreateForm.description;
+    const processed = [];
+    try {
+      let checkpoint = workItemCreateCheckpoint;
+      if (!checkpoint) checkpoint = await ensureWorkItemCreateCheckpoint();
+      const primaryPostId = await ensureWorkItemCreatePrimaryPost(checkpoint);
+      for (const selected of pending) {
+        const result = await uploadWorkItemCommentAttachment({
+          api,
+          platform: files,
+          itemKey: checkpoint.item.key,
+          commentId: primaryPostId,
+          file: selected,
+          lifecycle: {
+            isCurrent: () => workItemCreateOpen && !workItemCreateSubmitting,
+            onStage: (stage) => {
+              const labels = {
+                registering: '正在登记附件',
+                signing: '正在获取上传签名',
+                uploading: '正在上传到对象存储',
+                confirming: '正在确认上传结果',
+              };
+              setWorkItemCreateAttachmentStatus(`${selected.filename} ${labels[stage]}`);
+            },
+            onCreated: () => {},
+            onUploaded: () => {},
+            refresh: async () => {},
+          },
+        });
+        if (!result.completed || !result.uploaded) {
+          throw new Error('粘贴文件上传未完成，请重试。');
+        }
+        const attachmentOption = workItemCommentAttachmentOption(checkpoint.item.key, primaryPostId, result.uploaded);
+        description += richTextAttachmentHtml({
+          id: result.uploaded.id,
+          filename: result.uploaded.filename,
+          contentType: result.uploaded.content_type,
+          url: attachmentOption.url,
+        });
+        await api.updateWorkItemPrimaryPost(checkpoint.item.key, description);
+        processed.push(selected);
+        setWorkItemCreatePendingPastes((current) => current.filter((entry) => !processed.includes(entry)));
+        setWorkItemCreateForm((current) => ({ ...current, description }));
+        setWorkItemCreateAttachmentStatus(`${selected.filename} 上传完成。`);
+      }
+      setWorkItemCreateCheckpoint({ ...checkpoint, primaryPostId });
+      setWorkItemCreateAttachmentStatus('');
+    } catch (caught) {
+      setWorkItemCreatePendingPastes((current) => {
+        const nextPending = current.filter((entry) => !processed.includes(entry));
+        return nextPending.length === current.length ? current : nextPending;
+      });
+      setWorkItemCreateForm((current) => ({ ...current, description }));
+      setWorkItemCreateError(errorMessage(caught instanceof Error ? caught : new Error('上传粘贴图片失败。')));
+    } finally {
+      workItemCreateAttachmentMutationRef.current = false;
+      setWorkItemCreatePasteUploading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!workItemCreateForm.title.trim() || !workItemCreatePendingPastes.length) return;
+    void flushWorkItemCreatePendingPastes();
+  }, [workItemCreateForm.title, workItemCreatePendingPastes]);
 
   /** @param {React.FormEvent<HTMLFormElement>} event */
   async function submitWorkItemCreate(event) {
@@ -6053,7 +6125,7 @@ export function SharedApp({ services }) {
                     <Field id="work-item-create-due-date" label="截止日期"><input id="work-item-create-due-date" type="date" value={workItemCreateForm.dueDate} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, dueDate: event.target.value }))} /></Field>
                     <Field id="work-item-create-assignee" label="处理人"><select id="work-item-create-assignee" value={workItemCreateForm.assigneeUsername} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, assigneeUsername: event.target.value }))}><option value="">默认指派给我</option>{(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</select></Field>
                     {route.itemType === 'task' ? <Field id="work-item-create-parent" label="父级需求"><select id="work-item-create-parent" value={workItemCreateForm.parentItemKey} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, parentItemKey: event.target.value }))}><option value="">不关联</option>{(workItemPage?.parent_options || []).map((item) => <option key={item.key} value={item.key}>{item.key} · {item.title}</option>)}</select></Field> : null}
-                    <Field id="work-item-create-title" label="标题" required><input id="work-item-create-title" maxLength={160} value={workItemCreateForm.title} disabled={workItemCreateSubmitting} autoFocus onChange={(event) => { setWorkItemCreateForm((current) => ({ ...current, title: event.target.value })); if (event.target.value.trim() && workItemCreatePendingPastes.length) setWorkItemCreatePasteHint(`已暂存 ${workItemCreatePendingPastes.length} 个图片，点击“创建”时将自动上传。`); }} /></Field>
+                    <Field id="work-item-create-title" label="标题" required><input id="work-item-create-title" maxLength={160} value={workItemCreateForm.title} disabled={workItemCreateSubmitting} autoFocus onChange={(event) => { setWorkItemCreateForm((current) => ({ ...current, title: event.target.value })); if (event.target.value.trim() && workItemCreatePendingPastes.length) setWorkItemCreatePasteHint(`已暂存 ${workItemCreatePendingPastes.length} 个图片，正在自动上传…`); }} /></Field>
                   </div>
                   <div className="yc-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} label="说明内容" onPasteFile={pasteWorkItemCreateFile} onChange={(description) => setWorkItemCreateForm((current) => ({ ...current, description }))} /></div>
                   {workItemCreateAttachmentStatus ? <p className="work-item-attachment-status" role="status">{workItemCreateAttachmentStatus}</p> : null}
