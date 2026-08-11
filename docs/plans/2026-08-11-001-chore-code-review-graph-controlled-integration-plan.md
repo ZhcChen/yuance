@@ -25,7 +25,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 - 在 `AGENTS.md` 增加 CRG 受控使用规则：触发矩阵、证据优先级、失败降级、禁止项。
 - 在 `docs/prompts/plan.md`、`docs/prompts/review.md` 增加可选旁路使用提示。
 - 新增 `docs/standards/tooling/code-review-graph.md` 作为项目内工具参考。
-- 注册 yuance 专属 Codex MCP server（命令与 redcode-im 相同，但名称隔离）。
+- 注册通用 Codex MCP server：`code-review-graph`，供元策及其他项目复用。
 - 首次在元策仓库构建本地图数据，并抽查 Rust / JSX / Electron 调用与测试边。
 - 进行 3-5 次真实 review 试点，记录有效新增、误报和降级次数后决定保留级别。
 
@@ -36,7 +36,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 - 不把 CRG 的 risk score 或 token savings 作为质量门禁。
 - 不用 CRG 替代源码阅读、单元测试、E2E、浏览器或运行时验收。
 - 不直接照搬 redcode-im 的“保留”结论；元策需要独立试点验证。
-- 不迁移或复制 redcode-im 的图数据库，也不改动 redcode-im 的 MCP server 配置。
+- 不迁移或复制 redcode-im 的图数据库；旧 `code-review-graph-redcode-im` server 可保留过渡，但通用 server 不绑定任何项目。
 
 ## 现状与需要调整
 
@@ -55,7 +55,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 | AGENTS.md 受控规则 | 触发模块改为 `api/`、`frontend/`、`web/`、`desktop/`、`docs/` 等元策模块 | `AGENTS.md` |
 | `docs/prompts/plan.md`、`review.md` | 按元策提示词简洁格式补 CRG 可选旁路说明 | `docs/prompts/` |
 | 工具参考文档 | 元策没有 `docs/reference/`，按现有 `docs/standards/` 目录组织 | `docs/standards/tooling/code-review-graph.md` |
-| 项目专属 MCP 名称 | 全局已有 server 名为 `code-review-graph-redcode-im`，元策应注册独立名称 `code-review-graph-yuance`，避免回滚误伤 | 本机 `~/.codex/config.toml` |
+| MCP 名称与复用 | 全局已有 server 名为 `code-review-graph-redcode-im`，改为注册通用名称 `code-review-graph`，所有项目共用同一 server，图数据仍按项目隔离 | 本机 `~/.codex/config.toml` |
 | 守护测试 | redcode-im 用 Go 测试，元策改为 Node/Shell 轻量守护脚本 | `scripts/assert-crg-guard.mjs` |
 | 试点结论 | redcode-im 的收益基于 Rust + Vue/Dart/Kotlin/Swift；元策是 Rust + React JSX + Electron，需独立验证覆盖 | 试点记录 |
 
@@ -63,7 +63,7 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 
 1. CRG 只作为旁路证据源，证据优先级保持：运行时行为 > 测试/验收 > 当前源码 > CRG 高置信边 > CRG 推断边。
 2. 固定 `code-review-graph==2.3.7`，升级必须作为独立依赖治理任务重新验证。
-3. MCP 使用 `codex mcp add code-review-graph-yuance` 注册，不写项目级密钥，不启用 embeddings。
+3. MCP 使用 `codex mcp add code-review-graph -- uvx --from code-review-graph==2.3.7 code-review-graph serve` 注册通用 server，不写项目级密钥，不启用 embeddings，也不在配置中固定 `--repo`。
 4. 只允许手工执行 `make crg.build`、`make crg.update`、`make crg.status`、`make crg.review BASE=<git-ref>`。
 5. 首次构建后若 JSX / Electron 覆盖不足或试点无有效新增，降级为完全手工按需调用；若出现自动触发或阻塞，移除接入。
 
@@ -104,12 +104,19 @@ origin: docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-p
 
 ### 阶段 2：本机 MCP 与图数据
 
-#### U2.1 注册 yuance 专属 MCP
+#### U2.1 注册通用 MCP
 
-- 执行：`codex mcp add code-review-graph-yuance -- uvx --from code-review-graph==2.3.7 code-review-graph serve`。
+- 执行：`codex mcp add code-review-graph -- uvx --from code-review-graph==2.3.7 code-review-graph serve`。
 - 前置：U1.4。
-- 验证：`codex mcp get code-review-graph-yuance` 返回 server；重启 Codex 会话后工具可用。
-- 完成标准：元策不依赖 redcode-im 命名 server；回滚只影响 `code-review-graph-yuance`。
+- 验证：`codex mcp get code-review-graph` 返回 server；重启 Codex 会话后工具可用。
+- 完成标准：通用 server 不绑定项目名；CRG 启动时按当前项目根自动检测仓库，元策不依赖 redcode-im 命名 server。
+
+通用 server 复用规则：
+
+1. 所有项目共用同一个 MCP server 配置，命令保持 `uvx --from code-review-graph==2.3.7 code-review-graph serve`。
+2. 每个项目仍必须有自己的 `.code-review-graph/graph.db`；图数据按仓库隔离，不复制。
+3. CRG 从 Codex 当前工作目录自动检测仓库；配置中不得写死 `--repo`，否则通用名会退化为单项目。
+4. 跨项目回滚只移除通用 server 配置，不影响各项目 `.code-review-graph/` 数据。
 
 #### U2.2 首次构建图
 
@@ -150,7 +157,7 @@ make frontend-check -n | rg -i 'crg|code-review-graph' || true
 make web-build -n | rg -i 'crg|code-review-graph' || true
 make deploy-production -n | rg -i 'crg|code-review-graph' || true
 git check-ignore .code-review-graph/graph.db
-codex mcp get code-review-graph-yuance
+codex mcp get code-review-graph
 node scripts/assert-crg-guard.mjs
 git diff --check
 ```
@@ -159,7 +166,8 @@ git diff --check
 
 - CRG 对 React JSX、Electron 渲染进程和 Rust/JS 跨语言契约的覆盖未知，必须先试点再决定保留级别。
 - 首次构建可能产生 100MB 以上图数据库，需要确认磁盘空间和增量更新耗时。
-- 全局 MCP 已存在 `code-review-graph-redcode-im`，如果复用会导致项目边界和回滚范围混淆，因此计划使用独立名称。
+- 全局 MCP 已存在 `code-review-graph-redcode-im`；注册通用 `code-review-graph` 后，旧 server 可保留过渡，确认无依赖后再移除，避免影响 redcode-im 当前使用。
+- 通用 server 依赖 Codex 以项目根作为启动工作目录；若 Codex 未按项目根启动，CRG 可能找不到图，此时按规则降级，不阻塞任务。
 - CRG 静态图对动态路由、宏展开、CSS 和运行时状态不可靠，不得替代浏览器或运行时验收。
 - 如果试点无有效新增，应按计划降级为手工调用或移除，不硬性保留。
 
