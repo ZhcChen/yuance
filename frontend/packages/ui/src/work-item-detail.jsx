@@ -64,6 +64,7 @@ import { Button, Modal } from './primitives.jsx';
  *   onSubmitHandoff: (event: import('react').FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>,
  *   onRequestLifecycleAction: (action: 'close' | 'reopen' | 'restore') => void,
  *   onRequestDeletePrimaryPostAttachment: (attachment: { id: number, filename: string, contentType: string, url: string }) => void,
+ *   onPasteFile?: (file: File) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
  *   resolveAttachmentSource?: (attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (attachmentId: number) => void,
  *   backHref: string,
@@ -105,6 +106,7 @@ export function WorkItemDetail({
   onSubmitHandoff,
   onRequestLifecycleAction,
   onRequestDeletePrimaryPostAttachment,
+  onPasteFile,
   resolveAttachmentSource,
   onAttachmentActivate,
   backHref,
@@ -162,7 +164,7 @@ export function WorkItemDetail({
           <h3>编辑工作项</h3>
           <form id="work-item-edit-form" className="work-item-action-form" onSubmit={async (event) => { if (await onSubmitEdit(event)) setActivePanel(null); }}>
             <label className="work-item-form-field work-item-form-field-wide"><span>标题</span><input name="title" value={editForm.title} onChange={onChangeEdit} required /></label>
-            <div className="work-item-form-field work-item-form-field-wide"><span>主内容</span><RichTextEditor id="work-item-primary-post" value={editForm.description} disabled={mutationBusy} label="主内容" attachments={primaryPostAttachments} onRequestRemoveAttachment={onRequestDeletePrimaryPostAttachment} onChange={onChangeDescription} /></div>
+            <div className="work-item-form-field work-item-form-field-wide"><span>主内容</span><RichTextEditor id="work-item-primary-post" value={editForm.description} disabled={mutationBusy} label="主内容" attachments={primaryPostAttachments} onRequestRemoveAttachment={onRequestDeletePrimaryPostAttachment} onPasteFile={onPasteFile} onChange={onChangeDescription} /></div>
             <label className="work-item-form-field"><span>状态</span><select name="status" value={editForm.status} onChange={onChangeEdit}>{statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>
             <label className="work-item-form-field"><span>优先级</span><select name="priority" value={editForm.priority} onChange={onChangeEdit}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label>
             <label className="work-item-form-field"><span>处理人</span><select name="assigneeUsername" value={editForm.assigneeUsername} onChange={onChangeEdit}><option value="">未分配</option>{assigneeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>

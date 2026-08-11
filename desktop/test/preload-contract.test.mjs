@@ -125,12 +125,15 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadSystemReleaseAsset", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "openWorkItemAttachmentPreview", "openWorkItemCommentAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadSystemReleaseAsset", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadSystemReleaseAsset", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "openWorkItemAttachmentPreview", "openWorkItemCommentAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "selectPastedFile", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadSystemReleaseAsset", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
+  const pasted = { filename: "clip.png", contentType: "image/png", data: new ArrayBuffer(4) };
+  await bridge.files.selectPastedFile(pasted);
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();
   assert.deepEqual(invocations, [
     ["yuance:file-choose", undefined],
+    ["yuance:file-select-pasted", pasted],
     ["yuance:file-upload-canary", "yfc_opaque"],
     ["yuance:file-download-canary", undefined],
   ]);

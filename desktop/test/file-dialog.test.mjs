@@ -22,6 +22,21 @@ test("uses a fixed single-file dialog and returns only vault metadata", async ()
   assert.deepEqual(calls[1], [privatePath, { filename: "计划.txt", contentType: "text/plain" }]);
 });
 
+test("captures pasted clipboard bytes and returns only vault metadata", async () => {
+  const calls = [];
+  const snapshot = { privatePath: "/spool/pasted", filename: "clip.png", contentType: "image/png", byteSize: 4, sha256: "a".repeat(64), remove: async () => {} };
+  const adapter = createFileDialog({
+    dialog: {},
+    spool: { captureBuffer: async (...args) => { calls.push(args); return snapshot; } },
+    vault: { issue: (value, valueBinding) => { assert.equal(value, snapshot); assert.deepEqual(valueBinding, binding); return { capability: "yfc_pasted", filename: value.filename, contentType: value.contentType, byteSize: value.byteSize }; } },
+  });
+  const data = new ArrayBuffer(4);
+  const result = await adapter.selectPasted({ filename: "clip.png", contentType: "image/png", data }, binding);
+  assert.deepEqual(result, { capability: "yfc_pasted", filename: "clip.png", contentType: "image/png", byteSize: 4 });
+  assert.equal(JSON.stringify(result).includes("/spool/"), false);
+  assert.deepEqual(calls[0], [data, { filename: "clip.png", contentType: "image/png" }]);
+});
+
 test("cancel does not touch spool or vault", async () => {
   let touched = false;
   const adapter = createFileDialog({

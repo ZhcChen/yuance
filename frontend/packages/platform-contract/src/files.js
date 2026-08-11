@@ -15,6 +15,16 @@ void REVEAL_DOWNLOAD_CAPABILITY;
 /** @typedef {{ readonly [REVEAL_DOWNLOAD_CAPABILITY]: true }} RevealDownloadCapability */
 
 /**
+ * 宿主接收的剪贴板粘贴文件。共享层只依赖最小 File 形状，不解析平台私有元数据。
+ *
+ * @typedef {object} PastedFile
+ * @property {string} name
+ * @property {string} type
+ * @property {number} size
+ * @property {() => Promise<ArrayBuffer>} arrayBuffer
+ */
+
+/**
  * 由宿主验证服务端响应后签发的受控传输 capability。共享层不得解析或构造。
  *
  * @typedef {{ readonly [SIGNED_TRANSFER_CAPABILITY]: true }} SignedTransferCapability
@@ -85,6 +95,7 @@ export function defineTransferCapabilities(capabilities) {
  *
  * @typedef {object} HostDelegatedFileCapabilities
  * @property {() => Promise<SelectedFile | null>} chooseFile
+ * @property {(file: PastedFile) => Promise<SelectedFile | null>} selectPastedFile
  * @property {(fileCapability: FileCapability) => Promise<{status: string, byteSize?: number}>} uploadCanary
  * @property {() => Promise<{status: string, byteSize?: number, filename?: string}>} downloadCanary
  */

@@ -10,7 +10,9 @@ const CONTENT_TYPES = new Map([
 ]);
 
 export function createFileDialog({ dialog, spool, vault } = {}) {
-  if (typeof dialog?.showOpenDialog !== "function" || typeof spool?.capture !== "function" || typeof vault?.issue !== "function") {
+  const canChoose = typeof dialog?.showOpenDialog === "function" && typeof spool?.capture === "function";
+  const canSelectPasted = typeof spool?.captureBuffer === "function";
+  if ((!canChoose && !canSelectPasted) || typeof vault?.issue !== "function") {
     throw new TypeError("file dialog requires dialog, spool, and vault");
   }
 
@@ -39,7 +41,26 @@ export function createFileDialog({ dialog, spool, vault } = {}) {
     }
   }
 
-  return Object.freeze({ choose });
+  async function selectPasted({ filename = "pasted-file", contentType = "", data } = {}, binding) {
+    if (typeof data?.byteLength !== "number" || !Number.isSafeInteger(data.byteLength) || data.byteLength < 0) {
+      throw publicError("file_selection_invalid", "Pasted file is invalid");
+    }
+    const safeName = safeFilename(filename);
+    let snapshot;
+    try {
+      snapshot = await spool.captureBuffer(data, { filename: safeName, contentType: contentType || contentTypeFor(safeName) });
+    } catch (error) {
+      throw publicFileError(error);
+    }
+    try {
+      return vault.issue(snapshot, binding);
+    } catch (error) {
+      await snapshot.remove().catch(() => {});
+      throw error;
+    }
+  }
+
+  return Object.freeze({ choose, selectPasted });
 }
 
 function safeFilename(filePath) {

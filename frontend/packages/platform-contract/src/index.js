@@ -7,6 +7,7 @@
 /** @typedef {import('./files.js').HostDelegatedReleaseAssetCapabilities} HostDelegatedReleaseAssetCapabilities */
 /** @typedef {import('./files.js').RevealDownloadCapability} RevealDownloadCapability */
 /** @typedef {import('./files.js').SelectedFile} SelectedFile */
+/** @typedef {import('./files.js').PastedFile} PastedFile */
 /** @typedef {import('./files.js').SignedTransferCapability} SignedTransferCapability */
 /** @typedef {import('./files.js').TransferCapabilities} TransferCapabilities */
 /** @typedef {import('./platform.js').PlatformCapabilities} PlatformCapabilities */

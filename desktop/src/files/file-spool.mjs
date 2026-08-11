@@ -8,6 +8,7 @@ const MARKER = ".yuance-file-spool-v1";
 const MARKER_CONTENT = "yuance-file-spool-v1\n";
 const OWNED_FILE = /^snapshot-[0-9a-f]{32}\.bin$/;
 const STAGING_FILE = /^\.capture-[0-9a-f]{32}\.tmp$/;
+const PASTE_FILE = /^\.paste-[0-9a-f]{32}\.bin$/;
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
@@ -90,6 +91,29 @@ export function createFileSpool({
       await initialize();
       if (!cleaned) await cleanupOwnedFiles();
       return captureExclusive(filePath, metadata);
+    });
+  }
+
+  function captureBuffer(buffer, metadata = {}) {
+    return serialize(async () => {
+      await initialize();
+      if (!cleaned) await cleanupOwnedFiles();
+      const bytes = normalizeBuffer(buffer);
+      if (!Number.isSafeInteger(bytes.byteLength) || bytes.byteLength > maxFileBytes) {
+        throw spoolError("file_too_large", "File exceeds the local limit");
+      }
+      const nonce = secureNonce(randomBytes);
+      const sourcePath = path.join(rootDirectory, `.paste-${nonce}.bin`);
+      try {
+        await writeBufferFile(sourcePath, bytes);
+        return platform === "win32"
+          ? await captureWindowsExclusive(sourcePath, metadata)
+          : await captureExclusive(sourcePath, metadata);
+      } finally {
+        await fs.unlink(sourcePath).catch((error) => {
+          if (error?.code !== "ENOENT") throw error;
+        });
+      }
     });
   }
 
@@ -221,7 +245,7 @@ export function createFileSpool({
     }
     let removed = 0;
     for (const name of await fs.readdir(rootDirectory)) {
-      if (!OWNED_FILE.test(name) && !STAGING_FILE.test(name)) continue;
+      if (!OWNED_FILE.test(name) && !STAGING_FILE.test(name) && !PASTE_FILE.test(name)) continue;
       const candidate = path.join(rootDirectory, name);
       const stats = await fs.lstat(candidate);
       if (!stats.isFile() || stats.isSymbolicLink()) continue;
@@ -239,7 +263,7 @@ export function createFileSpool({
     return result;
   }
 
-  return Object.freeze({ rootDirectory, initialize, capture, cleanupOrphans, snapshot: () => Object.freeze({ totalBytes }) });
+  return Object.freeze({ rootDirectory, initialize, capture, captureBuffer, cleanupOrphans, snapshot: () => Object.freeze({ totalBytes }) });
 }
 
 function sanitizeFilename(value) {
@@ -262,6 +286,23 @@ async function writeAll(handle, chunk) {
     if (!Number.isSafeInteger(bytesWritten) || bytesWritten <= 0) throw spoolError("file_spool_write_failed", "File snapshot write made no progress");
     offset += bytesWritten;
   }
+}
+
+async function writeBufferFile(filePath, buffer) {
+  const handle = await fsPromises.open(filePath, "wx", 0o600);
+  try {
+    await writeAll(handle, buffer);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+function normalizeBuffer(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  throw spoolError("file_spool_write_failed", "Pasted file bytes are invalid");
 }
 
 function secureNonce(randomBytes) {
