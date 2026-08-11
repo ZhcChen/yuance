@@ -3,7 +3,11 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { RichTextContent, RichTextEditor, plainTextToRichHtml, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from '@yuance/frontend-ui';
+import { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, plainTextToRichHtml, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from '@yuance/frontend-ui';
+
+test('rich text editor exposes the deferred paste sentinel used by pre-upload flows', () => {
+  assert.equal(DEFER_RICH_TEXT_PASTE, 'defer');
+});
 
 test('rich text content defers HTML injection to its client sanitizer and preserves plain text semantics', () => {
   const rich = renderToStaticMarkup(React.createElement(RichTextContent, { html: '<h2>方案</h2><pre><code>cargo test</code></pre>', format: 'html' }));
