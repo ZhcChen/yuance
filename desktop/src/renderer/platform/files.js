@@ -54,7 +54,7 @@ async function normalizePastedFile(file) {
   }
   return Object.freeze({
     filename: file.name || "pasted-file",
-    contentType: file.type || "application/octet-stream",
+    contentType: file.type || "",
     data: await file.arrayBuffer(),
   });
 }

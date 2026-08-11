@@ -1,12 +1,18 @@
 import path from "node:path";
 
 const CONTENT_TYPES = new Map([
+  [".avif", "image/avif"],
+  [".bmp", "image/bmp"],
+  [".gif", "image/gif"],
+  [".ico", "image/x-icon"],
   [".txt", "text/plain"],
   [".md", "text/markdown"],
   [".pdf", "application/pdf"],
   [".png", "image/png"],
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
+  [".svg", "image/svg+xml"],
+  [".webp", "image/webp"],
 ]);
 
 export function createFileDialog({ dialog, spool, vault } = {}) {
