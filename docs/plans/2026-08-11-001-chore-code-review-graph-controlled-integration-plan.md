@@ -5,7 +5,7 @@ date: 2026-08-11
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 execution: code
-execution_status: pending
+execution_status: in_progress
 ---
 
 # 受控引入 Code Review Graph 增强审查
@@ -187,3 +187,11 @@ git diff --check
 
 - 试点有稳定收益时，将触发矩阵、证据优先级和降级模式沉淀到 `docs/solutions/`。
 - 将“静态图旁路证据 + 源码复核 + 运行时优先”的经验写入 `docs/reviews/`，供后续跨模块改动复用。
+
+## 执行状态（2026-08-11）
+
+- U1.1-U1.4 已实现并推送：Makefile 入口、根 `.gitignore`、AGENTS.md 规则、提示词旁路、工具文档、独立 `crg.guard`。
+- U2.1 已注册通用 MCP `code-review-graph`，CLI 自动定位图数据验证通过；当前会话启动早于注册，工具加载需重启 Codex 会话后做最终验证。
+- U2.2 已构建元策图数据：436 files / 6032 nodes / 83051 edges，`graph.db` 约 86M。
+- U2.3 与 U3.1 已完成 5 个真实跨模块试点，结论为“受控保留”；记录见 `docs/reviews/2026-08-11-code-review-graph-pilot.md`。
+- U3.2 已写入试点 review 与 solution，并更新 AGENTS.md、工具文档和本计划状态；剩余仅为本机 Codex 会话重启后的 MCP 工具加载验证。

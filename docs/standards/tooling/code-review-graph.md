@@ -101,3 +101,10 @@ codex mcp remove code-review-graph
 ```
 
 回滚前确认 `~/.codex/hooks.json` 未变化、Git hooks 内没有 CRG 内容，且 `make frontend-check -n`、`make web-build -n`、`make deploy-production -n` 不含 `crg` 或 `code-review-graph`。
+
+## 试点结论（2026-08-11）
+
+- 结论为受控保留，作为 `plan` / `review` 阶段的手工旁路证据源。
+- 5 个真实跨模块试点中 3 个产生经源码复核的 CRG 独有候选文件；增量更新实测约 0.5 秒。
+- `detect-changes --brief` 摘要对元策小改动召回不足，有效查询以 `query callers_of` / `importers_of` / `tests_for` 为主。
+- 试点详情见 `docs/reviews/2026-08-11-code-review-graph-pilot.md`，经验见 `docs/solutions/2026-08-11-code-review-graph-cross-platform-pilot.md`。

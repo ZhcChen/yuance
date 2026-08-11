@@ -72,6 +72,7 @@
 - 只允许手工运行 `make crg.build`、`make crg.update`、`make crg.status`、`make crg.review BASE=<git-ref>`，不得启用 install、hooks、daemon、watch、embeddings 或默认测试/提交链集成。
 - 中文自然语言快捷映射：`构建代码图` -> `make crg.build`，`更新代码图` -> `make crg.update`，`查看代码图` -> `make crg.status`，`代码图审查` -> `make crg.review`；用户指定基准分支或提交时附加 `BASE=<git-ref>`。这些映射仍属于显式手工执行，不改变 CRG 的受控边界。
 - 完整操作、触发矩阵、证据优先级与回滚方式见 `docs/standards/tooling/code-review-graph.md`。
+- 试点结论（2026-08-11）：CRG 受控保留为手工旁路；跨平台改动优先查询平台入口调用者与共享组件 importers；`detect-changes --brief` 摘要仅作参考，不以摘要面板作为有效性结论。
 
 ## Git 提交与推送
 
