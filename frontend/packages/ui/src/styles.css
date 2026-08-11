@@ -395,6 +395,7 @@ html[data-theme="dark"] {
 .yc-badge-success { border-color: color-mix(in srgb, var(--yc-success) 35%, var(--yc-line)); background: color-mix(in srgb, var(--yc-success) 10%, var(--yc-panel)); color: var(--yc-success); }
 .yc-badge-warning { border-color: color-mix(in srgb, var(--yc-warning) 35%, var(--yc-line)); background: color-mix(in srgb, var(--yc-warning) 10%, var(--yc-panel)); color: var(--yc-warning); }
 .yc-badge-danger { border-color: color-mix(in srgb, var(--yc-danger) 35%, var(--yc-line)); background: color-mix(in srgb, var(--yc-danger) 10%, var(--yc-panel)); color: var(--yc-danger); }
+.yc-priority-P3 { border-color: color-mix(in srgb, var(--yc-line) 70%, transparent); background: transparent; color: var(--yc-muted); }
 
 .yc-content-tabs { position: relative; box-sizing: border-box; width: max-content; max-width: 100%; display: inline-flex; align-items: center; gap: 3px; padding: 4px; overflow: visible; border: 1px solid var(--yc-line); border-radius: 999px; background: var(--yc-tab-bg); }
 .yc-content-tabs-indicator { position: absolute; z-index: 0; top: 4px; left: 4px; width: var(--yc-content-tab-indicator-width, 0); height: calc(100% - 8px); border: 1px solid var(--yc-tab-active-border); border-radius: 999px; background: var(--yc-tab-active-bg); box-shadow: var(--yc-tab-active-shadow); transform: translateX(var(--yc-content-tab-indicator-x, 0)); transition: width 360ms cubic-bezier(.22, .8, .24, 1), transform 360ms cubic-bezier(.22, .8, .24, 1); will-change: width, transform; }

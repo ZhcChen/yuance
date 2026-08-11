@@ -95,7 +95,7 @@ test('badge and tabs expose the main Web primitive structure', () => {
   assert.match(tabs, /99\+/u);
 });
 
-test('priority badge maps P0-P3 to distinct tones', () => {
+test('priority badge keeps P0-P1 semantic and weakens P2-P3 tones', () => {
   const html = {
     P0: renderToStaticMarkup(createElement(PriorityBadge, { priority: 'P0' })),
     P1: renderToStaticMarkup(createElement(PriorityBadge, { priority: 'P1' })),
@@ -104,8 +104,10 @@ test('priority badge maps P0-P3 to distinct tones', () => {
   };
   assert.match(html.P0, /yc-badge-danger/u);
   assert.match(html.P1, /yc-badge-warning/u);
-  assert.match(html.P2, /yc-badge-info/u);
-  assert.match(html.P3, /yc-badge-success/u);
+  assert.match(html.P2, /yc-badge-neutral/u);
+  assert.match(html.P3, /yc-badge-neutral/u);
+  assert.match(html.P2, /yc-priority-P2/u);
+  assert.match(html.P3, /yc-priority-P3/u);
   const unknown = renderToStaticMarkup(createElement(PriorityBadge, { priority: '未设置' }));
   assert.match(unknown, /yc-badge-neutral/u);
   assert.match(unknown, /未设置/u);

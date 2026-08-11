@@ -169,14 +169,15 @@ export function Badge({ children, tone = 'neutral' }) {
 const PRIORITY_TONE = {
   P0: 'danger',
   P1: 'warning',
-  P2: 'info',
-  P3: 'success',
+  P2: 'neutral',
+  P3: 'neutral',
 };
 
 /** @param {{ priority?: string, children?: React.ReactNode }} props */
 export function PriorityBadge({ priority, children }) {
   const value = children ?? priority ?? '未设置';
-  return <Badge tone={PRIORITY_TONE[priority] || 'neutral'}>{value}</Badge>;
+  const tone = PRIORITY_TONE[priority] || 'neutral';
+  return <span className={`yc-badge yc-badge-${tone} yc-priority yc-priority-${priority || 'none'}`}>{value}</span>;
 }
 
 /** @param {{ children?: React.ReactNode, ariaLabel: string }} props */
