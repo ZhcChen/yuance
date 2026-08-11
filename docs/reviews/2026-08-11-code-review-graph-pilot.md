@@ -13,6 +13,7 @@
 - 图构建：438 文件解析；`make crg.status` 显示 436 files / 6032 nodes / 83051 edges；`graph.db` 约 86M；完整构建约 11 秒。
 - 增量更新：`make crg.update` 更新 2 个文件、0 节点/边，耗时约 0.5 秒。
 - MCP：`codex mcp get code-review-graph` 返回固定命令 `uvx --from code-review-graph==2.3.7 code-review-graph serve`；不带 `--repo` 的 CLI 查询能在元策目录自动定位 `.code-review-graph/graph.db`。
+- MCP stdio 冒烟：`initialize` + `tools/list` 返回 server 与 `query_graph_tool` 等工具，server 可正常启动和暴露工具面。
 - 当前 Codex 会话启动早于 MCP 注册，最终工具加载需重启会话后验证。
 
 ## 试点样本
