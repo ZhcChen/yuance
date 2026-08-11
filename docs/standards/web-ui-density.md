@@ -39,6 +39,7 @@ date: 2026-08-11
 - `Field`：标签、提示、错误与必填语义。
 - `FilterBar` / `FilterField`：列表筛选条组合。
 - `Modal`、`DataTable`、`Pagination`、`Badge`、`Feedback`、`Skeleton`、`ContentTabs`：页面级共享原语。
+- `PriorityBadge`：工作项优先级标签，列表、看板与详情统一使用。
 
 ## 表单约定
 
@@ -54,6 +55,16 @@ date: 2026-08-11
 - 默认栅格为 `repeat(auto-fit, minmax(180px, 1fr))`，页面可按 `className` 覆盖列数，例如工作项筛选的 7 列栅格。
 - 筛选按钮与重置按钮使用共享 `Button`，自动获得紧凑密度。
 - 分页每页数量等原生 `select` 使用 `.shell-page-size` 或 `.page-size-control`，与表单控件保持 32px / 13px。
+
+## 优先级标签约定
+
+- 工作项优先级统一使用 `PriorityBadge`，颜色按级别映射：
+  - `P0`（紧急）：`danger`
+  - `P1`（高）：`warning`
+  - `P2`（中）：`info`
+  - `P3`（低）：`success`
+- 未知或缺失优先级显示“未设置”，使用中性色。
+- 不直接在其他位置复制黄色 Badge 或硬编码优先级颜色。
 
 ## 主题与可访问性
 

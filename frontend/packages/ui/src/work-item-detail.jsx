@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
-import { Button, Modal } from './primitives.jsx';
+import { Button, Modal, PriorityBadge } from './primitives.jsx';
 
 /**
  * @typedef {object} WorkItemDetail
@@ -124,7 +124,7 @@ export function WorkItemDetail({
         <a className="work-item-back" href={backHref} onClick={onOpenBack}>← 返回 {item.project_name}</a>
         <div className="work-item-title-row">
           <div><div className="work-item-identity"><span className="work-kind" data-kind={item.item_type}>{item.item_type === 'requirement' ? '需求' : item.item_type === 'bug' ? 'Bug' : '任务'}</span><span>{item.key}</span></div><h1 aria-label={`${item.key} · ${item.title}`}>{item.title}</h1></div>
-          <div className="work-item-title-tags"><span className="priority" data-priority={item.priority}>{item.priority || '未设置'}</span><span className={`status status-${item.status}`}>{statusLabel(item.status)}</span></div>
+          <div className="work-item-title-tags"><PriorityBadge priority={item.priority} /><span className={`status status-${item.status}`}>{statusLabel(item.status)}</span></div>
         </div>
       </header>
       {isDeleted ? <section className="work-item-deleted-panel"><div><strong>历史工作项</strong><span>该工作项已于 {item.deleted_at} 删除，当前仅供审计查看。</span></div>{canRestoreWorkItem ? <Button onClick={() => onRequestLifecycleAction('restore')}>恢复工作项</Button> : null}</section> : null}

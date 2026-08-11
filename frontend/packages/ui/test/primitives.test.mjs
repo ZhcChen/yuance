@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, Pagination, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
+import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, Pagination, PriorityBadge, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
@@ -93,6 +93,22 @@ test('badge and tabs expose the main Web primitive structure', () => {
   assert.match(tabs, /aria-label="类型导航"/u);
   assert.match(tabs, /aria-current="page"/u);
   assert.match(tabs, /99\+/u);
+});
+
+test('priority badge maps P0-P3 to distinct tones', () => {
+  const html = {
+    P0: renderToStaticMarkup(createElement(PriorityBadge, { priority: 'P0' })),
+    P1: renderToStaticMarkup(createElement(PriorityBadge, { priority: 'P1' })),
+    P2: renderToStaticMarkup(createElement(PriorityBadge, { priority: 'P2' })),
+    P3: renderToStaticMarkup(createElement(PriorityBadge, { priority: 'P3' })),
+  };
+  assert.match(html.P0, /yc-badge-danger/u);
+  assert.match(html.P1, /yc-badge-warning/u);
+  assert.match(html.P2, /yc-badge-info/u);
+  assert.match(html.P3, /yc-badge-success/u);
+  const unknown = renderToStaticMarkup(createElement(PriorityBadge, { priority: '未设置' }));
+  assert.match(unknown, /yc-badge-neutral/u);
+  assert.match(unknown, /未设置/u);
 });
 
 test('content tabs retain the sliding indicator transition after resize observation', async () => {
