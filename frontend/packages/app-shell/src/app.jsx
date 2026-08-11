@@ -4821,7 +4821,8 @@ export function SharedApp({ services }) {
   /** @param {{ item: AppWorkItemDetail, primaryPostId: number | null }} checkpoint @returns {Promise<number>} */
   async function ensureWorkItemCreatePrimaryPost(checkpoint) {
     if (checkpoint.primaryPostId) return checkpoint.primaryPostId;
-    const body = richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '<p><br></p>';
+    // 附件必须挂在已存在的主帖下；标题为空时先写入占位正文，上传成功后随即替换为图片 HTML。
+    const body = richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '<p>图片上传中…</p>';
     const primaryPost = await api.updateWorkItemPrimaryPost(checkpoint.item.key, body);
     const next = { ...checkpoint, primaryPostId: primaryPost.id };
     setWorkItemCreateCheckpoint(next);
