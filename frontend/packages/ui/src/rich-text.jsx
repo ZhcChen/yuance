@@ -103,7 +103,9 @@ export function richTextAttachmentHtml(attachment) {
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
 /** @typedef {{ username: string, displayName: string }} RichTextMentionOption */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onPasteFile?: (file: File) => Promise<RichTextAttachmentOption | null> | RichTextAttachmentOption | null, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
+export const DEFER_RICH_TEXT_PASTE = 'defer';
+
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onPasteFile?: (file: File) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
 export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment, onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
@@ -294,6 +296,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
               .then((attachment) => {
                 const target = inputRef.current;
                 if (!target || !target.isConnected || disabled) return;
+                if (attachment === DEFER_RICH_TEXT_PASTE) return;
                 if (attachment) {
                   const node = createAttachmentNode(target.ownerDocument, attachment);
                   insertAtSelection(target, node, pasteRangeRef.current);
