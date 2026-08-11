@@ -842,6 +842,7 @@ export function SharedApp({ services }) {
   const workItemTypingControllerRef = useRef(/** @type {ReturnType<typeof createWorkItemTypingController> | null} */ (null));
   const workItemTypingClientIdRef = useRef('');
   const workItemBatchMutationRef = useRef(false);
+  const workItemCreateAttachmentMutationRef = useRef(false);
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
   const [shellReady, setShellReady] = useState(false);
@@ -990,6 +991,9 @@ export function SharedApp({ services }) {
   const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
   const [workItemCreateError, setWorkItemCreateError] = useState('');
   const [workItemCreateForm, setWorkItemCreateForm] = useState({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
+  const [workItemCreateCheckpoint, setWorkItemCreateCheckpoint] = useState(/** @type {{ item: AppWorkItemDetail, primaryPostId: number | null } | null} */ (null));
+  const [workItemCreatePasteUploading, setWorkItemCreatePasteUploading] = useState(false);
+  const [workItemCreateAttachmentStatus, setWorkItemCreateAttachmentStatus] = useState('');
   const [workItemSelection, setWorkItemSelection] = useState(/** @type {Set<string>} */ (new Set()));
   const [workItemBatchForm, setWorkItemBatchForm] = useState({ action: 'priority', value: 'P2' });
   const [workItemBatchConfirmOpen, setWorkItemBatchConfirmOpen] = useState(false);
@@ -4756,39 +4760,181 @@ export function SharedApp({ services }) {
 
   function openWorkItemCreate() {
     setWorkItemCreateError('');
+    setWorkItemCreateCheckpoint(null);
+    setWorkItemCreatePasteUploading(false);
+    setWorkItemCreateAttachmentStatus('');
     setWorkItemCreateForm({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
     setWorkItemCreateOpen(true);
+  }
+
+  function closeWorkItemCreate() {
+    if (workItemCreateSubmitting || workItemCreatePasteUploading) return;
+    if (workItemCreateCheckpoint) {
+      const itemKey = workItemCreateCheckpoint.item.key;
+      setWorkItemCreateOpen(false);
+      setWorkItemCreateCheckpoint(null);
+      setWorkItemCreateAttachmentStatus('');
+      navigate(buildWorkItemDetailPath({ owner: workItemOwner, itemKey }), `已打开刚创建的 ${itemKey}。`);
+      return;
+    }
+    setWorkItemCreateOpen(false);
+    setWorkItemCreateAttachmentStatus('');
+  }
+
+  function workItemCreatePayload() {
+    if (!workItemListRoute || !currentProject) return null;
+    const itemType = workItemListRoute.itemType;
+    if (!itemType) return null;
+    return {
+      projectKey: currentProject.key,
+      itemType,
+      title: workItemCreateForm.title.trim(),
+      description: richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '',
+      priority: workItemCreateForm.priority,
+      assigneeUsername: workItemCreateForm.assigneeUsername,
+      cycleId: Number.parseInt(workItemCreateForm.cycleId, 10) || null,
+      dueDate: workItemCreateForm.dueDate,
+      parentItemKey: itemType === 'task' ? workItemCreateForm.parentItemKey : '',
+    };
+  }
+
+  /** @returns {Promise<{ item: AppWorkItemDetail, primaryPostId: number | null }>} */
+  async function ensureWorkItemCreateCheckpoint() {
+    if (workItemCreateCheckpoint) return workItemCreateCheckpoint;
+    const payload = workItemCreatePayload();
+    if (!payload) throw new Error('当前页面无法创建工作项。');
+    const item = await api.createWorkItem(payload);
+    const checkpoint = { item, primaryPostId: null };
+    setWorkItemCreateCheckpoint(checkpoint);
+    return checkpoint;
+  }
+
+  /** @param {{ item: AppWorkItemDetail, primaryPostId: number | null }} checkpoint @returns {Promise<number>} */
+  async function ensureWorkItemCreatePrimaryPost(checkpoint) {
+    if (checkpoint.primaryPostId) return checkpoint.primaryPostId;
+    const body = richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '<p><br></p>';
+    const primaryPost = await api.updateWorkItemPrimaryPost(checkpoint.item.key, body);
+    const next = { ...checkpoint, primaryPostId: primaryPost.id };
+    setWorkItemCreateCheckpoint(next);
+    return primaryPost.id;
+  }
+
+  /** @param {import('@yuance/frontend-platform-contract').PastedFile} file @returns {Promise<AppRichTextAttachmentOption | null>} */
+  async function pasteWorkItemCreateFile(file) {
+    if (!workItemListRoute || !currentProject || workItemCreateSubmitting || workItemCreateAttachmentMutationRef.current) return null;
+    if (!workItemCreateForm.title.trim()) {
+      setWorkItemCreateError('请先填写工作项标题，再粘贴图片。');
+      return null;
+    }
+    const selectPastedFile = files.selectPastedFile;
+    if (typeof selectPastedFile !== 'function') {
+      setWorkItemCreateError('当前环境不支持粘贴文件。');
+      return null;
+    }
+    let selected;
+    try { selected = await selectPastedFile(file); }
+    catch (caught) {
+      setWorkItemCreateError(errorMessage(caught instanceof Error ? caught : new Error('读取剪贴板图片失败。')));
+      return null;
+    }
+    if (!selected || !selected.byteSize || selected.byteSize <= 0) {
+      setWorkItemCreateError('请粘贴非空文件。');
+      return null;
+    }
+    workItemCreateAttachmentMutationRef.current = true;
+    setWorkItemCreatePasteUploading(true);
+    setWorkItemCreateError('');
+    setWorkItemCreateAttachmentStatus(`正在上传 ${selected.filename}…`);
+    try {
+      const checkpoint = await ensureWorkItemCreateCheckpoint();
+      const primaryPostId = await ensureWorkItemCreatePrimaryPost(checkpoint);
+      const result = await uploadWorkItemCommentAttachment({
+        api,
+        platform: files,
+        itemKey: checkpoint.item.key,
+        commentId: primaryPostId,
+        file: selected,
+        lifecycle: {
+          isCurrent: () => workItemCreateOpen && !workItemCreateSubmitting,
+          onStage: (stage) => {
+            const labels = {
+              registering: '正在登记附件',
+              signing: '正在获取上传签名',
+              uploading: '正在上传到对象存储',
+              confirming: '正在确认上传结果',
+            };
+            setWorkItemCreateAttachmentStatus(`${selected.filename} ${labels[stage]}`);
+          },
+          onCreated: () => {},
+          onUploaded: () => {},
+          refresh: async () => {},
+        },
+      });
+      if (!result.completed || !result.uploaded) {
+        setWorkItemCreateError('粘贴文件上传未完成，请重试。');
+        return null;
+      }
+      const attachmentOption = workItemCommentAttachmentOption(checkpoint.item.key, primaryPostId, result.uploaded);
+      const nextBody = `${workItemCreateForm.description}${richTextAttachmentHtml({
+        id: result.uploaded.id,
+        filename: result.uploaded.filename,
+        contentType: result.uploaded.content_type,
+        url: attachmentOption.url,
+      })}`;
+      await api.updateWorkItemPrimaryPost(checkpoint.item.key, nextBody);
+      setWorkItemCreateAttachmentStatus(`${selected.filename} 上传完成。`);
+      return attachmentOption;
+    } catch (caught) {
+      setWorkItemCreateError(errorMessage(caught instanceof Error ? caught : new Error('上传粘贴图片失败。')));
+      return null;
+    } finally {
+      workItemCreateAttachmentMutationRef.current = false;
+      setWorkItemCreatePasteUploading(false);
+    }
   }
 
   /** @param {React.FormEvent<HTMLFormElement>} event */
   async function submitWorkItemCreate(event) {
     event.preventDefault();
-    if (!workItemListRoute || !currentProject || workItemCreateSubmitting) return;
-    const title = workItemCreateForm.title.trim();
-    const itemType = workItemListRoute.itemType;
-    if (!title) {
+    if (!workItemListRoute || !currentProject || workItemCreateSubmitting || workItemCreatePasteUploading) return;
+    const payload = workItemCreatePayload();
+    if (!payload) {
+      setWorkItemCreateError('工作项类型无效。');
+      return;
+    }
+    if (!payload.title) {
       setWorkItemCreateError('请输入工作项标题。');
       return;
     }
-    if (!itemType) {
+    if (!payload.itemType) {
       setWorkItemCreateError('工作项类型无效。');
       return;
     }
     setWorkItemCreateSubmitting(true);
     setWorkItemCreateError('');
     try {
-      const item = await api.createWorkItem({
-        projectKey: currentProject.key,
-        itemType,
-        title,
-        description: richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '',
-        priority: workItemCreateForm.priority,
-        assigneeUsername: workItemCreateForm.assigneeUsername,
-        cycleId: Number.parseInt(workItemCreateForm.cycleId, 10) || null,
-        dueDate: workItemCreateForm.dueDate,
-        parentItemKey: itemType === 'task' ? workItemCreateForm.parentItemKey : '',
-      });
+      let item = workItemCreateCheckpoint?.item || null;
+      if (item) {
+        item = await api.updateWorkItem(item.key, {
+          title: payload.title,
+          priority: payload.priority,
+          assigneeUsername: payload.assigneeUsername,
+          cycleId: payload.cycleId,
+          dueDate: payload.dueDate,
+          parentItemKey: payload.parentItemKey,
+        });
+      } else {
+        item = await api.createWorkItem(payload);
+      }
+      const needsPrimaryPost = Boolean(workItemCreateCheckpoint) || richTextHasContent(payload.description);
+      if (needsPrimaryPost) {
+        const body = richTextHasContent(payload.description) ? payload.description : '<p><br></p>';
+        const primaryPost = await api.updateWorkItemPrimaryPost(item.key, body);
+        setWorkItemCreateCheckpoint({ item, primaryPostId: primaryPost.id });
+      }
       setWorkItemCreateOpen(false);
+      setWorkItemCreateCheckpoint(null);
+      setWorkItemCreateAttachmentStatus('');
       setStatusMessage(`${item.key} 已创建。`);
       navigate(buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }), `${item.key} 已创建。`);
     } catch (caught) {
@@ -5828,17 +5974,18 @@ export function SharedApp({ services }) {
                 </div>
               )}
               <Modal open={workItemBatchConfirmOpen} title="确认批量更新" onClose={() => { if (!workItemBatchSubmitting) setWorkItemBatchConfirmOpen(false); }} footer={<><Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemBatchConfirmOpen(false)}>取消</Button><Button loading={workItemBatchSubmitting} onClick={() => void confirmWorkItemBatchUpdate()}>确认更新</Button></>}><p>将对已选择的 {workItemSelection.size} 个工作项执行批量更新。每个工作项独立提交，未成功的项目会保留选择。</p></Modal>
-              <Modal wide open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={() => { if (!workItemCreateSubmitting) setWorkItemCreateOpen(false); }} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting} onClick={() => setWorkItemCreateOpen(false)}>取消</Button><Button loading={workItemCreateSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
+              <Modal wide open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={closeWorkItemCreate} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onClick={closeWorkItemCreate}>{workItemCreateCheckpoint ? '转到详情' : '取消'}</Button><Button loading={workItemCreateSubmitting} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
                 <form id="work-item-create-form" onSubmit={submitWorkItemCreate}>
                   <div className="field-grid">
                     <Field id="work-item-create-priority" label="优先级" required><select id="work-item-create-priority" value={workItemCreateForm.priority} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, priority: event.target.value }))}><option value="P0">紧急</option><option value="P1">高</option><option value="P2">中</option><option value="P3">低</option></select></Field>
-                    <Field id="work-item-create-cycle" label="周期"><select id="work-item-create-cycle" value={workItemCreateForm.cycleId} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, cycleId: event.target.value }))}><option value="">不关联</option>{(workItemPage?.cycles || []).map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}</select></Field>
+                    <Field id="work-item-create-cycle" label="周期"><select id="work-item-create-cycle" value={workItemCreateForm.cycleId} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, cycleId: event.target.value }))}><option value="">不关联</option>{(workItemPage?.cycles || []).map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}</select></Field>
                     <Field id="work-item-create-due-date" label="截止日期"><input id="work-item-create-due-date" type="date" value={workItemCreateForm.dueDate} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, dueDate: event.target.value }))} /></Field>
                     <Field id="work-item-create-assignee" label="处理人"><select id="work-item-create-assignee" value={workItemCreateForm.assigneeUsername} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, assigneeUsername: event.target.value }))}><option value="">默认指派给我</option>{(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</select></Field>
                     {route.itemType === 'task' ? <Field id="work-item-create-parent" label="父级需求"><select id="work-item-create-parent" value={workItemCreateForm.parentItemKey} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, parentItemKey: event.target.value }))}><option value="">不关联</option>{(workItemPage?.parent_options || []).map((item) => <option key={item.key} value={item.key}>{item.key} · {item.title}</option>)}</select></Field> : null}
                     <Field id="work-item-create-title" label="标题" required><input id="work-item-create-title" maxLength={160} value={workItemCreateForm.title} disabled={workItemCreateSubmitting} autoFocus onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, title: event.target.value }))} /></Field>
                   </div>
-                  <div className="yc-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting} label="说明内容" onChange={(description) => setWorkItemCreateForm((current) => ({ ...current, description }))} /></div>
+                  <div className="yc-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} label="说明内容" onPasteFile={pasteWorkItemCreateFile} onChange={(description) => setWorkItemCreateForm((current) => ({ ...current, description }))} /></div>
+                  {workItemCreateAttachmentStatus ? <p className="work-item-attachment-status" role="status">{workItemCreateAttachmentStatus}</p> : null}
                   {workItemCreateError ? <Feedback tone="danger" title="创建失败">{workItemCreateError}</Feedback> : null}
                 </form>
               </Modal>
