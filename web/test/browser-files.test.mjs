@@ -25,6 +25,13 @@ test('browser pasted file converts a clipboard File into an opaque capability', 
   assert.deepEqual(Object.keys(selected?.capability || {}), []);
 });
 
+test('browser pasted file infers image content type when clipboard omits MIME', async () => {
+  const platform = createBrowserFilePlatform({ refreshCsrfToken: async () => '' });
+  const selected = await platform.selectPastedFile(new File(['clip'], 'image.png'));
+  assert.equal(selected?.contentType, 'image/png');
+  assert.equal(selected?.byteSize, 4);
+});
+
 test('browser file platform uploads through opaque capabilities', async () => {
   const calls = [];
   const file = new File(['content'], 'design.txt', { type: 'text/plain' });

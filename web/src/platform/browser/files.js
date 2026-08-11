@@ -6,6 +6,18 @@ import {
   defineTransferCapabilities,
 } from '@yuance/frontend-platform-contract';
 
+const CONTENT_TYPES_BY_EXTENSION = new Map([
+  ['.avif', 'image/avif'],
+  ['.bmp', 'image/bmp'],
+  ['.gif', 'image/gif'],
+  ['.ico', 'image/x-icon'],
+  ['.jpeg', 'image/jpeg'],
+  ['.jpg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.svg', 'image/svg+xml'],
+  ['.webp', 'image/webp'],
+]);
+
 /** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
 /** @typedef {import('@yuance/frontend-platform-contract').PastedFile} PastedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SelectedFile} SelectedFile */
@@ -50,7 +62,7 @@ export function createBrowserFilePlatform({
     return {
       capability,
       filename: file.name || 'attachment.bin',
-      contentType: file.type || 'application/octet-stream',
+      contentType: file.type || contentTypeForFilename(file.name) || 'application/octet-stream',
       byteSize: file.size,
       ...(checksumSha256 ? { checksumSha256 } : {}),
     };
@@ -127,6 +139,12 @@ export function createBrowserFilePlatform({
   });
 
   return { files, downloads, transfers, selectFile, selectPastedFile };
+}
+
+/** @param {string} filename @returns {string | undefined} */
+function contentTypeForFilename(filename) {
+  const extension = filename.match(/\.([^.]+)$/u)?.[1]?.toLowerCase();
+  return extension ? CONTENT_TYPES_BY_EXTENSION.get(`.${extension}`) : undefined;
 }
 
 function chooseFileFromDocument() {
