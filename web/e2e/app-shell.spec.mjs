@@ -566,6 +566,7 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await page.goto('/web/app/tasks');
   await page.getByRole('button', { name: '新建任务' }).click();
   const taskDialog = page.getByRole('dialog', { name: '新建任务' });
+  await expect(taskDialog).toHaveClass(/yc-modal-wide/u);
   await taskDialog.locator('#work-item-create-priority').selectOption('P1');
   await expect(taskDialog.locator('#work-item-create-cycle')).toHaveValue('');
   await taskDialog.locator('#work-item-create-assignee').selectOption({ index: 1 });

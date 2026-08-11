@@ -54,6 +54,7 @@ test('feedback and modal expose bounded semantic states', () => {
   const labelledBy = modal.match(/aria-labelledby="([^"]+)"/u)?.[1];
   assert.ok(labelledBy);
   assert.match(modal, new RegExp(`<h2 id="${labelledBy}">确认删除</h2>`, 'u'));
+  assert.match(renderToStaticMarkup(createElement(Modal, { open: false, wide: true, title: '新建资料', onClose() {} })), /class="yc-modal yc-modal-wide"/u);
 });
 
 test('badge and tabs expose the main Web primitive structure', () => {

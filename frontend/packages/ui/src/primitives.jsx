@@ -178,8 +178,8 @@ export function ContentTab({ children, href, active = false, badge = 0, onClick 
     : <button className={className} type="button" aria-pressed={active} onClick={/** @type {React.MouseEventHandler<HTMLButtonElement>} */ (onClick)}>{content}</button>;
 }
 
-/** @param {{ open: boolean, title: string, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void }} props */
-export function Modal({ open, title, children, footer, onClose }) {
+/** @param {{ open: boolean, title: string, wide?: boolean, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void }} props */
+export function Modal({ open, title, wide = false, children, footer, onClose }) {
   const ref = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const titleId = useId();
   useEffect(() => {
@@ -189,7 +189,7 @@ export function Modal({ open, title, children, footer, onClose }) {
     if (!open && dialog.open) dialog.close();
   }, [open]);
   return (
-    <dialog ref={ref} className="yc-modal" aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}>
+    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}>
       <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
       <div className="yc-modal-body">{children}</div>
       {footer ? <div className="yc-modal-footer">{footer}</div> : null}
