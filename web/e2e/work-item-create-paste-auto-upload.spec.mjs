@@ -28,7 +28,16 @@ test('work item create pastes before title and auto-uploads after title', async 
 
   const attachmentCreates = [];
   const uploadStages = [];
+  const primaryPostUpdates = [];
   let nextAttachmentId = 9100;
+  await page.route('**/api/v1/work-items/*/primary-post', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    primaryPostUpdates.push(route.request().postDataJSON().body);
+    await route.continue();
+  });
   await page.route('**/api/v1/test-storage/upload**', async (route) => {
     uploadStages.push(`put:${new URL(route.request().url()).searchParams.get('target')}`);
     await route.fulfill({ status: 200, body: '' });
@@ -93,7 +102,8 @@ test('work item create pastes before title and auto-uploads after title', async 
     Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
     element.dispatchEvent(event);
   });
-  await expect(dialog).toContainText('已暂存 1 个图片，填写标题后将自动上传。');
+  await expect(dialog).toContainText('图片已加入正文，填写标题后将自动上传。');
+  await expect(editor.getByRole('img', { name: 'pasted.png' })).toBeVisible();
   expect(attachmentCreates).toHaveLength(0);
 
   await dialog.locator('#work-item-create-title').fill('自动上传粘贴图片验收');
@@ -103,4 +113,11 @@ test('work item create pastes before title and auto-uploads after title', async 
   await expect(editor.getByRole('img', { name: 'pasted.png' })).toBeVisible();
   expect(uploadStages).toContain('put:comment-9100');
   expect(uploadStages).toContain('mark:comment:9100');
+  await expect.poll(() => primaryPostUpdates.length).toBeGreaterThanOrEqual(2);
+  const finalBody = primaryPostUpdates[primaryPostUpdates.length - 1];
+  expect(finalBody).toContain('data-yuance-attachment-id="9100"');
+  expect(finalBody).not.toContain('data:');
+  expect(finalBody).not.toContain('data-yuance-attachment-id="-"');
+  expect(primaryPostUpdates[0]).not.toContain('data:');
+  expect(primaryPostUpdates[0]).not.toContain('data-yuance-attachment-id="-"');
 });
