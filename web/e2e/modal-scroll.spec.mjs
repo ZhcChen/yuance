@@ -32,6 +32,12 @@ test('wide create dialog scrolls inside body and keeps footer visible', async ({
   const dialog = page.getByRole('dialog', { name: '新建 Bug' });
   await expect(dialog).toBeVisible();
 
+  // display:flex 只允许作用于打开的 dialog，避免覆盖 UA 对关闭 dialog 的 display:none。
+  const closedDialogsHidden = await page.locator('.yc-modal').evaluateAll((elements) =>
+    elements.filter((element) => !element.open).every((element) => getComputedStyle(element).display === 'none'),
+  );
+  expect(closedDialogsHidden).toBe(true);
+
   const body = dialog.locator('.yc-modal-body');
   await expect.poll(() => body.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(0);
   expect(await body.evaluate((element) => getComputedStyle(element).overflowY)).toBe('auto');

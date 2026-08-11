@@ -388,7 +388,8 @@ html[data-theme="dark"] {
   .yc-content-tabs-indicator { top: 9px; height: calc(100% - 13px); }
 }
 
-.yc-modal { width: min(560px, calc(100% - 36px)); max-height: min(720px, calc(100% - 56px)); display: flex; flex-direction: column; padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 14px; background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 22px 60px rgb(24 39 58 / 20%); }
+.yc-modal { width: min(560px, calc(100% - 36px)); max-height: min(720px, calc(100% - 56px)); padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 14px; background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 22px 60px rgb(24 39 58 / 20%); }
+.yc-modal[open] { display: flex; flex-direction: column; }
 .yc-modal-wide { width: min(85vw, calc(100% - 40px)); max-height: min(860px, calc(100% - 36px)); }
 .yc-modal::backdrop { background: rgb(15 23 42 / 36%); }
 .yc-modal-wide .yc-rich-text-input { min-height: 248px; }
