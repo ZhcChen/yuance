@@ -1,7 +1,7 @@
 ---
 title: 全局表单与列表筛选样式统一计划
 type: plan
-status: active
+status: completed
 date: 2026-08-11
 ---
 
