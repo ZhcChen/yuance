@@ -52,7 +52,7 @@ WORKDIR /app
 
 ARG YUANCE_BUILD_RELEASE_VERSION
 
-RUN apt-get update \
+RUN apt-get -o Acquire::ForceIPv4=true update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata wget libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
 
