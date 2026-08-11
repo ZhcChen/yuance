@@ -32,6 +32,20 @@ test('browser pasted file infers image content type when clipboard omits MIME', 
   assert.equal(selected?.byteSize, 4);
 });
 
+test('browser pasted file infers image content type from octet-stream clipboard files', async () => {
+  const platform = createBrowserFilePlatform({ refreshCsrfToken: async () => '' });
+  const selected = await platform.selectPastedFile(new File(['clip'], 'image.png', { type: 'application/octet-stream' }));
+  assert.equal(selected?.contentType, 'image/png');
+  assert.equal(selected?.byteSize, 4);
+});
+
+test('browser pasted file sniffs image bytes when filename and MIME are generic', async () => {
+  const platform = createBrowserFilePlatform({ refreshCsrfToken: async () => '' });
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+  const selected = await platform.selectPastedFile(new File([png], 'clipboard-image', { type: 'application/octet-stream' }));
+  assert.equal(selected?.contentType, 'image/png');
+});
+
 test('browser file platform uploads through opaque capabilities', async () => {
   const calls = [];
   const file = new File(['content'], 'design.txt', { type: 'text/plain' });
@@ -66,6 +80,35 @@ test('browser file platform uploads through opaque capabilities', async () => {
   assert.equal(headers.get('content-type'), 'text/plain');
   assert.equal(headers.get('x-oss-token'), 'signed');
   assert.equal(headers.get('x-yuance-csrf-token'), 'csrf-test');
+});
+
+test('browser file platform uploads inferred image MIME when signature omits content type', async () => {
+  const calls = [];
+  const file = new File(['clip'], 'image.png', { type: 'application/octet-stream' });
+  const platform = createBrowserFilePlatform({
+    refreshCsrfToken: async () => 'csrf-test',
+    baseUrl: 'https://yuance.test/web/app/',
+    origin: 'https://yuance.test',
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return new Response(null, { status: 200 });
+    },
+  });
+  const selected = platform.selectFile(file);
+  const transfer = platform.transfers.authorizeSignedRequest({
+    purpose: 'upload',
+    expiresInSeconds: 300,
+    request: {
+      method: 'PUT',
+      url: '/storage/upload',
+      headers: [['x-oss-token', 'signed']],
+    },
+  });
+
+  await platform.files.uploadSignedRequest(transfer, selected.capability);
+
+  const headers = new Headers(calls[0].options.headers);
+  assert.equal(headers.get('content-type'), 'image/png');
 });
 
 test('browser file platform opens validated GET downloads', async () => {

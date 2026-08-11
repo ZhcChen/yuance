@@ -50,6 +50,19 @@ test("captures pasted clipboard bytes by inferring image content type from filen
   assert.deepEqual(calls[0][1], { filename: "clip.png", contentType: "image/png" });
 });
 
+test("captures pasted clipboard bytes by overriding octet-stream with filename inference", async () => {
+  const calls = [];
+  const snapshot = { privatePath: "/spool/pasted", filename: "clip.png", contentType: "image/png", byteSize: 4, sha256: "a".repeat(64), remove: async () => {} };
+  const adapter = createFileDialog({
+    dialog: {},
+    spool: { captureBuffer: async (...args) => { calls.push(args); return snapshot; } },
+    vault: { issue: (value) => ({ capability: "yfc_pasted", filename: value.filename, contentType: value.contentType, byteSize: value.byteSize }) },
+  });
+  const result = await adapter.selectPasted({ filename: "clip.png", contentType: "application/octet-stream", data: new ArrayBuffer(4) }, binding);
+  assert.equal(result.contentType, "image/png");
+  assert.deepEqual(calls[0][1], { filename: "clip.png", contentType: "image/png" });
+});
+
 test("cancel does not touch spool or vault", async () => {
   let touched = false;
   const adapter = createFileDialog({
