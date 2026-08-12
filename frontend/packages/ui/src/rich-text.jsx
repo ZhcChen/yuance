@@ -8,15 +8,18 @@ const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', '
 const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'title'];
 const CONTENT_TAGS = EDITOR_TAGS;
 const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
+const DOCUMENT_FILE_TYPES = ['doc', 'txt', 'log', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'xls', 'xlsx', 'ods', 'ppt', 'docx', 'pptx', 'pdf'];
 
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
 
-/** @param {{ html: string, format?: string, emptyText?: string, onAttachmentActivate?: (attachmentId: number) => void, resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource> }} props */
-export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, resolveAttachmentSource }) {
+/** @param {{ html: string, format?: string, emptyText?: string, onAttachmentActivate?: (attachmentId: number) => void, onFileAttachmentActivate?: (attachmentId: number, file: { href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }) => void, resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource> }} props */
+export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const activateRef = useRef(onAttachmentActivate);
+  const fileActivateRef = useRef(onFileAttachmentActivate);
   const resolveRef = useRef(resolveAttachmentSource);
   activateRef.current = onAttachmentActivate;
+  fileActivateRef.current = onFileAttachmentActivate;
   resolveRef.current = resolveAttachmentSource;
   useEffect(() => {
     const content = contentRef.current;
@@ -28,6 +31,13 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
     if (resolveRef.current) for (const media of mediaReferences) media.removeAttribute('src');
     content.replaceChildren(...staging.childNodes);
+    for (const file of content.querySelectorAll('a[data-yuance-attachment-kind="file"]')) {
+      if (!file.hasAttribute('data-yuance-file-kind') || !file.hasAttribute('data-yuance-file-ext')) {
+        const filename = file.getAttribute('title') || file.textContent || '';
+        file.setAttribute('data-yuance-file-kind', richFileVisualKind(filename, ''));
+        file.setAttribute('data-yuance-file-ext', richFileVisualBadge(filename, ''));
+      }
+    }
     let active = true;
     const releases = [];
     if (resolveRef.current) for (const media of [...content.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')]) {
@@ -43,7 +53,20 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     const activate = (event) => {
       const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
       const attachmentId = Number(target?.getAttribute('data-yuance-attachment-id'));
-      if (!Number.isSafeInteger(attachmentId) || attachmentId < 1 || !activateRef.current) return;
+      if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) return;
+      if (target?.matches('a[data-yuance-attachment-kind="file"]') && fileActivateRef.current) {
+        event.preventDefault();
+        fileActivateRef.current(attachmentId, {
+          href: target.getAttribute('href') || '',
+          title: target.getAttribute('title') || target.textContent || '',
+          fileExt: target.getAttribute('data-yuance-file-ext') || '',
+          fileKind: target.getAttribute('data-yuance-file-kind') || '',
+          x: event.clientX,
+          y: event.clientY,
+        });
+        return;
+      }
+      if (!activateRef.current) return;
       event.preventDefault();
       activateRef.current(attachmentId);
     };
@@ -95,13 +118,79 @@ export function richTextAttachmentHtml(attachment) {
   const id = String(attachment.id);
   const url = escapeAttribute(attachment.url);
   const filename = escapeAttribute(attachment.filename);
-  if (mediaKind === 'file') return `<a data-yuance-attachment-id="${id}" data-yuance-attachment-kind="file" data-yuance-align="left" href="${url}" title="${filename}">${escapeText(attachment.filename)}</a>`;
+  if (mediaKind === 'file') {
+    const fileKind = richFileVisualKind(attachment.filename, attachment.contentType);
+    const fileExt = richFileVisualBadge(attachment.filename, attachment.contentType);
+    return `<a data-yuance-attachment-id="${id}" data-yuance-attachment-kind="file" data-yuance-file-kind="${fileKind}" data-yuance-file-ext="${fileExt}" data-yuance-align="left" href="${url}" title="${filename}">${escapeText(attachment.filename)}</a>`;
+  }
   if (mediaKind === 'image') return `<figure data-yuance-attachment-id="${id}" data-yuance-attachment-kind="image" data-yuance-align="left"><img src="${url}" alt="${filename}" loading="lazy"></figure>`;
   return `<figure data-yuance-attachment-id="${id}" data-yuance-attachment-kind="video" data-yuance-align="left"><video src="${url}" controls preload="metadata" playsinline title="${filename}"></video></figure>`;
 }
 
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
 /** @typedef {{ username: string, displayName: string }} RichTextMentionOption */
+
+/** @param {string} filename @returns {string} */
+function normalizedFileExtension(filename) {
+  const index = filename.lastIndexOf('.');
+  if (index <= 0 || index === filename.length - 1) return '';
+  return filename.slice(index + 1).trim().toLowerCase();
+}
+
+/** @param {string} filename @param {string} contentType @returns {string} */
+export function previewableDocumentFileType(filename, contentType) {
+  const extension = normalizedFileExtension(filename);
+  if (DOCUMENT_FILE_TYPES.includes(extension)) return extension;
+  switch ((contentType || '').trim().toLowerCase()) {
+    case 'application/pdf': return 'pdf';
+    case 'application/msword': return 'doc';
+    case 'text/plain': return 'txt';
+    case 'text/markdown': return 'md';
+    case 'text/csv': return 'csv';
+    case 'application/vnd.ms-excel': return 'xls';
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': return 'xlsx';
+    case 'application/vnd.oasis.opendocument.spreadsheet': return 'ods';
+    case 'application/vnd.ms-powerpoint':
+    case 'application/powerpoint':
+    case 'application/x-mspowerpoint': return 'ppt';
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': return 'docx';
+    case 'application/vnd.openxmlformats-officedocument.presentationml.presentation': return 'pptx';
+    case 'application/json': return 'json';
+    case 'application/xml':
+    case 'text/xml': return 'xml';
+    case 'application/yaml':
+    case 'application/x-yaml':
+    case 'text/yaml':
+    case 'text/x-yaml': return 'yaml';
+    default: return '';
+  }
+}
+
+/** @param {string} filename @param {string} contentType @returns {string} */
+export function richFileVisualKind(filename, contentType) {
+  const extension = previewableDocumentFileType(filename, contentType) || normalizedFileExtension(filename);
+  if (['doc', 'docx', 'odt', 'rtf'].includes(extension)) return 'word';
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(extension)) return 'sheet';
+  if (['ppt', 'pptx', 'odp'].includes(extension)) return 'slide';
+  if (extension === 'pdf') return 'pdf';
+  if (['txt', 'log'].includes(extension)) return 'text';
+  if (['md', 'json', 'xml', 'yaml', 'yml'].includes(extension)) return 'code';
+  if (['zip', '7z', 'rar', 'tar', 'gz'].includes(extension)) return 'archive';
+  return 'file';
+}
+
+/** @param {string} filename @param {string} contentType @returns {string} */
+export function richFileVisualBadge(filename, contentType) {
+  const extension = previewableDocumentFileType(filename, contentType) || normalizedFileExtension(filename);
+  if (extension) return extension.slice(0, 5).toUpperCase();
+  const kind = richFileVisualKind(filename, contentType);
+  return { word: 'DOC', sheet: 'XLS', slide: 'PPT', pdf: 'PDF', code: 'CODE', archive: 'ZIP' }[kind] || 'FILE';
+}
+
+/** @param {string} filename @param {string} contentType @returns {boolean} */
+export function isPreviewableDocumentFile(filename, contentType) {
+  return Boolean(previewableDocumentFileType(filename, contentType));
+}
 
 export const DEFER_RICH_TEXT_PASTE = 'defer';
 
@@ -383,6 +472,8 @@ function createAttachmentNode(ownerDocument, attachment) {
   if (mediaKind === 'file') {
     container.setAttribute('href', attachment.url);
     container.setAttribute('title', attachment.filename);
+    container.setAttribute('data-yuance-file-kind', richFileVisualKind(attachment.filename, attachment.contentType));
+    container.setAttribute('data-yuance-file-ext', richFileVisualBadge(attachment.filename, attachment.contentType));
     container.textContent = attachment.filename;
     return container;
   }

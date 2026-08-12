@@ -62,6 +62,7 @@ import {
   Modal,
   Pagination,
   PriorityBadge,
+  RichAttachmentMenu,
   RichTextContent,
   RichTextEditor,
   Select,
@@ -72,6 +73,7 @@ import {
   WorkItemDetail,
   attachmentIsUploaded,
   formatByteSize,
+  isPreviewableDocumentFile,
   plainTextToRichHtml,
   richTextAttachmentHtml,
   richTextAttachmentIds,
@@ -916,6 +918,7 @@ export function SharedApp({ services }) {
   const [projectResourcePasswordResetOpen, setProjectResourcePasswordResetOpen] = useState(false);
   const [projectResourcePasswordResetForm, setProjectResourcePasswordResetForm] = useState({ accessPasswordAction: 'set', accessPassword: '' });
   const [projectResourceAttachments, setProjectResourceAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
+  const [projectResourceFileMenu, setProjectResourceFileMenu] = useState(/** @type {{ attachmentId: number, title: string, href: string, fileExt: string, fileKind: string, x: number, y: number } | null} */ (null));
   const [projectResourceAttachmentUploading, setProjectResourceAttachmentUploading] = useState(false);
   const [projectAttachmentUploading, setProjectAttachmentUploading] = useState(false);
   const [projectAttachmentArchiving, setProjectAttachmentArchiving] = useState(false);
@@ -2132,6 +2135,39 @@ export function SharedApp({ services }) {
   function activateProjectResourceInlineAttachment(attachmentId) {
     const attachment = projectResourceAttachments.find((value) => value.id === attachmentId);
     if (attachment && attachmentIsUploaded(attachment)) void openProjectResourceAttachmentPreview(attachment);
+  }
+
+  /** @param {string} url */
+  function appendProjectResourceAccess(url) {
+    const accessToken = projectResourceDetail?.access_token || '';
+    if (!accessToken || !url) return url;
+    return url.includes('?') ? `${url}&access=${encodeURIComponent(accessToken)}` : `${url}?access=${encodeURIComponent(accessToken)}`;
+  }
+
+  /** @param {number} attachmentId @param {{ href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }} file */
+  function openProjectResourceFileMenu(attachmentId, file) {
+    setProjectResourceFileMenu({ attachmentId, title: file.title, href: file.href, fileExt: file.fileExt, fileKind: file.fileKind, x: file.x, y: file.y });
+  }
+
+  function closeProjectResourceFileMenu() {
+    setProjectResourceFileMenu(null);
+  }
+
+  function projectResourceFileMenuDownloadHandler() {
+    const menu = projectResourceFileMenu;
+    if (!menu) return undefined;
+    const attachment = projectResourceAttachments.find((entry) => entry.id === menu.attachmentId) || null;
+    return attachment && attachmentIsUploaded(attachment)
+      ? () => void downloadProjectResourceAttachment(attachment)
+      : undefined;
+  }
+
+  function projectResourceFileMenuCanPreview() {
+    const menu = projectResourceFileMenu;
+    if (!menu) return false;
+    const attachment = projectResourceAttachments.find((entry) => entry.id === menu.attachmentId) || null;
+    return isPreviewableDocumentFile(menu.title, attachment?.content_type || '')
+      && menu.href.includes('/download');
   }
 
   async function resolveProjectResourceInlineAttachmentSource(attachmentId) {
@@ -6042,7 +6078,7 @@ export function SharedApp({ services }) {
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
                 <section className="project-tabs-card resource-summary-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料标签与关联</p><h2>结构化信息</h2></div></div><div className="resource-summary-grid"><div className="resource-summary-block"><strong>标签</strong><div className="resource-chip-row">{projectResourceDetail.tags.length ? projectResourceDetail.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>) : <span className="shell-muted">未设置标签</span>}</div></div><div className="resource-summary-block"><strong>关联对象</strong><div className="resource-link-row">{projectResourceDetail.related_work_item ? <span className="resource-link-chip">关联工作项 · {projectResourceDetail.related_work_item.key}</span> : projectResourceDetail.related_cycle ? <span className="resource-link-chip">关联周期 · {projectResourceDetail.related_cycle.name}</span> : <span className="shell-muted">未关联工作项或周期</span>}</div></div></div></section>
-                {projectResourceLocked ? <section className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></section> : <><section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div></div><article className="resource-rich-body"><RichTextContent html={projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} resolveAttachmentSource={typeof files.attachments?.openProjectResourceAttachmentPreview === 'function' ? resolveProjectResourceInlineAttachmentSource : undefined} /></article></section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /></>}
+                {projectResourceLocked ? <section className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></section> : <><section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div></div><article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={typeof files.attachments?.openProjectResourceAttachmentPreview === 'function' ? resolveProjectResourceInlineAttachmentSource : undefined} /></article></section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /><RichAttachmentMenu open={Boolean(projectResourceFileMenu)} title={projectResourceFileMenu?.title || '附件'} x={projectResourceFileMenu?.x || 0} y={projectResourceFileMenu?.y || 0} downloadUrl={projectResourceFileMenu ? appendProjectResourceAccess(projectResourceFileMenu.href) : ''} canPreview={projectResourceFileMenuCanPreview()} onClose={closeProjectResourceFileMenu} onDownload={projectResourceFileMenuDownloadHandler()} onStatus={({ tone, text }) => { if (tone === 'error') setProjectResourceError(text); else setStatusMessage(text); }} /></>}
               </> : null}
             </section>
           ) : route.id === 'project-cycle-detail' ? (

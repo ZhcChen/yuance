@@ -3,7 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, plainTextToRichHtml, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from '@yuance/frontend-ui';
+import { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, isPreviewableDocumentFile, plainTextToRichHtml, previewableDocumentFileType, richFileVisualBadge, richFileVisualKind, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from '@yuance/frontend-ui';
 
 test('rich text editor exposes the deferred paste sentinel used by pre-upload flows', () => {
   assert.equal(DEFER_RICH_TEXT_PASTE, 'defer');
@@ -51,7 +51,23 @@ test('rich text editor distinguishes inserted and available uploaded attachments
 });
 
 test('rich text attachment HTML emits canonical escaped file and media nodes', () => {
-  assert.equal(richTextAttachmentHtml({ id: 9, filename: 'a<&".txt', contentType: 'text/plain', url: '/web/projects/YCE/resources/8/attachments/9/download' }), '<a data-yuance-attachment-id="9" data-yuance-attachment-kind="file" data-yuance-align="left" href="/web/projects/YCE/resources/8/attachments/9/download" title="a&lt;&amp;&quot;.txt">a&lt;&amp;".txt</a>');
+  assert.equal(richTextAttachmentHtml({ id: 9, filename: 'a<&".txt', contentType: 'text/plain', url: '/web/projects/YCE/resources/8/attachments/9/download' }), '<a data-yuance-attachment-id="9" data-yuance-attachment-kind="file" data-yuance-file-kind="text" data-yuance-file-ext="TXT" data-yuance-align="left" href="/web/projects/YCE/resources/8/attachments/9/download" title="a&lt;&amp;&quot;.txt">a&lt;&amp;".txt</a>');
   assert.match(richTextAttachmentHtml({ id: 10, filename: 'design.png', contentType: 'image/png', url: '/web/projects/YCE/resources/8/attachments/10/download' }), /^<figure[\s\S]*<img[\s\S]*><\/figure>$/u);
   assert.match(richTextAttachmentHtml({ id: 11, filename: 'demo.mp4', contentType: 'video/mp4', url: '/web/projects/YCE/resources/8/attachments/11/download' }), /<video[\s\S]*controls/);
+});
+
+test('rich text file helpers derive document previewability and file card visuals', () => {
+  assert.equal(previewableDocumentFileType('guide.pdf', ''), 'pdf');
+  assert.equal(previewableDocumentFileType('plan.txt', 'text/plain'), 'txt');
+  assert.equal(previewableDocumentFileType('notes.md', 'application/octet-stream'), 'md');
+  assert.equal(previewableDocumentFileType('archive.zip', ''), '');
+  assert.equal(richFileVisualKind('设计说明.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), 'word');
+  assert.equal(richFileVisualKind('数据.xlsx', ''), 'sheet');
+  assert.equal(richFileVisualKind('演示.pptx', ''), 'slide');
+  assert.equal(richFileVisualKind('archive.zip', ''), 'archive');
+  assert.equal(richFileVisualBadge('README.md', ''), 'MD');
+  assert.equal(richFileVisualBadge('archive.zip', ''), 'ZIP');
+  assert.equal(richFileVisualBadge('unknown', ''), 'FILE');
+  assert.equal(isPreviewableDocumentFile('guide.pdf', ''), true);
+  assert.equal(isPreviewableDocumentFile('archive.zip', ''), false);
 });

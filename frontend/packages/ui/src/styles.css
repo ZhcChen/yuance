@@ -727,6 +727,84 @@ html[data-theme="dark"] {
   }
 }
 
+.rich-attachment-menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 178px;
+  max-width: min(280px, calc(100vw - 20px));
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--yc-line-strong);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--yc-panel) 96%, transparent);
+  color: var(--yc-text);
+  box-shadow: var(--yc-shadow);
+  opacity: 0;
+  transform: translateY(4px) scale(.98);
+  transform-origin: top left;
+  animation: yc-rich-menu-enter 150ms ease forwards;
+  backdrop-filter: blur(12px);
+}
+
+@keyframes yc-rich-menu-enter {
+  from { opacity: 0; transform: translateY(4px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.rich-attachment-menu-title {
+  max-width: 100%;
+  padding: 5px 8px 7px;
+  border-bottom: 1px solid var(--yc-line);
+  color: var(--yc-muted);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rich-attachment-menu button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--yc-text);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--yc-motion-fast) ease, color var(--yc-motion-fast) ease;
+}
+
+.rich-attachment-menu button:hover,
+.rich-attachment-menu button:focus-visible {
+  background: var(--yc-brand-soft);
+  color: var(--yc-brand-strong);
+  outline: none;
+}
+
+.rich-attachment-menu button span {
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 18px;
+}
+
+.rich-attachment-menu button em {
+  color: var(--yc-muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rich-attachment-menu { animation: none; }
+}
+
 .yc-table-wrap { width: 100%; overflow-x: auto; }
 .yc-table { width: 100%; border-collapse: collapse; background: var(--yc-panel); color: var(--yc-text); }
 .yc-table th,
