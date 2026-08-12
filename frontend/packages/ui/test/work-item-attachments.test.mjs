@@ -37,7 +37,7 @@ test('work item attachments render content, status and callbacks as controls', (
     onDownload: () => {},
   }));
 
-  assert.match(html, /工作项附件/);
+  assert.match(html, /已有附件/);
   assert.match(html, /design\.txt/);
   assert.match(html, /1\.5 KB/);
   assert.match(html, /aria-label="下载附件 design\.txt"/);

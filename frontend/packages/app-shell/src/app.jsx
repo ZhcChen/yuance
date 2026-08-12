@@ -308,6 +308,7 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
  * @property {string} assignee_username
  * @property {string} assignee
  * @property {string} reporter
+ * @property {string} reporter_username
  * @property {string} due_date
  * @property {string} created_at
  * @property {string} updated_at
@@ -565,6 +566,13 @@ function workItemBatchChangeSummary(action, value, count, assignees = [], cycles
 }
 
 const WORK_ITEM_PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
+
+/** @param {import('react').FormEvent<HTMLFormElement>} event */
+function workItemFormSubmitter(event) {
+  return /** @type {HTMLButtonElement | null | undefined} */ (
+    /** @type {Event & { submitter?: HTMLButtonElement | null }} */ (event.nativeEvent).submitter
+  );
+}
 
 /** @param {AppWorkItemDetail} item @param {AppWorkItemComment | null} [primaryPost] */
 function workItemEditFormFromDetail(item, primaryPost = null) {
@@ -1067,6 +1075,8 @@ export function SharedApp({ services }) {
   const [workItemNewCommentDraftId, setWorkItemNewCommentDraftId] = useState(/** @type {number | null} */ (null));
   const [workItemNewCommentAttachmentUploading, setWorkItemNewCommentAttachmentUploading] = useState(false);
   const [workItemCommentSubmitting, setWorkItemCommentSubmitting] = useState(false);
+  const [workItemNewCommentAssignStatus, setWorkItemNewCommentAssignStatus] = useState('');
+  const [workItemReplyAssignStatus, setWorkItemReplyAssignStatus] = useState('');
   const [workItemEditingCommentId, setWorkItemEditingCommentId] = useState(/** @type {number | null} */ (null));
   const [workItemEditCommentBody, setWorkItemEditCommentBody] = useState('');
   const [workItemEditCommentSubmitting, setWorkItemEditCommentSubmitting] = useState(false);
@@ -3327,6 +3337,8 @@ export function SharedApp({ services }) {
     setWorkItemHandoffForm(workItemHandoffFormFromDetail(activeWorkItemDetail));
     setWorkItemActionError('');
     setWorkItemNewCommentBody('');
+    setWorkItemNewCommentAssignStatus(activeWorkItemDetail.status || 'open');
+    setWorkItemReplyAssignStatus(activeWorkItemDetail.status || 'open');
     setWorkItemEditingCommentId(null);
     setWorkItemEditCommentBody('');
     setWorkItemReplyingToCommentId(null);
@@ -3514,6 +3526,7 @@ export function SharedApp({ services }) {
     setWorkItemEditCommentBody('');
     setWorkItemReplyingToCommentId(comment.id);
     setWorkItemReplyCommentBody('');
+    setWorkItemReplyAssignStatus(activeWorkItemDetail?.status || 'open');
     setWorkItemCommentActionError('');
     runtime.scheduleFrame(() => runtime.getElementById(`work-item-comment-reply-${comment.id}`)?.focus());
   }
@@ -3842,6 +3855,8 @@ export function SharedApp({ services }) {
       return;
     }
 
+    const submitter = workItemFormSubmitter(event);
+    const shouldAssign = Boolean(submitter?.closest?.('[data-discussion-assign]'));
     const itemKey = activeWorkItemDetail.key;
     const actionId = workItemActionRef.current + 1;
     workItemActionRef.current = actionId;
@@ -3875,14 +3890,26 @@ export function SharedApp({ services }) {
         setWorkItemComments((current) => [...current, created]);
         setWorkItemNewCommentBody('');
         setWorkItemNewCommentDraftId(null);
-        setStatusMessage(`${itemKey} 评论已发布。`);
-        try {
-          await refreshWorkItemCompanionState(itemKey, '评论已发布', actionId);
-        } catch {
-          if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
-            setStatusMessage(`${itemKey} 评论已发布，但关联状态刷新失败，请手动刷新。`);
+      }
+      if (shouldAssign) {
+        const assigneeUsername = activeWorkItemDetail.reporter_username || '';
+        if (!assigneeUsername) {
+          throw new Error('无法识别指派对象，请刷新页面后重试。');
+        }
+        const updated = await api.handoffWorkItem(itemKey, {
+          status: workItemNewCommentAssignStatus,
+          assigneeUsername,
+          body: '由讨论内容自动指派',
+          sourceCommentId: created.id,
+        });
+        if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+          if (applyWorkItemMutationResult(updated, `${itemKey} 评论已发布并指派。`, actionId)) {
+            await refreshWorkItemCompanionState(itemKey, '评论已发布并指派', actionId, updated);
           }
         }
+      } else if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setStatusMessage(`${itemKey} 评论已发布。`);
+        await refreshWorkItemCompanionState(itemKey, '评论已发布', actionId);
       }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
@@ -3944,7 +3971,10 @@ export function SharedApp({ services }) {
     setWorkItemReplySubmitting(true);
     setWorkItemCommentActionError('');
     try {
-      await createWorkItemCommentUseCase({
+      const submitter = workItemFormSubmitter(event);
+      const shouldAssign = Boolean(submitter?.closest?.('[data-discussion-assign]'));
+      const parentComment = workItemComments.find((comment) => comment.id === parentCommentId);
+      const result = await createWorkItemCommentUseCase({
         api,
         itemKey,
         payload: { body, bodyFormat: 'html', parentCommentId },
@@ -3958,11 +3988,31 @@ export function SharedApp({ services }) {
             setWorkItemReplyCommentBody('');
             setStatusMessage(`${itemKey} 回复已发布。`);
           },
-          refreshCompanion: () => refreshWorkItemCompanionState(itemKey, '回复已发布', actionId),
+          refreshCompanion: shouldAssign ? undefined : () => refreshWorkItemCompanionState(itemKey, '回复已发布', actionId),
         },
       });
+      if (shouldAssign) {
+        const created = result.value;
+        const assigneeUsername = parentComment?.author_username || '';
+        if (!assigneeUsername) {
+          throw new Error('无法识别指派对象，请刷新页面后重试。');
+        }
+        const updated = await api.handoffWorkItem(itemKey, {
+          status: workItemReplyAssignStatus,
+          assigneeUsername,
+          body: '由讨论内容自动指派',
+          sourceCommentId: created.id,
+        });
+        if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+          if (applyWorkItemMutationResult(updated, `${itemKey} 回复已发布并指派。`, actionId)) {
+            await refreshWorkItemCompanionState(itemKey, '回复已发布并指派', actionId, updated);
+          }
+        }
+      }
     } catch (caught) {
-      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('发布回复失败。')));
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('发布回复失败。')));
+      }
     } finally {
       clearWorkItemMutation(actionId, setWorkItemReplySubmitting);
     }
@@ -5375,7 +5425,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
+      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases', 'work-item-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -6267,6 +6317,10 @@ export function SharedApp({ services }) {
                     canWriteComments={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
                     currentUsername={user?.username || ''}
                     mentionOptions={(activeWorkItemDetailView?.assignees || []).map((option) => ({ username: option.value, displayName: option.label }))}
+                    statusOptions={activeWorkItemDetailView?.status_options || []}
+                    assigneeTarget={activeWorkItemDetail.reporter_username || ''}
+                    newCommentAssignStatus={workItemNewCommentAssignStatus}
+                    replyAssignStatus={workItemReplyAssignStatus}
                     editingCommentId={workItemEditingCommentId}
                     replyingToCommentId={workItemReplyingToCommentId}
                     newCommentBody={workItemNewCommentBody}
@@ -6287,6 +6341,8 @@ export function SharedApp({ services }) {
                     onTypingStop={stopWorkItemTyping}
                     onSubmitNew={submitWorkItemComment}
                     onChangeNew={changeWorkItemNewComment}
+                    onChangeNewAssignStatus={setWorkItemNewCommentAssignStatus}
+                    onChangeReplyAssignStatus={setWorkItemReplyAssignStatus}
                     onUploadNewAttachment={() => void uploadSelectedWorkItemCommentAttachment(null)}
                     onCancelNewDraft={() => void cancelWorkItemCommentDraft()}
                     onSubmitEdit={submitWorkItemCommentEdit}
@@ -6305,6 +6361,7 @@ export function SharedApp({ services }) {
                     onPasteFile={pasteWorkItemCommentFile}
                     resolveAttachmentSource={resolveWorkItemCommentInlineAttachmentSource}
                     onAttachmentActivate={activateWorkItemCommentInlineAttachment}
+                    buildAttachmentThumbnailUrl={(commentId, attachment) => `/api/v1/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${commentId}/attachments/${attachment.id}/download`}
                   />
                   <WorkItemAttachments
                     attachments={workItemAttachments}

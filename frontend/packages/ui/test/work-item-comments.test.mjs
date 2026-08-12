@@ -41,6 +41,10 @@ function renderComments(overrides = {}) {
     canWriteComments: true,
     currentUsername: 'alice',
     mentionOptions: [{ username: 'bob', displayName: 'Bob' }],
+    statusOptions: [{ value: 'open', label: '待处理' }, { value: 'in_progress', label: '处理中' }],
+    assigneeTarget: 'bob',
+    newCommentAssignStatus: 'open',
+    replyAssignStatus: 'open',
     editingCommentId: null,
     replyingToCommentId: null,
     newCommentBody: '',
@@ -57,6 +61,8 @@ function renderComments(overrides = {}) {
     error: '',
     onSubmitNew: () => {},
     onChangeNew: () => {},
+    onChangeNewAssignStatus: () => {},
+    onChangeReplyAssignStatus: () => {},
     onUploadNewAttachment: () => {},
     onCancelNewDraft: () => {},
     onSubmitEdit: () => {},
@@ -79,12 +85,16 @@ function renderComments(overrides = {}) {
 test('work item comments render comments, attachment controls and upload state', () => {
   const html = renderComments();
 
-  assert.match(html, /评论与流转/);
+  assert.match(html, /讨论/);
+  assert.match(html, /1 条讨论/);
   assert.match(html, /开始处理/);
+  assert.match(html, /发表于 2026-08-01/);
   assert.match(html, /comment\.txt/);
   assert.match(html, /aria-label="下载评论附件 comment\.txt"/);
   assert.match(html, /aria-label="预览评论附件 comment\.txt"/);
   assert.match(html, /上传完成/);
+  assert.match(html, /指派后状态/);
+  assert.match(html, /发表并指派/);
 });
 
 test('work item comments render edit and error states', () => {
@@ -118,7 +128,8 @@ test('work item comments expose draft attachments in the shared composer', () =>
 test('work item comments render reply composer and hide edit from non-authors', () => {
   const reply = renderComments({ replyingToCommentId: 9, replyCommentBody: '<p>回复内容</p>' });
   assert.match(reply, /回复 alice/);
-  assert.match(reply, /回复评论/);
+  assert.match(reply, /回复并指派/);
+  assert.match(reply, /data-discussion-assign/);
 
   const foreign = renderComments({ currentUsername: 'bob' });
   assert.doesNotMatch(foreign, /data-comment-edit/);
@@ -128,18 +139,19 @@ test('work item comments render reply composer and hide edit from non-authors', 
 test('work item comments keep browsing available without exposing write controls', () => {
   const html = renderComments({ canWriteComments: false });
 
-  assert.match(html, /评论与流转/);
+  assert.match(html, /讨论/);
   assert.match(html, /开始处理/);
   assert.match(html, /comment\.txt/);
   assert.doesNotMatch(html, /新增评论/);
   assert.doesNotMatch(html, /data-comment-reply/);
   assert.doesNotMatch(html, /data-comment-edit/);
-  assert.doesNotMatch(html, /选择评论附件/);
+  assert.doesNotMatch(html, /添加附件/);
 });
 
 test('work item comments render an explicit empty state', () => {
   const html = renderComments({ comments: [], attachmentsByComment: {}, attachmentStatusByComment: {} });
-  assert.match(html, /当前没有评论或流转记录/);
+  assert.match(html, /还没有讨论/);
+  assert.match(html, /0 条讨论/);
 });
 
 test('work item comments summarize typing users in a polite live region', () => {
@@ -149,5 +161,5 @@ test('work item comments summarize typing users in a polite live region', () => 
   assert.equal(workItemTypingText([{ userId: 1, displayName: 'Alice' }, { userId: 2, displayName: 'Bob' }, { userId: 3, displayName: 'Carol' }]), 'Alice、Bob 等 3 人正在输入…');
 
   const html = renderComments({ typingUsers: [{ userId: 1, displayName: 'Alice' }] });
-  assert.match(html, /class="work-item-typing-status" aria-live="polite" aria-atomic="true">Alice 正在输入…/u);
+  assert.match(html, /class="discussion-typing" aria-live="polite" aria-atomic="true">Alice 正在输入…/u);
 });

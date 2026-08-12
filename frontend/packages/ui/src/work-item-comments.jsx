@@ -2,10 +2,22 @@
 
 import React from 'react';
 
+import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
 import { AttachmentList } from './work-item-attachments.jsx';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
 
 /** @typedef {import('./work-item-attachments.jsx').Attachment} Attachment */
+
+const DISCUSSION_AVATAR_COLORS = [
+  '#1f5fbf',
+  '#2d8a68',
+  '#a85b00',
+  '#b42318',
+  '#4656a8',
+  '#0f766e',
+  '#7c3aed',
+  '#be4b00',
+];
 
 /**
  * @typedef {object} Comment
@@ -22,6 +34,134 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  * @property {string} updated_at
  */
 
+/** @param {string} name */
+function discussionAvatarInitial(name) {
+  const value = (name || '').trim();
+  return value ? Array.from(value)[0].toLocaleUpperCase('zh-CN') : 'U';
+}
+
+/** @param {string} name */
+function discussionAvatarStyle(name) {
+  const value = (name || '').trim();
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.codePointAt(0) || 0;
+    hash = Math.imul(hash, 16777619);
+  }
+  hash >>>= 0;
+  return { backgroundColor: DISCUSSION_AVATAR_COLORS[hash % DISCUSSION_AVATAR_COLORS.length] };
+}
+
+/**
+ * @param {{
+ *   name: string,
+ *   className?: string,
+ * }} props
+ */
+function DiscussionAvatar({ name, className = '' }) {
+  return (
+    <span className={`discussion-avatar ${className}`.trim()} data-user-avatar data-avatar-name={name} style={discussionAvatarStyle(name)} aria-hidden="true">
+      {discussionAvatarInitial(name)}
+    </span>
+  );
+}
+
+/**
+ * @param {Attachment} attachment
+ * @returns {'image' | 'video' | null}
+ */
+function attachmentMediaKind(attachment) {
+  if (!attachmentIsUploaded(attachment)) return null;
+  const contentType = (attachment.content_type || '').toLowerCase();
+  if (contentType.startsWith('image/')) return 'image';
+  if (contentType.startsWith('video/')) return 'video';
+  return null;
+}
+
+/**
+ * @param {{
+ *   attachments: Attachment[],
+ *   commentId: number,
+ *   downloadingId: number | null,
+ *   revealableId: number | null,
+ *   onPreview: (attachment: Attachment) => void,
+ *   onDownload: (attachment: Attachment) => void,
+ *   onReveal?: (attachment: Attachment) => void,
+ *   renderExtraAction?: (attachment: Attachment) => React.ReactNode,
+ *   buildThumbnailUrl?: (commentId: number, attachment: Attachment) => string,
+ * }} props
+ */
+function DiscussionAttachmentList({ attachments, commentId, downloadingId, revealableId, onPreview, onDownload, onReveal, renderExtraAction, buildThumbnailUrl }) {
+  return (
+    <ul className="discussion-attachments work-item-comment-attachments" aria-label="评论附件">
+      {attachments.map((attachment) => {
+        const uploaded = attachmentIsUploaded(attachment);
+        const mediaKind = uploaded ? attachmentMediaKind(attachment) : null;
+        const thumbnailSource = buildThumbnailUrl ? buildThumbnailUrl(commentId, attachment) : '';
+        return (
+          <li key={attachment.id} className={`discussion-attachment is-${attachment.status || 'unknown'}`}>
+            {mediaKind === 'image' ? (
+              <button
+                className="discussion-attachment-preview"
+                type="button"
+                aria-label={`预览图片 ${attachment.filename || attachment.id}`}
+                onClick={() => onPreview(attachment)}
+                disabled={downloadingId === attachment.id}
+              >
+                <span className="attachment-image-frame">
+                  {thumbnailSource ? (
+                    <img
+                      src={thumbnailSource}
+                      alt=""
+                      loading="lazy"
+                      onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
+                      onError={(event) => {
+                        event.currentTarget.classList.add('is-error');
+                        const state = event.currentTarget.parentElement?.querySelector('.attachment-image-state');
+                        if (state) state.textContent = '预览不可用';
+                      }}
+                    />
+                  ) : null}
+                  <span className="attachment-image-state">加载预览</span>
+                </span>
+              </button>
+            ) : mediaKind === 'video' ? (
+              <button
+                className="discussion-attachment-preview"
+                type="button"
+                aria-label={`预览视频 ${attachment.filename || attachment.id}`}
+                onClick={() => onPreview(attachment)}
+                disabled={downloadingId === attachment.id}
+              >
+                <span className="attachment-image-frame">
+                  {thumbnailSource ? <video src={thumbnailSource} muted preload="metadata" playsInline /> : null}
+                  <span className="attachment-video-play" aria-hidden="true">▶</span>
+                </span>
+              </button>
+            ) : (
+              <span className="discussion-file-type" aria-hidden="true">FILE</span>
+            )}
+            <div>
+              <strong>{attachment.filename || '未命名附件'}</strong>
+              <span>{formatByteSize(attachment.byte_size)} · {attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}</span>
+            </div>
+            <div className="work-item-attachment-actions">
+              {uploaded ? (
+                <>
+                  {onPreview ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" aria-label={`预览评论附件 ${attachment.filename || attachment.id}`} onClick={() => onPreview(attachment)} disabled={downloadingId === attachment.id}>预览</button> : null}
+                  <button className="yuance-ui-button yuance-ui-button-secondary" type="button" aria-label={`下载评论附件 ${attachment.filename || attachment.id}`} onClick={() => onDownload(attachment)} disabled={downloadingId === attachment.id}>{downloadingId === attachment.id ? '处理中…' : '下载'}</button>
+                  {revealableId === attachment.id && onReveal ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onReveal(attachment)} disabled={downloadingId === attachment.id}>在文件夹中显示</button> : null}
+                </>
+              ) : <span className="attachment-action-hint">{attachmentStatusLabel(attachment.status)}</span>}
+              {renderExtraAction?.(attachment)}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
  * @param {{
  *   comments: Comment[],
@@ -34,6 +174,10 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   canWriteComments: boolean,
  *   currentUsername: string,
  *   mentionOptions: Array<{ username: string, displayName: string }>,
+ *   statusOptions?: Array<{ value: string, label: string }>,
+ *   assigneeTarget?: string,
+ *   newCommentAssignStatus?: string,
+ *   replyAssignStatus?: string,
  *   editingCommentId: number | null,
  *   replyingToCommentId: number | null,
  *   newCommentBody: string,
@@ -54,6 +198,8 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   onTypingStop?: () => void,
  *   onSubmitNew: (event: import('react').FormEvent<HTMLFormElement>) => void,
  *   onChangeNew: (value: string) => void,
+ *   onChangeNewAssignStatus?: (value: string) => void,
+ *   onChangeReplyAssignStatus?: (value: string) => void,
  *   onUploadNewAttachment: () => void,
  *   onCancelNewDraft: () => void,
  *   onSubmitEdit: (event: import('react').FormEvent<HTMLFormElement>) => void,
@@ -72,6 +218,7 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
  *   resolveAttachmentSource?: (commentId: number, attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (commentId: number, attachmentId: number) => void,
+ *   buildAttachmentThumbnailUrl?: (commentId: number, attachment: Attachment) => string,
  * }} props
  */
 export function WorkItemComments(props) {
@@ -86,6 +233,10 @@ export function WorkItemComments(props) {
     canWriteComments,
     currentUsername,
     mentionOptions,
+    statusOptions = [],
+    assigneeTarget = '',
+    newCommentAssignStatus = '',
+    replyAssignStatus = '',
     editingCommentId,
     replyingToCommentId,
     newCommentBody,
@@ -106,6 +257,8 @@ export function WorkItemComments(props) {
     onTypingStop,
     onSubmitNew,
     onChangeNew,
+    onChangeNewAssignStatus = () => {},
+    onChangeReplyAssignStatus = () => {},
     onUploadNewAttachment,
     onCancelNewDraft,
     onSubmitEdit,
@@ -124,119 +277,140 @@ export function WorkItemComments(props) {
     onPasteFile,
     resolveAttachmentSource,
     onAttachmentActivate,
+    buildAttachmentThumbnailUrl,
   } = props;
   const typingText = workItemTypingText(typingUsers);
   const typingCallbacks = { onFocus: onTypingStart, onInputActivity: onTypingActivity, onBlur: onTypingStop };
 
   return (
     <section id="work-item-comments" className="work-item-comments-panel discussion-section" aria-labelledby="work-item-comments-title">
-      <div className="yuance-ui-panel-header">
-        <div className="work-item-comments-heading">
-          <h3 id="work-item-comments-title">评论与流转</h3>
-          <span className="work-item-typing-status" aria-live="polite" aria-atomic="true">{typingText}</span>
+      <div className="content-section-head discussion-heading">
+        <div className="content-section-copy">
+          <span className="section-kicker">协作记录</span>
+          <h2 id="work-item-comments-title">讨论</h2>
         </div>
-        <span className="yuance-ui-meta">共 {comments.length} 条</span>
+        <div className="discussion-heading-meta">
+          <span className="discussion-count">{comments.length} 条讨论</span>
+          {typingText ? <span className="discussion-typing" aria-live="polite" aria-atomic="true">{typingText}</span> : null}
+        </div>
       </div>
-      {canWriteComments ? <form className="work-item-comment-form" onSubmit={onSubmitNew}>
-        <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('new', null, file) : undefined} {...typingCallbacks} />
-        {newCommentAttachments.length ? (
-          <AttachmentList
-            attachments={newCommentAttachments}
-            ariaLabel="新评论附件"
-            downloadLabel="评论附件"
-            downloadingId={newCommentDraftId !== null && downloadingKey.startsWith(`${newCommentDraftId}:`) ? Number(downloadingKey.split(':')[1]) : null}
-            revealableId={newCommentDraftId !== null && revealableKey.startsWith(`${newCommentDraftId}:`) ? Number(revealableKey.split(':')[1]) : null}
-            onPreview={(attachment) => { if (newCommentDraftId !== null) onPreviewAttachment(newCommentDraftId, attachment); }}
-            onDownload={(attachment) => { if (newCommentDraftId !== null) onDownloadAttachment(newCommentDraftId, attachment); }}
-            onReveal={(attachment) => { if (newCommentDraftId !== null) onRevealAttachment(newCommentDraftId, attachment); }}
-            className="work-item-comment-attachment-list"
-          />
-        ) : null}
-        {newCommentAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{newCommentAttachmentStatus}</p> : null}
-        <div className="work-item-form-actions">
-          <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onUploadNewAttachment} disabled={mutationBusy || newCommentAttachmentUploading}>{newCommentAttachmentUploading ? '处理中…' : '添加附件'}</button>
-          {newCommentDraftId !== null ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelNewDraft} disabled={mutationBusy}>取消草稿</button> : null}
-          <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{commentSubmitting ? '发布中…' : '发布评论'}</button>
-        </div>
-      </form> : null}
+      {canWriteComments ? <div className="discussion-composer-dock">
+        <form className="discussion-composer work-item-comment-form" onSubmit={onSubmitNew}>
+          <DiscussionAvatar name="我" className="discussion-composer-avatar work-item-comment-avatar" />
+          <div className="discussion-composer-main">
+            <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('new', null, file) : undefined} {...typingCallbacks} />
+            {newCommentAttachments.length ? (
+              <AttachmentList
+                attachments={newCommentAttachments}
+                ariaLabel="新评论附件"
+                downloadLabel="评论附件"
+                downloadingId={newCommentDraftId !== null && downloadingKey.startsWith(`${newCommentDraftId}:`) ? Number(downloadingKey.split(':')[1]) : null}
+                revealableId={newCommentDraftId !== null && revealableKey.startsWith(`${newCommentDraftId}:`) ? Number(revealableKey.split(':')[1]) : null}
+                onPreview={(attachment) => { if (newCommentDraftId !== null) onPreviewAttachment(newCommentDraftId, attachment); }}
+                onDownload={(attachment) => { if (newCommentDraftId !== null) onDownloadAttachment(newCommentDraftId, attachment); }}
+                onReveal={(attachment) => { if (newCommentDraftId !== null) onRevealAttachment(newCommentDraftId, attachment); }}
+                className="work-item-comment-attachment-list"
+              />
+            ) : null}
+            {newCommentAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{newCommentAttachmentStatus}</p> : null}
+            <div className="discussion-composer-footer work-item-form-actions">
+              <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onUploadNewAttachment} disabled={mutationBusy || newCommentAttachmentUploading}>{newCommentAttachmentUploading ? '处理中…' : '添加附件'}</button>
+              {newCommentDraftId !== null ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelNewDraft} disabled={mutationBusy}>取消草稿</button> : null}
+              <label className="discussion-assign-status">指派后状态<select value={newCommentAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeNewAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <button className="yuance-ui-button yuance-ui-button-secondary" type="submit" data-discussion-submit disabled={mutationBusy || newCommentAttachmentUploading}>{commentSubmitting ? '正在提交…' : '发表'}</button>
+              <button className="yuance-ui-button" type="submit" data-discussion-submit data-discussion-assign disabled={mutationBusy || newCommentAttachmentUploading || !assigneeTarget}>{commentSubmitting ? '正在提交…' : '发表并指派'}</button>
+            </div>
+          </div>
+        </form>
+      </div> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {comments.length ? (
-        <ul className="work-item-comment-list">
+        <ul className="work-item-comment-list discussion-thread">
           {comments.map((comment) => {
             const attachments = attachmentsByComment[String(comment.id)] || [];
             const attachmentStatus = attachmentStatusByComment[String(comment.id)] || '';
             const commentUploading = uploadingCommentId === comment.id;
+            const downloadingId = downloadingKey.startsWith(`${comment.id}:`) ? Number(downloadingKey.split(':')[1]) : null;
+            const revealableId = revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null;
             return (
-              <li key={comment.id} id={`comment-${comment.id}`} tabIndex={-1} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
-                <div className="work-item-comment-heading">
-                  <strong>{comment.author}</strong>
-                  {comment.parent_comment_id ? <span className="yuance-ui-meta">回复 {comment.parent_author}</span> : null}
-                  {comment.is_flow ? <span className="yuance-ui-pill yuance-ui-pill-status">流转记录</span> : null}
-                  {comment.is_draft ? <span className="yuance-ui-pill yuance-ui-pill-draft">草稿</span> : null}
-                </div>
-                {editingCommentId === comment.id ? (
-                  <>
-                    <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />
-                    <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
-                      <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('edit', comment.id, file) : undefined} {...typingCallbacks} />
-                      <div className="work-item-form-actions work-item-comment-actions">
-                        <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
-                        <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
-                      </div>
-                    </form>
-                  </>
-                ) : <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />}
-                {attachments.length ? (
-                  <AttachmentList
-                    attachments={attachments}
-                    ariaLabel={`评论 ${comment.id} 附件`}
-                    downloadLabel="评论附件"
-                    downloadingId={downloadingKey.startsWith(`${comment.id}:`) ? Number(downloadingKey.split(':')[1]) : null}
-                    revealableId={revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null}
-                    onPreview={(attachment) => onPreviewAttachment(comment.id, attachment)}
-                    onDownload={(attachment) => onDownloadAttachment(comment.id, attachment)}
-                    onReveal={(attachment) => onRevealAttachment(comment.id, attachment)}
-                    renderExtraAction={(attachment) => editingCommentId === comment.id && comment.author_username === currentUsername ? (
-                      <button className="yuance-ui-button yuance-ui-button-danger" type="button" onClick={() => onRequestDeleteAttachment(comment.id, attachment)} disabled={mutationBusy || deletingAttachmentId !== null}>
-                        {deletingAttachmentId === attachment.id ? '删除中…' : '删除'}
-                      </button>
+              <li key={comment.id} id={`comment-${comment.id}`} tabIndex={-1} className={`work-item-comment-row discussion-post ${comment.is_flow ? 'is-flow' : ''}`}>
+                <DiscussionAvatar name={comment.author} className="work-item-comment-avatar" />
+                <div className="discussion-post-shell">
+                  <header className="discussion-post-head">
+                    <div>
+                      <strong>{comment.author}</strong>
+                      {comment.parent_comment_id ? <a className="discussion-reply-target" href={`#comment-${comment.parent_comment_id}`} aria-label={`查看 ${comment.parent_author} 的原评论`}>回复 {comment.parent_author}</a> : null}
+                      {comment.is_flow ? <span className="yuance-ui-pill yuance-ui-pill-status">流转记录</span> : null}
+                      {comment.is_draft ? <span className="yuance-ui-pill yuance-ui-pill-draft">草稿</span> : null}
+                    </div>
+                  </header>
+                  <article className="discussion-post-content">
+                    {editingCommentId === comment.id ? (
+                      <>
+                        <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />
+                        <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
+                          <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('edit', comment.id, file) : undefined} {...typingCallbacks} />
+                          <div className="work-item-form-actions work-item-comment-actions">
+                            <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
+                            <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
+                          </div>
+                        </form>
+                      </>
+                    ) : <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />}
+                    {attachments.length ? (
+                      <DiscussionAttachmentList
+                        attachments={attachments}
+                        commentId={comment.id}
+                        downloadingId={downloadingId}
+                        revealableId={revealableId}
+                        onPreview={(attachment) => onPreviewAttachment(comment.id, attachment)}
+                        onDownload={(attachment) => onDownloadAttachment(comment.id, attachment)}
+                        onReveal={onRevealAttachment ? (attachment) => onRevealAttachment(comment.id, attachment) : undefined}
+                        renderExtraAction={(attachment) => editingCommentId === comment.id && comment.author_username === currentUsername ? (
+                          <button className="yuance-ui-button yuance-ui-button-danger" type="button" onClick={() => onRequestDeleteAttachment(comment.id, attachment)} disabled={mutationBusy || deletingAttachmentId !== null}>
+                            {deletingAttachmentId === attachment.id ? '删除中…' : '删除'}
+                          </button>
+                        ) : null}
+                        buildThumbnailUrl={buildAttachmentThumbnailUrl}
+                      />
                     ) : null}
-                    className="work-item-comment-attachment-list"
-                  />
-                ) : null}
-                {canWriteComments && !comment.is_flow && !comment.is_draft ? (
-                  <form className="work-item-comment-attachment-upload" onSubmit={(event) => event.preventDefault()}>
-                    <button
-                      className="yuance-ui-button yuance-ui-button-secondary"
-                      type="button"
-                      onClick={() => onUploadAttachment(comment.id)}
-                      disabled={commentUploading || uploadingCommentId !== null || mutationBusy}
-                    >
-                      {commentUploading ? '处理中…' : '选择评论附件'}
-                    </button>
                     {attachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{attachmentStatus}</p> : null}
-                  </form>
-                ) : null}
-                <p className="yuance-ui-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
-                {!comment.is_flow && !comment.is_draft && editingCommentId === null ? (
-                  <div className="work-item-comment-actions">
-                    {canWriteComments ? <button data-comment-reply className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartReply(comment)} disabled={mutationBusy}>回复</button> : null}
-                    {canWriteComments && comment.author_username === currentUsername ? <button data-comment-edit className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button> : null}
-                  </div>
-                ) : null}
-                {replyingToCommentId === comment.id ? <form className="work-item-comment-reply-form" onSubmit={onSubmitReply}>
-                  <p className="yuance-ui-meta">回复 {comment.author}</p>
-                  <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('reply', comment.id, file) : undefined} {...typingCallbacks} />
-                  <div className="work-item-form-actions work-item-comment-actions">
-                    <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</button>
-                    <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{replySubmitting ? '回复中…' : '回复评论'}</button>
-                  </div>
-                </form> : null}
+                    <footer className="discussion-post-actions">
+                      <div className="discussion-post-action-buttons">
+                        {canWriteComments && !comment.is_flow && !comment.is_draft && editingCommentId === null ? (
+                          <>
+                            <button data-comment-reply className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartReply(comment)} disabled={mutationBusy}>回复</button>
+                            {comment.author_username === currentUsername ? <button data-comment-edit className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button> : null}
+                            <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onUploadAttachment(comment.id)} disabled={commentUploading || uploadingCommentId !== null || mutationBusy}>{commentUploading ? '处理中…' : '添加附件'}</button>
+                          </>
+                        ) : null}
+                      </div>
+                      <div className="discussion-post-time">
+                        <span>发表于 {comment.created_at || '未知'}</span>
+                        {comment.updated_at && comment.updated_at !== comment.created_at ? <span>编辑于 {comment.updated_at}</span> : null}
+                      </div>
+                    </footer>
+                    {replyingToCommentId === comment.id ? (
+                      <form className="discussion-composer discussion-reply-form work-item-comment-reply-form" onSubmit={onSubmitReply}>
+                        <div className="discussion-composer-main">
+                          <p className="discussion-replying-to">回复 <strong>{comment.author}</strong></p>
+                          <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('reply', comment.id, file) : undefined} {...typingCallbacks} />
+                          <div className="discussion-composer-footer work-item-form-actions">
+                            <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</button>
+                            <label className="discussion-assign-status">指派后状态<select value={replyAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeReplyAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                            <button className="yuance-ui-button yuance-ui-button-secondary" type="submit" data-discussion-submit disabled={mutationBusy}>{replySubmitting ? '正在提交…' : '回复'}</button>
+                            <button className="yuance-ui-button" type="submit" data-discussion-submit data-discussion-assign disabled={mutationBusy || !comment.author_username}>{replySubmitting ? '正在提交…' : '回复并指派'}</button>
+                          </div>
+                        </div>
+                      </form>
+                    ) : null}
+                  </article>
+                </div>
               </li>
             );
           })}
         </ul>
-      ) : <p className="yuance-ui-empty">当前没有评论或流转记录。</p>}
+      ) : <div className="discussion-empty"><strong>还没有讨论</strong><span>发表第一条内容，后续协作记录会完整保留在这里。</span></div>}
     </section>
   );
 }

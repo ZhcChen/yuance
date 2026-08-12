@@ -6,7 +6,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
 /** @typedef {(url: string, options?: ApiRequestOptions) => Promise<any>} ApiRequest */
 /** @typedef {() => Promise<void>} PrepareWrite */
 /** @typedef {{ key: string, item_type: string, title: string, status: string, priority: string, project_key: string, project_name: string, assignee: string, updated_at: string }} WorkItemSummary */
-/** @typedef {{ key: string, item_type: string, title: string, description: string, status: string, priority: string, project_key: string, project_name: string, parent_item_key: string, parent_title: string, assignee_username: string, assignee: string, reporter: string, due_date: string, created_at: string, updated_at: string, deleted_at: string }} WorkItemDetail */
+/** @typedef {{ key: string, item_type: string, title: string, description: string, status: string, priority: string, project_key: string, project_name: string, parent_item_key: string, parent_title: string, assignee_username: string, assignee: string, reporter: string, reporter_username: string, due_date: string, created_at: string, updated_at: string, deleted_at: string }} WorkItemDetail */
 /** @typedef {{ id: number, parent_comment_id: number | null, parent_author: string, body: string, body_format: string, author: string, author_username: string, created_at: string, updated_at: string, is_flow: boolean, is_draft: boolean }} WorkItemComment */
 /** @typedef {{ id: number, filename: string, content_type: string, byte_size: number, status: string, created_by: string, created_at: string }} Attachment */
 /** @typedef {{ method: string, url: string, headers: Array<[string, string]> }} SignedObjectRequest */

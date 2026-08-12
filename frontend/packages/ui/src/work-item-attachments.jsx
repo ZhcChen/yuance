@@ -64,9 +64,12 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
 export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, canUpload, downloadingId, revealableId = null, onChooseUpload, onRetryUpload, onPreview, onDownload, onReveal }) {
   return (
     <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
-      <div className="yuance-ui-panel-header">
-        <h3 id="work-item-attachments-title">工作项附件</h3>
-        <span className="yuance-ui-meta">共 {attachments.length} 个</span>
+      <div className="content-section-head work-item-attachments-head">
+        <div className="content-section-copy">
+          <span className="section-kicker">历史资料</span>
+          <h2 id="work-item-attachments-title">已有附件</h2>
+        </div>
+        <span className="discussion-count">共 {attachments.length} 个</span>
       </div>
       {canUpload ? <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
         <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onChooseUpload} disabled={uploading || mutationBusy}>
