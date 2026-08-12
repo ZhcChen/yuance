@@ -174,7 +174,7 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRequestDeleteAttachment: (commentId: number, attachment: Attachment) => void,
- *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
+ *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null | typeof import('./rich-text.jsx').DEFER_RICH_TEXT_PASTE>,
  *   resolveAttachmentSource?: (commentId: number, attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (commentId: number, attachmentId: number) => void,
  *   buildAttachmentThumbnailUrl?: (commentId: number, attachment: Attachment) => string,

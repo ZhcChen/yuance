@@ -65,7 +65,7 @@ import { UserAvatar } from './user-avatar.jsx';
  *   onSubmitHandoff: (event: import('react').FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>,
  *   onRequestLifecycleAction: (action: 'close' | 'reopen' | 'restore') => void,
  *   onRequestDeletePrimaryPostAttachment: (attachment: { id: number, filename: string, contentType: string, url: string }) => void,
- *   onPasteFile?: (file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
+ *   onPasteFile?: (file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null | typeof import('./rich-text.jsx').DEFER_RICH_TEXT_PASTE>,
  *   resolveAttachmentSource?: (attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (attachmentId: number) => void,
  *   backHref: string,

@@ -230,7 +230,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
-  const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string }>} */ (new Map()));
+  const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string, deferRetryCount: number }>} */ (new Map()));
   const pendingUploadSequenceRef = useRef(0);
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
@@ -400,7 +400,17 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       const current = pendingUploadsRef.current.get(uploadId);
       if (!current || current.cancelled) return;
       if (attachment === DEFER_RICH_TEXT_PASTE) {
-        setPendingUploadState(current.node, 'error', '上传被暂缓，请重试。');
+        const entry = pendingUploadsRef.current.get(uploadId);
+        if (!entry) return;
+        if (entry.deferRetryCount >= 120) {
+          setPendingUploadState(current.node, 'error', '上传通道繁忙，请重试。');
+          return;
+        }
+        entry.deferRetryCount += 1;
+        setPendingUploadState(current.node, 'uploading', '等待上传通道…');
+        current.node.ownerDocument.defaultView?.setTimeout(() => {
+          void uploadPastedFile(uploadId);
+        }, 200);
         return;
       }
       if (!attachment) {
@@ -749,7 +759,7 @@ function createPendingUploadEntry(ownerDocument, file, uploadId) {
   overlay.append(progress, overlayStatus, retry);
   node.appendChild(overlay);
 
-  return { node, file, cancelled: false, objectUrl };
+  return { node, file, cancelled: false, objectUrl, deferRetryCount: 0 };
 }
 
 /** @param {HTMLElement} node @param {'uploading' | 'error'} state @param {string} message */

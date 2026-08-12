@@ -21,7 +21,7 @@ async function ensureCurrentProject(page, projectKey) {
   await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
-test('work item create keeps pasted image inline and uploads after title with retry', async ({ page }) => {
+test('work item create keeps pasted images inline and uploads them after title with retry', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
   await page.goto('/web/app/bugs');
@@ -36,7 +36,11 @@ test('work item create keeps pasted image inline and uploads after title with re
       return;
     }
     primaryPostUpdates.push(route.request().postDataJSON().body);
-    await route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { id: 3, body: '', body_format: 'html' } }),
+    });
   });
   await page.route('**/api/v1/test-storage/upload**', async (route) => {
     uploadStages.push(`put:${new URL(route.request().url()).searchParams.get('target')}`);
@@ -95,30 +99,41 @@ test('work item create keeps pasted image inline and uploads after title with re
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
   await editor.click();
   await editor.evaluate((element) => {
-    const file = new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' });
     const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(file);
+    dataTransfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' }));
+    dataTransfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'pasted-2.png', { type: 'image/png' }));
     const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
     element.dispatchEvent(event);
   });
   const pendingImage = editor.getByRole('img', { name: 'pasted.png' });
+  const pendingImage2 = editor.getByRole('img', { name: 'pasted-2.png' });
   await expect(pendingImage).toBeVisible();
+  await expect(pendingImage2).toBeVisible();
   await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');
   await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先完善工作项标题后再上传附件。');
+  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');
+  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先完善工作项标题后再上传附件。');
   expect(attachmentCreates).toHaveLength(0);
 
   await dialog.locator('#work-item-create-title').fill('自动上传粘贴图片验收');
   await editor.getByRole('button', { name: '重试上传 pasted.png' }).click();
-  await expect.poll(() => attachmentCreates.length).toBe(1);
+  await editor.getByRole('button', { name: '重试上传 pasted-2.png' }).click();
+  await expect.poll(() => attachmentCreates.length).toBe(2);
   expect(attachmentCreates[0].payload.original_filename).toBe('pasted.png');
+  expect(attachmentCreates[1].payload.original_filename).toBe('pasted-2.png');
   expect(attachmentCreates[0].payload.content_type).toBe('image/png');
-  await expect(editor.getByRole('img', { name: 'pasted.png' })).toBeVisible();
+  expect(attachmentCreates[1].payload.content_type).toBe('image/png');
+  await expect(editor.locator('figure[data-yuance-attachment-id="9100"] img')).toBeVisible();
+  await expect(editor.locator('figure[data-yuance-attachment-id="9101"] img')).toBeVisible();
   expect(uploadStages).toContain('put:comment-9100');
+  expect(uploadStages).toContain('put:comment-9101');
   expect(uploadStages).toContain('mark:comment:9100');
+  expect(uploadStages).toContain('mark:comment:9101');
   await expect.poll(() => primaryPostUpdates.length).toBeGreaterThanOrEqual(2);
   const finalBody = primaryPostUpdates[primaryPostUpdates.length - 1];
   expect(finalBody).toContain('data-yuance-attachment-id="9100"');
+  expect(finalBody).toContain('data-yuance-attachment-id="9101"');
   expect(finalBody).not.toContain('data:');
   expect(finalBody).not.toContain('data-yuance-attachment-id="-"');
   expect(primaryPostUpdates[0]).not.toContain('data:');

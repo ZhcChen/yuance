@@ -15,6 +15,8 @@
 - 新建工作项未填标题时，`ensureBugReportItemForRichUpload` 校验失败，节点进入错误态；
   填写标题后点击重试继续上传。
 - 上传成功后节点原地替换为正式附件节点，正文序列化只保留正式附件 HTML。
+- 旧版 `insertRichFiles(editor, files)` 会一次插入多个文件节点并同时开始上传；
+  新版为兼容 app-shell 的单飞互斥，改为所有节点立即显示、上传排队逐个执行。
 
 ## 当前实现
 
@@ -26,19 +28,19 @@
 - 样式新增 `.yc-rich-pending-upload*`，对齐旧版 `.rich-attachment` 的视觉结构。
 - `publish()` 序列化前移除本地 pending 节点，避免临时对象 URL 写入表单值；
   value 同步时保留上传中节点的原始位置，避免被挪到编辑器末尾。
+- 多文件粘贴时，后续文件通过 `DEFER_RICH_TEXT_PASTE` 等待上传通道释放后自动续传；
+  `workItemCreateDescriptionRef` 同步累积正文，避免后一个附件覆盖前一个附件。
+- 工作项评论附件在正文中的 URL 统一为 `/web/work-items/.../attachments/.../download`，
+  与后端 `comment_attachment_url_like` 校验和旧版正文引用保持一致。
 
 ## 已执行验证
 
 - `frontend`：`@yuance/frontend-ui` 61 个测试通过；`@yuance/frontend-app-shell` 10 个测试通过。
 - `web`：`npm run check` 52 个测试通过。
 - 聚焦 E2E：`npx playwright test work-item-create-paste-auto-upload.spec.mjs` 通过，
-  覆盖“粘贴后立即显示图片 -> 未填标题错误态 -> 填标题重试 -> 上传后替换正式附件”闭环。
+  覆盖“一次粘贴两张图片 -> 未填标题错误态 -> 填标题重试 -> 两张依次上传 ->
+  主帖正文同时保留两个附件”闭环。
 - `git diff --check` 无空白错误；未跟踪的 `.artifacts/`、`.tmp-docx-harness/`、`test-results/` 未纳入提交。
-
-## 可接受的残留项
-
-- 连续粘贴多个文件时，`app-shell` 的上传单飞互斥仍会令后续文件等待或失败；
-  当前验收场景为单文件粘贴。后续如需完全对齐旧版多文件并发上传，可再做队列或去互斥。
 
 ## 结论
 
