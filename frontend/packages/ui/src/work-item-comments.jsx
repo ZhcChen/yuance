@@ -5,19 +5,9 @@ import React from 'react';
 import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
 import { AttachmentList } from './work-item-attachments.jsx';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
+import { UserAvatar } from './user-avatar.jsx';
 
 /** @typedef {import('./work-item-attachments.jsx').Attachment} Attachment */
-
-const DISCUSSION_AVATAR_COLORS = [
-  '#1f5fbf',
-  '#2d8a68',
-  '#a85b00',
-  '#b42318',
-  '#4656a8',
-  '#0f766e',
-  '#7c3aed',
-  '#be4b00',
-];
 
 /**
  * @typedef {object} Comment
@@ -33,38 +23,6 @@ const DISCUSSION_AVATAR_COLORS = [
  * @property {string} created_at
  * @property {string} updated_at
  */
-
-/** @param {string} name */
-function discussionAvatarInitial(name) {
-  const value = (name || '').trim();
-  return value ? Array.from(value)[0].toLocaleUpperCase('zh-CN') : 'U';
-}
-
-/** @param {string} name */
-function discussionAvatarStyle(name) {
-  const value = (name || '').trim();
-  let hash = 2166136261;
-  for (const char of value) {
-    hash ^= char.codePointAt(0) || 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  hash >>>= 0;
-  return { backgroundColor: DISCUSSION_AVATAR_COLORS[hash % DISCUSSION_AVATAR_COLORS.length] };
-}
-
-/**
- * @param {{
- *   name: string,
- *   className?: string,
- * }} props
- */
-function DiscussionAvatar({ name, className = '' }) {
-  return (
-    <span className={`discussion-avatar ${className}`.trim()} data-user-avatar data-avatar-name={name} style={discussionAvatarStyle(name)} aria-hidden="true">
-      {discussionAvatarInitial(name)}
-    </span>
-  );
-}
 
 /**
  * @param {Attachment} attachment
@@ -296,7 +254,7 @@ export function WorkItemComments(props) {
       </div>
       {canWriteComments ? <div className="discussion-composer-dock">
         <form className="discussion-composer work-item-comment-form" onSubmit={onSubmitNew}>
-          <DiscussionAvatar name="我" className="discussion-composer-avatar work-item-comment-avatar" />
+          <UserAvatar name="我" className="discussion-composer-avatar work-item-comment-avatar" />
           <div className="discussion-composer-main">
             <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('new', null, file) : undefined} {...typingCallbacks} />
             {newCommentAttachments.length ? (
@@ -334,7 +292,7 @@ export function WorkItemComments(props) {
             const revealableId = revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null;
             return (
               <li key={comment.id} id={`comment-${comment.id}`} tabIndex={-1} className={`work-item-comment-row discussion-post ${comment.is_flow ? 'is-flow' : ''}`}>
-                <DiscussionAvatar name={comment.author} className="work-item-comment-avatar" />
+                <UserAvatar name={comment.author} className="work-item-comment-avatar" />
                 <div className="discussion-post-shell">
                   <header className="discussion-post-head">
                     <div>

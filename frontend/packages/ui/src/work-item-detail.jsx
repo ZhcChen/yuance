@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
 import { Button, Modal, PriorityBadge } from './primitives.jsx';
+import { UserAvatar } from './user-avatar.jsx';
 
 /**
  * @typedef {object} WorkItemDetail
@@ -131,7 +132,7 @@ export function WorkItemDetail({
       <div className="work-item-layout">
         <main className="work-item-content">
         <section className="work-item-description" aria-labelledby="work-item-description-title">
-          <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><span className="work-item-publisher-avatar" aria-hidden="true">{(item.reporter || '?').slice(0, 1)}</span><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {item.updated_at || '未知'}</span></div>
+          <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><UserAvatar name={item.reporter || ''} fallback="?" className="work-item-publisher-avatar" /><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {item.updated_at || '未知'}</span></div>
           <h2 id="work-item-description-title" className="visually-hidden">详情说明</h2>
           <div className="work-item-description-body">
           <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" resolveAttachmentSource={resolveAttachmentSource} onAttachmentActivate={onAttachmentActivate} />

@@ -3,6 +3,8 @@
 
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { UserAvatar } from './user-avatar.jsx';
+
 const logoSrc = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"%3E%3Crect x="4" y="4" width="88" height="88" rx="22" fill="%231f5fbf"/%3E%3Cpath d="M22 22h27v14H36v38H22V22Z" fill="%23fff"/%3E%3Cpath d="M50 22h24v14H56L37 74H22l21-42c2-4 4-7 7-10Z" fill="%23fff"/%3E%3Cpath d="M57 45h17v14H50l7-14Z" fill="%23fff"/%3E%3Crect x="62" y="62" width="15" height="15" rx="4" fill="%232d8a68"/%3E%3C/svg%3E';
 
 /** @param {number} count */
@@ -83,7 +85,6 @@ export function GlobalNavigation({
   const linksRef = useRef(/** @type {HTMLElement | null} */ (null));
   const hasSyncedIndicatorRef = useRef(false);
   const displayName = user?.display_name || user?.username || '未知用户';
-  const avatar = Array.from(displayName.trim())[0] || '元';
   const totalProjectPendingCount = projectOptions.reduce((total, project) => {
     const count = Number(project.pending_count || 0);
     return Number.isFinite(count) && count > 0 ? total + count : total;
@@ -220,7 +221,7 @@ export function GlobalNavigation({
 
         <details className="global-nav-account" onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
           <summary role="button" aria-label={`打开 ${displayName} 的账户菜单`}>
-            <span className="global-nav-avatar" aria-hidden="true">{avatar}</span>
+            <UserAvatar name={user?.display_name || user?.username || ''} fallback="元" className="global-nav-avatar" />
           </summary>
           <div className="global-nav-menu global-nav-account-menu">
             <div className="global-nav-account-head"><strong>{displayName}</strong><span>@{user?.username || 'unknown'}</span></div>

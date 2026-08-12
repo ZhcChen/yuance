@@ -1241,7 +1241,7 @@ html[data-theme="dark"] .project-stats div {
 .profile-hero { align-items: stretch; }
 .profile-hero-main { min-width: 0; display: grid; gap: 16px; }
 .profile-hero-overview { min-width: 0; display: flex; align-items: center; gap: 16px; }
-.profile-hero-avatar { width: 72px; height: 72px; flex: 0 0 72px; display: grid; place-items: center; border: 1px solid var(--yc-brand-line); border-radius: 18px; background: var(--yc-brand-soft); color: var(--yc-brand-strong); font-size: 26px; font-weight: 800; }
+.profile-hero-avatar { width: 72px; height: 72px; flex: 0 0 72px; display: grid; place-items: center; border: 1px solid var(--yc-brand-line); border-radius: 18px; font-size: 26px; font-weight: 800; }
 .profile-hero-copy { min-width: 0; display: grid; gap: 5px; }
 .profile-hero-identity { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .profile-hero-identity h1 { margin: 0; font-size: 24px; line-height: 30px; }
