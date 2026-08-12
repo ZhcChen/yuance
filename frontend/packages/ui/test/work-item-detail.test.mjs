@@ -81,6 +81,8 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /关闭工作项/);
   assert.match(html, /yc-rich-text-content/);
   assert.match(html, /aria-label="主内容"/);
+  assert.doesNotMatch(html, />详情说明</);
+  assert.match(html, /aria-label="详情说明"/);
 });
 
 test('work item detail prefers the canonical HTML primary post over the legacy summary', () => {

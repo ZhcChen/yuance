@@ -131,9 +131,8 @@ export function WorkItemDetail({
       {isDeleted ? <section className="work-item-deleted-panel"><div><strong>历史工作项</strong><span>该工作项已于 {item.deleted_at} 删除，当前仅供审计查看。</span></div>{canRestoreWorkItem ? <Button onClick={() => onRequestLifecycleAction('restore')}>恢复工作项</Button> : null}</section> : null}
       <div className="work-item-layout">
         <main className="work-item-content">
-        <section className="work-item-description" aria-labelledby="work-item-description-title">
+        <section className="work-item-description" aria-label="详情说明">
           <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><UserAvatar name={item.reporter || ''} fallback="?" className="work-item-publisher-avatar" /><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {item.updated_at || '未知'}</span></div>
-          <h2 id="work-item-description-title" className="visually-hidden">详情说明</h2>
           <div className="work-item-description-body">
           <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" resolveAttachmentSource={resolveAttachmentSource} onAttachmentActivate={onAttachmentActivate} />
           </div>

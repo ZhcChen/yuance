@@ -5,10 +5,10 @@ import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'reac
 
 import { useAnimatedDialog } from './use-animated-dialog.js';
 
-/** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', size?: 'md' | 'sm', className?: string, loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
-export function Button({ children, variant = 'primary', size = 'md', className = '', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
+/** @param {React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost', size?: 'md' | 'sm', className?: string, loading?: boolean, ariaLabel?: string }} props */
+export function Button({ children, variant = 'primary', size = 'md', className = '', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel, ...buttonProps }) {
   const buttonClass = ['yc-button', `yc-button-${variant}`, size === 'sm' ? 'yc-button-sm' : '', className].filter(Boolean).join(' ');
-  return <button className={buttonClass} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
+  return <button className={buttonClass} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick} {...buttonProps}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
 }
 
 /** @param {React.InputHTMLAttributes<HTMLInputElement> & { className?: string }} props */

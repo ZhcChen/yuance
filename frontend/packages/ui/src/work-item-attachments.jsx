@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
+import { Button } from './primitives.jsx';
 
 /**
  * @typedef {object} Attachment
@@ -33,20 +34,14 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
           <div className="work-item-attachment-actions">
             {attachmentIsUploaded(attachment) ? (
               <>
-                {onPreview ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" aria-label={`预览${downloadLabel} ${attachment.filename || attachment.id}`} onClick={() => onPreview(attachment)} disabled={downloadingId === attachment.id}>预览</button> : null}
-                <button
-                  className="yuance-ui-button yuance-ui-button-secondary"
-                  type="button"
-                  aria-label={`下载${downloadLabel} ${attachment.filename || attachment.id}`}
-                  onClick={() => onDownload(attachment)}
-                  disabled={downloadingId === attachment.id}
-                >
+                {onPreview ? <Button variant="secondary" type="button" ariaLabel={`预览${downloadLabel} ${attachment.filename || attachment.id}`} onClick={() => onPreview(attachment)} disabled={downloadingId === attachment.id}>预览</Button> : null}
+                <Button variant="secondary" type="button" ariaLabel={`下载${downloadLabel} ${attachment.filename || attachment.id}`} onClick={() => onDownload(attachment)} disabled={downloadingId === attachment.id}>
                   {downloadingId === attachment.id ? '处理中…' : '下载'}
-                </button>
+                </Button>
                 {revealableId === attachment.id && onReveal ? (
-                  <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onReveal(attachment)} disabled={downloadingId === attachment.id}>
+                  <Button variant="secondary" type="button" onClick={() => onReveal(attachment)} disabled={downloadingId === attachment.id}>
                     在文件夹中显示
-                  </button>
+                  </Button>
                 ) : null}
               </>
             ) : <span className="attachment-action-hint">上传完成后可下载</span>}
@@ -72,16 +67,16 @@ export function WorkItemAttachments({ attachments, status, warning, error, uploa
         <span className="discussion-count">共 {attachments.length} 个</span>
       </div>
       {canUpload ? <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
-        <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onChooseUpload} disabled={uploading || mutationBusy}>
+        <Button variant="secondary" type="button" onClick={onChooseUpload} disabled={uploading || mutationBusy}>
           {uploading ? '处理中…' : '选择工作项附件'}
-        </button>
+        </Button>
         <p className="yuance-ui-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
       </form> : null}
       {status ? <p className="work-item-attachment-status" aria-live="polite">{status}</p> : null}
       {warning ? <p className="work-item-attachment-warning" aria-live="polite">{warning}</p> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {attachments.length ? (
-        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} revealableId={revealableId} onPreview={onPreview} onDownload={onDownload} onReveal={onReveal} showCreator renderExtraAction={(attachment) => canUpload && ['pending', 'failed'].includes(attachment.status) ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onRetryUpload(attachment)} disabled={uploading || mutationBusy}>继续上传</button> : null} />
+        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} revealableId={revealableId} onPreview={onPreview} onDownload={onDownload} onReveal={onReveal} showCreator renderExtraAction={(attachment) => canUpload && ['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" type="button" onClick={() => onRetryUpload(attachment)} disabled={uploading || mutationBusy}>继续上传</Button> : null} />
       ) : <p className="yuance-ui-empty">当前没有工作项附件。</p>}
     </section>
   );
