@@ -7692,6 +7692,7 @@ fn sanitize_comment_html(body: &str) -> String {
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
+        .add_tag_attributes("span", &["style"])
         .add_generic_attributes(&[
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
@@ -7701,6 +7702,7 @@ fn sanitize_comment_html(body: &str) -> String {
             "data-yuance-mention-display-name",
             "data-yuance-mention-username",
         ])
+        .filter_style_properties(std::collections::HashSet::from(["color", "font-size"]))
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") | ("source", "src") | ("video", "src")
                 if !comment_attachment_url_like(value) =>
@@ -7737,6 +7739,7 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
+        .add_tag_attributes("span", &["style"])
         .add_generic_attributes(&[
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
@@ -7746,6 +7749,7 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
             "data-yuance-mention-display-name",
             "data-yuance-mention-username",
         ])
+        .filter_style_properties(std::collections::HashSet::from(["color", "font-size"]))
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
                 ("img", "src") | ("source", "src") | ("video", "src")
@@ -9211,6 +9215,27 @@ mod tests {
         assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
         assert!(rendered.contains("data-yuance-file-kind=\"text\""));
         assert!(rendered.contains("data-yuance-file-ext=\"TXT\""));
+    }
+
+    #[test]
+    fn work_item_description_preserves_span_text_style_properties() {
+        let html = r#"<p><span style="color: blue; font-size: x-large; text-decoration: underline">标题色</span></p>"#;
+
+        let rendered = work_item_description_html_for_display(html, "YCE-TASK-1");
+
+        assert!(rendered.contains("style=\"color:blue"));
+        assert!(rendered.contains("font-size:x-large"));
+        assert!(!rendered.contains("text-decoration"));
+    }
+
+    #[test]
+    fn work_item_comment_preserves_span_text_style_properties() {
+        let html = r#"<p><span style="color: green; font-size: medium">评论色</span></p>"#;
+
+        let rendered = work_item_comment_body_html_for_display(html, "html", false);
+
+        assert!(rendered.contains("style=\"color:green"));
+        assert!(rendered.contains("font-size:medium"));
     }
 
     #[test]

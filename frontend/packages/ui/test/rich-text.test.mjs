@@ -30,11 +30,10 @@ test('rich text editor exposes the shared formatting toolbar and textbox', () =>
   const html = renderToStaticMarkup(React.createElement(RichTextEditor, { id: 'body', value: '<p>正文</p>', onChange() {}, required: true, mentionOptions: [{ username: 'alice', displayName: 'Alice' }] }));
   assert.match(html, /aria-label="富文本工具栏"/);
   assert.match(html, /role="group" aria-label="文本样式"/);
-  assert.match(html, /role="group" aria-label="段落"/);
+  assert.match(html, /role="group" aria-label="列表"/);
   assert.match(html, /aria-label="加粗"/);
   assert.match(html, /aria-label="有序列表"/);
-  assert.match(html, /aria-label="转换 Markdown"/);
-  assert.match(html, /aria-label="清除格式"/);
+  assert.match(html, /aria-label="更多格式"/);
   assert.match(html, /aria-label="提及成员"/);
   assert.doesNotMatch(html, /aria-label="提及成员"[^>]*disabled/);
   assert.match(html, /role="textbox"/);

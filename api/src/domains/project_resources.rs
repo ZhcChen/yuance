@@ -1595,6 +1595,7 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
+        .add_tag_attributes("span", &["style"])
         .add_generic_attributes(&[
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
@@ -1602,6 +1603,7 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
             "data-yuance-file-kind",
             "data-yuance-file-ext",
         ])
+        .filter_style_properties(std::collections::HashSet::from(["color", "font-size"]))
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
                 ("img", "src") | ("source", "src") | ("video", "src")
@@ -1637,6 +1639,18 @@ mod tests {
         assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
         assert!(rendered.contains("data-yuance-file-kind=\"pdf\""));
         assert!(rendered.contains("data-yuance-file-ext=\"PDF\""));
+    }
+
+    #[test]
+    fn resource_body_preserves_span_text_style_properties() {
+        let html =
+            r#"<p><span style="color: red; font-size: large; font-weight: 900">重点</span></p>"#;
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(rendered.contains("style=\"color:red"));
+        assert!(rendered.contains("font-size:large"));
+        assert!(!rendered.contains("font-weight"));
     }
 
     #[test]

@@ -5,9 +5,18 @@ import { marked } from 'marked';
 import React, { useEffect, useRef, useState } from 'react';
 
 const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
-const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'title'];
+const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'style', 'title'];
 const CONTENT_TAGS = EDITOR_TAGS;
 const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
+const RICH_TEXT_CSS_PROPERTIES = ['color', 'font-size'];
+const RICH_TEXT_COLORS = [
+  { label: '红色', value: '#d92d20' },
+  { label: '橙色', value: '#b54708' },
+  { label: '绿色', value: '#0e7a3d' },
+  { label: '蓝色', value: '#175cd3' },
+  { label: '紫色', value: '#6941c6' },
+  { label: '灰色', value: '#475467' },
+];
 const DOCUMENT_FILE_TYPES = ['doc', 'txt', 'log', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'xls', 'xlsx', 'ods', 'ppt', 'docx', 'pptx', 'pdf'];
 
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
@@ -37,7 +46,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     const content = contentRef.current;
     const view = content?.ownerDocument.defaultView;
     if (!content || !view || format !== 'html') return undefined;
-    const sanitized = createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: CONTENT_TAGS, ALLOWED_ATTR: CONTENT_ATTRIBUTES });
+    const sanitized = filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: CONTENT_TAGS, ALLOWED_ATTR: CONTENT_ATTRIBUTES }), view);
     const staging = content.ownerDocument.createElement('div');
     staging.innerHTML = sanitized;
     const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
@@ -232,10 +241,14 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
   const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string, deferRetryCount: number }>} */ (new Map()));
   const pendingUploadSequenceRef = useRef(0);
+  const moreTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const moreMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
-  const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, align: /** @type {string | null} */ (null) });
+  const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', align: /** @type {string | null} */ (null) });
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
     .filter((option) => {
       const query = mentionQuery.toLocaleLowerCase();
@@ -285,6 +298,35 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     };
   }, [disabled]);
 
+  useEffect(() => {
+    if (!moreMenuOpen) return undefined;
+    const view = moreMenuRef.current?.ownerDocument.defaultView;
+    if (!view) return undefined;
+    const close = () => setMoreMenuOpen(false);
+    const closeOnOutsidePointer = (event) => {
+      const target = event.target instanceof view.Node ? event.target : null;
+      if (target && (moreMenuRef.current?.contains(target) || moreTriggerRef.current?.contains(target))) return;
+      close();
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+        moreTriggerRef.current?.focus();
+      }
+    };
+    view.addEventListener('pointerdown', closeOnOutsidePointer);
+    view.addEventListener('keydown', closeOnEscape);
+    view.addEventListener('scroll', close, true);
+    view.addEventListener('resize', close);
+    return () => {
+      view.removeEventListener('pointerdown', closeOnOutsidePointer);
+      view.removeEventListener('keydown', closeOnEscape);
+      view.removeEventListener('scroll', close, true);
+      view.removeEventListener('resize', close);
+    };
+  }, [moreMenuOpen]);
+
   /** @param {string} command @param {string | undefined} [argument] */
   function execute(command, argument) {
     const input = inputRef.current;
@@ -332,6 +374,60 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     input.ownerDocument.execCommand('removeFormat');
     publish(input);
     syncFormatState();
+  }
+
+  function openMoreMenu() {
+    const trigger = moreTriggerRef.current;
+    const view = trigger?.ownerDocument.defaultView;
+    if (!trigger || !view || disabled) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 264;
+    const left = Math.min(Math.max(8, rect.right - menuWidth), Math.max(8, view.innerWidth - menuWidth - 8));
+    const top = Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420));
+    setMoreMenuPosition({ left, top, maxHeight: Math.min(460, view.innerHeight - top - 8) });
+    setMoreMenuOpen(true);
+  }
+
+  function closeMoreMenu() {
+    setMoreMenuOpen(false);
+  }
+
+  /** @param {'p' | 'h1' | 'h2' | 'h3'} tag */
+  function applyBlock(tag) {
+    const input = inputRef.current;
+    if (!input || disabled) return;
+    input.focus();
+    input.ownerDocument.execCommand('formatBlock', false, tag);
+    publish(input);
+    syncFormatState();
+    closeMoreMenu();
+  }
+
+  /** @param {() => void} action @param {() => void} [after] */
+  function applyInlineStyle(action, after) {
+    const input = inputRef.current;
+    if (!input || disabled) return;
+    input.focus();
+    const doc = input.ownerDocument;
+    try {
+      doc.execCommand('styleWithCSS', false, 'true');
+      action();
+    } finally {
+      try { doc.execCommand('styleWithCSS', false, 'false'); } catch { /* 恢复浏览器默认行内格式模式。 */ }
+    }
+    publish(input);
+    syncFormatState();
+    after?.();
+  }
+
+  /** @param {string} size */
+  function applyFontSize(size) {
+    applyInlineStyle(() => inputRef.current?.ownerDocument.execCommand('fontSize', false, size), closeMoreMenu);
+  }
+
+  /** @param {string} color */
+  function applyColor(color) {
+    applyInlineStyle(() => inputRef.current?.ownerDocument.execCommand('foreColor', false, color), closeMoreMenu);
   }
 
   /** @param {RichTextAttachmentOption} attachment */
@@ -411,6 +507,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       strikeThrough: queryCommandState(input, 'strikeThrough'),
       unorderedList: queryCommandState(input, 'insertUnorderedList'),
       orderedList: queryCommandState(input, 'insertOrderedList'),
+      block: currentBlockName(input),
       align: block?.getAttribute('data-yuance-align') || null,
     });
   }
@@ -535,11 +632,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           <ToolbarButton active={formatState.strikeThrough} label="删除线" title="删除线" disabled={disabled} onClick={() => execute('strikeThrough')}><s>S</s></ToolbarButton>
         </div>
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
-        <div className="yc-rich-toolbar-group" role="group" aria-label="段落">
+        <div className="yc-rich-toolbar-group" role="group" aria-label="列表">
           <ToolbarButton active={formatState.unorderedList} label="无序列表" title="无序列表" disabled={disabled} onClick={() => execute('insertUnorderedList')}>•</ToolbarButton>
           <ToolbarButton active={formatState.orderedList} label="有序列表" title="有序列表" disabled={disabled} onClick={() => execute('insertOrderedList')}>1.</ToolbarButton>
-          <ToolbarButton label="插入引用" title="插入引用" disabled={disabled} onClick={() => execute('formatBlock', 'blockquote')}>❝</ToolbarButton>
-          <ToolbarButton label="插入代码块" title="插入代码块" disabled={disabled} onClick={() => execute('formatBlock', 'pre')}><code>&lt;/&gt;</code></ToolbarButton>
         </div>
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
         <div className="yc-rich-toolbar-group" role="group" aria-label="插入">
@@ -553,11 +648,54 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           <ToolbarButton active={formatState.align === 'right'} label="右对齐" title="右对齐" disabled={disabled} onClick={() => align('right')}>右</ToolbarButton>
         </div>
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
-        <div className="yc-rich-toolbar-group" role="group" aria-label="高级">
-          <ToolbarButton label="转换 Markdown" title="转换 Markdown" disabled={disabled} onClick={convertMarkdown}>MD</ToolbarButton>
-          <ToolbarButton label="清除格式" title="清除格式" disabled={disabled} onClick={clearFormat}>清除</ToolbarButton>
-        </div>
+        <button
+          ref={moreTriggerRef}
+          type="button"
+          className={`yc-rich-toolbar-button yc-rich-toolbar-more${moreMenuOpen ? ' is-active' : ''}`}
+          aria-label="更多格式"
+          title="更多格式"
+          aria-haspopup="menu"
+          aria-expanded={moreMenuOpen}
+          disabled={disabled}
+          onClick={() => { if (moreMenuOpen) closeMoreMenu(); else openMoreMenu(); }}
+        >
+          更多<span className="yc-rich-toolbar-caret" aria-hidden="true" />
+        </button>
       </div>
+      {moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}>
+        <section className="yc-rich-more-section" aria-label="段落样式">
+          <h3>段落</h3>
+          <div className="yc-rich-more-grid">
+            {[['p', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3']].map(([tag, name]) => (
+              <button key={tag} type="button" role="menuitem" className={`yc-rich-more-option${formatState.block === tag ? ' is-active' : ''}`} disabled={disabled} onClick={() => applyBlock(/** @type {'p' | 'h1' | 'h2' | 'h3'} */ (tag))}>{name}</button>
+            ))}
+          </div>
+        </section>
+        <section className="yc-rich-more-section" aria-label="文字大小">
+          <h3>文字大小</h3>
+          <div className="yc-rich-more-grid yc-rich-more-sizes">
+            {[['2', '小'], ['3', '正常'], ['4', '大'], ['5', '特大']].map(([size, name]) => (
+              <button key={size} type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => applyFontSize(size)}>{name}</button>
+            ))}
+          </div>
+        </section>
+        <section className="yc-rich-more-section" aria-label="文字颜色">
+          <h3>文字颜色</h3>
+          <div className="yc-rich-more-colors">
+            {RICH_TEXT_COLORS.map((color) => (
+              <button key={color.value} type="button" role="menuitem" className="yc-rich-more-color" aria-label={color.label} title={color.label} style={{ background: color.value }} disabled={disabled} onClick={() => applyColor(color.value)} />
+            ))}
+          </div>
+        </section>
+        <section className="yc-rich-more-section" aria-label="更多操作">
+          <div className="yc-rich-more-grid yc-rich-more-actions">
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'pre'); closeMoreMenu(); }}>&lt;/&gt; 代码块</button>
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { convertMarkdown(); closeMoreMenu(); }}>MD 转换</button>
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { clearFormat(); closeMoreMenu(); }}>清除格式</button>
+          </div>
+        </section>
+      </div> : null}
       <div
         id={id}
         ref={inputRef}
@@ -883,11 +1021,46 @@ function queryCommandState(input, command) {
   try { return input.ownerDocument.queryCommandState(command); } catch { return false; }
 }
 
+/** @param {HTMLDivElement} input @returns {string} */
+function currentBlockName(input) {
+  try {
+    const value = String(input.ownerDocument.queryCommandValue('formatBlock') || '').replace(/[<>]/g, '').toLowerCase();
+    return value || 'p';
+  } catch { return 'p'; }
+}
+
+/** @param {string} html @param {Window} view @returns {string} */
+function filterRichTextStyle(html, view) {
+  if (!html.includes('style=')) return html;
+  const doc = view.document.implementation.createHTMLDocument('');
+  const container = doc.createElement('div');
+  container.innerHTML = html;
+  for (const element of container.querySelectorAll('[style]')) {
+    if (element.tagName.toLowerCase() !== 'span') {
+      element.removeAttribute('style');
+      continue;
+    }
+    const kept = [];
+    const style = element.getAttribute('style');
+    if (!style) continue;
+    for (const declaration of style.split(';')) {
+      const colon = declaration.indexOf(':');
+      if (colon < 1) continue;
+      const name = declaration.slice(0, colon).trim().toLowerCase();
+      const value = declaration.slice(colon + 1).trim();
+      if (RICH_TEXT_CSS_PROPERTIES.includes(name) && !/url\s*\(|expression\s*\(/iu.test(value)) kept.push(`${name}:${value}`);
+    }
+    if (kept.length) element.setAttribute('style', kept.join(';'));
+    else element.removeAttribute('style');
+  }
+  return container.innerHTML;
+}
+
 /** @param {HTMLDivElement} input @param {string} html */
 function sanitizeEditorHtml(input, html) {
   const view = input.ownerDocument.defaultView;
   if (!view) return '';
-  return createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: EDITOR_TAGS, ALLOWED_ATTR: EDITOR_ATTRIBUTES });
+  return filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: EDITOR_TAGS, ALLOWED_ATTR: EDITOR_ATTRIBUTES }), view);
 }
 
 /** @param {string} value @param {new (value: string) => { protocol: string }} Url */
