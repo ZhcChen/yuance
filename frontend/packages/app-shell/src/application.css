@@ -822,8 +822,7 @@ html[data-theme="dark"] .shell-code-block {
 
 .message-center,
 .project-center,
-.work-item-center,
-.work-item-detail-center {
+.work-item-center {
   border: 0;
   border-radius: var(--yc-card-radius);
   background: var(--yc-panel);
@@ -833,8 +832,7 @@ html[data-theme="dark"] .shell-code-block {
 
 .message-center > .yc-content-tabs,
 .project-center > .yc-content-tabs,
-.work-item-center > .yc-content-tabs,
-.work-item-detail-center > .yc-content-tabs { margin-bottom: 16px; }
+.work-item-center > .yc-content-tabs { margin-bottom: 16px; }
 
 .message-row.unread {
   border-left: 3px solid #2563eb;
@@ -1177,8 +1175,7 @@ html[data-theme="dark"] .shell-loading,
 html[data-theme="dark"] .shell-banner,
 html[data-theme="dark"] .message-center,
 html[data-theme="dark"] .project-center,
-html[data-theme="dark"] .work-item-center,
-html[data-theme="dark"] .work-item-detail-center {
+html[data-theme="dark"] .work-item-center {
   border-color: var(--yc-line);
   background: var(--yc-panel);
   color: var(--yc-text);
