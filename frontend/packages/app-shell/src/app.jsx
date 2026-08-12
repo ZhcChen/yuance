@@ -533,6 +533,35 @@ function workItemStatusLabel(status) {
   }
 }
 
+/** @param {string} action */
+function workItemBatchActionLabel(action) {
+  return { priority: '修改优先级', status: '修改状态', assignee: '修改处理人', cycle: '修改周期' }[action] || action;
+}
+
+/** @param {string} action @param {string} value @param {Array<{ username: string, display_name: string }>} assignees @param {Array<{ id: number, name: string }>} cycles */
+function workItemBatchTargetLabel(action, value, assignees = [], cycles = []) {
+  switch (action) {
+    case 'priority':
+      return value;
+    case 'status':
+      return workItemStatusLabel(value);
+    case 'assignee':
+      return assignees.find((assignee) => assignee.username === value)?.display_name || value;
+    case 'cycle':
+      return cycles.find((cycle) => String(cycle.id) === String(value))?.name || (value ? value : '取消周期关联');
+    default:
+      return value || '';
+  }
+}
+
+/** @param {string} action @param {string} value @param {number} count @param {Array<{ username: string, display_name: string }>} assignees @param {Array<{ id: number, name: string }>} cycles */
+function workItemBatchChangeSummary(action, value, count, assignees = [], cycles = []) {
+  const target = workItemBatchTargetLabel(action, value, assignees, cycles);
+  const prefix = `将已选择的 ${count} 个工作项`;
+  if (action === 'cycle' && !value) return `${prefix}取消周期关联`;
+  return `${prefix}${workItemBatchActionLabel(action).replace('修改', '修改为')}“${target}”`;
+}
+
 const WORK_ITEM_PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
 
 /** @param {AppWorkItemDetail} item @param {AppWorkItemComment | null} [primaryPost] */
@@ -6140,9 +6169,11 @@ export function SharedApp({ services }) {
                   {workItemPage.can_manage_work_items ? <div className="work-item-batch-bar" aria-label="批量操作">
                     <label className="work-item-batch-select-all"><input type="checkbox" checked={currentWorkItemPageSelected} onChange={(event) => toggleCurrentWorkItemPage(event.target.checked)} /> 选择当前页</label>
                     <strong>已选择 {workItemSelection.size} 项</strong>
+                    <span className="work-item-batch-label">更新字段</span>
                     <Select aria-label="批量操作类型" value={workItemBatchForm.action} disabled={workItemBatchSubmitting} onChange={changeWorkItemBatchAction}>
                       <option value="priority">修改优先级</option><option value="status">修改状态</option><option value="assignee">修改处理人</option><option value="cycle">修改周期</option>
                     </Select>
+                    <span className="work-item-batch-label">目标值</span>
                     {workItemBatchForm.action === 'priority' ? <Select aria-label="目标优先级" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></Select> : null}
                     {workItemBatchForm.action === 'status' ? <Select aria-label="目标状态" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="open">待处理</option><option value="in_progress">进行中</option><option value="pending_confirmation">待确认</option>{route.itemType === 'bug' ? <><option value="resolved">已解决</option><option value="verified">已验证</option></> : <option value="done">已完成</option>}<option value="closed">已关闭</option></Select> : null}
                     {workItemBatchForm.action === 'assignee' ? <Select aria-label="目标处理人" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">请选择处理人</option>{workItemPage.assignees.map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</Select> : null}
@@ -6161,7 +6192,7 @@ export function SharedApp({ services }) {
                   <span>当前筛选条件下没有匹配项，可以调整筛选条件或重置后查看。</span>
                 </div>
               )}
-              <Modal open={workItemBatchConfirmOpen} title="确认批量更新" onClose={() => { if (!workItemBatchSubmitting) setWorkItemBatchConfirmOpen(false); }} footer={<><Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemBatchConfirmOpen(false)}>取消</Button><Button loading={workItemBatchSubmitting} onClick={() => void confirmWorkItemBatchUpdate()}>确认更新</Button></>}><p>将对已选择的 {workItemSelection.size} 个工作项执行批量更新。每个工作项独立提交，未成功的项目会保留选择。</p></Modal>
+              <Modal open={workItemBatchConfirmOpen} title="确认批量更新" onClose={() => { if (!workItemBatchSubmitting) setWorkItemBatchConfirmOpen(false); }} footer={<><Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemBatchConfirmOpen(false)}>取消</Button><Button loading={workItemBatchSubmitting} onClick={() => void confirmWorkItemBatchUpdate()}>确认更新</Button></>}><p>将对已选择的 {workItemSelection.size} 个工作项执行批量更新。</p><p className="work-item-batch-confirm-target">{workItemBatchChangeSummary(workItemBatchForm.action, workItemBatchForm.value, workItemSelection.size, workItemPage?.assignees || [], workItemPage?.cycles || [])}</p><p>每个工作项独立提交，未成功的项目会保留选择。</p></Modal>
               <Modal wide open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={closeWorkItemCreate} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onClick={closeWorkItemCreate}>{workItemCreateCheckpoint ? '转到详情' : '取消'}</Button><Button loading={workItemCreateSubmitting} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
                 <form id="work-item-create-form" onSubmit={submitWorkItemCreate}>
                   <div className="field-grid">

@@ -998,6 +998,22 @@ html[data-theme="dark"] .shell-code-block {
   max-width: 14rem;
 }
 
+.work-item-batch-label {
+  color: var(--yc-muted-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.work-item-batch-confirm-target {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--yc-brand-line);
+  border-radius: 8px;
+  background: var(--yc-brand-soft);
+  color: var(--yc-text);
+  font-weight: 750;
+}
+
 .work-item-batch-select-all {
   display: inline-flex;
   align-items: center;
