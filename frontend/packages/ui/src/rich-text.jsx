@@ -12,7 +12,19 @@ const DOCUMENT_FILE_TYPES = ['doc', 'txt', 'log', 'md', 'json', 'xml', 'yaml', '
 
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
 
-/** @param {{ html: string, format?: string, emptyText?: string, onAttachmentActivate?: (attachmentId: number) => void, onFileAttachmentActivate?: (attachmentId: number, file: { href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }) => void, resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource> }} props */
+/**
+ * @param {{
+ *   html: string,
+ *   format?: string,
+ *   emptyText?: string,
+ *   onAttachmentActivate?: (attachmentId: number) => void,
+ *   onFileAttachmentActivate?: (attachmentId: number, file: { href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }) => void,
+ *   resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource>,
+ * }} props
+ *
+ * 附件交互约定：左键附件统一走 onAttachmentActivate（文件附件直接预览）；
+ * onFileAttachmentActivate 仅在右键文件附件时触发，用于打开操作菜单。
+ */
 export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const activateRef = useRef(onAttachmentActivate);
@@ -54,7 +66,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
       const attachmentId = Number(target?.getAttribute('data-yuance-attachment-id'));
       if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) return;
-      if (target?.matches('a[data-yuance-attachment-kind="file"]') && fileActivateRef.current) {
+      if (target?.matches('a[data-yuance-attachment-kind="file"]') && fileActivateRef.current && !activateRef.current) {
         event.preventDefault();
         fileActivateRef.current(attachmentId, {
           href: target.getAttribute('href') || '',
@@ -70,10 +82,27 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       event.preventDefault();
       activateRef.current(attachmentId);
     };
+    const openFileMenu = (event) => {
+      const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
+      const attachmentId = Number(target?.getAttribute('data-yuance-attachment-id'));
+      if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) return;
+      if (!target?.matches('a[data-yuance-attachment-kind="file"]') || !fileActivateRef.current) return;
+      event.preventDefault();
+      fileActivateRef.current(attachmentId, {
+        href: target.getAttribute('href') || '',
+        title: target.getAttribute('title') || target.textContent || '',
+        fileExt: target.getAttribute('data-yuance-file-ext') || '',
+        fileKind: target.getAttribute('data-yuance-file-kind') || '',
+        x: event.clientX,
+        y: event.clientY,
+      });
+    };
     content.addEventListener('click', activate);
+    content.addEventListener('contextmenu', openFileMenu);
     return () => {
       active = false;
       content.removeEventListener('click', activate);
+      content.removeEventListener('contextmenu', openFileMenu);
       for (const release of releases) releaseResolvedSource({ source: '', release });
     };
   }, [format, html, Boolean(resolveAttachmentSource)]);
