@@ -5,13 +5,29 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { AttachmentPreview } from '@yuance/frontend-ui';
 
-test('attachment preview renders shared image navigation and download controls', () => {
+test('attachment preview renders fullscreen image viewer controls and status', () => {
   const html = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'design.png', source: '/preview/content', kind: 'image', fileType: 'png', position: 2, total: 3, hasPrevious: true, hasNext: true, onPrevious() {}, onNext() {}, onDownload() {}, onClose() {} }));
   assert.match(html, /design\.png/);
-  assert.match(html, /2 \/ 3/);
+  assert.match(html, /第 2 \/ 3 项/);
   assert.match(html, /<img/);
-  assert.match(html, />上一个</);
-  assert.match(html, />下载</);
+  assert.match(html, /role="toolbar"/);
+  assert.match(html, /aria-label="查看上一个媒体"/);
+  assert.match(html, /aria-label="缩小图片"/);
+  assert.match(html, /aria-label="放大图片"/);
+  assert.match(html, /aria-label="顺时针旋转图片"/);
+  assert.match(html, /aria-label="重置图片显示"/);
+  assert.match(html, /aria-label="查看下一个媒体"/);
+  assert.match(html, /aria-label="下载附件"/);
+  assert.match(html, /aria-label="关闭媒体预览"/);
+});
+
+test('attachment preview renders video with native controls and hides image-only actions', () => {
+  const html = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'demo.mp4', source: '/preview/demo.mp4', kind: 'video', fileType: 'mp4', onDownload() {}, onClose() {} }));
+  assert.match(html, /<video/);
+  assert.match(html, /controls/);
+  assert.match(html, /aria-label="下载附件"/);
+  assert.doesNotMatch(html, /aria-label="放大图片"/);
+  assert.doesNotMatch(html, /aria-label="顺时针旋转图片"/);
 });
 
 test('attachment preview keeps document and error fallbacks actionable', () => {
