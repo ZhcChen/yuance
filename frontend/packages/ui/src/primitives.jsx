@@ -3,6 +3,8 @@
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
+import { useAnimatedDialog } from './use-animated-dialog.js';
+
 /** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', size?: 'md' | 'sm', className?: string, loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
 export function Button({ children, variant = 'primary', size = 'md', className = '', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
   const buttonClass = ['yc-button', `yc-button-${variant}`, size === 'sm' ? 'yc-button-sm' : '', className].filter(Boolean).join(' ');
@@ -222,14 +224,9 @@ export function ContentTab({ children, href, active = false, badge = 0, onClick 
 export function Modal({ open, title, wide = false, children, footer, onClose }) {
   const ref = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const titleId = useId();
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
+  useAnimatedDialog(open, ref, 'yc-modal-closing');
   return (
-    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}>
+    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={() => { if (open) onClose(); }}>
       <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
       <div className="yc-modal-body">{children}</div>
       {footer ? <div className="yc-modal-footer">{footer}</div> : null}

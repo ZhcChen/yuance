@@ -419,10 +419,12 @@ html[data-theme="dark"] {
   .yc-content-tabs-indicator { top: 9px; height: calc(100% - 13px); }
 }
 
-.yc-modal { width: min(560px, calc(100% - 36px)); max-height: min(720px, calc(100% - 56px)); padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 14px; background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 22px 60px rgb(24 39 58 / 20%); }
-.yc-modal[open] { display: flex; flex-direction: column; }
+.yc-modal { width: min(560px, calc(100% - 36px)); max-height: min(720px, calc(100% - 56px)); padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 14px; background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 22px 60px rgb(24 39 58 / 20%); opacity: 0; transform: translateY(12px) scale(.98); }
+.yc-modal[open] { display: flex; flex-direction: column; opacity: 1; transform: translateY(0) scale(1); animation: yc-modal-enter 200ms cubic-bezier(.22, .8, .24, 1); }
+.yc-modal.yc-modal-closing { opacity: 0; transform: translateY(10px) scale(.985); animation: yc-modal-exit 180ms cubic-bezier(.4, 0, .6, 1) forwards; }
 .yc-modal-wide { width: min(85vw, calc(100% - 40px)); max-height: min(860px, calc(100% - 36px)); }
-.yc-modal::backdrop { background: rgb(15 23 42 / 36%); }
+.yc-modal::backdrop { background: rgb(15 23 42 / 36%); animation: yc-backdrop-enter 200ms ease; }
+.yc-modal.yc-modal-closing::backdrop { animation: yc-backdrop-exit 180ms ease forwards; }
 .yc-modal-wide .yc-rich-text-input { min-height: 248px; }
 .yc-modal-header,
 .yc-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
@@ -435,6 +437,33 @@ html[data-theme="dark"] {
 .yc-modal-body::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: color-mix(in srgb, var(--yc-muted) 58%, transparent); background-clip: padding-box; }
 .yc-modal-body::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--yc-muted-strong) 74%, transparent); background-clip: padding-box; }
 .yc-modal-footer { justify-content: flex-end; border-top: 1px solid var(--yc-line); }
+
+@keyframes yc-modal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes yc-modal-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(10px) scale(.985); }
+}
+
+@keyframes yc-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes yc-backdrop-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yc-modal[open],
+  .yc-modal.yc-modal-closing,
+  .yc-modal::backdrop,
+  .yc-modal.yc-modal-closing::backdrop { animation: none; }
+}
 
 .attachment-preview-modal {
   position: fixed;
@@ -453,11 +482,29 @@ html[data-theme="dark"] {
   color: #fff;
   opacity: 0;
   transform: scale(0.97);
-  transition: opacity 240ms ease, transform 240ms ease;
 }
 
-.attachment-preview-modal::backdrop { background: rgb(22 27 35 / 82%); }
-.attachment-preview-modal[open] { opacity: 1; transform: scale(1); }
+.attachment-preview-modal::backdrop { background: rgb(22 27 35 / 82%); animation: yc-backdrop-enter 220ms ease; }
+.attachment-preview-modal[open] { opacity: 1; transform: scale(1); animation: yc-preview-enter 220ms cubic-bezier(.22, .8, .24, 1); }
+.attachment-preview-modal.attachment-preview-closing { opacity: 0; transform: scale(.97); animation: yc-preview-exit 200ms cubic-bezier(.4, 0, .6, 1) forwards; }
+.attachment-preview-modal.attachment-preview-closing::backdrop { animation: yc-backdrop-exit 200ms ease forwards; }
+
+@keyframes yc-preview-enter {
+  from { opacity: 0; transform: scale(.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes yc-preview-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(.97); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attachment-preview-modal[open],
+  .attachment-preview-modal.attachment-preview-closing,
+  .attachment-preview-modal::backdrop,
+  .attachment-preview-modal.attachment-preview-closing::backdrop { animation: none; }
+}
 
 .attachment-preview-stage {
   position: relative;

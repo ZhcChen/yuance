@@ -3,6 +3,8 @@
 
 import React, { useEffect, useReducer, useRef } from 'react';
 
+import { useAnimatedDialog } from './use-animated-dialog.js';
+
 /**
  * @typedef {{
  *   scale: number,
@@ -476,18 +478,7 @@ export function AttachmentPreview({ open, title, source, kind, fileType, loading
     renderViewer();
   }
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) {
-      return;
-    }
-    if (open && !dialog.open) {
-      dialog.showModal();
-    }
-    if (!open && dialog.open) {
-      dialog.close();
-    }
-  }, [open]);
+  useAnimatedDialog(open, dialogRef, 'attachment-preview-closing', 200);
 
   useEffect(() => {
     const dialog = dialogRef.current;

@@ -49,4 +49,12 @@ test('wide create dialog scrolls inside body and keeps footer visible', async ({
   const createButton = dialog.getByRole('button', { name: '创建' });
   const buttonBox = await createButton.boundingBox();
   expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 1);
+
+  // 关闭时先进入退出动画，再真正 close，避免原生 dialog 直接消失。
+  await dialog.getByRole('button', { name: '取消' }).click();
+  await expect.poll(() => dialog.evaluate((element) => ({
+    closing: element.classList.contains('yc-modal-closing'),
+    open: element.open,
+  }))).toEqual({ closing: true, open: true });
+  await expect(dialog).toBeHidden();
 });
