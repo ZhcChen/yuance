@@ -1,4 +1,4 @@
-import { n as e } from "./mathjax-BPjQ2C_j.js";
+import { n as e } from "./mathjax-CMjda8Ip.js";
 //#region packages/core/assets/mathjax-stix2.js?url
 var t = new URL("mathjax-stix2.js", import.meta.url).href, n = null;
 function r() {

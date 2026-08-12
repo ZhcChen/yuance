@@ -1930,7 +1930,7 @@ function officePreviewErrorMessage(error) {
   if (error instanceof Error) {
     console.error("[document-preview] Office 预览失败", error);
   }
-  if (/numbering\.bodyOffsetPt must be finite and non-negative|Paragraph source boundaries must align with retained lines/iu.test(message)) {
+  if (/bodyOffsetPt must be finite and non-negative|Paragraph source boundaries must align with retained lines|Splittable paragraph source boundaries must align with retained lines/iu.test(message)) {
     return "该文档包含当前预览引擎暂不支持的复杂版式，请下载原文件查看。";
   }
   return message || "当前无法加载预览。";

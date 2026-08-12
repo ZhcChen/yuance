@@ -1,15 +1,3 @@
-//#region dist/.types-work/mathjax-CKU2W8zq.d.ts
-interface MathSvg {
-  svg: string;
-  widthEm: number;
-  ascentEm: number;
-  descentEm: number;
-}
-interface MathRenderer {
-  loadMathJax(): Promise<void>;
-  mathMLToSvg(mathml: string): Promise<MathSvg>;
-}
-//#endregion
 //#region dist/.types-work/hyperlink-R5D7g--F.d.ts
 type MathStyle = 'roman' | 'italic' | 'bold' | 'boldItalic';
 interface MathRun {
@@ -115,13 +103,48 @@ interface MathBorderBox {
   base: MathNode[];
 }
 type MathNode = MathRun | MathFraction | MathScript | MathNary | MathDelimiter | MathRadical | MathLimit | MathArray | MathGroupChr | MathBar | MathAccent | MathFunc | MathGroup | MathPhant | MathSPre | MathBox | MathBorderBox;
-interface Duotone {
+interface Duotone$1 {
   clr1: string;
   clr2: string;
 }
+type PathCmd$2 = {
+  cmd: 'moveTo';
+  x: number;
+  y: number;
+} | {
+  cmd: 'lineTo';
+  x: number;
+  y: number;
+} | {
+  cmd: 'cubicBezTo';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  x: number;
+  y: number;
+} | {
+  cmd: 'quadBezTo';
+  x1: number;
+  y1: number;
+  x: number;
+  y: number;
+} | {
+  cmd: 'arcTo';
+  wr: number;
+  hr: number;
+  stAng: number;
+  swAng: number;
+} | {
+  cmd: 'close';
+};
+type Fill = SolidFill | NoFill | GradientFill | PatternFill | ImageFill;
 interface SolidFill {
   fillType: 'solid';
   color: string;
+}
+interface NoFill {
+  fillType: 'none';
 }
 interface GradientStop$1 {
   position: number;
@@ -158,6 +181,182 @@ interface TileInfo {
   sy: number;
   flip: string;
   algn?: string;
+}
+interface ImageFill {
+  fillType: 'image';
+  imagePath: string;
+  mimeType: string;
+  fillRect?: FillRect;
+  tile?: TileInfo;
+  alpha?: number;
+  duotone?: Duotone$1;
+}
+interface Shadow {
+  color: string;
+  alpha: number;
+  blur: number;
+  dist: number;
+  dir: number;
+  sx?: number;
+  sy?: number;
+  kx?: number;
+  ky?: number;
+  algn?: 'tl' | 't' | 'tr' | 'l' | 'ctr' | 'r' | 'bl' | 'b' | 'br';
+  rotWithShape?: boolean;
+}
+interface Glow {
+  color: string;
+  alpha: number;
+  radius: number;
+}
+interface SoftEdge {
+  radius: number;
+}
+interface Reflection {
+  blur: number;
+  dist: number;
+  dir: number;
+  stA: number;
+  stPos: number;
+  endA: number;
+  endPos: number;
+  sx: number;
+  sy: number;
+}
+interface ArrowEnd {
+  type: string;
+  w: string;
+  len: string;
+}
+interface Stroke {
+  color: string;
+  width: number;
+  fill?: Exclude<Fill, {
+    fillType: 'image';
+  } | {
+    fillType: 'none';
+  }>;
+  dashStyle?: string;
+  customDash?: ReadonlyArray<{
+    dash: number;
+    space: number;
+  }>;
+  lineCap?: 'butt' | 'round' | 'square';
+  lineJoin?: 'round' | 'bevel' | 'miter';
+  miterLimit?: number;
+  alignment?: 'ctr' | 'in';
+  headEnd?: ArrowEnd;
+  tailEnd?: ArrowEnd;
+  cmpd?: string;
+}
+interface TextBody$1 {
+  verticalAnchor: string;
+  paragraphs: Paragraph$1[];
+  defaultFontSize: number | null;
+  defaultBold: boolean | null;
+  defaultItalic: boolean | null;
+  lIns: number;
+  rIns: number;
+  tIns: number;
+  bIns: number;
+  wrap: string;
+  vert: string;
+  autoFit: string;
+  fontScale?: number | null;
+  lnSpcReduction?: number | null;
+  numCol?: number;
+  spcCol?: number;
+}
+type SpaceLine = {
+  type: 'pct';
+  val: number;
+} | {
+  type: 'pts';
+  val: number;
+};
+type Bullet = {
+  type: 'none';
+} | {
+  type: 'inherit';
+} | {
+  type: 'char';
+  char: string;
+  color: string | null;
+  sizePct: number | null;
+  sizePts?: number;
+  fontFamily: string | null;
+} | {
+  type: 'autoNum';
+  numType: string;
+  startAt: number | null;
+  color: string | null;
+  sizePct?: number | null;
+  sizePts?: number;
+  fontFamily?: string | null;
+};
+interface TabStop$1 {
+  pos: number;
+  algn: string;
+}
+interface Paragraph$1 {
+  alignment: string;
+  marL: number;
+  marR: number;
+  indent: number;
+  spaceBefore: number | null;
+  spaceAfter: number | null;
+  spaceLine: SpaceLine | null;
+  lvl: number;
+  bullet: Bullet;
+  defFontSize: number | null;
+  defColor: string | null;
+  defBold: boolean | null;
+  defItalic: boolean | null;
+  defFontFamily: string | null;
+  tabStops: TabStop$1[];
+  rtl?: boolean;
+  runs: TextRun[];
+}
+type TextRun = TextRunData | LineBreak | EquationRun;
+interface EquationRun {
+  type: 'math';
+  nodes: MathNode[];
+  display: boolean;
+  fontSize?: number | null;
+  color?: string | null;
+}
+interface TextRunData {
+  type: 'text';
+  text: string;
+  bold: boolean | null;
+  italic: boolean | null;
+  underline: boolean;
+  underlineStyle?: string;
+  underlineColor?: string;
+  strikethrough: boolean;
+  strikeDouble?: boolean;
+  fontSize: number | null;
+  color: string | null;
+  fontFamily: string | null;
+  fontFamilyEa?: string;
+  fontFamilySym?: string;
+  baseline?: number;
+  caps?: 'none' | 'small' | 'all';
+  letterSpacing?: number;
+  fieldType?: string;
+  hyperlink?: string;
+  hyperlinkAction?: string;
+  shadow?: Shadow;
+  reflection?: Reflection;
+  outline?: TextOutline;
+  highlight?: string;
+}
+interface TextOutline {
+  width: number;
+  color?: string;
+}
+interface LineBreak {
+  type: 'break';
 }
 interface ChartSeries {
   name: string;
@@ -473,18 +672,7 @@ interface LegendManualLayout {
   w: number;
   h: number;
 }
-interface ChartRect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-type OoxmlErrorCode = 'encrypted' | 'invalid-password' | 'unsupported-encryption' | 'legacy-binary-format' | 'not-ooxml';
 type OoxmlErrorStage = 'container' | 'decompression' | 'parsing' | 'serialization' | 'layout' | 'rendering' | 'worker';
-declare class OoxmlError extends Error {
-  readonly code: OoxmlErrorCode;
-  constructor(code: OoxmlErrorCode, message: string);
-}
 type OoxmlFormat = 'docx' | 'xlsx' | 'pptx';
 interface OoxmlResourceUsageSnapshot {
   readonly archiveEntryCount: number;
@@ -551,17 +739,6 @@ interface OoxmlResourceLimits {
   maxTotalInflatedBytes?: OoxmlResourceLimit;
   maxArchiveEntries?: OoxmlResourceLimit;
 }
-interface LoadOptions$1 {
-  useGoogleFonts?: boolean;
-  password?: string;
-  wasmUrl?: string | URL;
-  maxZipEntryBytes?: number;
-  resourceLimits?: OoxmlResourceLimits;
-  debug?: boolean;
-  onResourceMetrics?: (metrics: OoxmlResourceMetrics) => void;
-  workerTimeoutMs?: number;
-  math?: MathRenderer;
-}
 type OoxmlDecodedImageLimitMetric = 'image-pixels' | 'active-decoded-bytes';
 declare class OoxmlDecodedImageLimitError extends RangeError {
   readonly metric: OoxmlDecodedImageLimitMetric;
@@ -579,48 +756,276 @@ type HyperlinkTarget = {
   ref: string;
   slideIndex?: number;
 };
-declare function openExternalHyperlink(url: string, allowed?: readonly string[], win?: Pick<Window, 'open'> | undefined): boolean;
 //#endregion
-//#region dist/.types-work/find-highlight-DcNlrW8O.d.ts
-interface TextSelectionContextOptions {
-  readonly maxTextCharacters?: number;
-  readonly maxRunLocators?: number;
+//#region dist/.types-work/node.d.ts
+interface Paragraph extends Paragraph$1 {
+  eaLnBrk: boolean;
+  defTabSz?: number;
 }
-interface ViewerContextMenuEvent<TContext> {
-  readonly originalEvent: MouseEvent;
-  getContext(): Promise<TContext | null>;
+interface TextBody extends TextBody$1 {
+  rtlCol?: boolean;
+  textWarp?: {
+    preset: string;
+    adj?: number[];
+  };
+  paragraphs: Paragraph[];
 }
-interface AutoResizeOptions {
-  pauseWhenHidden?: boolean;
+interface Presentation {
+  slideWidth: number;
+  slideHeight: number;
+  slides: Slide[];
+  defaultTextColor: string | null;
+  majorFont: string | null;
+  minorFont: string | null;
+  hlinkColor?: string;
+  folHlinkColor?: string;
 }
-declare function autoResize(render: (width: number, height: number) => void | Promise<void>, element: Element, opts?: AutoResizeOptions): () => void;
-interface ZoomableViewer {
-  getScale(): number;
-  setScale(scale: number): void | Promise<void>;
-  zoomIn(): void | Promise<void>;
-  zoomOut(): void | Promise<void>;
-  fitWidth(): void | Promise<void>;
-  fitPage(): void | Promise<void>;
+interface Slide {
+  index: number;
+  slideNumber: number;
+  partName?: string;
+  background: Fill | null;
+  elements: SlideElement[];
+  elementSources?: SlideElementSource[];
+  notes?: string;
+  comments?: PptxComment[];
+  hidden?: boolean;
+  parseError?: string;
 }
-interface MatchRunSlice {
-  runIndex: number;
-  start: number;
-  end: number;
+type SlideElementOrigin = 'master' | 'layout' | 'slide';
+interface SlideElementSource {
+  origin: SlideElementOrigin;
 }
-interface FindMatchesOptions {
-  caseSensitive?: boolean;
-}
-interface FindMatch<Loc = unknown> {
-  matchIndex: number;
+interface PptxComment {
+  author?: string;
+  date?: string;
   text: string;
-  location: Loc;
 }
-interface FindHighlightColors {
-  match?: string;
-  active?: string;
+type SlideElement = ShapeElement | PictureElement | TableElement | ChartElement | MediaElement;
+interface MediaElement {
+  type: 'media';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  mediaKind: 'audio' | 'video';
+  posterPath: string;
+  posterMimeType: string;
+  mediaPath: string;
+  mimeType: string;
 }
-//#endregion
-//#region dist/.types-work/docx-BPe8ajoT.d.ts
+interface ShapeElement {
+  type: 'shape';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  geometry: string;
+  fill: Fill | null;
+  stroke: Stroke | null;
+  textBody: TextBody | null;
+  defaultTextColor: string | null;
+  custGeom: PathCmd$2[][] | null;
+  adj: number | null;
+  adj2: number | null;
+  adj3: number | null;
+  adj4: number | null;
+  adj5: number | null;
+  adj6: number | null;
+  adj7: number | null;
+  adj8: number | null;
+  shadow: Shadow | null;
+  innerShadow?: Shadow;
+  glow?: Glow;
+  softEdge?: SoftEdge;
+  reflection?: Reflection;
+  textRect?: TextRect;
+  scene3d?: Scene3d;
+  sp3d?: Sp3d;
+  id?: string;
+  name?: string;
+  hyperlink?: string;
+  hyperlinkAction?: string;
+}
+interface TextRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+interface Rot3d {
+  lat: number;
+  lon: number;
+  rev: number;
+}
+interface Camera3d {
+  prst: string;
+  fov?: number;
+  zoom?: number;
+  rot?: Rot3d;
+}
+interface LightRig {
+  rig: string;
+  dir: string;
+  rot?: Rot3d;
+}
+interface Scene3d {
+  camera: Camera3d;
+  lightRig?: LightRig;
+}
+interface Bevel3d {
+  w: number;
+  h: number;
+  prst: string;
+}
+interface Sp3d {
+  z?: number;
+  extrusionH?: number;
+  contourW?: number;
+  contourClr?: string;
+  extrusionClr?: string;
+  prstMaterial: string;
+  bevelT?: Bevel3d;
+  bevelB?: Bevel3d;
+}
+interface TableElement {
+  type: 'table';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  cols: number[];
+  rows: TableRow[];
+  rtl?: boolean;
+}
+interface TableRow {
+  height: number;
+  cells: TableCell[];
+}
+interface TableCell {
+  textBody: TextBody | null;
+  fill: Fill | null;
+  textColor?: string;
+  borderL: Stroke | null;
+  borderR: Stroke | null;
+  borderT: Stroke | null;
+  borderB: Stroke | null;
+  diagonalTL?: Stroke | null;
+  diagonalTR?: Stroke | null;
+  gridSpan: number;
+  rowSpan: number;
+  hMerge: boolean;
+  vMerge: boolean;
+}
+interface ChartElement {
+  type: 'chart';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  chart: ChartModel;
+}
+interface PictureElement {
+  type: 'picture';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  flipH: boolean;
+  flipV: boolean;
+  imagePath: string;
+  mimeType: string;
+  svgImagePath?: string;
+  intrinsicWidthPx?: number;
+  intrinsicHeightPx?: number;
+  stroke: Stroke | null;
+  prstGeom?: string;
+  prstAdjust?: number[];
+  srcRect?: {
+    l: number;
+    t: number;
+    r: number;
+    b: number;
+  };
+  alpha?: number;
+  duotone?: Duotone$1;
+  custGeom?: PathCmd$2[][] | null;
+  shadow?: Shadow;
+  innerShadow?: Shadow;
+  glow?: Glow;
+  softEdge?: SoftEdge;
+  reflection?: Reflection;
+  scene3d?: Scene3d;
+  sp3d?: Sp3d;
+}
+interface OoxmlNodeSessionOptions {
+  resourceLimits?: OoxmlResourceLimits;
+  maxZipEntryBytes?: number;
+  debug?: boolean;
+  onResourceMetrics?: (metrics: OoxmlResourceMetrics) => void;
+  signal?: AbortSignal;
+}
+interface NodeTextMetricsLike {
+  readonly width: number;
+}
+interface NodeCanvasContext2D {
+  measureText(text: string): NodeTextMetricsLike;
+}
+interface NodeCanvasLike {
+  width: number;
+  height: number;
+  getContext(kind: '2d'): NodeCanvasContext2D;
+  toBuffer?(format?: string): Uint8Array | Promise<Uint8Array>;
+}
+interface NodeImageLike {
+  width: number;
+  height: number;
+}
+interface NodeCanvasFactory {
+  createCanvas(width: number, height: number): NodeCanvasLike;
+  loadImage(buffer: ArrayBuffer | Uint8Array): Promise<NodeImageLike>;
+}
+declare function installOffscreenCanvasShim(factory: NodeCanvasFactory): () => void;
+declare function installImageBitmapShim(factory: NodeCanvasFactory): () => void;
+declare function renderSlideNode(canvas: NodeCanvasLike, presentation: Presentation, slideIndex: number, opts?: {
+  width?: number;
+  dpr?: number;
+  factory?: NodeCanvasFactory;
+  fetchImage?: (path: string, mimeType: string) => Promise<Blob>;
+  fetchMedia?: (path: string) => Promise<Blob>;
+}): Promise<void>;
+type OpenPptxPresentationOptions = OoxmlNodeSessionOptions;
+interface PptxSessionRenderOptions {
+  readonly width?: number;
+  readonly dpr?: number;
+  readonly factory: NodeCanvasFactory;
+}
+interface PptxPresentationSession extends AsyncIterable<Slide> {
+  readonly slideCount: number;
+  readonly slideWidth: number;
+  readonly slideHeight: number;
+  readonly resourceUsage: OoxmlResourceUsageSnapshot | undefined;
+  getImage(path: string, mimeType: string): Promise<Blob>;
+  getMedia(path: string, mimeType?: string): Promise<Blob>;
+  renderSlide(canvas: NodeCanvasLike, slide: Slide, options: PptxSessionRenderOptions): Promise<void>;
+  slides(): AsyncGenerator<Slide, void, void>;
+  close(): Promise<void>;
+}
+declare function openPptxPresentation(buffer: ArrayBuffer | Uint8Array, options?: OpenPptxPresentationOptions): Promise<PptxPresentationSession>;
+declare function materializePptxPresentation(buffer: ArrayBuffer | Uint8Array, options?: OpenPptxPresentationOptions): Promise<Presentation>;
 interface DocxDocumentModel {
   section: SectionProps;
   body: BodyElement[];
@@ -672,7 +1077,6 @@ interface DocNote {
   id: string;
   content: BodyElement[];
 }
-declare function noteText(note: DocNote): string;
 interface HeadersFooters {
   default: HeaderFooter | null;
   first: HeaderFooter | null;
@@ -916,7 +1320,7 @@ interface PTabRun {
   leader: 'none' | 'dot' | 'hyphen' | 'underscore' | 'middleDot';
   fontSize: number;
 }
-type PathCmd = {
+type PathCmd$1 = {
   cmd: 'moveTo';
   x: number;
   y: number;
@@ -976,10 +1380,10 @@ interface ShapeRun {
   groupHeightPt?: number | null;
   behindDoc?: boolean;
   zOrder: number;
-  subpaths: PathCmd[][];
+  subpaths: PathCmd$1[][];
   presetGeometry?: string | null;
   adjValues?: Array<number | null>;
-  fill: ShapeFill | null;
+  fill: ShapeFill$1 | null;
   stroke: string | null;
   strokeWidth?: number;
   strokeFill?: ShapeStrokeFill | null;
@@ -1004,7 +1408,7 @@ interface ShapeRun {
   distLeft?: number;
   distRight?: number;
   wrapSide?: string | null;
-  textBlocks?: ShapeText[];
+  textBlocks?: ShapeText$1[];
   defaultTextColor?: string | null;
   textAnchor?: string | null;
   textAutofit?: string | null;
@@ -1027,7 +1431,7 @@ interface LineEnd {
   w: string;
   len: string;
 }
-interface ShapeTextRun {
+interface ShapeTextRun$1 {
   text: string;
   fontSizePt: number;
   color?: string | null;
@@ -1037,7 +1441,7 @@ interface ShapeTextRun {
   italic?: boolean;
   ruby?: RubyAnnotation | null;
 }
-interface ShapeText {
+interface ShapeText$1 {
   text: string;
   fontSizePt: number;
   color?: string | null;
@@ -1045,7 +1449,7 @@ interface ShapeText {
   fontFamily?: string | null;
   bold?: boolean;
   italic?: boolean;
-  runs?: ShapeTextRun[];
+  runs?: ShapeTextRun$1[];
   numbering?: NumberingInfo | null;
   alignment: string;
   spaceBefore?: number;
@@ -1065,7 +1469,7 @@ interface ShapeText {
   imageWidthPt?: number;
   imageHeightPt?: number;
 }
-type ShapeFill = {
+type ShapeFill$1 = {
   fillType: 'solid';
   color: string;
 } | {
@@ -1098,7 +1502,7 @@ type ShapeFill = {
   fillRect?: FillRect;
   tile?: TileInfo;
   alpha?: number;
-  duotone?: Duotone;
+  duotone?: Duotone$1;
 };
 type ShapeStrokeFill = {
   fillType: 'gradient';
@@ -1222,7 +1626,7 @@ interface ImageRun {
   anchorXFromMargin?: boolean;
   anchorYFromPara?: boolean;
   colorReplaceFrom?: string;
-  duotone?: Duotone;
+  duotone?: Duotone$1;
   alpha?: number;
   wrapMode?: string;
   distTop?: number;
@@ -1334,347 +1738,747 @@ interface DocxTextRunInfo {
   hyperlink?: HyperlinkTarget;
   eastAsianVert?: boolean;
 }
-interface RenderPageOptions {
+interface OpenDocxDocumentOptions extends OoxmlNodeSessionOptions {
+  factory: NodeCanvasFactory;
+  currentDate?: Date | number;
+}
+interface DocxPageRenderOptions {
   width?: number;
   dpr?: number;
   defaultTextColor?: string;
   onTextRun?: (run: DocxTextRunInfo) => void;
-  currentDate?: Date | number;
 }
-type DocxSelectionContextOptions = TextSelectionContextOptions;
-interface DocxSelectionSourceLocator {
-  readonly story: 'body' | 'header' | 'footer' | 'footnote' | 'endnote' | 'textbox';
-  readonly storyInstance: string;
-  readonly path: readonly number[];
-}
-interface DocxSelectionRunLocator {
+interface DocxRenderedPage {
   readonly pageIndex: number;
-  readonly runIndex: number;
-  readonly paragraphId?: string;
-  readonly source?: DocxSelectionSourceLocator;
+  readonly widthPt: number;
+  readonly heightPt: number;
+  readonly canvas: NodeCanvasLike;
 }
-interface DocxTextSelectionContext {
-  readonly format: 'docx';
-  readonly kind: 'text';
-  readonly text: string;
-  readonly pageIndexes: readonly number[];
-  readonly paragraphIds: readonly string[];
-  readonly runs: readonly DocxSelectionRunLocator[];
-  readonly truncated: boolean;
-  readonly truncationReasons: readonly ('text' | 'runs')[];
-  readonly textCharacters: number;
-  readonly maxTextCharacters: number;
-  readonly maxRunLocators: number;
-}
-interface DocxPagePoint {
-  readonly xPt: number;
-  readonly yPt: number;
-}
-interface DocxElementContext {
-  readonly format: 'docx';
-  readonly kind: 'element';
-  readonly pageIndex: number;
-  readonly elementIndex: number;
-  readonly elementType: 'chart' | 'image' | 'shape';
-  readonly point: DocxPagePoint;
-  readonly bounds: Readonly<DocxPagePoint & {
+interface DocxDocumentSession extends AsyncIterable<DocxRenderedPage> {
+  readonly pageCount: number;
+  readonly resourceUsage: OoxmlResourceUsageSnapshot | undefined;
+  pageSize(pageIndex: number): Readonly<{
     widthPt: number;
     heightPt: number;
   }>;
-  readonly source: DocxSelectionSourceLocator;
-  readonly text?: string;
-  readonly mimeType?: string;
-  readonly seriesCount?: number;
-  readonly truncated: boolean;
-  readonly truncationReasons: readonly ('text')[];
-  readonly textCharacters: number;
-  readonly maxTextCharacters: number;
+  renderPage(pageIndex: number, options?: DocxPageRenderOptions): Promise<NodeCanvasLike>;
+  pages(options?: DocxPageRenderOptions): AsyncGenerator<DocxRenderedPage, void, void>;
+  close(): Promise<void>;
 }
-type DocxSelectionContext = DocxTextSelectionContext | DocxElementContext;
-declare function readDocxTextSelectionContext(root: HTMLElement, selection: Selection | null, options?: DocxSelectionContextOptions): DocxTextSelectionContext | null;
-interface DocxElementContextOptions {
-  readonly maxTextCharacters?: number;
-  readonly currentDate?: Date | number;
+declare function openDocxDocument(buffer: ArrayBuffer | Uint8Array, options: OpenDocxDocumentOptions): Promise<DocxDocumentSession>;
+declare function materializeDocxDocument(buffer: ArrayBuffer | Uint8Array, options?: OoxmlNodeSessionOptions): Promise<DocxDocumentModel>;
+type ShapeFill = Exclude<Fill, {
+  fillType: 'image';
+} | {
+  fillType: 'none';
+}>;
+interface Workbook {
+  sheets: SheetMeta[];
+  date1904?: boolean;
+  parseError?: string;
 }
-interface LoadOptions extends LoadOptions$1 {
-  math?: MathRenderer;
-  mode?: 'main' | 'worker';
+interface SheetMeta {
+  name: string;
+  sheetId: number;
+  rId: string;
+  tabColor?: string | null;
+  visibility?: 'hidden' | 'veryHidden';
 }
-type CollectPageRunsOptions = Pick<RenderPageOptions, 'width' | 'currentDate'>;
-type RenderPageToBitmapOptions = Omit<RenderPageOptions, 'onTextRun'> & {
-  onTextRun?: (run: DocxTextRunInfo) => void;
+interface MergeCell {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+interface Worksheet {
+  name: string;
+  rows: Row[];
+  colWidths: Record<number, number>;
+  rowHeights: Record<number, number>;
+  colOutlineLevels?: Record<number, number>;
+  colCollapsed?: Record<number, boolean>;
+  colHidden?: Record<number, boolean>;
+  defaultColWidth: number;
+  defaultRowHeight: number;
+  mergeCells: MergeCell[];
+  freezeRows: number;
+  freezeCols: number;
+  conditionalFormats: ConditionalFormat[];
+  images: ImageAnchor[];
+  charts: ChartAnchor[];
+  shapeGroups?: ShapeAnchor[];
+  showZeros?: boolean;
+  showGridlines?: boolean;
+  rightToLeft?: boolean;
+  outlinePr?: OutlinePr;
+  tabColor?: string | null;
+  autoFilter?: WorksheetCellRange | null;
+  hyperlinks?: Hyperlink[];
+  commentRefs?: string[];
+  comments?: XlsxComment[];
+  dataValidations?: DataValidation[];
+  definedNames?: DefinedName[];
+  tables?: TableInfo[];
+  slicers?: SlicerAnchor[];
+  pivotTables?: PivotTableMetadata[];
+  pivotDiagnostics?: PivotDiagnostic[];
+  sparklineGroups?: SparklineGroup[];
+  defaultFontFamily?: string;
+  defaultFontSize?: number;
+  date1904?: boolean;
+  parseError?: string;
+}
+interface PivotTableMetadata {
+  name: string;
+  cacheId: number;
+  location: PivotLocation;
+  rowFields: number[];
+  columnFields: number[];
+  pageFields: PivotPageField[];
+  dataFields: PivotDataField[];
+  refreshOnLoad?: boolean;
+  cacheInvalid?: boolean;
+  cacheDefinitionPart?: string;
+  cacheSource?: PivotCacheSource;
+  status: PivotMetadataStatus;
+  extensionUris?: string[];
+}
+interface PivotLocation extends WorksheetCellRange {
+  firstHeaderRow: number;
+  firstDataRow: number;
+  firstDataCol: number;
+}
+interface PivotPageField {
+  field: number;
+  item?: number;
+  name?: string;
+}
+interface PivotDataField {
+  field: number;
+  subtotal?: string;
+  rawSubtotal?: string;
+  name?: string;
+}
+type PivotCacheSource = {
+  kind: 'worksheet';
+  sheet?: string;
+  reference?: string;
+  name?: string;
+  relationshipId?: string;
+} | {
+  kind: 'external';
+} | {
+  kind: 'consolidation';
+} | {
+  kind: 'scenario';
 };
-declare class DocxDocument {
-  private _metrics;
-  private _document;
-  private _source;
-  private _meta;
-  private _bookmarkPages;
-  private _mode;
-  private _worker;
-  private _bridge;
-  private readonly _rawParts;
-  private _embeddedFontFaces;
-  private _googleFontFaces;
-  private _localMetricFontFaces;
-  private readonly _fetchImage;
-  private constructor();
-  static load(source: string | ArrayBuffer, opts?: LoadOptions): Promise<DocxDocument>;
-  private _parse;
-  destroy(): void;
-  getImage(imagePath: string, mimeType: string): Promise<Blob>;
-  getFontBytes(partPath: string): Promise<Uint8Array>;
-  private _resourceUsage;
-  getResourceMetrics(): Promise<OoxmlResourceMetrics>;
-  toMarkdown(): Promise<string>;
-  get pageCount(): number;
-  get mode(): 'main' | 'worker';
-  get document(): DocxDocumentModel;
-  get comments(): DocComment[];
-  get footnotes(): DocNote[];
-  get endnotes(): DocNote[];
-  private _getLayout;
-  private _getBookmarkPages;
-  getBookmarkPage(bookmarkName: string): number | undefined;
-  pageSize(pageIndex: number): {
-    widthPt: number;
-    heightPt: number;
+type PivotMetadataStatus = {
+  state: 'complete';
+} | {
+  state: 'partial';
+  reasons: PivotPartialReason[];
+};
+type PivotPartialReason = {
+  kind: 'missingCacheRelationship';
+} | {
+  kind: 'malformedCacheRelationships';
+} | {
+  kind: 'unreadableCacheRelationships';
+} | {
+  kind: 'externalCacheRelationship';
+} | {
+  kind: 'ambiguousCacheRelationship';
+} | {
+  kind: 'unreadableCacheDefinition';
+} | {
+  kind: 'malformedCacheDefinition';
+} | {
+  kind: 'malformedField';
+  field: string;
+} | {
+  kind: 'unsupportedCacheSource';
+  sourceType: string;
+} | {
+  kind: 'unresolvedWorksheetSourceRelationship';
+} | {
+  kind: 'unsupportedSemanticFeature';
+  feature: string;
+};
+interface PivotDiagnostic {
+  part: string;
+  reason: {
+    kind: 'unreadableWorksheetRelationships';
+  } | {
+    kind: 'malformedWorksheetRelationships';
+  } | {
+    kind: 'malformedPivotRelationship';
+  } | {
+    kind: 'externalPivotRelationship';
+  } | {
+    kind: 'unreadablePart';
+  } | {
+    kind: 'malformedXml';
+  } | {
+    kind: 'missingIdentity';
+  } | {
+    kind: 'invalidLocation';
   };
-  renderPage(target: HTMLCanvasElement | OffscreenCanvas, pageIndex: number, opts?: RenderPageOptions): Promise<void>;
-  renderPageToBitmap(pageIndex: number, opts?: RenderPageToBitmapOptions): Promise<ImageBitmap>;
-  collectPageRuns(pageIndex: number, opts?: CollectPageRunsOptions): Promise<DocxTextRunInfo[]>;
-  getElementContextAt(pageIndex: number, point: DocxPagePoint, opts?: DocxElementContextOptions): Promise<DocxElementContext | null>;
 }
-interface DocxMatchLocation {
-  page: number;
+interface SparklineGroup {
+  kind: 'line' | 'column' | 'stem';
+  markers: boolean;
+  high: boolean;
+  low: boolean;
+  first: boolean;
+  last: boolean;
+  negative: boolean;
+  displayXAxis: boolean;
+  displayEmptyCellsAs: string;
+  minAxisType: string;
+  maxAxisType: string;
+  manualMin?: number;
+  manualMax?: number;
+  lineWeight: number;
+  colorSeries?: string;
+  colorNegative?: string;
+  colorAxis?: string;
+  colorMarkers?: string;
+  colorFirst?: string;
+  colorLast?: string;
+  colorHigh?: string;
+  colorLow?: string;
+  sparklines: Sparkline[];
 }
-interface DocxViewerOptions extends Omit<RenderPageOptions, 'onTextRun'>, LoadOptions {
-  container?: HTMLElement;
-  enableTextSelection?: boolean;
-  enableElementSelection?: boolean;
-  onSelectionContextChange?: (context: DocxSelectionContext | null) => void;
-  onContextMenu?: (event: ViewerContextMenuEvent<DocxSelectionContext>) => void;
-  findHighlightColors?: FindHighlightColors;
-  onPageChange?: (index: number, total: number) => void;
-  zoomMin?: number;
-  zoomMax?: number;
-  onScaleChange?: (scale: number) => void;
-  onHyperlinkClick?: (target: HyperlinkTarget) => void;
-  enableHyperlinks?: boolean;
-  onError?: (err: Error) => void;
+interface Sparkline {
+  row: number;
+  col: number;
+  values: (number | null)[];
 }
-declare class DocxViewer implements ZoomableViewer {
-  private readonly _documentOwner;
-  private get _doc();
-  private readonly _borrowed;
-  private readonly _hostWindow;
-  private _currentPage;
-  private _scale;
-  private _canvas;
-  private _wrapper;
-  private readonly _canvasMount;
-  private _textLayer;
-  private _highlightLayer;
-  private _elementLayer;
-  private _find;
-  private _measureCtx;
-  private _opts;
-  private readonly _mode;
-  private readonly _renderDispatcher;
-  private readonly _errorRouter;
-  private _destroyed;
-  private _selectionChangeListener;
-  private _selectionContextKey;
-  private _elementContext;
-  private _elementHitGeneration;
-  private _elementClickListener;
-  private _contextMenuListener;
-  static fromDocument(canvas: HTMLCanvasElement, document: DocxDocument, opts?: Omit<DocxViewerOptions, keyof LoadOptions>): Omit<DocxViewer, 'load'>;
-  constructor(canvas: HTMLCanvasElement, opts?: DocxViewerOptions);
-  load(source: string | ArrayBuffer): Promise<void>;
-  get pageCount(): number;
-  get currentPage(): number;
-  get canvasElement(): HTMLCanvasElement;
-  goToPage(index: number): Promise<void>;
-  nextPage(): Promise<void>;
-  prevPage(): Promise<void>;
-  private _naturalWidthPx;
-  private _renderWidth;
-  getScale(): number;
-  private _zoomMin;
-  private _zoomMax;
-  setScale(scale: number): Promise<void>;
-  zoomIn(): Promise<void>;
-  zoomOut(): Promise<void>;
-  fitWidth(): Promise<void>;
-  fitPage(): Promise<void>;
-  private _fit;
-  private _fitContainer;
-  findText(query: string, opts?: FindMatchesOptions): Promise<FindMatch<DocxMatchLocation>[]>;
-  findNext(): Promise<FindMatch<DocxMatchLocation> | null>;
-  findPrev(): Promise<FindMatch<DocxMatchLocation> | null>;
-  clearFind(): void;
-  private _activateMatch;
-  private _redrawHighlights;
-  getResourceMetrics(): Promise<OoxmlResourceMetrics>;
-  getSelectionContext(options?: DocxSelectionContextOptions): DocxSelectionContext | null;
-  private _emitSelectionContextChange;
-  private _setElementContext;
-  private _invalidateElementContext;
-  private _redrawElementOutline;
-  private _onElementClick;
-  private _onContextMenu;
-  private _resolveContextAt;
-  destroy(): void;
-  private _render;
-  private _reportRenderError;
-  private _renderPage;
-  private _buildHighlightLayer;
-  private _canvasCssPx;
-  private _measureForFont;
-  private _collectPageRuns;
-  private _buildTextLayer;
-  private _hyperlinkHandler;
+interface SlicerAnchor {
+  fromCol: number;
+  fromColOff: number;
+  fromRow: number;
+  fromRowOff: number;
+  toCol: number;
+  toColOff: number;
+  toRow: number;
+  toRowOff: number;
+  caption: string;
+  items: SlicerItem[];
+  style?: SlicerStyle;
 }
-interface DocxScrollViewerOptions extends Omit<RenderPageOptions, 'onTextRun'>, LoadOptions {
-  width?: number;
-  gap?: number;
-  paddingTop?: number;
-  paddingBottom?: number;
-  paddingLeft?: number;
-  paddingRight?: number;
-  overscan?: number;
-  enableTextSelection?: boolean;
-  enableElementSelection?: boolean;
-  onSelectionContextChange?: (context: DocxSelectionContext | null) => void;
-  onContextMenu?: (event: ViewerContextMenuEvent<DocxSelectionContext>) => void;
-  findHighlightColors?: FindHighlightColors;
-  zoomMin?: number;
-  zoomMax?: number;
-  enableZoom?: boolean;
-  refitOnResize?: boolean;
-  background?: string;
-  pageShadow?: string | false;
-  onVisiblePageChange?: (topIndex: number, total: number) => void;
-  onScaleChange?: (scale: number) => void;
-  onHyperlinkClick?: (target: HyperlinkTarget) => void;
-  enableHyperlinks?: boolean;
-  onError?: (err: Error) => void;
+interface SlicerItem {
+  name: string;
+  selected: boolean;
 }
-declare class DocxScrollViewer implements ZoomableViewer {
-  private readonly _documentOwner;
-  private get _doc();
-  private readonly _borrowed;
-  private readonly _opts;
-  private readonly _container;
-  private readonly _wrapper;
-  private readonly _scrollHost;
-  private readonly _spacer;
-  private _mode;
-  private _scale;
-  private _scaleEstablished;
-  private _pendingScale;
-  private readonly _slots;
-  private readonly _free;
-  private _heights;
-  private _lastRange;
-  private _lastTopIndex;
-  private _scrollListener;
-  private _selectionChangeListener;
-  private _selectionContextKey;
-  private _elementClickListener;
-  private _contextMenuListener;
-  private _elementContext;
-  private _elementHitGeneration;
-  private _destroyed;
-  private _measureCtx;
-  private readonly _bitmapInFlight;
-  private _renderEpoch;
-  private _settleTimer;
-  private _wheelListener;
-  private _pendingZoomAnchor;
-  private _resizeObserver;
-  private _prevBase;
-  private _lastFitWidth;
-  private readonly _pageShadow;
-  private readonly _find;
-  private _findActive;
-  static fromDocument(container: HTMLElement, document: DocxDocument, opts?: Omit<DocxScrollViewerOptions, keyof LoadOptions>): Omit<DocxScrollViewer, 'load'>;
-  constructor(container: HTMLElement, opts?: DocxScrollViewerOptions);
-  load(source: string | ArrayBuffer): Promise<void>;
-  get pageCount(): number;
-  private _pageWidthPx;
-  private _pageHeightPx;
-  private _fitWidthPx;
-  private _baseScale;
-  relayout(): void;
-  private _relayout;
-  private _recomputeHeights;
-  private _gap;
-  private _overscan;
-  private _pad;
-  private _padH;
-  private _pageIndexAtOffset;
-  private _range;
-  private _syncSpacer;
-  private _syncSpacerWidth;
-  private _onScroll;
-  private _mountVisible;
-  private _applyPageShadow;
-  private _acquireSlot;
-  private _recycleSlot;
-  private _positionSlot;
-  private _dpr;
-  private _renderSlot;
-  private _hyperlinkHandler;
-  private _measureForFont;
-  private _canvasCssPx;
-  private _reportRenderError;
-  private _renderSlotBitmap;
-  setScale(scale: number): void;
-  getScale(): number;
-  zoomIn(): void;
-  zoomOut(): void;
-  fitWidth(): void;
-  fitPage(): void;
-  private _fit;
-  private _previewVisible;
-  private _previewSlot;
-  private _scheduleSettle;
-  private _settleRender;
-  private _settleSlot;
-  scrollToPage(index: number, opts?: {
-    behavior?: 'auto' | 'smooth';
-  }): void;
-  findText(query: string, opts?: FindMatchesOptions): Promise<FindMatch<DocxMatchLocation>[]>;
-  findNext(): Promise<FindMatch<DocxMatchLocation> | null>;
-  findPrev(): Promise<FindMatch<DocxMatchLocation> | null>;
-  clearFind(): void;
-  private _activateMatch;
-  private _collectPageRuns;
-  private _redrawHighlights;
-  private _refreshFindRuns;
-  private _redrawSlotHighlights;
-  private _onResize;
-  get topVisiblePage(): number;
-  getResourceMetrics(): Promise<OoxmlResourceMetrics>;
-  getSelectionContext(options?: DocxSelectionContextOptions): DocxSelectionContext | null;
-  private _emitSelectionContextChange;
-  private _setElementContext;
-  private _invalidateElementContext;
-  private _redrawElementOutlines;
-  private _redrawElementOutlineForSlot;
-  private _onElementClick;
-  private _onContextMenu;
-  private _resolveContextAt;
-  destroy(): void;
+interface SlicerStyle {
+  whole?: SlicerElementStyle;
+  header?: SlicerElementStyle;
+  selectedItemWithData?: SlicerElementStyle;
+  unselectedItemWithData?: SlicerElementStyle;
 }
-declare function buildDocxTextLayer(layer: HTMLDivElement, runs: DocxTextRunInfo[], cssWidth: number, cssHeight: number, onHyperlinkClick?: (target: HyperlinkTarget) => void, measureForFont?: (font: string) => (s: string) => number, pageIndex?: number): void;
-interface DocxHighlightMatch {
-  slices: MatchRunSlice[];
-  active: boolean;
+interface SlicerElementStyle {
+  fontColor?: string;
+  fontSize?: number;
+  fontBold?: boolean;
+  fontFamily?: string;
+  fillColor?: string;
+  borderColor?: string;
 }
-type DocxHighlightColors = FindHighlightColors;
-declare function buildDocxHighlightLayer(layer: HTMLDivElement, runs: DocxTextRunInfo[], matches: DocxHighlightMatch[], cssWidth: number, cssHeight: number, measureForFont: (font: string) => (s: string) => number, colors?: DocxHighlightColors): void;
+interface TableInfo {
+  range: WorksheetCellRange;
+  styleName: string;
+  headerRowCount: number;
+  totalsRowCount: number;
+  showRowStripes: boolean;
+  showColumnStripes: boolean;
+  showFirstColumn: boolean;
+  showLastColumn: boolean;
+  accentColor: string;
+  isCustom?: boolean;
+  wholeTableDxf?: number;
+  headerRowDxf?: number;
+  totalRowDxf?: number;
+  firstColumnDxf?: number;
+  lastColumnDxf?: number;
+  band1HorizontalDxf?: number;
+  band2HorizontalDxf?: number;
+  columns: TableColumnInfo[];
+}
+interface TableColumnInfo {
+  dataDxfId?: number;
+  headerRowDxfId?: number;
+  totalsRowDxfId?: number;
+}
+interface DefinedName {
+  name: string;
+  formula: string;
+}
+interface XlsxComment {
+  cellRef: string;
+  author?: string;
+  text: string;
+}
+interface DataValidation {
+  sqref: string;
+  validationType?: string;
+  operator?: string;
+  formula1?: string;
+  formula2?: string;
+  allowBlank?: boolean;
+  promptTitle?: string;
+  prompt?: string;
+  errorTitle?: string;
+  errorMessage?: string;
+}
+interface ChartAnchor {
+  zOrder?: number;
+  fromCol: number;
+  fromColOff: number;
+  fromRow: number;
+  fromRowOff: number;
+  toCol: number;
+  toColOff: number;
+  toRow: number;
+  toRowOff: number;
+  chart: ChartModel;
+}
+interface ShapeAnchor {
+  fromCol: number;
+  fromColOff: number;
+  fromRow: number;
+  fromRowOff: number;
+  toCol: number;
+  toColOff: number;
+  toRow: number;
+  toRowOff: number;
+  editAs?: string;
+  nativeExtCx: number;
+  nativeExtCy: number;
+  shapes: ShapeInfo[];
+}
+interface ShapeInfo {
+  zOrder?: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot: number;
+  flipH?: boolean;
+  flipV?: boolean;
+  fillColor?: string;
+  fill?: ShapeFill;
+  strokeColor?: string;
+  strokeWidth: number;
+  strokeFill?: Exclude<Fill, {
+    fillType: 'image';
+  } | {
+    fillType: 'none';
+  }>;
+  strokeDashStyle?: string;
+  strokeCustomDash?: Array<{
+    dash: number;
+    space: number;
+  }>;
+  strokeLineCap?: 'butt' | 'round' | 'square';
+  strokeLineJoin?: 'round' | 'bevel' | 'miter';
+  strokeMiterLimit?: number;
+  strokeAlignment?: 'ctr' | 'in';
+  strokeCmpd?: string;
+  strokeHeadEnd?: ArrowEnd;
+  strokeTailEnd?: ArrowEnd;
+  geom: ShapeGeom;
+  text?: ShapeText;
+}
+interface ShapeText {
+  anchor: string;
+  wrap: string;
+  autoFit?: string;
+  fontScale?: number | null;
+  lnSpcReduction?: number | null;
+  lIns: number;
+  tIns: number;
+  rIns: number;
+  bIns: number;
+  paragraphs: ShapeParagraph[];
+}
+interface ShapeParagraph {
+  align: string;
+  rtl?: boolean;
+  marL?: number;
+  marR?: number;
+  indent?: number;
+  spaceLine?: SpaceLine | null;
+  runs: ShapeTextRun[];
+}
+type ShapeTextRun = {
+  type: 'text';
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  size: number;
+  color?: string;
+  fontFace?: string;
+  fontFaceEa?: string;
+  fontFaceCs?: string;
+} | {
+  type: 'break';
+} | {
+  type: 'math';
+  nodes: MathNode[];
+  display: boolean;
+  fontSize?: number;
+  color?: string;
+};
+type ShapeGeom = {
+  type: 'preset';
+  name: string;
+  adj?: (number | null)[];
+} | {
+  type: 'custom';
+  paths: PathInfo[];
+} | {
+  type: 'image';
+  imagePath: string;
+  mimeType: string;
+  svgImagePath?: string;
+  srcRect?: {
+    l: number;
+    t: number;
+    r: number;
+    b: number;
+  };
+  alpha?: number;
+  duotone?: Duotone;
+};
+interface Duotone {
+  clr1: string;
+  clr2: string;
+}
+interface PathInfo {
+  w: number;
+  h: number;
+  commands: PathCmd[];
+}
+type PathCmd = {
+  op: 'moveTo';
+  x: number;
+  y: number;
+} | {
+  op: 'lineTo';
+  x: number;
+  y: number;
+} | {
+  op: 'cubicBezTo';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  x3: number;
+  y3: number;
+} | {
+  op: 'quadBezTo';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+} | {
+  op: 'arcTo';
+  wr: number;
+  hr: number;
+  stAng: number;
+  swAng: number;
+} | {
+  op: 'close';
+};
+interface ImageAnchor {
+  zOrder?: number;
+  fromCol: number;
+  fromColOff: number;
+  fromRow: number;
+  fromRowOff: number;
+  toCol: number;
+  toColOff: number;
+  toRow: number;
+  toRowOff: number;
+  editAs?: string;
+  nativeExtCx: number;
+  nativeExtCy: number;
+  imagePath: string;
+  mimeType: string;
+  svgImagePath?: string;
+  srcRect?: {
+    l: number;
+    t: number;
+    r: number;
+    b: number;
+  };
+  alpha?: number;
+  duotone?: Duotone;
+}
+interface WorksheetCellRange {
+  top: number;
+  left: number;
+  bottom: number;
+  right: number;
+}
+interface Hyperlink {
+  col: number;
+  row: number;
+  url: string | null;
+  location?: string | null;
+  display?: string | null;
+}
+interface ConditionalFormat {
+  sqref: WorksheetCellRange[];
+  rules: CfRule[];
+}
+type CfRule = {
+  type: 'cellIs';
+  operator: string;
+  formulas: string[];
+  dxfId: number | null;
+  priority: number;
+} | {
+  type: 'expression';
+  formula: string;
+  dxfId: number | null;
+  priority: number;
+  stopIfTrue: boolean;
+} | {
+  type: 'colorScale';
+  stops: CfStop[];
+  priority: number;
+} | {
+  type: 'dataBar';
+  color: string;
+  min: CfValue;
+  max: CfValue;
+  priority: number;
+  gradient: boolean;
+} | {
+  type: 'top10';
+  top: boolean;
+  percent: boolean;
+  rank: number;
+  dxfId: number | null;
+  priority: number;
+} | {
+  type: 'aboveAverage';
+  aboveAverage: boolean;
+  equalAverage?: boolean;
+  stdDev?: number;
+  dxfId: number | null;
+  priority: number;
+} | {
+  type: 'iconSet';
+  iconSet: string;
+  cfvos: CfValue[];
+  reverse: boolean;
+  priority: number;
+  customIcons?: CfIcon[];
+} | {
+  type: 'other';
+  kind: string;
+  priority: number;
+};
+interface CfIcon {
+  iconSet: string;
+  iconId: number;
+}
+interface CfStop {
+  kind: string;
+  value: string | null;
+  color: string;
+}
+interface CfValue {
+  kind: string;
+  value: string | null;
+}
+interface Row {
+  index: number;
+  height: number | null;
+  cells: Cell[];
+  outlineLevel?: number;
+  collapsed?: boolean;
+  hidden?: boolean;
+}
+interface OutlinePr {
+  summaryBelow: boolean;
+  summaryRight: boolean;
+}
+interface Cell {
+  col: number;
+  row: number;
+  value: CellValue;
+  styleIndex?: number;
+  formula?: string;
+  showPhonetic?: boolean;
+}
+type CellValue = {
+  type: 'empty';
+} | {
+  type: 'text';
+  text: string;
+  runs?: Run[];
+  phoneticRuns?: PhoneticRun[];
+  phoneticPr?: PhoneticProperties;
+} | {
+  type: 'number';
+  number: number;
+} | {
+  type: 'bool';
+  bool: boolean;
+} | {
+  type: 'error';
+  error: string;
+} | {
+  type: 'shared';
+  si: number;
+};
+interface PhoneticRun {
+  sb: number;
+  eb: number;
+  text: string;
+}
+type PhoneticType = 'fullwidthKatakana' | 'halfwidthKatakana' | 'Hiragana' | 'noConversion';
+type PhoneticAlignment = 'left' | 'center' | 'distributed' | 'noControl';
+interface PhoneticProperties {
+  fontId: number;
+  type?: PhoneticType;
+  alignment?: PhoneticAlignment;
+}
+interface Run {
+  text: string;
+  font?: RunFont;
+}
+interface RunFont {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+  size?: number;
+  color?: string | null;
+  name?: string | null;
+  underlineStyle?: string;
+  vertAlign?: 'superscript' | 'subscript';
+}
+interface SharedString {
+  text: string;
+  runs?: Run[];
+  phoneticRuns?: PhoneticRun[];
+  phoneticPr?: PhoneticProperties;
+}
+interface NumFmt {
+  numFmtId: number;
+  formatCode: string;
+}
+interface Styles {
+  fonts: CellFont[];
+  fills: CellFill[];
+  borders: Border[];
+  cellXfs: CellXf[];
+  numFmts: NumFmt[];
+  dxfs: Dxf[];
+}
+interface Dxf {
+  font: CellFont | null;
+  fill: CellFill | null;
+  border: Border | null;
+  numFmt?: NumFmt | null;
+}
+interface CellFont {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+  size: number;
+  color: string | null;
+  name: string | null;
+  underlineStyle?: string;
+  vertAlign?: 'superscript' | 'subscript';
+}
+interface CellFill {
+  patternType: string;
+  fgColor: string | null;
+  bgColor: string | null;
+  gradient?: GradientFillSpec | null;
+}
+interface GradientFillSpec {
+  gradientType: string;
+  degree: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  stops: {
+    position: number;
+    color: string;
+  }[];
+}
+interface Border {
+  left: BorderEdge | null;
+  right: BorderEdge | null;
+  top: BorderEdge | null;
+  bottom: BorderEdge | null;
+  diagonalUp?: BorderEdge | null;
+  diagonalDown?: BorderEdge | null;
+  horizontal?: BorderEdge | null;
+  vertical?: BorderEdge | null;
+}
+interface BorderEdge {
+  style: string;
+  color: string | null;
+}
+interface CellXf {
+  fontId: number;
+  fillId: number;
+  borderId: number;
+  numFmtId: number;
+  alignH: string | null;
+  alignV: string | null;
+  wrapText: boolean;
+  indent?: number;
+  textRotation?: number;
+  shrinkToFit?: boolean;
+  readingOrder?: number;
+}
+interface ParsedWorkbook {
+  workbook: Workbook;
+  styles: Styles;
+  sharedStrings: SharedString[];
+}
+type DeepReadonly<T> = T extends ((...args: never[]) => unknown) ? T : T extends readonly (infer TValue)[] ? readonly DeepReadonly<TValue>[] : T extends object ? { readonly [TKey in keyof T]: DeepReadonly<T[TKey]>; } : T;
+type ReadonlyParsedWorkbook = DeepReadonly<ParsedWorkbook>;
+interface MaterializedXlsxWorkbook {
+  readonly workbookIndex: ParsedWorkbook;
+  readonly worksheets: readonly Worksheet[];
+}
+type OpenXlsxWorkbookOptions = OoxmlNodeSessionOptions;
+type XlsxWorksheetRowChunk = {
+  readonly kind: 'rows';
+  readonly rows: Row[];
+  readonly sequence: number;
+  readonly wireBytes: number;
+  readonly usage?: OoxmlResourceUsageSnapshot;
+} | {
+  readonly kind: 'finished';
+  readonly worksheet: Worksheet;
+  readonly sequence: number;
+  readonly wireBytes: number;
+  readonly usage?: OoxmlResourceUsageSnapshot;
+};
+interface XlsxWorkbookSession {
+  readonly workbookIndex: ReadonlyParsedWorkbook;
+  readonly sheetCount: number;
+  readonly sheetNames: ReadonlyArray<string>;
+  readonly resourceUsage: OoxmlResourceUsageSnapshot | undefined;
+  worksheetRows(sheetIndex: number): AsyncGenerator<XlsxWorksheetRowChunk, void, void>;
+  close(): Promise<void>;
+}
+declare function openXlsxWorkbook(buffer: ArrayBuffer | Uint8Array, options?: OpenXlsxWorkbookOptions): Promise<XlsxWorkbookSession>;
+declare function materializeXlsxWorkbookIndex(buffer: ArrayBuffer | Uint8Array, options?: OpenXlsxWorkbookOptions): Promise<ParsedWorkbook>;
+declare function materializeXlsxWorksheet(buffer: ArrayBuffer | Uint8Array, sheetIndex: number, options?: OpenXlsxWorkbookOptions): Promise<Worksheet>;
+declare function materializeXlsxWorkbook(buffer: ArrayBuffer | Uint8Array, options?: OpenXlsxWorkbookOptions): Promise<MaterializedXlsxWorkbook>;
 //#endregion
-export { type AnchorHostMetrics, type AutoResizeOptions, type BodyElement, type BorderSpec, type CellBorders, type CellElement, type ChartDataLabelOverride, type ChartDataPointOverride, type ChartErrBars, type ChartExElementStyle, type ChartLabelBox, type ChartManualLayout, type ChartModel, type ChartRect, type ChartRun, type ChartSeries, type ChartSeriesDataLabels, type ChartTextBox, type ChartTextParagraph, type ChartTextRun, type ChartTrendline, type ChartType, type ChartexBoxSeries, type ChartexBoxWhisker, type ChartexSunburst, type ChartexSunburstRow, type ChartexTreemap, type ColSpec, type CollectPageRunsOptions, type ColumnsSpec, type DocComment, type DocNote, type DocParagraph, type DocRevision, type DocRun, type DocSettings, type DocTable, type DocTableCell, type DocTableRow, DocxDocument, type DocxDocumentModel, type DocxElementContext, type DocxElementContextOptions, type DocxHighlightColors, type DocxHighlightMatch, type DocxMatchLocation, type DocxPagePoint, type DocxRunBorder, DocxScrollViewer, type DocxScrollViewerOptions, type DocxSelectionContext, type DocxSelectionContextOptions, type DocxSelectionRunLocator, type DocxSelectionSourceLocator, type DocxTextRun, type DocxTextRunInfo, type DocxTextSelectionContext, DocxViewer, type DocxViewerOptions, type Duotone, type EmbeddedFontRef, type FieldRun, type FillRect, type FindHighlightColors, type FindMatch, type FindMatchesOptions, type FramePr, type GradientFill, type GradientStop, type HeaderFooter, type HeadersFooters, type HyperlinkTarget, type ImageRun, type LegendManualLayout, type LineEnd, type LineNumbering, type LineSpacing, type LoadOptions, type MatchRunSlice, type MathAccent, type MathArray, type MathBar, type MathBorderBox, type MathBox, type MathDelimiter, type MathFraction, type MathFunc, type MathGroup, type MathGroupChr, type MathLimit, type MathNary, type MathNode, type MathPhant, type MathRadical, type MathRenderer, type MathRun, type MathSPre, type MathScript, type MathStyle, type MathSvg, type NoteRef, type NumberingInfo, OoxmlDecodedImageLimitError, type OoxmlDecodedImageLimitMetric, OoxmlError, type OoxmlErrorCode, type OoxmlErrorStage, type OoxmlFormat, type OoxmlResourceLimit, OoxmlResourceLimitError, type OoxmlResourceLimitErrorDetails, type OoxmlResourceLimits, type OoxmlResourceMetric, type OoxmlResourceMetrics, type OoxmlResourceMetricsCheckpoint, type OoxmlResourceName, type OoxmlResourcePolicySnapshot, type OoxmlResourceUsageSnapshot, type OoxmlResourceViolation, type PTabRun, type PageBorderEdge, type PageBorders, type PageNumType, type ParaBorderEdge, type ParagraphBorders, type PathCmd, type PatternFill, type RenderPageOptions, type RenderPageToBitmapOptions, type RubyAnnotation, type RunRevision, type SecondaryValueAxis, type SectionGeom, type SectionProps, type ShapeFill, type ShapeRun, type ShapeStrokeFill, type ShapeText, type ShapeTextRun, type SolidFill, type TabStop, type TableBorders, type TblpPr, type TextPath, type TextSelectionContextOptions, type TileInfo, type ViewerContextMenuEvent, type ZoomableViewer, autoResize, buildDocxHighlightLayer, buildDocxTextLayer, isOoxmlDecodedImageLimitError, noteText, openExternalHyperlink, readDocxTextSelectionContext };
+export { type DeepReadonly, type DocxDocumentSession, type DocxPageRenderOptions, type DocxRenderedPage, type MaterializedXlsxWorkbook, type NodeCanvasFactory, type NodeCanvasLike, type NodeImageLike, OoxmlDecodedImageLimitError, type OoxmlDecodedImageLimitMetric, type OoxmlNodeSessionOptions, type OoxmlResourceLimit, OoxmlResourceLimitError, type OoxmlResourceLimitErrorDetails, type OoxmlResourceLimits, type OoxmlResourceMetrics, type OoxmlResourceMetricsCheckpoint, type OoxmlResourcePolicySnapshot, type OoxmlResourceUsageSnapshot, type OpenDocxDocumentOptions, type OpenPptxPresentationOptions, type OpenXlsxWorkbookOptions, type PptxPresentationSession, type PptxSessionRenderOptions, type ReadonlyParsedWorkbook, type XlsxWorkbookSession, type XlsxWorksheetRowChunk, installImageBitmapShim, installOffscreenCanvasShim, isOoxmlDecodedImageLimitError, materializeDocxDocument, materializePptxPresentation, materializeXlsxWorkbook, materializeXlsxWorkbookIndex, materializeXlsxWorksheet, openDocxDocument, openPptxPresentation, openXlsxWorkbook, renderSlideNode };

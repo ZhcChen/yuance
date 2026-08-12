@@ -1,3 +1,4 @@
-import { Yt as e, _t as t, l as n } from "./find-cursor-CaGrVs7z.js";
-import { a as r, i, n as a, o, r as s, s as c } from "./docx-C6i4Ut3d.js";
-export { c as DocxDocument, s as DocxScrollViewer, i as DocxViewer, e as OoxmlError, t as autoResize, r as buildDocxHighlightLayer, o as buildDocxTextLayer, a as noteText, n as openExternalHyperlink };
+import { It as e, Lt as t, a as n, gn as r, hn as i } from "./line-metrics-z9AdgPaZ.js";
+import { w as a } from "./canvas-viewer-mechanics-ChxLdOJg.js";
+import { a as o, c as s, i as c, n as l, o as u, r as d, s as f } from "./docx-CZC3j4s4.js";
+export { s as DocxDocument, d as DocxScrollViewer, c as DocxViewer, e as OoxmlDecodedImageLimitError, i as OoxmlError, r as OoxmlResourceLimitError, a as autoResize, u as buildDocxHighlightLayer, f as buildDocxTextLayer, t as isOoxmlDecodedImageLimitError, l as noteText, n as openExternalHyperlink, o as readDocxTextSelectionContext };
