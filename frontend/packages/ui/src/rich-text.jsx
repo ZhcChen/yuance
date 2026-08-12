@@ -223,11 +223,15 @@ export function isPreviewableDocumentFile(filename, contentType) {
 
 export const DEFER_RICH_TEXT_PASTE = 'defer';
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onPasteFile?: (file: File) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
+/** @typedef {{ onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteOptions */
+
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
 export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment, onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
+  const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string }>} */ (new Map()));
+  const pendingUploadSequenceRef = useRef(0);
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
@@ -241,11 +245,27 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
+    const pendingNodes = [...input.querySelectorAll('[data-rich-pending-upload]')];
+    if (pendingNodes.length) {
+      // 保留上传中节点的原始位置；value 由同一编辑器发布，无需重建 DOM。
+      setAttachmentIds(richTextAttachmentIds(value));
+      return;
+    }
+    for (const node of pendingNodes) node.remove();
     const sanitized = sanitizeEditorHtml(input, value);
     if (input.innerHTML !== sanitized) input.innerHTML = sanitized;
+    for (const node of pendingNodes) input.appendChild(node);
     setAttachmentIds(richTextAttachmentIds(sanitized));
     if (sanitized !== value) onChange(sanitized);
   }, [value]);
+
+  useEffect(() => () => {
+    for (const entry of pendingUploadsRef.current.values()) {
+      if (!entry.objectUrl) continue;
+      try { entry.node.ownerDocument.defaultView?.URL.revokeObjectURL(entry.objectUrl); } catch { /* 卸载时释放失败可忽略。 */ }
+    }
+    pendingUploadsRef.current.clear();
+  }, []);
 
   /** @param {string} command @param {string | undefined} [argument] */
   function execute(command, argument) {
@@ -342,6 +362,107 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     publish(input);
   }
 
+  /** @param {File} file */
+  function startPasteUpload(file) {
+    const input = inputRef.current;
+    if (!input || disabled) return;
+    const uploadId = `yuance-paste-${++pendingUploadSequenceRef.current}`;
+    const entry = createPendingUploadEntry(input.ownerDocument, file, uploadId);
+    pendingUploadsRef.current.set(uploadId, entry);
+    insertAtSelection(input, entry.node, pasteRangeRef.current);
+    void uploadPastedFile(uploadId);
+  }
+
+  /** @param {string} uploadId */
+  async function uploadPastedFile(uploadId) {
+    const entry = pendingUploadsRef.current.get(uploadId);
+    if (!entry || entry.cancelled || !onPasteFile) return;
+    setPendingUploadState(entry.node, 'uploading', '正在上传');
+    try {
+      const attachment = await Promise.resolve(onPasteFile(entry.file, {
+        onProgress: (stage) => {
+          const current = pendingUploadsRef.current.get(uploadId);
+          if (current && !current.cancelled) {
+            setPendingUploadState(current.node, 'uploading', richTextPasteStageLabel(stage));
+          }
+        },
+        onError: (message) => {
+          const current = pendingUploadsRef.current.get(uploadId);
+          if (current && !current.cancelled) {
+            setPendingUploadState(current.node, 'error', message || '上传失败，请重试。');
+          }
+        },
+        isCurrent: () => {
+          const current = pendingUploadsRef.current.get(uploadId);
+          return Boolean(current && !current.cancelled);
+        },
+      }));
+      const current = pendingUploadsRef.current.get(uploadId);
+      if (!current || current.cancelled) return;
+      if (attachment === DEFER_RICH_TEXT_PASTE) {
+        setPendingUploadState(current.node, 'error', '上传被暂缓，请重试。');
+        return;
+      }
+      if (!attachment) {
+        const existingMessage = current.node.querySelector('[data-rich-pending-overlay-status]')?.textContent || '';
+        setPendingUploadState(current.node, 'error', existingMessage || '上传失败，请重试。');
+        return;
+      }
+      const input = inputRef.current;
+      if (!input || !input.isConnected) return;
+      const completedNode = createAttachmentNode(input.ownerDocument, attachment);
+      current.node.replaceWith(completedNode);
+      cleanupPendingUploadEntry(uploadId);
+      publish(input);
+    } catch (caught) {
+      const current = pendingUploadsRef.current.get(uploadId);
+      if (!current || current.cancelled) return;
+      setPendingUploadState(current.node, 'error', errorMessageText(caught) || '上传失败，请重试。');
+    }
+  }
+
+  /** @param {string} uploadId */
+  function retryPendingUpload(uploadId) {
+    void uploadPastedFile(uploadId);
+  }
+
+  /** @param {string} uploadId */
+  function removePendingUpload(uploadId) {
+    const entry = pendingUploadsRef.current.get(uploadId);
+    if (!entry) return;
+    entry.cancelled = true;
+    entry.node.remove();
+    cleanupPendingUploadEntry(uploadId);
+  }
+
+  /** @param {string} uploadId */
+  function cleanupPendingUploadEntry(uploadId) {
+    const entry = pendingUploadsRef.current.get(uploadId);
+    if (!entry) return;
+    pendingUploadsRef.current.delete(uploadId);
+    if (entry.objectUrl) {
+      try { entry.node.ownerDocument.defaultView?.URL.revokeObjectURL(entry.objectUrl); } catch { /* 本地预览 URL 释放失败可忽略。 */ }
+    }
+  }
+
+  /** @param {React.MouseEvent<HTMLDivElement>} event */
+  function handlePendingUploadClick(event) {
+    const view = event.currentTarget.ownerDocument.defaultView;
+    const target = view && event.target instanceof view.Element ? event.target : null;
+    if (!target) return;
+    const node = target.closest('[data-rich-pending-upload]');
+    if (!node || !event.currentTarget.contains(node)) return;
+    const uploadId = node.getAttribute('data-rich-upload-id');
+    if (!uploadId) return;
+    if (target.closest('[data-rich-pending-retry]')) {
+      event.preventDefault();
+      retryPendingUpload(uploadId);
+    } else if (target.closest('[data-rich-pending-remove]')) {
+      event.preventDefault();
+      removePendingUpload(uploadId);
+    }
+  }
+
   return (
     <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
       <div className="yc-rich-text-toolbar" role="toolbar" aria-label="富文本工具栏">
@@ -398,40 +519,23 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           }
           onBlur?.();
         }}
+        onClick={handlePendingUploadClick}
         onPaste={(event) => {
-          const file = firstPastedFile(event.clipboardData);
-          if (file && onPasteFile && !disabled) {
+          const files = pastedFiles(event.clipboardData);
+          if (files.length && onPasteFile && !disabled) {
             event.preventDefault();
             const input = event.currentTarget;
             pasteRangeRef.current = currentInsertionRange(input);
-            const insertFallback = () => {
-              const target = inputRef.current;
-              if (!target || !target.isConnected || disabled) return;
-              insertAtSelection(target, target.ownerDocument.createTextNode(file.name), pasteRangeRef.current);
-              publish(target);
-            };
-            void Promise.resolve(onPasteFile(file))
-              .then((attachment) => {
-                const target = inputRef.current;
-                if (!target || !target.isConnected || disabled) return;
-                if (attachment === DEFER_RICH_TEXT_PASTE) return;
-                if (attachment) {
-                  const node = createAttachmentNode(target.ownerDocument, attachment);
-                  insertAtSelection(target, node, pasteRangeRef.current);
-                  publish(target);
-                  return;
-                }
-                insertFallback();
-              })
-              .catch((error) => {
-                inputRef.current?.ownerDocument.defaultView?.console?.error('粘贴附件上传失败，已回退为文件名文本。', error);
-                insertFallback();
-              })
-              .finally(() => { pasteRangeRef.current = null; });
+            for (const file of files) startPasteUpload(file);
+            pasteRangeRef.current = null;
             return;
           }
           event.preventDefault();
-          event.currentTarget.ownerDocument.execCommand('insertText', false, file ? file.name : event.clipboardData.getData('text/plain'));
+          if (files.length) {
+            insertAtSelection(event.currentTarget, event.currentTarget.ownerDocument.createTextNode(files.map((file) => file.name).join(' ')));
+          } else {
+            event.currentTarget.ownerDocument.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+          }
           publish(event.currentTarget);
         }}
       />
@@ -460,7 +564,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
 
   /** @param {HTMLDivElement} input */
   function publish(input) {
-    const sanitized = sanitizeEditorHtml(input, input.innerHTML);
+    const clone = /** @type {HTMLDivElement} */ (input.cloneNode(true));
+    clone.querySelectorAll('[data-rich-pending-upload]').forEach((node) => node.remove());
+    const sanitized = sanitizeEditorHtml(clone, clone.innerHTML);
     setAttachmentIds(richTextAttachmentIds(sanitized));
     onChange(sanitized);
   }
@@ -543,23 +649,135 @@ function insertAtSelection(input, node, insertRange = null) {
   input.appendChild(input.ownerDocument.createElement('p')).appendChild(input.ownerDocument.createElement('br'));
 }
 
-/** @param {DataTransfer | null} clipboardData */
-function firstPastedFile(clipboardData) {
-  if (!clipboardData) return null;
+/** @param {DataTransfer | null} clipboardData @returns {File[]} */
+function pastedFiles(clipboardData) {
+  if (!clipboardData) return [];
+  const files = [];
   const items = clipboardData.items;
   for (let index = 0; items && index < items.length; index += 1) {
     const item = items[index];
     if (item?.kind === 'file') {
       const file = item.getAsFile();
-      if (file) return file;
+      if (file) files.push(file);
     }
   }
-  const files = clipboardData.files;
-  for (let index = 0; files && index < files.length; index += 1) {
-    const file = files[index];
-    if (file) return file;
+  const dataFiles = clipboardData.files;
+  for (let index = 0; dataFiles && index < dataFiles.length; index += 1) {
+    const file = dataFiles[index];
+    if (file && !files.includes(file)) files.push(file);
   }
-  return null;
+  return files;
+}
+
+/** @param {Document} ownerDocument @param {File} file @param {string} uploadId */
+function createPendingUploadEntry(ownerDocument, file, uploadId) {
+  const mediaKind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file';
+  const node = ownerDocument.createElement(mediaKind === 'file' ? 'span' : 'figure');
+  node.className = `yc-rich-pending-upload${mediaKind === 'file' ? ' yc-rich-pending-upload-file' : ' yc-rich-pending-upload-media'}`;
+  node.setAttribute('data-rich-pending-upload', 'true');
+  node.setAttribute('data-rich-upload-id', uploadId);
+  node.setAttribute('data-upload-state', 'uploading');
+  node.setAttribute('contenteditable', 'false');
+  node.setAttribute('data-rich-filename', file.name);
+  node.setAttribute('data-rich-content-type', file.type);
+  node.setAttribute('data-rich-byte-size', String(file.size || 0));
+
+  let objectUrl = '';
+  if (mediaKind !== 'file') {
+    try { objectUrl = ownerDocument.defaultView?.URL.createObjectURL(file) || ''; } catch { objectUrl = ''; }
+    const media = ownerDocument.createElement(mediaKind === 'image' ? 'img' : 'video');
+    media.className = 'yc-rich-pending-preview-media';
+    if (objectUrl) media.setAttribute('src', objectUrl);
+    if (mediaKind === 'image') {
+      media.setAttribute('alt', file.name);
+      media.setAttribute('loading', 'eager');
+    } else {
+      media.setAttribute('muted', 'muted');
+      media.setAttribute('playsinline', 'playsinline');
+      media.setAttribute('preload', 'metadata');
+      media.setAttribute('title', file.name);
+    }
+    const preview = ownerDocument.createElement('span');
+    preview.className = 'yc-rich-pending-preview';
+    preview.appendChild(media);
+    node.appendChild(preview);
+  } else {
+    const icon = ownerDocument.createElement('span');
+    icon.className = 'yc-rich-pending-icon';
+    icon.setAttribute('data-file-kind', richFileVisualKind(file.name, file.type));
+    icon.textContent = richFileVisualBadge(file.name, file.type);
+    node.appendChild(icon);
+  }
+
+  const main = ownerDocument.createElement('span');
+  main.className = 'yc-rich-pending-main';
+  const name = ownerDocument.createElement('strong');
+  name.textContent = file.name;
+  const status = ownerDocument.createElement('span');
+  status.className = 'yc-rich-pending-status';
+  status.setAttribute('data-rich-pending-status', '');
+  status.textContent = '正在上传';
+  main.append(name, status);
+  if (mediaKind === 'file') node.appendChild(main);
+
+  const remove = ownerDocument.createElement('button');
+  remove.type = 'button';
+  remove.className = 'yc-rich-pending-remove';
+  remove.setAttribute('data-rich-pending-remove', '');
+  remove.setAttribute('aria-label', `移除 ${file.name}`);
+  remove.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  node.appendChild(remove);
+
+  const overlay = ownerDocument.createElement('span');
+  overlay.className = 'yc-rich-pending-overlay';
+  const progress = ownerDocument.createElement('span');
+  progress.className = 'yc-rich-pending-progress';
+  progress.setAttribute('role', 'progressbar');
+  progress.setAttribute('aria-label', '上传进度');
+  progress.setAttribute('aria-valuetext', '正在上传');
+  const overlayStatus = ownerDocument.createElement('span');
+  overlayStatus.className = 'yc-rich-pending-overlay-status';
+  overlayStatus.setAttribute('data-rich-pending-overlay-status', '');
+  overlayStatus.textContent = '正在上传';
+  const retry = ownerDocument.createElement('button');
+  retry.type = 'button';
+  retry.className = 'yc-rich-pending-retry';
+  retry.setAttribute('data-rich-pending-retry', '');
+  retry.hidden = true;
+  retry.textContent = '重试';
+  retry.setAttribute('aria-label', `重试上传 ${file.name}`);
+  overlay.append(progress, overlayStatus, retry);
+  node.appendChild(overlay);
+
+  return { node, file, cancelled: false, objectUrl };
+}
+
+/** @param {HTMLElement} node @param {'uploading' | 'error'} state @param {string} message */
+function setPendingUploadState(node, state, message) {
+  node.setAttribute('data-upload-state', state);
+  const status = node.querySelector('[data-rich-pending-status]');
+  const overlayStatus = node.querySelector('[data-rich-pending-overlay-status]');
+  const progress = node.querySelector('.yc-rich-pending-progress');
+  const retry = /** @type {HTMLButtonElement | null} */ (node.querySelector('[data-rich-pending-retry]'));
+  if (status) status.textContent = message;
+  if (overlayStatus) overlayStatus.textContent = message;
+  if (progress) progress.setAttribute('aria-valuetext', message);
+  if (retry) retry.hidden = state !== 'error';
+}
+
+/** @param {'registering' | 'signing' | 'uploading' | 'confirming'} stage */
+function richTextPasteStageLabel(stage) {
+  return {
+    registering: '正在登记附件',
+    signing: '正在获取上传签名',
+    uploading: '正在上传到对象存储',
+    confirming: '正在确认上传结果',
+  }[stage] || '正在上传';
+}
+
+/** @param {unknown} error */
+function errorMessageText(error) {
+  return error instanceof Error && error.message ? error.message : '';
 }
 
 /** @param {HTMLDivElement} input @param {string} html */

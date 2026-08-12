@@ -21,7 +21,7 @@ async function ensureCurrentProject(page, projectKey) {
   await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
-test('work item create pastes before title and auto-uploads after title', async ({ page }) => {
+test('work item create keeps pasted image inline and uploads after title with retry', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
   await page.goto('/web/app/bugs');
@@ -102,11 +102,14 @@ test('work item create pastes before title and auto-uploads after title', async 
     Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
     element.dispatchEvent(event);
   });
-  await expect(dialog).toContainText('图片已加入正文，填写标题后将自动上传。');
-  await expect(editor.getByRole('img', { name: 'pasted.png' })).toBeVisible();
+  const pendingImage = editor.getByRole('img', { name: 'pasted.png' });
+  await expect(pendingImage).toBeVisible();
+  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');
+  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先完善工作项标题后再上传附件。');
   expect(attachmentCreates).toHaveLength(0);
 
   await dialog.locator('#work-item-create-title').fill('自动上传粘贴图片验收');
+  await editor.getByRole('button', { name: '重试上传 pasted.png' }).click();
   await expect.poll(() => attachmentCreates.length).toBe(1);
   expect(attachmentCreates[0].payload.original_filename).toBe('pasted.png');
   expect(attachmentCreates[0].payload.content_type).toBe('image/png');

@@ -174,7 +174,7 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRequestDeleteAttachment: (commentId: number, attachment: Attachment) => void,
- *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
+ *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null>,
  *   resolveAttachmentSource?: (commentId: number, attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (commentId: number, attachmentId: number) => void,
  *   buildAttachmentThumbnailUrl?: (commentId: number, attachment: Attachment) => string,
@@ -257,7 +257,7 @@ export function WorkItemComments(props) {
         <form className="discussion-composer work-item-comment-form" onSubmit={onSubmitNew}>
           <UserAvatar name="我" className="discussion-avatar discussion-composer-avatar work-item-comment-avatar" />
           <div className="discussion-composer-main">
-            <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('new', null, file) : undefined} {...typingCallbacks} />
+            <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file, options) => onPasteFile('new', null, file, options) : undefined} {...typingCallbacks} />
             {newCommentAttachments.length ? (
               <AttachmentList
                 attachments={newCommentAttachments}
@@ -308,7 +308,7 @@ export function WorkItemComments(props) {
                       <>
                         <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />
                         <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
-                          <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('edit', comment.id, file) : undefined} {...typingCallbacks} />
+                          <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file, options) => onPasteFile('edit', comment.id, file, options) : undefined} {...typingCallbacks} />
                           <div className="work-item-form-actions work-item-comment-actions">
                             <Button variant="secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</Button>
                             <Button type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</Button>
@@ -353,7 +353,7 @@ export function WorkItemComments(props) {
                       <form className="discussion-composer discussion-reply-form work-item-comment-reply-form" onSubmit={onSubmitReply}>
                         <div className="discussion-composer-main">
                           <p className="discussion-replying-to">回复 <strong>{comment.author}</strong></p>
-                          <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('reply', comment.id, file) : undefined} {...typingCallbacks} />
+                          <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file, options) => onPasteFile('reply', comment.id, file, options) : undefined} {...typingCallbacks} />
                           <div className="discussion-composer-footer work-item-form-actions">
                             <Button variant="secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</Button>
                             <label className="discussion-assign-status">指派后状态<select value={replyAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeReplyAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
