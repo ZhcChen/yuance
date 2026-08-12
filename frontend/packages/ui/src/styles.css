@@ -1393,26 +1393,60 @@ html[data-theme="dark"] {
 
 .yc-rich-text-toolbar {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px;
+  gap: 2px 6px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--yc-line);
   background: var(--yc-panel-soft);
 }
 
-.yc-rich-text-toolbar button {
-  width: 34px;
-  height: 34px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--yc-text);
-  background: transparent;
-  cursor: pointer;
+.yc-rich-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.yc-rich-text-toolbar button:hover,
-.yc-rich-text-toolbar button:focus-visible {
+.yc-rich-toolbar-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--yc-line);
+}
+
+.yc-rich-toolbar-button {
+  min-width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--yc-muted-strong);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  transition: background-color var(--yc-motion-fast) ease, color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease;
+}
+
+.yc-rich-toolbar-button:hover,
+.yc-rich-toolbar-button:focus-visible {
   background: var(--yc-brand-soft);
+  color: var(--yc-brand-strong);
+}
+
+.yc-rich-toolbar-button.is-active {
+  background: var(--yc-brand-soft);
+  color: var(--yc-brand-strong);
+  box-shadow: inset 0 0 0 1px var(--yc-brand-line);
+}
+
+.yc-rich-toolbar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .yc-rich-text-input {

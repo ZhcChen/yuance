@@ -235,6 +235,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, align: /** @type {string | null} */ (null) });
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
     .filter((option) => {
       const query = mentionQuery.toLocaleLowerCase();
@@ -267,6 +268,23 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     pendingUploadsRef.current.clear();
   }, []);
 
+  useEffect(() => {
+    const input = inputRef.current;
+    const view = input?.ownerDocument.defaultView;
+    if (!input || !view || disabled) return undefined;
+    const sync = () => syncFormatState();
+    view.document.addEventListener('selectionchange', sync);
+    input.addEventListener('keyup', sync);
+    input.addEventListener('mouseup', sync);
+    input.addEventListener('input', sync);
+    return () => {
+      view.document.removeEventListener('selectionchange', sync);
+      input.removeEventListener('keyup', sync);
+      input.removeEventListener('mouseup', sync);
+      input.removeEventListener('input', sync);
+    };
+  }, [disabled]);
+
   /** @param {string} command @param {string | undefined} [argument] */
   function execute(command, argument) {
     const input = inputRef.current;
@@ -274,6 +292,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     input.focus();
     input.ownerDocument.execCommand(command, false, argument);
     publish(input);
+    syncFormatState();
   }
 
   /** @param {'left' | 'center' | 'right'} alignment */
@@ -281,13 +300,11 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const input = inputRef.current;
     const view = input?.ownerDocument.defaultView;
     if (!input || !view) return;
-    const selection = input?.ownerDocument.getSelection();
-    const anchor = selection?.anchorNode instanceof view.Node ? selection.anchorNode : null;
-    const element = anchor?.nodeType === 1 ? /** @type {Element} */ (anchor) : anchor?.parentElement;
-    const block = element?.closest('p,div,h1,h2,h3,h4,h5,h6,blockquote,pre,li');
+    const block = currentBlock(input);
     if (!block || !input.contains(block)) return;
     block.setAttribute('data-yuance-align', alignment);
     publish(input);
+    syncFormatState();
   }
 
   function createLink() {
@@ -305,6 +322,16 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const markdown = input.textContent || '';
     input.innerHTML = sanitizeEditorHtml(input, String(marked.parse(markdown, { async: false })));
     publish(input);
+    syncFormatState();
+  }
+
+  function clearFormat() {
+    const input = inputRef.current;
+    if (!input || disabled) return;
+    input.focus();
+    input.ownerDocument.execCommand('removeFormat');
+    publish(input);
+    syncFormatState();
   }
 
   /** @param {RichTextAttachmentOption} attachment */
@@ -314,6 +341,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const node = createAttachmentNode(input.ownerDocument, attachment);
     insertAtSelection(input, node);
     publish(input);
+    syncFormatState();
   }
 
   function openMentionPicker() {
@@ -347,6 +375,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     mentionRangeRef.current = null;
     setMentionQuery(null);
     publish(input);
+    syncFormatState();
   }
 
   /** @param {number} attachmentId */
@@ -360,6 +389,30 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     }
     input.querySelector(`[data-yuance-attachment-id="${attachmentId}"]`)?.remove();
     publish(input);
+    syncFormatState();
+  }
+
+  /** @param {HTMLDivElement} input @returns {Element | null} */
+  function currentBlock(input) {
+    const selection = input.ownerDocument.getSelection();
+    const anchor = selection?.anchorNode || null;
+    const element = anchor?.nodeType === 1 ? /** @type {Element} */ (anchor) : anchor?.parentElement;
+    return element?.closest('p,div,h1,h2,h3,h4,h5,h6,blockquote,pre,li,[data-yuance-align]') || null;
+  }
+
+  function syncFormatState() {
+    const input = inputRef.current;
+    const view = input?.ownerDocument.defaultView;
+    if (!input || !view) return;
+    const block = currentBlock(input);
+    setFormatState({
+      bold: queryCommandState(input, 'bold'),
+      italic: queryCommandState(input, 'italic'),
+      strikeThrough: queryCommandState(input, 'strikeThrough'),
+      unorderedList: queryCommandState(input, 'insertUnorderedList'),
+      orderedList: queryCommandState(input, 'insertOrderedList'),
+      align: block?.getAttribute('data-yuance-align') || null,
+    });
   }
 
   /** @param {File} file */
@@ -476,16 +529,34 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   return (
     <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
       <div className="yc-rich-text-toolbar" role="toolbar" aria-label="富文本工具栏">
-        <button type="button" aria-label="加粗" title="加粗" disabled={disabled} onClick={() => execute('bold')}><strong>B</strong></button>
-        <button type="button" aria-label="斜体" title="斜体" disabled={disabled} onClick={() => execute('italic')}><em>I</em></button>
-        <button type="button" aria-label="无序列表" title="无序列表" disabled={disabled} onClick={() => execute('insertUnorderedList')}>•</button>
-        <button type="button" aria-label="插入代码块" title="插入代码块" disabled={disabled} onClick={() => execute('formatBlock', 'pre')}>&lt;/&gt;</button>
-        <button type="button" aria-label="插入链接" title="插入链接" disabled={disabled} onClick={createLink}>↗</button>
-        <button type="button" aria-label="转换 Markdown" title="转换 Markdown" disabled={disabled} onClick={convertMarkdown}>MD</button>
-        <button type="button" aria-label="提及成员" title="提及成员" disabled={disabled || mentionOptions.length === 0} onClick={openMentionPicker}>@</button>
-        <button type="button" aria-label="左对齐" title="左对齐" disabled={disabled} onClick={() => align('left')}>≡</button>
-        <button type="button" aria-label="居中对齐" title="居中对齐" disabled={disabled} onClick={() => align('center')}>≡</button>
-        <button type="button" aria-label="右对齐" title="右对齐" disabled={disabled} onClick={() => align('right')}>≡</button>
+        <div className="yc-rich-toolbar-group" role="group" aria-label="文本样式">
+          <ToolbarButton active={formatState.bold} label="加粗" title="加粗" disabled={disabled} onClick={() => execute('bold')}><strong>B</strong></ToolbarButton>
+          <ToolbarButton active={formatState.italic} label="斜体" title="斜体" disabled={disabled} onClick={() => execute('italic')}><em>I</em></ToolbarButton>
+          <ToolbarButton active={formatState.strikeThrough} label="删除线" title="删除线" disabled={disabled} onClick={() => execute('strikeThrough')}><s>S</s></ToolbarButton>
+        </div>
+        <span className="yc-rich-toolbar-sep" aria-hidden="true" />
+        <div className="yc-rich-toolbar-group" role="group" aria-label="段落">
+          <ToolbarButton active={formatState.unorderedList} label="无序列表" title="无序列表" disabled={disabled} onClick={() => execute('insertUnorderedList')}>•</ToolbarButton>
+          <ToolbarButton active={formatState.orderedList} label="有序列表" title="有序列表" disabled={disabled} onClick={() => execute('insertOrderedList')}>1.</ToolbarButton>
+          <ToolbarButton label="插入引用" title="插入引用" disabled={disabled} onClick={() => execute('formatBlock', 'blockquote')}>❝</ToolbarButton>
+          <ToolbarButton label="插入代码块" title="插入代码块" disabled={disabled} onClick={() => execute('formatBlock', 'pre')}><code>&lt;/&gt;</code></ToolbarButton>
+        </div>
+        <span className="yc-rich-toolbar-sep" aria-hidden="true" />
+        <div className="yc-rich-toolbar-group" role="group" aria-label="插入">
+          <ToolbarButton label="插入链接" title="插入链接" disabled={disabled} onClick={createLink}>链接</ToolbarButton>
+          <ToolbarButton label="提及成员" title="提及成员" disabled={disabled || mentionOptions.length === 0} onClick={openMentionPicker}>@</ToolbarButton>
+        </div>
+        <span className="yc-rich-toolbar-sep" aria-hidden="true" />
+        <div className="yc-rich-toolbar-group" role="group" aria-label="对齐">
+          <ToolbarButton active={formatState.align === 'left'} label="左对齐" title="左对齐" disabled={disabled} onClick={() => align('left')}>左</ToolbarButton>
+          <ToolbarButton active={formatState.align === 'center'} label="居中对齐" title="居中对齐" disabled={disabled} onClick={() => align('center')}>中</ToolbarButton>
+          <ToolbarButton active={formatState.align === 'right'} label="右对齐" title="右对齐" disabled={disabled} onClick={() => align('right')}>右</ToolbarButton>
+        </div>
+        <span className="yc-rich-toolbar-sep" aria-hidden="true" />
+        <div className="yc-rich-toolbar-group" role="group" aria-label="高级">
+          <ToolbarButton label="转换 Markdown" title="转换 Markdown" disabled={disabled} onClick={convertMarkdown}>MD</ToolbarButton>
+          <ToolbarButton label="清除格式" title="清除格式" disabled={disabled} onClick={clearFormat}>清除</ToolbarButton>
+        </div>
       </div>
       <div
         id={id}
@@ -788,6 +859,28 @@ function richTextPasteStageLabel(stage) {
 /** @param {unknown} error */
 function errorMessageText(error) {
   return error instanceof Error && error.message ? error.message : '';
+}
+
+/** @param {{ active?: boolean, label: string, title: string, disabled?: boolean, onClick: React.MouseEventHandler<HTMLButtonElement>, children: React.ReactNode }} props */
+function ToolbarButton({ active = false, label, title, disabled = false, onClick, children }) {
+  return (
+    <button
+      type="button"
+      className={`yc-rich-toolbar-button${active ? ' is-active' : ''}`}
+      aria-label={label}
+      title={title}
+      aria-pressed={active || undefined}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** @param {HTMLDivElement} input @param {string} command @returns {boolean} */
+function queryCommandState(input, command) {
+  try { return input.ownerDocument.queryCommandState(command); } catch { return false; }
 }
 
 /** @param {HTMLDivElement} input @param {string} html */
