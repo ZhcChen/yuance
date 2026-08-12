@@ -161,7 +161,7 @@ export function ErrorToast({ open, message, onClose }) {
   return <aside className="yc-error-toast" role="alert" aria-live="assertive"><span className="yc-error-toast-mark" aria-hidden="true">!</span><div><strong>操作未完成</strong><p>{message}</p></div><button type="button" aria-label="关闭提示" title="关闭提示" onClick={onClose}>×</button></aside>;
 }
 
-/** @param {{ children?: React.ReactNode, tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' }} props */
+/** @param {{ children?: React.ReactNode, tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'violet' | 'sand' }} props */
 export function Badge({ children, tone = 'neutral' }) {
   return <span className={`yc-badge yc-badge-${tone}`}>{children}</span>;
 }
@@ -169,8 +169,8 @@ export function Badge({ children, tone = 'neutral' }) {
 const PRIORITY_TONE = {
   P0: 'danger',
   P1: 'warning',
-  P2: 'neutral',
-  P3: 'neutral',
+  P2: 'violet',
+  P3: 'sand',
 };
 
 /** @param {{ priority?: string, children?: React.ReactNode }} props */
