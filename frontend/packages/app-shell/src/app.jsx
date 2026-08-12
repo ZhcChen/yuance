@@ -917,11 +917,6 @@ export function SharedApp({ services }) {
   const [projectResourcePasswordResetForm, setProjectResourcePasswordResetForm] = useState({ accessPasswordAction: 'set', accessPassword: '' });
   const [projectResourceAttachments, setProjectResourceAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
   const [projectResourceAttachmentUploading, setProjectResourceAttachmentUploading] = useState(false);
-  const [projectResourceAttachmentDeleting, setProjectResourceAttachmentDeleting] = useState(false);
-  const [projectResourceAttachmentDownloadingId, setProjectResourceAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
-  const [projectResourceAttachmentDeleteTarget, setProjectResourceAttachmentDeleteTarget] = useState(/** @type {AppAttachment | null} */ (null));
-  const [projectResourceAttachmentStatus, setProjectResourceAttachmentStatus] = useState('');
-  const [projectResourceAttachmentReveal, setProjectResourceAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [projectAttachmentUploading, setProjectAttachmentUploading] = useState(false);
   const [projectAttachmentArchiving, setProjectAttachmentArchiving] = useState(false);
   const [projectAttachmentDownloadingId, setProjectAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
@@ -1359,11 +1354,6 @@ export function SharedApp({ services }) {
         setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' });
         setProjectResourceAttachments([]);
         setProjectResourceAttachmentUploading(false);
-        setProjectResourceAttachmentDeleting(false);
-        setProjectResourceAttachmentDownloadingId(null);
-        setProjectResourceAttachmentDeleteTarget(null);
-        setProjectResourceAttachmentStatus('');
-        setProjectResourceAttachmentReveal(null);
         setProjectAttachmentUploading(false);
         setProjectAttachmentArchiving(false);
         setProjectAttachmentDownloadingId(null);
@@ -3131,7 +3121,6 @@ export function SharedApp({ services }) {
     projectResourceAttachmentMutationRef.current = true;
     setProjectResourceAttachmentUploading(true);
     setProjectResourceError('');
-    setProjectResourceAttachmentStatus('正在选择资料附件。');
     let file;
     try {
       const selectPastedFile = files.selectPastedFile;
@@ -3147,11 +3136,10 @@ export function SharedApp({ services }) {
       clearProjectResourceAttachmentUpload(actionId); return null;
     }
     if (!isCurrentProjectResourceAttachmentRoute(projectKey, resourceId, actionId) || !file) {
-      if (isCurrentProjectResourceAttachmentRoute(projectKey, resourceId, actionId)) setProjectResourceAttachmentStatus('已取消选择资料附件。');
       clearProjectResourceAttachmentUpload(actionId); return null;
     }
     if (!file.byteSize || file.byteSize <= 0) {
-      setProjectResourceError('请选择非空文件。'); setProjectResourceAttachmentStatus(`${file.filename || '文件'} 未上传。`);
+      setProjectResourceError('请选择非空文件。');
       clearProjectResourceAttachmentUpload(actionId); return null;
     }
     const filename = file.filename || 'attachment.bin';
@@ -3165,14 +3153,13 @@ export function SharedApp({ services }) {
     try {
       const result = await uploadProjectResourceAttachment({ api, platform: files, projectKey, resourceId, file, existingAttachment, lifecycle: {
         isCurrent: () => isCurrentProjectResourceAttachmentRoute(projectKey, resourceId, actionId),
-        onStage: (nextStage) => { stage = nextStage; setProjectResourceAttachmentStatus({ registering: `${filename} 正在登记。`, signing: `${filename} 正在获取上传签名。`, uploading: `${filename} 正在上传。`, confirming: `${filename} 正在确认上传结果。` }[nextStage]); },
+        onStage: (nextStage) => { stage = nextStage; },
         onCreated: (created) => { createdAttachment = created; setProjectResourceAttachments((items) => upsertAttachment(items, created)); },
         onUploaded: (uploaded) => setProjectResourceAttachments((items) => upsertAttachment(items, uploaded)),
         refresh: async () => { await refreshProjectResourceAttachments(projectKey, resourceId, projectResourceDetail.access_token, actionId); },
       } });
       if (result.completed) {
         completedUpload = result.uploaded || null;
-        setProjectResourceAttachmentStatus(`${filename} 上传完成。`);
         if (result.refreshError) setProjectResourceError('附件已上传，但列表刷新失败，请手动刷新。');
       }
     } catch (caught) {
@@ -3191,36 +3178,11 @@ export function SharedApp({ services }) {
     const current = routeRef.current;
     if (current.id !== 'project-resource-detail' || !projectResourceDetail || projectResourceLocked || !attachmentIsUploaded(attachment)) return;
     const { projectKey, resourceId } = current;
-    setProjectResourceAttachmentDownloadingId(attachment.id); setProjectResourceAttachmentReveal(null); setProjectResourceError('');
+    setProjectResourceError('');
     try {
       const result = await downloadProjectResourceAttachmentUseCase({ api, platform: files, projectKey, resourceId, attachmentId: attachment.id, accessToken: projectResourceDetail.access_token, suggestedFilename: attachment.filename, isCurrent: () => isCurrentProjectResourceAttachmentRoute(projectKey, resourceId) });
-      if (result.completed) { setProjectResourceAttachmentReveal(result.revealCapability ? { attachmentId: attachment.id, capability: result.revealCapability } : null); setProjectResourceAttachmentStatus(`${attachment.filename} 下载完成。`); }
+      if (result.completed) setProjectResourceStatus(`${attachment.filename} 下载完成。`);
     } catch (caught) { if (isCurrentProjectResourceAttachmentRoute(projectKey, resourceId)) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('下载资料附件失败。'))); }
-    finally { setProjectResourceAttachmentDownloadingId((id) => id === attachment.id ? null : id); }
-  }
-
-  async function revealProjectResourceAttachment(attachment) {
-    const reveal = projectResourceAttachmentReveal;
-    if (!reveal || reveal.attachmentId !== attachment.id || typeof files.attachments?.revealDownload !== 'function') return;
-    setProjectResourceAttachmentReveal(null); setProjectResourceAttachmentDownloadingId(attachment.id);
-    try { await files.attachments.revealDownload(reveal.capability); setProjectResourceAttachmentStatus(`${attachment.filename} 已在文件夹中定位。`); }
-    catch (caught) { setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('定位资料附件失败。'))); }
-    finally { setProjectResourceAttachmentDownloadingId(null); }
-  }
-
-  async function confirmProjectResourceAttachmentDelete() {
-    const current = routeRef.current;
-    const target = projectResourceAttachmentDeleteTarget;
-    if (!target || current.id !== 'project-resource-detail' || projectResourceAttachmentMutationRef.current || projectResourceMutationRef.current) return;
-    const { projectKey, resourceId } = current;
-    const actionId = projectResourceAttachmentActionRef.current + 1;
-    projectResourceAttachmentActionRef.current = actionId; projectResourceAttachmentMutationRef.current = true; setProjectResourceAttachmentDeleting(true); setProjectResourceError('');
-    try {
-      await api.deleteProjectResourceAttachment(projectKey, resourceId, target.id);
-      await refreshProjectResourceAttachments(projectKey, resourceId, projectResourceDetail?.access_token || '', actionId);
-      if (isCurrentProjectResourceAttachmentRoute(projectKey, resourceId, actionId)) { setProjectResourceAttachmentDeleteTarget(null); setProjectResourceAttachmentStatus(`${target.filename} 已删除。`); }
-    } catch (caught) { if (isCurrentProjectResourceAttachmentRoute(projectKey, resourceId, actionId)) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('删除资料附件失败。'))); }
-    finally { if (projectResourceAttachmentActionRef.current === actionId) { projectResourceAttachmentMutationRef.current = false; setProjectResourceAttachmentDeleting(false); } }
   }
 
   async function confirmAccountAction() {
@@ -6075,12 +6037,12 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'project-resource-detail' ? (
             <section className="page-stack resource-detail-page" aria-labelledby="project-resource-detail-title">
-              <section className="page-hero detail-hero resource-hero"><div><p className="shell-eyebrow">资料库 / {route.projectKey}</p><h1 id="project-resource-detail-title" ref={headingRef} tabIndex={-1}>{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h1><p>{projectResourceLocked ? '这条资料已设置访问密码，验证通过后可查看正文和附件。' : projectResourceDetail?.summary || '暂无摘要。'}</p>{projectResourceDetail ? <div className="project-detail-meta"><span className="resource-category">{projectResourceDetail.category || '未分类'}</span><Badge>{projectResourceDetail.status === 'archived' ? '已归档' : '生效中'}</Badge>{projectResourceDetail.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}<span>更新：{projectResourceDetail.updated_by} · {formatTimestamp(projectResourceDetail.updated_at)}</span></div> : null}</div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a>{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading || projectResourceAttachmentDeleting} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}{user?.is_super_admin && projectResourceDetail?.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading || projectResourceAttachmentDeleting} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading || projectResourceAttachmentDeleting} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}</div></section>
+              <section className="page-hero detail-hero resource-hero"><div><p className="shell-eyebrow">资料库 / {route.projectKey}</p><h1 id="project-resource-detail-title" ref={headingRef} tabIndex={-1}>{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h1><p>{projectResourceLocked ? '这条资料已设置访问密码，验证通过后可查看正文和附件。' : projectResourceDetail?.summary || '暂无摘要。'}</p>{projectResourceDetail ? <div className="project-detail-meta"><span className="resource-category">{projectResourceDetail.category || '未分类'}</span><Badge>{projectResourceDetail.status === 'archived' ? '已归档' : '生效中'}</Badge>{projectResourceDetail.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}<span>更新：{projectResourceDetail.updated_by} · {formatTimestamp(projectResourceDetail.updated_at)}</span></div> : null}</div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a>{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}{user?.is_super_admin && projectResourceDetail?.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}</div></section>
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
                 <section className="project-tabs-card resource-summary-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料标签与关联</p><h2>结构化信息</h2></div></div><div className="resource-summary-grid"><div className="resource-summary-block"><strong>标签</strong><div className="resource-chip-row">{projectResourceDetail.tags.length ? projectResourceDetail.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>) : <span className="shell-muted">未设置标签</span>}</div></div><div className="resource-summary-block"><strong>关联对象</strong><div className="resource-link-row">{projectResourceDetail.related_work_item ? <span className="resource-link-chip">关联工作项 · {projectResourceDetail.related_work_item.key}</span> : projectResourceDetail.related_cycle ? <span className="resource-link-chip">关联周期 · {projectResourceDetail.related_cycle.name}</span> : <span className="shell-muted">未关联工作项或周期</span>}</div></div></div></section>
-                {projectResourceLocked ? <section className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></section> : <><section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div></div><article className="resource-rich-body"><RichTextContent html={projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} resolveAttachmentSource={typeof files.attachments?.openProjectResourceAttachmentPreview === 'function' ? resolveProjectResourceInlineAttachmentSource : undefined} /></article></section><section className="project-tabs-card resource-attachments-card" aria-labelledby="project-resource-attachments-title"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料文件</p><h2 id="project-resource-attachments-title">资料附件</h2><p>共 {projectResourceAttachments.length} 个附件</p></div>{canManageProject && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceAttachmentUploading || projectResourceAttachmentDeleting || projectResourceSubmitting} onClick={() => void uploadSelectedProjectResourceAttachment()}>{projectResourceAttachmentUploading ? '处理中…' : '选择附件上传'}</Button> : null}</div><div className="project-tab-panels">{projectResourceAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceAttachmentStatus}</p> : null}{projectResourceAttachments.length ? <AttachmentList attachments={projectResourceAttachments} ariaLabel="资料附件列表" downloadLabel="附件" downloadingId={projectResourceAttachmentDownloadingId} revealableId={projectResourceAttachmentReveal?.attachmentId || null} onPreview={(attachment) => void openProjectResourceAttachmentPreview(attachment)} onDownload={(attachment) => void downloadProjectResourceAttachment(attachment)} onReveal={(attachment) => void revealProjectResourceAttachment(attachment)} showCreator renderExtraAction={(attachment) => canManageProject && projectResourceDetail.status !== 'archived' && attachment.status !== 'deleted' ? <><Button variant="danger" disabled={projectResourceAttachmentUploading || projectResourceAttachmentDeleting} onClick={() => { setProjectResourceError(''); setProjectResourceAttachmentDeleteTarget(attachment); }}>删除</Button>{['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" disabled={projectResourceAttachmentUploading || projectResourceAttachmentDeleting} onClick={() => void uploadSelectedProjectResourceAttachment(attachment)}>继续上传</Button> : null}</> : null} /> : <p className="shell-empty">当前资料暂无附件。</p>}</div></section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /></>}
+                {projectResourceLocked ? <section className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></section> : <><section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div></div><article className="resource-rich-body"><RichTextContent html={projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} resolveAttachmentSource={typeof files.attachments?.openProjectResourceAttachmentPreview === 'function' ? resolveProjectResourceInlineAttachmentSource : undefined} /></article></section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /></>}
               </> : null}
             </section>
           ) : route.id === 'project-cycle-detail' ? (
@@ -6389,7 +6351,6 @@ export function SharedApp({ services }) {
             </form>
           </Modal>
           <Modal open={Boolean(projectResourceArchiveTarget)} title="归档项目资料" onClose={() => { if (!projectResourceSubmitting) setProjectResourceArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => setProjectResourceArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectResourceSubmitting} onClick={() => void confirmProjectResourceArchive()}>确认归档</Button></>}><p>确认归档资料“{projectResourceArchiveTarget?.title}”？归档后不能继续编辑，但资料记录会保留。</p></Modal>
-          <Modal open={Boolean(projectResourceAttachmentDeleteTarget)} title="删除资料附件" onClose={() => { if (!projectResourceAttachmentDeleting) setProjectResourceAttachmentDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={projectResourceAttachmentDeleting} onClick={() => setProjectResourceAttachmentDeleteTarget(null)}>取消</Button><Button variant="danger" loading={projectResourceAttachmentDeleting} onClick={() => void confirmProjectResourceAttachmentDelete()}>确认删除</Button></>}><p>确认删除附件“{projectResourceAttachmentDeleteTarget?.filename}”？对象存储中的文件也会一并删除。</p></Modal>
           <Modal open={projectResourcePasswordResetOpen} title="重置资料访问密码" onClose={() => { if (!projectResourceSubmitting) { setProjectResourcePasswordResetOpen(false); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); } }} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => setProjectResourcePasswordResetOpen(false)}>取消</Button><Button variant="danger" loading={projectResourceSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-resource-password-reset-form'))?.requestSubmit()}>确认重置</Button></>}>
             <form id="project-resource-password-reset-form" onSubmit={submitProjectResourcePasswordReset}>
               <p>此操作仅限超级管理员。设置或清除密码会立即改变其他宿主后续访问此资料的方式，并记录安全审计。</p>
