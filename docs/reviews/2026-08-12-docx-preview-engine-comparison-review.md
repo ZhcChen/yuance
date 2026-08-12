@@ -33,6 +33,21 @@
   - `cargo test -p yuance-api --test routing_smoke static_ooxml_module_is_served_for_document_preview`
   - 两项均通过。
 
+### 2026-08-12 追加：真实文件复测
+
+- 对 `~/Desktop` 与本地验证库中的 docx 做 0.73.2 / 0.78.0 对比：
+  - `供应链售后管理规则.docx`、`沃尔玛企业权益消费UI设计说明V1.0.docx`、
+    `系统接入供应链项目结算与核销规则v2.docx`：两个版本均能完整渲染，未复现报错。
+  - `平安银行银企直连接口（通用）.docx`、`平安银行银企直连_单位移动支付_接口（通用）-20251027.docx`：
+    两个版本均稳定复现 `numbering.bodyOffsetPt must be finite and non-negative`。
+- 根因确认：编号段落使用悬挂缩进（`w:ind` 的 `firstLine` 为负），引擎计算出的编号
+  `bodyOffsetPt` 为负数，布局断言要求有限且非负，属于引擎对合法悬挂编号的兼容性缺陷。
+- 处理：对 vendored 0.78.0 的 `kc()` 返回前把非有限或负数 `bodyOffsetPt` 钳制为 0，
+  补丁记录在 `api/static/vendor/ooxml/PATCHES.md`。补丁后上述两个银行接口文档均可完成
+  全部 40 页渲染。
+- `Paragraph source boundaries must align with retained lines` 尚未在本机文件中复现，
+  仍需用户提供触发文件或线上资源路径。
+
 ## 主要发现
 
 ### 当前引擎与 docx-editor 对比
@@ -52,13 +67,15 @@
 
 - 增加 docx/pptx 预览友好降级：内部布局断言失败时显示“复杂版式请下载原文件”，不再直接暴露内部错误。
 - 升级 `@silurus/ooxml` 0.73.2 -> 0.78.0，并兼容新版错误提示。
+- 增加 0.78.0 本地补丁：兼容悬挂编号负数 `bodyOffsetPt`，解决已复现的银行接口文档预览报错。
 
 ### 建议后续跟进
 
-1. 用户提供两份问题 docx 原文件（或路径），用 0.78.0 复测。
-2. 若仍失败，用 `docx-editor` core 的 `mode='view'` 做同文件 POC，确认是否真正解决。
-3. 若 POC 有效，再评估 docx-only 双引擎方案：docx 走 `docx-editor`，xlsx/pptx 继续 `@silurus/ooxml`。
-4. 切换前必须单独评审集成方式（静态 vendor vs 引入 bundler）和 License 边界（避免引入 pro/editor-api）。
+1. 已复现的 `numbering.bodyOffsetPt` 报错已通过本地补丁解决，正式环境部署后验收银行接口文档。
+2. 用户提供第二个报错（`Paragraph source boundaries...`）的触发文件或线上资源路径，继续复测。
+3. 若第二个报错仍由当前引擎触发且补丁无法覆盖，再考虑 `docx-editor` core 的 `mode='view'` 同文件 POC。
+4. 若 POC 有效，再评估 docx-only 双引擎方案：docx 走 `docx-editor`，xlsx/pptx 继续 `@silurus/ooxml`。
+5. 切换前必须单独评审集成方式（静态 vendor vs 引入 bundler）和 License 边界（避免引入 pro/editor-api）。
 
 ## 与计划的一致性
 
@@ -73,5 +90,5 @@
 
 ## 结论
 
-- 结论：有条件通过。
-- 下一步：等待两份问题文件复测；若仍失败，做 `docx-editor` 同文件 POC 后再决策。
+- 结论：已复现的第一类报错已通过本地补丁解决；第二类报错仍等待触发文件。
+- 下一步：部署正式环境后验收已复现文件；拿到第二份触发文件后继续复测。

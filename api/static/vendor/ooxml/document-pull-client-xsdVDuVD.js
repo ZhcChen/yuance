@@ -6303,6 +6303,9 @@ function kc(e, t, n, r, i = !0) {
 		let e = Oc(n.physicalIndentLeftPt + l, n.tabStops, n.defaultTabPt);
 		d = e ? e.pos - n.physicalIndentLeftPt : l;
 	}
+	if (!(Number.isFinite(d) && d >= 0)) {
+		d = 0;
+	}
 	return {
 		bodyOffsetPt: d,
 		markerText: a,
