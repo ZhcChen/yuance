@@ -97,6 +97,8 @@ test('work item comments render comments, attachment controls and upload state',
   assert.match(html, /发表并指派/);
   assert.doesNotMatch(html, /yuance-ui-button/);
   assert.match(html, /yc-button/);
+  assert.match(html, /class="user-avatar discussion-avatar work-item-comment-avatar"/);
+  assert.match(html, /class="user-avatar discussion-avatar discussion-composer-avatar work-item-comment-avatar"/);
 });
 
 test('work item comments render edit and error states', () => {

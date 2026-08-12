@@ -255,7 +255,7 @@ export function WorkItemComments(props) {
       </div>
       {canWriteComments ? <div className="discussion-composer-dock">
         <form className="discussion-composer work-item-comment-form" onSubmit={onSubmitNew}>
-          <UserAvatar name="我" className="discussion-composer-avatar work-item-comment-avatar" />
+          <UserAvatar name="我" className="discussion-avatar discussion-composer-avatar work-item-comment-avatar" />
           <div className="discussion-composer-main">
             <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file) => onPasteFile('new', null, file) : undefined} {...typingCallbacks} />
             {newCommentAttachments.length ? (
@@ -293,7 +293,7 @@ export function WorkItemComments(props) {
             const revealableId = revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null;
             return (
               <li key={comment.id} id={`comment-${comment.id}`} tabIndex={-1} className={`work-item-comment-row discussion-post ${comment.is_flow ? 'is-flow' : ''}`}>
-                <UserAvatar name={comment.author} className="work-item-comment-avatar" />
+                <UserAvatar name={comment.author} className="discussion-avatar work-item-comment-avatar" />
                 <div className="discussion-post-shell">
                   <header className="discussion-post-head">
                     <div>
