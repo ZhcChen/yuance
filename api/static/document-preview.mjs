@@ -1925,6 +1925,17 @@ function nextAnimationFrame() {
   });
 }
 
+function officePreviewErrorMessage(error) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (error instanceof Error) {
+    console.error("[document-preview] Office 预览失败", error);
+  }
+  if (/numbering\.bodyOffsetPt must be finite and non-negative|Paragraph source boundaries must align with retained lines/iu.test(message)) {
+    return "该文档包含当前预览引擎暂不支持的复杂版式，请下载原文件查看。";
+  }
+  return message || "当前无法加载预览。";
+}
+
 async function renderOfficePreview(root, sourceUrl, previewType) {
   const label = previewType === "pptx" ? "演示文稿" : "Word 文档";
   setPreviewStatus(root, "正在加载" + label + "预览，请稍候...");
@@ -1937,28 +1948,32 @@ async function renderOfficePreview(root, sourceUrl, previewType) {
   stage.className = "office-preview-stage";
   host.appendChild(stage);
   await nextAnimationFrame();
-  if (previewType === "docx") {
-    const { DocxScrollViewer } = await import("/static/vendor/ooxml/docx.mjs");
-    const viewer = new DocxScrollViewer(stage);
-    await viewer.load(previewArrayBuffer(bytes));
-    if (typeof viewer.relayout === "function") {
-      viewer.relayout();
+  try {
+    if (previewType === "docx") {
+      const { DocxScrollViewer } = await import("/static/vendor/ooxml/docx.mjs");
+      const viewer = new DocxScrollViewer(stage);
+      await viewer.load(previewArrayBuffer(bytes));
+      if (typeof viewer.relayout === "function") {
+        viewer.relayout();
+      }
+      setPreviewMetrics(root, [
+        (viewer.pageCount || 0) + " 页",
+        formatPreviewByteSize(bytes.byteLength),
+      ]);
+    } else {
+      const { PptxScrollViewer } = await import("/static/vendor/ooxml/pptx.mjs");
+      const viewer = new PptxScrollViewer(stage);
+      await viewer.load(previewArrayBuffer(bytes));
+      if (typeof viewer.relayout === "function") {
+        viewer.relayout();
+      }
+      setPreviewMetrics(root, [
+        (viewer.slideCount || 0) + " 张幻灯片",
+        formatPreviewByteSize(bytes.byteLength),
+      ]);
     }
-    setPreviewMetrics(root, [
-      (viewer.pageCount || 0) + " 页",
-      formatPreviewByteSize(bytes.byteLength),
-    ]);
-  } else {
-    const { PptxScrollViewer } = await import("/static/vendor/ooxml/pptx.mjs");
-    const viewer = new PptxScrollViewer(stage);
-    await viewer.load(previewArrayBuffer(bytes));
-    if (typeof viewer.relayout === "function") {
-      viewer.relayout();
-    }
-    setPreviewMetrics(root, [
-      (viewer.slideCount || 0) + " 张幻灯片",
-      formatPreviewByteSize(bytes.byteLength),
-    ]);
+  } catch (error) {
+    throw new Error(officePreviewErrorMessage(error));
   }
   setPreviewStatus(root, "");
 }
