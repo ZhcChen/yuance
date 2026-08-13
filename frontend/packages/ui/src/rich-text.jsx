@@ -272,7 +272,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', fontSize: /** @type {string | null} */ (null), color: /** @type {string | null} */ (null), align: /** @type {string | null} */ (null) });
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
+  const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480, arrowLeft: 0 });
   const [toolbarMenuRoot, setToolbarMenuRoot] = useState(/** @type {HTMLDivElement | null} */ (null));
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
     .filter((option) => {
@@ -427,7 +427,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const left = Math.min(Math.max(8, rect.right - (rootRect?.left || 0) - menuWidth), Math.max(8, availableRight - menuWidth - 8));
     const top = (rootRect ? rect.bottom - rootRect.top + 6 : Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420)));
     const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
-    setMoreMenuPosition({ left, top, maxHeight: Math.max(120, maxHeight) });
+    const triggerCenter = (rootRect ? rect.left - rootRect.left + rect.width / 2 : rect.left + rect.width / 2);
+    const arrowLeft = Math.min(Math.max(10, triggerCenter - left), menuWidth - 10);
+    setMoreMenuPosition({ left, top, maxHeight: Math.max(120, maxHeight), arrowLeft });
     setMoreMenuOpen(true);
   }
 
@@ -954,22 +956,25 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         )) : <p>没有匹配成员</p>}
       </div> : null}
       </div>
-      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
-        onMouseEnter={cancelMoreMenuClose}
-        onMouseLeave={(event) => {
-          if (relatedInside(event, moreTriggerRef)) return;
-          scheduleMoreMenuClose();
-        }}
-      >
-        <section className="yc-rich-more-section" aria-label="更多操作">
-          <div className="yc-rich-more-grid yc-rich-more-actions">
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'pre'); closeMoreMenu(); }}>&lt;/&gt; 代码块</button>
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { convertMarkdown(); closeMoreMenu(); }}>MD 转换</button>
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { clearFormat(); closeMoreMenu(); }}>清除格式</button>
-          </div>
-        </section>
-      </div> : null, toolbarMenuRoot) : null}
+      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <>
+        <span className="yc-rich-menu-arrow" style={{ left: moreMenuPosition.left + moreMenuPosition.arrowLeft - 5, top: moreMenuPosition.top - 5 }} aria-hidden="true" />
+        <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
+          onMouseEnter={cancelMoreMenuClose}
+          onMouseLeave={(event) => {
+            if (relatedInside(event, moreTriggerRef)) return;
+            scheduleMoreMenuClose();
+          }}
+        >
+          <section className="yc-rich-more-section" aria-label="更多操作">
+            <div className="yc-rich-more-grid yc-rich-more-actions">
+              <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
+              <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'pre'); closeMoreMenu(); }}>&lt;/&gt; 代码块</button>
+              <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { convertMarkdown(); closeMoreMenu(); }}>MD 转换</button>
+              <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { clearFormat(); closeMoreMenu(); }}>清除格式</button>
+            </div>
+          </section>
+        </div>
+      </> : null, toolbarMenuRoot) : null}
     </div>
   );
 
@@ -1253,7 +1258,7 @@ function ToolbarButton({ active = false, label, title, disabled = false, onClick
 /** @param {{ label: string, value: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, menuRoot: HTMLDivElement | null, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, children: React.ReactNode }} props */
 function ToolbarDropdown({ label, value, disabled = false, active = false, triggerRef, menuRef, menuRoot, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, children }) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
+  const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480, arrowLeft: 0 });
   const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const localMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const hoverCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
@@ -1308,7 +1313,9 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
     const left = Math.min(Math.max(8, rect.left - (rootRect?.left || 0)), Math.max(8, availableRight - menuWidth - 8));
     const top = (rootRect ? rect.bottom - rootRect.top + 6 : Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420)));
     const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
-    setPosition({ left, top, maxHeight: Math.max(120, maxHeight) });
+    const triggerCenter = (rootRect ? rect.left - rootRect.left + rect.width / 2 : rect.left + rect.width / 2);
+    const arrowLeft = Math.min(Math.max(10, triggerCenter - left), menuWidth - 10);
+    setPosition({ left, top, maxHeight: Math.max(120, maxHeight), arrowLeft });
     onOpen?.();
     setOpen(true);
   }
@@ -1366,24 +1373,27 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
         <span className="yc-rich-toolbar-select-label">{value}</span>
         {triggerExtra}
       </button>
-      {open && menuRoot ? createPortal(<div
-        ref={(node) => {
-          if (typeof menuRef === 'function') menuRef(node);
-          else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
-        }}
-        className="yc-rich-toolbar-popover"
-        role="menu"
-        aria-label={label}
-        style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
-        onMouseDown={(event) => event.preventDefault()}
-        onMouseEnter={cancelCloseDropdown}
-        onMouseLeave={(event) => {
-          if (relatedInside(event, localTriggerRef)) return;
-          scheduleCloseDropdown();
-        }}
-      >
-        {children}
-      </div>, menuRoot) : null}
+      {open && menuRoot ? createPortal(<>
+        <span className="yc-rich-menu-arrow" style={{ left: position.left + position.arrowLeft - 5, top: position.top - 5 }} aria-hidden="true" />
+        <div
+          ref={(node) => {
+            if (typeof menuRef === 'function') menuRef(node);
+            else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
+          }}
+          className="yc-rich-toolbar-popover"
+          role="menu"
+          aria-label={label}
+          style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseEnter={cancelCloseDropdown}
+          onMouseLeave={(event) => {
+            if (relatedInside(event, localTriggerRef)) return;
+            scheduleCloseDropdown();
+          }}
+        >
+          {children}
+        </div>
+      </>, menuRoot) : null}
     </>
   );
 }

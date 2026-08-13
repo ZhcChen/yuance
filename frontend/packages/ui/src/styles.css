@@ -1488,6 +1488,19 @@ html[data-theme="dark"] {
   box-shadow: var(--yc-shadow);
 }
 
+.yc-rich-menu-arrow {
+  position: absolute;
+  z-index: 199;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid var(--yc-line);
+  border-left: 1px solid var(--yc-line);
+  border-radius: 2px;
+  background: var(--yc-panel);
+  pointer-events: none;
+  transform: rotate(45deg);
+}
+
 .yc-rich-toolbar-popover {
   position: absolute;
   z-index: 200;
