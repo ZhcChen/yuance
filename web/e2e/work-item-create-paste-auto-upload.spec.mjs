@@ -99,15 +99,19 @@ test('work item create keeps pasted images inline and uploads them after title w
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
   await editor.click();
   await editor.evaluate((element) => {
+    const bytes = new Uint8Array([137, 80, 78, 71]);
     const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'pasted.png', { type: 'image/png' }));
-    dataTransfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'pasted-2.png', { type: 'image/png' }));
+    dataTransfer.items.add(new File([bytes], 'pasted.png', { type: 'image/png', lastModified: 1234 }));
+    dataTransfer.items.add(new File([bytes], 'pasted-2.png', { type: 'image/png', lastModified: 1234 }));
+    dataTransfer.items.add(new File([bytes], 'pasted.png', { type: 'image/png', lastModified: 1234 }));
     const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
     element.dispatchEvent(event);
   });
   const pendingImage = editor.getByRole('img', { name: 'pasted.png' });
   const pendingImage2 = editor.getByRole('img', { name: 'pasted-2.png' });
+  await expect(pendingImage).toHaveCount(1);
+  await expect(pendingImage2).toHaveCount(1);
   await expect(pendingImage).toBeVisible();
   await expect(pendingImage2).toBeVisible();
   await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');

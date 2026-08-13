@@ -872,18 +872,24 @@ function insertAtSelection(input, node, insertRange = null) {
 function pastedFiles(clipboardData) {
   if (!clipboardData) return [];
   const files = [];
+  const seen = new Set();
+  const addFile = (file) => {
+    if (!file) return;
+    const fingerprint = `${file.type || ''}|${file.name || ''}|${file.size || 0}|${file.lastModified || 0}`;
+    if (seen.has(fingerprint)) return;
+    seen.add(fingerprint);
+    files.push(file);
+  };
   const items = clipboardData.items;
   for (let index = 0; items && index < items.length; index += 1) {
     const item = items[index];
     if (item?.kind === 'file') {
-      const file = item.getAsFile();
-      if (file) files.push(file);
+      addFile(item.getAsFile());
     }
   }
   const dataFiles = clipboardData.files;
   for (let index = 0; dataFiles && index < dataFiles.length; index += 1) {
-    const file = dataFiles[index];
-    if (file && !files.includes(file)) files.push(file);
+    addFile(dataFiles[index]);
   }
   return files;
 }
