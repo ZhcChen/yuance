@@ -1266,24 +1266,13 @@ html[data-theme="dark"] {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  color: #475569;
+  color: var(--yc-muted-strong);
 }
 
-.work-item-file-field input,
-.work-item-form-field input,
-.work-item-form-field select,
-.work-item-form-field textarea {
-  width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 9px 10px;
-  color: #0f172a;
-  font: inherit;
-}
-
-.work-item-form-field textarea {
-  resize: vertical;
+.work-item-form-field > label,
+.work-item-form-field > span {
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .work-item-attachment-status {
@@ -2113,15 +2102,9 @@ html[data-theme="dark"] {
   white-space: nowrap;
 }
 
-.discussion-assign-status select {
+.discussion-assign-status .yc-select {
+  flex: 0 0 auto;
   width: clamp(140px, 12vw, 168px);
-  min-width: 140px;
-  min-height: 34px;
-  border: 1px solid var(--yc-line);
-  border-radius: 8px;
-  background: var(--yc-panel);
-  color: var(--yc-text);
-  font: inherit;
 }
 
 .work-item-content .discussion-thread {

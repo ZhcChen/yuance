@@ -94,6 +94,7 @@ test('work item comments render comments, attachment controls and upload state',
   assert.match(html, /aria-label="预览评论附件 comment\.txt"/);
   assert.match(html, /上传完成/);
   assert.match(html, /指派后状态/);
+  assert.match(html, /yc-select/);
   assert.match(html, /发表并指派/);
   assert.doesNotMatch(html, /yuance-ui-button/);
   assert.match(html, /yc-button/);

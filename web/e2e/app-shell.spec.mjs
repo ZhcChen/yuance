@@ -567,10 +567,10 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await page.getByRole('button', { name: '新建任务' }).click();
   const taskDialog = page.getByRole('dialog', { name: '新建任务' });
   await expect(taskDialog).toHaveClass(/yc-modal-wide/u);
-  await taskDialog.locator('#work-item-create-priority').selectOption('P1');
-  await expect(taskDialog.locator('#work-item-create-cycle')).toHaveValue('');
-  await taskDialog.locator('#work-item-create-assignee').selectOption({ index: 1 });
-  await taskDialog.locator('#work-item-create-parent').selectOption('YCE-REQ-1');
+  await taskDialog.locator('#work-item-create-priority-native').selectOption('P1');
+  await expect(taskDialog.locator('#work-item-create-cycle-native')).toHaveValue('');
+  await taskDialog.locator('#work-item-create-assignee-native').selectOption({ index: 1 });
+  await taskDialog.locator('#work-item-create-parent-native').selectOption('YCE-REQ-1');
   await taskDialog.locator('#work-item-create-due-date').fill('2026-08-31');
   await taskDialog.locator('#work-item-create-title').fill('共享任务创建验收');
   await taskDialog.getByRole('textbox', { name: '说明内容' }).fill('共享任务说明');
@@ -581,7 +581,7 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await page.goto('/web/app/requirements');
   await page.getByRole('button', { name: '新建需求' }).click();
   const requirementDialog = page.getByRole('dialog', { name: '新建需求' });
-  await expect(requirementDialog.locator('#work-item-create-parent')).toHaveCount(0);
+  await expect(requirementDialog.locator('#work-item-create-parent-native')).toHaveCount(0);
   await requirementDialog.locator('#work-item-create-title').fill('共享需求创建验收');
   await requirementDialog.getByRole('button', { name: '创建' }).click();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-REQ-\d+/u);
@@ -789,11 +789,11 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   const editForm = page.locator('#work-item-edit-form');
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill(editedDetail.description);
-  await editForm.getByLabel('状态').selectOption('in_progress');
-  await editForm.getByLabel('优先级').selectOption('P1');
-  await editForm.getByLabel('处理人').selectOption('yuance_admin');
+  await editForm.locator('select[name="status"]').selectOption('in_progress');
+  await editForm.locator('select[name="priority"]').selectOption('P1');
+  await editForm.locator('select[name="assigneeUsername"]').selectOption('yuance_admin');
   await editForm.getByLabel('截止日期').fill('2026-08-15');
-  await editForm.getByLabel('父级需求').selectOption('');
+  await editForm.locator('select[name="parentItemKey"]').selectOption('');
   await editForm.getByRole('button', { name: '保存修改' }).click();
 
   await expect.poll(() => editRequests.length).toBe(1);
@@ -841,8 +841,8 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
 
   await page.getByRole('button', { name: '指派 / 流转' }).click();
   const handoffForm = page.locator('#work-item-handoff-form');
-  await handoffForm.getByLabel('目标状态').selectOption('pending_confirmation');
-  await handoffForm.getByLabel('指派给').selectOption('yuance_admin');
+  await handoffForm.locator('select[name="status"]').selectOption('pending_confirmation');
+  await handoffForm.locator('select[name="assigneeUsername"]').selectOption('yuance_admin');
   await handoffForm.getByLabel('处理说明').fill('请确认 Web shell 表单提交。');
   await handoffForm.getByRole('button', { name: '确认推进' }).click();
 
@@ -3100,7 +3100,7 @@ test('shared system release management preserves state transitions, locks, and f
   await createDialog.getByLabel('版本号').fill('v2.2.0');
   await createDialog.getByLabel('版本标题').fill('下一版本');
   await createDialog.getByLabel('版本说明').fill('跨宿主一致发布');
-  await createDialog.getByLabel('发布通道').selectOption('internal');
+  await createDialog.locator('#system-release-channel-native').selectOption('internal');
   await createDialog.getByLabel('Manifest SHA-256').fill('c'.repeat(64));
   await createDialog.getByLabel('签名 Key ID').fill('release-key-2');
   await createDialog.getByLabel('Source Commit').fill('d'.repeat(40));
@@ -3173,9 +3173,9 @@ test('shared system release assets complete browser upload download and confirme
   await login(page, '/web/app/system/releases');
   await page.getByRole('row').filter({ hasText: 'v2.3.0' }).getByRole('button', { name: '编辑' }).click();
   const editor = page.getByRole('dialog', { name: '编辑版本草稿' });
-  await editor.getByLabel('平台').selectOption('windows');
-  await editor.getByLabel('架构').selectOption('x64');
-  await editor.getByLabel('资产类型').selectOption('installer');
+  await editor.locator('#system-release-asset-platform-native').selectOption('windows');
+  await editor.locator('#system-release-asset-architecture-native').selectOption('x64');
+  await editor.locator('#system-release-asset-kind-native').selectOption('installer');
   await chooseFile(page, editor.getByRole('button', { name: '选择并上传' }), { name: 'desktop.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('desktopdata') });
   await expect(page.locator('p.shell-live-region[role="status"]')).toHaveText('desktop.exe 已上传。');
   await editor.getByRole('button', { name: '取消' }).click();
@@ -3330,7 +3330,7 @@ test('shared system role mutations preserve permission parent and confirmation s
   const createDialog = page.getByRole('dialog', { name: '创建角色' });
   await createDialog.getByLabel('角色编码').fill('release_lead');
   await createDialog.getByLabel('角色名称').fill('发布负责人');
-  await createDialog.getByLabel('数据范围').selectOption('all');
+  await createDialog.locator('#system-role-scope-native').selectOption('all');
   await createDialog.getByRole('button', { name: '创建', exact: true }).click();
   await expect(page).toHaveURL(/\/web\/app\/system\/roles\?role=release_lead$/);
 
@@ -3373,7 +3373,7 @@ test('shared system users core mutations use the same confirmed interaction cont
   await createDialog.getByLabel('用户名').fill('new_member');
   await createDialog.getByLabel('显示名称').fill('新成员');
   await createDialog.getByLabel('邮箱').fill('new@example.test');
-  await createDialog.getByLabel('全局角色').selectOption('member');
+  await createDialog.locator('#system-user-role-native').selectOption('member');
   await createDialog.locator('#system-user-password').fill('NewMemberPass2026!');
   await createDialog.locator('#system-user-password-confirm').fill('NewMemberPass2026!');
   await createDialog.getByRole('button', { name: '创建' }).click();
@@ -3382,7 +3382,7 @@ test('shared system users core mutations use the same confirmed interaction cont
   const table = page.getByRole('table', { name: '系统用户列表' });
   await table.getByRole('button', { name: '角色' }).click();
   const roleDialog = page.getByRole('dialog', { name: '调整全局角色' });
-  await roleDialog.getByLabel('全局角色').selectOption('viewer');
+  await roleDialog.locator('#system-user-role-value-native').selectOption('viewer');
   await roleDialog.getByRole('button', { name: '保存' }).click();
   await expect(roleDialog).not.toBeVisible();
 
@@ -3463,14 +3463,14 @@ test('shared system user project relationships preserve batch and blocking seman
   await expect(manageDialog.getByLabel('选择移除 阻塞项目')).toBeDisabled();
   await manageDialog.getByLabel(/YCE-B · 项目 B/u).check();
   await manageDialog.getByLabel(/YCE-C · 项目 C/u).check();
-  await manageDialog.getByLabel('项目角色').selectOption('viewer');
+  await manageDialog.locator('#system-user-project-assign-role-native').selectOption('viewer');
   await manageDialog.getByRole('button', { name: '分配所选项目' }).click();
   await expect(manageDialog.getByRole('table', { name: '已分配项目' })).toContainText('YCE-C');
 
   const assignedTable = manageDialog.getByRole('table', { name: '已分配项目' });
   await assignedTable.getByRole('row').filter({ hasText: /YCE-B ·/u }).getByRole('button', { name: '角色' }).click();
   const roleDialog = page.getByRole('dialog', { name: '调整项目角色' });
-  await roleDialog.getByLabel('项目角色').selectOption('maintainer');
+  await roleDialog.locator('#system-user-project-role-native').selectOption('maintainer');
   await roleDialog.getByRole('button', { name: '保存' }).click();
   await expect(manageDialog).toBeVisible();
 
@@ -3584,7 +3584,7 @@ test('shared project list creates a project with one validated request', async (
   await page.getByRole('button', { name: '新建项目' }).click();
   const dialog = page.getByRole('dialog', { name: '新建项目' });
   await dialog.getByLabel('项目名称').fill('共享创建项目');
-  await dialog.getByLabel('状态').selectOption('not_started');
+  await dialog.locator('#project-create-status-native').selectOption('not_started');
   await dialog.getByLabel('开始日期').fill('2026-08-08');
   await dialog.getByLabel('截止日期').fill('2026-08-31');
   await dialog.getByLabel('项目描述').fill('项目创建 E2E');
@@ -3642,12 +3642,12 @@ test('shared project detail manages project information and member lifecycle', a
   await page.getByRole('button', { name: '添加成员' }).click();
   const addDialog = page.getByRole('dialog', { name: '添加项目成员' });
   await addDialog.getByLabel('用户名').fill('collaborator');
-  await addDialog.getByLabel('项目角色').selectOption('member');
+  await addDialog.locator('#project-member-role-native').selectOption('member');
   await addDialog.getByRole('button', { name: '添加' }).click();
   const memberRow = page.getByRole('row', { name: /协作成员/ });
   await memberRow.getByRole('button', { name: '调整角色' }).click();
   const roleDialog = page.getByRole('dialog', { name: '调整成员角色' });
-  await roleDialog.getByLabel('项目角色').selectOption('maintainer');
+  await roleDialog.locator('#project-member-role-value-native').selectOption('maintainer');
   await roleDialog.getByRole('button', { name: '保存' }).click();
   await expect(memberRow).toContainText('项目管理员');
   await memberRow.getByRole('button', { name: '移除' }).click();
@@ -3952,7 +3952,7 @@ test('shared project resources create edit password actions and archive', async 
   await page.getByRole('button', { name: '新建资料' }).click();
   const createDialog = page.getByRole('dialog', { name: '新建项目资料' });
   await createDialog.getByLabel('资料标题').fill('部署手册');
-  await createDialog.getByLabel('分类').selectOption('implementation');
+  await createDialog.locator('#project-resource-category-native').selectOption('implementation');
   await createDialog.getByLabel('标签').fill('发布，运维');
   await createDialog.getByLabel('关联工作项 Key').fill('YCE-TASK-2');
   await createDialog.getByLabel('关联周期 ID').fill('7');
@@ -3976,7 +3976,7 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[1]).toEqual(['reset', { access_password_action: 'set', access_password: 'reset-pass' }]);
   await page.getByRole('button', { name: '重置保险箱密码' }).click();
   resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
-  await resetDialog.getByLabel('重置方式').selectOption('clear');
+  await resetDialog.locator('#project-resource-password-reset-action-native').selectOption('clear');
   await resetDialog.getByRole('button', { name: '确认重置' }).click();
   await expect(page.locator('.resource-content-card')).toBeVisible();
   expect(mutations[2]).toEqual(['reset', { access_password_action: 'clear', access_password: '' }]);
@@ -3988,7 +3988,7 @@ test('shared project resources create edit password actions and archive', async 
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
   await editDialog.getByLabel('资料标题').fill('部署手册 2.0');
-  await editDialog.getByLabel('密码处理方式').selectOption('set');
+  await editDialog.locator('#project-resource-password-action-native').selectOption('set');
   await editDialog.getByLabel('新访问密码').fill('next-pass');
   await editDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByRole('heading', { level: 2, name: '部署手册 2.0' })).toBeVisible();
@@ -3996,7 +3996,7 @@ test('shared project resources create edit password actions and archive', async 
 
   await page.getByRole('button', { name: '编辑' }).click();
   const clearDialog = page.getByRole('dialog', { name: '编辑项目资料' });
-  await clearDialog.getByLabel('密码处理方式').selectOption('clear');
+  await clearDialog.locator('#project-resource-password-action-native').selectOption('clear');
   await clearDialog.getByRole('button', { name: '保存' }).click();
   await expect(clearDialog).not.toBeVisible();
   expect(mutations[4][1]).toMatchObject({ access_password_action: 'clear', access_password: '' });

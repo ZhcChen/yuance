@@ -3,7 +3,7 @@
 import React from 'react';
 
 import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
-import { Button } from './primitives.jsx';
+import { Button, Select } from './primitives.jsx';
 import { AttachmentList } from './work-item-attachments.jsx';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
 import { UserAvatar } from './user-avatar.jsx';
@@ -275,7 +275,7 @@ export function WorkItemComments(props) {
             <div className="discussion-composer-footer work-item-form-actions">
               <Button variant="secondary" type="button" onClick={onUploadNewAttachment} disabled={mutationBusy || newCommentAttachmentUploading}>{newCommentAttachmentUploading ? '处理中…' : '添加附件'}</Button>
               {newCommentDraftId !== null ? <Button variant="secondary" type="button" onClick={onCancelNewDraft} disabled={mutationBusy}>取消草稿</Button> : null}
-              <label className="discussion-assign-status">指派后状态<select value={newCommentAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeNewAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+              <div className="discussion-assign-status"><label htmlFor="work-item-new-assign-status">指派后状态</label><Select id="work-item-new-assign-status" value={newCommentAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeNewAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></div>
               <Button variant="secondary" type="submit" data-discussion-submit disabled={mutationBusy || newCommentAttachmentUploading}>{commentSubmitting ? '正在提交…' : '发表'}</Button>
               <Button type="submit" data-discussion-submit data-discussion-assign disabled={mutationBusy || newCommentAttachmentUploading || !assigneeTarget}>{commentSubmitting ? '正在提交…' : '发表并指派'}</Button>
             </div>
@@ -356,7 +356,7 @@ export function WorkItemComments(props) {
                           <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file, options) => onPasteFile('reply', comment.id, file, options) : undefined} {...typingCallbacks} />
                           <div className="discussion-composer-footer work-item-form-actions">
                             <Button variant="secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</Button>
-                            <label className="discussion-assign-status">指派后状态<select value={replyAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeReplyAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                            <div className="discussion-assign-status"><label htmlFor="work-item-reply-assign-status">指派后状态</label><Select id="work-item-reply-assign-status" value={replyAssignStatus} disabled={mutationBusy} onChange={(event) => onChangeReplyAssignStatus(event.target.value)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></div>
                             <Button variant="secondary" type="submit" data-discussion-submit disabled={mutationBusy}>{replySubmitting ? '正在提交…' : '回复'}</Button>
                             <Button type="submit" data-discussion-submit data-discussion-assign disabled={mutationBusy || !comment.author_username}>{replySubmitting ? '正在提交…' : '回复并指派'}</Button>
                           </div>
