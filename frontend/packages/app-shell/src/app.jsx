@@ -6185,22 +6185,24 @@ export function SharedApp({ services }) {
                     onAttachmentActivate={activateWorkItemCommentInlineAttachment}
                     buildAttachmentThumbnailUrl={(commentId, attachment) => `/api/v1/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${commentId}/attachments/${attachment.id}/download`}
                   />
-                  <WorkItemAttachments
-                    attachments={workItemAttachments}
-                    status={workItemAttachmentStatus}
-                    warning={workItemAttachmentLoadWarning}
-                    error={workItemAttachmentActionError}
-                    uploading={workItemAttachmentUploading}
-                    mutationBusy={workItemMutationSubmitting}
-                    canUpload={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
-                    downloadingId={workItemAttachmentDownloadingId}
-                    revealableId={workItemAttachmentReveal?.attachmentId || null}
-                    onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
-                    onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
-                    onPreview={(attachment) => void openWorkItemAttachmentPreview(attachment)}
-                    onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
-                    onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
-                  />
+                  {workItemAttachments.length > 0 || workItemAttachmentUploading || workItemAttachmentStatus || workItemAttachmentLoadWarning || workItemAttachmentActionError ? (
+                    <WorkItemAttachments
+                      attachments={workItemAttachments}
+                      status={workItemAttachmentStatus}
+                      warning={workItemAttachmentLoadWarning}
+                      error={workItemAttachmentActionError}
+                      uploading={workItemAttachmentUploading}
+                      mutationBusy={workItemMutationSubmitting}
+                      canUpload={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
+                      downloadingId={workItemAttachmentDownloadingId}
+                      revealableId={workItemAttachmentReveal?.attachmentId || null}
+                      onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
+                      onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
+                      onPreview={(attachment) => void openWorkItemAttachmentPreview(attachment)}
+                      onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
+                      onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
+                    />
+                  ) : null}
                   </WorkItemDetail>
                   <Modal open={Boolean(workItemCommentAttachmentDeleteTarget)} title={workItemCommentAttachmentDeleteTarget?.editorContext === 'primary-post' ? '删除主内容附件' : '删除评论附件'} onClose={() => { if (workItemCommentAttachmentDeletingId === null) setWorkItemCommentAttachmentDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemCommentAttachmentDeletingId !== null} onClick={() => setWorkItemCommentAttachmentDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemCommentAttachmentDeletingId !== null} onClick={() => void confirmWorkItemCommentAttachmentDelete()}>确认删除</Button></>}>
                     <p>确认删除“{workItemCommentAttachmentDeleteTarget?.attachment.filename}”？对象存储中的文件和{workItemCommentAttachmentDeleteTarget?.editorContext === 'primary-post' ? '主内容' : '评论正文'}中的附件引用都会立即删除。</p>

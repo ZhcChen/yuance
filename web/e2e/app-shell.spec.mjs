@@ -678,6 +678,10 @@ test('shared work item lists render a stable empty state for filtered results', 
 test('work item detail can edit and handoff through app shell forms', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+  });
+  await expect(page.locator('.work-item-attachments-panel')).toHaveCount(0);
 
   const editRequests = [];
   const primaryPostRequests = [];
