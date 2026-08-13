@@ -146,6 +146,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
     if (resolveRef.current) for (const media of mediaReferences) media.removeAttribute('src');
     content.replaceChildren(...staging.childNodes);
+    normalizeRichTextAttachmentFigures(content);
     for (const file of content.querySelectorAll('a[data-yuance-attachment-kind="file"]')) {
       if (!file.hasAttribute('data-yuance-file-kind') || !file.hasAttribute('data-yuance-file-ext')) {
         const filename = file.getAttribute('title') || file.textContent || '';
@@ -485,8 +486,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   /** @param {'left' | 'center' | 'right'} alignment */
   function align(alignment) {
     const input = inputRef.current;
-    const view = input?.ownerDocument.defaultView;
-    if (!input || !view) return;
+    if (!input || disabled) return;
+    restoreToolbarRange();
+    input.focus();
     const block = currentBlock(input);
     if (!block || !input.contains(block)) return;
     block.setAttribute('data-yuance-align', alignment);
@@ -1374,6 +1376,7 @@ function ToolbarButton({ active = false, label, title, disabled = false, onClick
       title={title}
       aria-pressed={active || undefined}
       disabled={disabled}
+      onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
       {children}
@@ -1633,11 +1636,50 @@ function filterRichTextStyle(html, view) {
   return container.innerHTML;
 }
 
+/**
+ * 附件图不应嵌套，历史数据中偶发出现“外层空 figure 包着真实附件图”的脏结构。
+ * 这里保留最深一层真正携带媒体的附件图，并把对齐信息从外层合并过来；
+ * 同时清掉没有媒体且没有文本的空附件图，避免对齐视觉失效。
+ *
+ * @param {Element} root
+ */
+function normalizeRichTextAttachmentFigures(root) {
+  const mediaFigure = (figure) => {
+    let current = figure;
+    const chain = [current];
+    while (true) {
+      const nested = current.querySelector(':scope > figure[data-yuance-attachment-kind]');
+      if (!nested) break;
+      current = nested;
+      chain.push(current);
+    }
+    return { current, chain };
+  };
+
+  for (const figure of [...root.querySelectorAll('figure[data-yuance-attachment-kind]')]) {
+    const { current, chain } = mediaFigure(figure);
+    if (current === figure) continue;
+    const align = chain.map((item) => item.getAttribute('data-yuance-align')).find((value) => value && value !== 'left') || 'left';
+    current.setAttribute('data-yuance-align', align);
+    figure.replaceWith(current);
+  }
+
+  for (const figure of [...root.querySelectorAll('figure[data-yuance-attachment-kind]')]) {
+    if (!figure.querySelector('img, video') && !(figure.textContent || '').trim()) {
+      figure.remove();
+    }
+  }
+}
+
 /** @param {HTMLDivElement} input @param {string} html */
 function sanitizeEditorHtml(input, html) {
   const view = input.ownerDocument.defaultView;
   if (!view) return '';
-  return filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: EDITOR_TAGS, ALLOWED_ATTR: EDITOR_ATTRIBUTES }), view);
+  const doc = view.document.implementation.createHTMLDocument('');
+  const container = doc.createElement('div');
+  container.innerHTML = filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: EDITOR_TAGS, ALLOWED_ATTR: EDITOR_ATTRIBUTES }), view);
+  normalizeRichTextAttachmentFigures(container);
+  return container.innerHTML;
 }
 
 /** @param {string} value @param {new (value: string) => { protocol: string }} Url */
