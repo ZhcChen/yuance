@@ -425,7 +425,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const menuWidth = 264;
     const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
     const left = Math.min(Math.max(8, rect.right - (rootRect?.left || 0) - menuWidth), Math.max(8, availableRight - menuWidth - 8));
-    const top = (rootRect ? rect.bottom - rootRect.top + 6 : Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420)));
+    const top = (rootRect ? rect.bottom - rootRect.top + 9 : Math.min(rect.bottom + 9, Math.max(8, view.innerHeight - 420)));
     const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
     const triggerCenter = (rootRect ? rect.left - rootRect.left + rect.width / 2 : rect.left + rect.width / 2);
     const arrowLeft = Math.min(Math.max(10, triggerCenter - left), menuWidth - 10);
@@ -1311,7 +1311,7 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
     const menuWidth = 172;
     const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
     const left = Math.min(Math.max(8, rect.left - (rootRect?.left || 0)), Math.max(8, availableRight - menuWidth - 8));
-    const top = (rootRect ? rect.bottom - rootRect.top + 6 : Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420)));
+    const top = (rootRect ? rect.bottom - rootRect.top + 9 : Math.min(rect.bottom + 9, Math.max(8, view.innerHeight - 420)));
     const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
     const triggerCenter = (rootRect ? rect.left - rootRect.left + rect.width / 2 : rect.left + rect.width / 2);
     const arrowLeft = Math.min(Math.max(10, triggerCenter - left), menuWidth - 10);
