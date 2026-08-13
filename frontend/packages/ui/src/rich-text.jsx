@@ -512,14 +512,14 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     });
   }
 
-  /** @param {File} file */
-  function startPasteUpload(file) {
+  /** @param {File} file @param {Range | null} [insertRange] */
+  function startPasteUpload(file, insertRange = null) {
     const input = inputRef.current;
     if (!input || disabled) return;
     const uploadId = `yuance-paste-${++pendingUploadSequenceRef.current}`;
     const entry = createPendingUploadEntry(input.ownerDocument, file, uploadId);
     pendingUploadsRef.current.set(uploadId, entry);
-    insertAtSelection(input, entry.node, pasteRangeRef.current);
+    insertAtSelection(input, entry.node, insertRange || pasteRangeRef.current);
     void uploadPastedFile(uploadId);
   }
 
@@ -744,9 +744,19 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           if (files.length && onPasteFile && !disabled) {
             event.preventDefault();
             const input = event.currentTarget;
-            pasteRangeRef.current = currentInsertionRange(input);
-            for (const file of files) startPasteUpload(file);
-            pasteRangeRef.current = null;
+            const pasteRange = currentInsertionRange(input);
+            pasteRangeRef.current = pasteRange;
+            void uniquePastedFilesByContent(files).then((uniqueFiles) => {
+              if (input.isConnected && !disabled) {
+                for (const file of uniqueFiles) startPasteUpload(file, pasteRange);
+              }
+              if (pasteRangeRef.current === pasteRange) pasteRangeRef.current = null;
+            }).catch(() => {
+              if (input.isConnected && !disabled) {
+                for (const file of files) startPasteUpload(file, pasteRange);
+              }
+              if (pasteRangeRef.current === pasteRange) pasteRangeRef.current = null;
+            });
             return;
           }
           event.preventDefault();
@@ -875,7 +885,8 @@ function pastedFiles(clipboardData) {
   const seen = new Set();
   const addFile = (file) => {
     if (!file) return;
-    const fingerprint = `${file.type || ''}|${file.name || ''}|${file.size || 0}|${file.lastModified || 0}`;
+    // 真实剪贴板会在 items 与 files 中暴露同一张图片，lastModified 可能不一致。
+    const fingerprint = `${file.type || ''}|${file.name || ''}|${file.size || 0}`;
     if (seen.has(fingerprint)) return;
     seen.add(fingerprint);
     files.push(file);
@@ -892,6 +903,47 @@ function pastedFiles(clipboardData) {
     addFile(dataFiles[index]);
   }
   return files;
+}
+
+/** @param {File} file @returns {Promise<string>} */
+async function digestPastedFile(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle?.digest) {
+    const digest = await subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `fnv:${hash.toString(16)}`;
+}
+
+/**
+ * 同一粘贴批次中，items/files 可能携带同一图片的多个包装对象；
+ * 快速指纹无法覆盖不同文件名或时间戳，这里再按文件内容去重。
+ *
+ * @param {File[]} files
+ * @returns {Promise<File[]>}
+ */
+async function uniquePastedFilesByContent(files) {
+  if (files.length <= 1) return files;
+  const seen = new Set();
+  const uniqueFiles = [];
+  for (const file of files) {
+    let digest = '';
+    try {
+      digest = await digestPastedFile(file);
+    } catch {
+      digest = `${file.type || ''}|${file.name || ''}|${file.size || 0}`;
+    }
+    if (seen.has(digest)) continue;
+    seen.add(digest);
+    uniqueFiles.push(file);
+  }
+  return uniqueFiles;
 }
 
 /** @param {Document} ownerDocument @param {File} file @param {string} uploadId */

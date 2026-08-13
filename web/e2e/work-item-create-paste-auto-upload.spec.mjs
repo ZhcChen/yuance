@@ -99,19 +99,29 @@ test('work item create keeps pasted images inline and uploads them after title w
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
   await editor.click();
   await editor.evaluate((element) => {
-    const bytes = new Uint8Array([137, 80, 78, 71]);
-    const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(new File([bytes], 'pasted.png', { type: 'image/png', lastModified: 1234 }));
-    dataTransfer.items.add(new File([bytes], 'pasted-2.png', { type: 'image/png', lastModified: 1234 }));
-    dataTransfer.items.add(new File([bytes], 'pasted.png', { type: 'image/png', lastModified: 1234 }));
+    const bytesA = new Uint8Array([137, 80, 78, 71]);
+    const bytesB = new Uint8Array([255, 216, 255]);
+    // 真实剪贴板会在 items/files 中暴露同一图片，且 lastModified/name 可能不同。
+    const clipboardData = {
+      items: [
+        { kind: 'file', getAsFile: () => new File([bytesA], 'pasted.png', { type: 'image/png', lastModified: 1234 }) },
+        { kind: 'file', getAsFile: () => new File([bytesB], 'pasted-2.png', { type: 'image/png', lastModified: 1234 }) },
+        { kind: 'file', getAsFile: () => new File([bytesA], 'same-as-pasted.png', { type: 'image/png', lastModified: 9999 }) },
+      ],
+      files: [
+        new File([bytesA], 'pasted.png', { type: 'image/png', lastModified: 8888 }),
+        new File([bytesB], 'pasted-2.png', { type: 'image/png', lastModified: 7777 }),
+      ],
+    };
     const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
-    Object.defineProperty(event, 'clipboardData', { value: dataTransfer });
+    Object.defineProperty(event, 'clipboardData', { value: clipboardData });
     element.dispatchEvent(event);
   });
   const pendingImage = editor.getByRole('img', { name: 'pasted.png' });
   const pendingImage2 = editor.getByRole('img', { name: 'pasted-2.png' });
   await expect(pendingImage).toHaveCount(1);
   await expect(pendingImage2).toHaveCount(1);
+  await expect(editor.getByRole('img', { name: 'same-as-pasted.png' })).toHaveCount(0);
   await expect(pendingImage).toBeVisible();
   await expect(pendingImage2).toBeVisible();
   await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');
