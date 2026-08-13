@@ -2,6 +2,13 @@
 
 export const APP_CORE_PACKAGE_NAME = '@yuance/frontend-app-core';
 export {
+  APP_UPDATE_CHECK_INTERVAL_MS,
+  APP_UPDATE_MANIFEST_URL,
+  createAppUpdateController,
+  isReleaseUpdate,
+  releaseVersionFromPayload,
+} from './app-update.js';
+export {
   PUBLIC_HOST_AUTH_LOCKED_REASONS,
   PUBLIC_HOST_AUTH_STATES,
   normalizeHostAuthState,

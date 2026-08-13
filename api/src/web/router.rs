@@ -1561,6 +1561,15 @@ fn serve_web_app_path(state: &AppState, requested_path: &str) -> Response {
         Ok(content) => content,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    let content = if relative_path == "index.html" {
+        let html = String::from_utf8_lossy(&content).into_owned();
+        let version = serde_json::to_string(&app_release_version())
+            .unwrap_or_else(|_| "\"\"".to_string());
+        html.replace(WEB_APP_RELEASE_VERSION_PLACEHOLDER, &version)
+            .into_bytes()
+    } else {
+        content
+    };
 
     let cache_control = if relative_path == "index.html" || relative_path == "manifest.json" {
         "no-store, max-age=0, must-revalidate"
@@ -1579,6 +1588,8 @@ fn serve_web_app_path(state: &AppState, requested_path: &str) -> Response {
     )
         .into_response()
 }
+
+const WEB_APP_RELEASE_VERSION_PLACEHOLDER: &str = "\"__YUANCE_RELEASE_VERSION_PLACEHOLDER__\"";
 
 fn normalize_web_app_path(requested_path: &str) -> Option<String> {
     let trimmed = requested_path.trim_matches('/');

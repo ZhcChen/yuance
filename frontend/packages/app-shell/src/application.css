@@ -1607,3 +1607,101 @@ html[data-theme="dark"] .work-item-row,
 html[data-theme="dark"] .shell-stats div {
   border-color: var(--yc-line);
 }
+
+.app-update-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.app-update-copy p {
+  margin: 0;
+  color: var(--yc-muted-strong);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.app-update-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 8px 0 2px;
+}
+
+.app-update-meta-item {
+  min-width: 0;
+  min-height: 88px;
+  display: grid;
+  align-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--yc-line);
+  border-radius: 12px;
+  background: var(--yc-panel-soft);
+}
+
+.app-update-meta-item span {
+  color: var(--yc-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.app-update-meta-item strong {
+  display: block;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--yc-line);
+  color: var(--yc-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.app-update-meta-item.is-next {
+  border-color: var(--yc-brand-line);
+  background: color-mix(in srgb, var(--yc-brand-soft) 72%, var(--yc-panel));
+}
+
+.app-update-meta-item.is-next span,
+.app-update-meta-item.is-next strong {
+  color: var(--yc-brand-strong);
+}
+
+.app-update-meta-item.is-next strong {
+  border-top-color: color-mix(in srgb, var(--yc-brand-line) 78%, transparent);
+}
+
+.app-update-meta-arrow {
+  position: relative;
+  align-self: center;
+  width: 44px;
+  height: 16px;
+  color: var(--yc-brand);
+}
+
+.app-update-meta-arrow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 8px;
+  top: 50%;
+  height: 1.5px;
+  background: currentColor;
+  transform: translateY(-50%);
+}
+
+.app-update-meta-arrow::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  transform: translateY(-50%) rotate(45deg);
+}

@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { APP_UPDATE_CHECK_INTERVAL_MS } from '@yuance/frontend-app-core';
 import App from './app.jsx';
 import { webApi } from './lib/api.js';
 import { createBrowserEvents } from './platform/browser/events.js';
@@ -33,6 +34,41 @@ const services = {
     writeTheme: (theme) => {
       document.documentElement.dataset.theme = theme;
       localStorage.setItem('yuance-theme', theme);
+    },
+    readAppReleaseVersion: () => {
+      const value = /** @type {Record<string, unknown>} */ (globalThis).__YUANCE_APP_RELEASE_VERSION__;
+      if (typeof value !== 'string') return '';
+      return value.startsWith('__YUANCE_') ? '' : value.trim();
+    },
+    openAppUpdateManifest: async () => {
+      const response = await fetch('/version.json', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok) return null;
+      try {
+        return await response.json();
+      } catch {
+        return null;
+      }
+    },
+    reloadPage: () => window.location.reload(),
+    subscribeAppUpdateChecks: (check) => {
+      const onFocus = () => check();
+      const onVisibilityChange = () => {
+        if (document.visibilityState === 'visible') check();
+      };
+      window.addEventListener('focus', onFocus);
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      const interval = setInterval(check, APP_UPDATE_CHECK_INTERVAL_MS);
+      const initial = setTimeout(check, 0);
+      return () => {
+        window.removeEventListener('focus', onFocus);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        clearInterval(interval);
+        clearTimeout(initial);
+      };
     },
     readDatabaseStatsCache: async (username) => {
       try {

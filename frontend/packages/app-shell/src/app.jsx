@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createNotificationActionCoordinator,
   createNotificationEventCoordinator,
+  createAppUpdateController,
   createWorkItemEventCoordinator,
   createWorkItemTypingController,
   createProjectResourceWithAttachments,
@@ -842,6 +843,10 @@ function normalizeSystemApiDocs(payload) {
  *     createSessionId?(): string,
  *     readTheme?(): 'light' | 'dark',
  *     writeTheme?(theme: 'light' | 'dark'): void,
+ *     readAppReleaseVersion?(): string,
+ *     openAppUpdateManifest?(): Promise<unknown>,
+ *     reloadPage?(): void,
+ *     subscribeAppUpdateChecks?(check: () => void): () => void,
  *     readDatabaseStatsCache?(username: string): Promise<any | null>,
  *     writeDatabaseStatsCache?(username: string, snapshot: any): Promise<void>,
  *   },
@@ -865,6 +870,7 @@ export function SharedApp({ services }) {
   const mainContentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const scrollbarTrackRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const scrollbarDragRef = useRef(/** @type {{ pointerId: number, startY: number, startScrollTop: number } | null} */ (null));
+  const appUpdateControllerRef = useRef(/** @type {ReturnType<typeof createAppUpdateController> | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
   const accountSecurityActionRef = useRef(false);
@@ -1098,6 +1104,7 @@ export function SharedApp({ services }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
   const [scrollbar, setScrollbar] = useState({ visible: false, top: 0, height: 44 });
+  const [appUpdatePrompt, setAppUpdatePrompt] = useState(/** @type {{ version: string } | null} */ (null));
   if (!workItemTypingClientIdRef.current && events.supportsWorkItemTyping) workItemTypingClientIdRef.current = runtime.createSessionId?.() || '';
 
   function syncScrollbar() {
@@ -3360,9 +3367,34 @@ export function SharedApp({ services }) {
   }, [router]);
 
   useEffect(() => {
+    if (typeof runtime.readAppReleaseVersion !== 'function'
+      || typeof runtime.openAppUpdateManifest !== 'function'
+      || typeof runtime.subscribeAppUpdateChecks !== 'function') {
+      return undefined;
+    }
+    const openManifest = runtime.openAppUpdateManifest;
+    const subscribeAppUpdateChecks = runtime.subscribeAppUpdateChecks;
+    const currentVersion = runtime.readAppReleaseVersion().trim();
+    if (!currentVersion) return undefined;
+    const controller = createAppUpdateController({
+      currentVersion,
+      fetchManifest: () => openManifest(),
+      onPrompt: (version) => setAppUpdatePrompt((current) => current ? current : { version }),
+    });
+    appUpdateControllerRef.current = controller;
+    const unsubscribe = subscribeAppUpdateChecks(() => controller.check());
+    return () => {
+      if (appUpdateControllerRef.current === controller) appUpdateControllerRef.current = null;
+      unsubscribe();
+      controller.dispose();
+    };
+  }, [runtime]);
+
+  useEffect(() => {
     const coordinator = createNotificationEventCoordinator({
       refresh: () => loadRouteState(routeRef.current, 'refresh'),
       onNavigate: (path) => router.assign(path),
+      onReleaseVersion: (version) => appUpdateControllerRef.current?.handleRealtimeVersion(version),
     });
     const pollingCoordinator = createNotificationEventCoordinator({
       refresh: async () => {
@@ -3436,6 +3468,16 @@ export function SharedApp({ services }) {
       // Even if logout fails after the session is gone, returning to the login page is the safest path.
     }
     router.assign('/web/login');
+  }
+
+  function closeAppUpdatePrompt() {
+    const version = appUpdatePrompt?.version || '';
+    if (version) appUpdateControllerRef.current?.defer(version);
+    setAppUpdatePrompt(null);
+  }
+
+  function confirmAppUpdateRefresh() {
+    runtime.reloadPage?.();
   }
 
   /** @param {'light' | 'dark'} nextTheme */
@@ -6252,6 +6294,14 @@ export function SharedApp({ services }) {
               <Field id="project-resource-password-reset-action" label="重置方式" required><Select value={projectResourcePasswordResetForm.accessPasswordAction} onChange={(event) => setProjectResourcePasswordResetForm({ accessPasswordAction: event.target.value, accessPassword: '' })}><option value="set">设置新密码</option><option value="clear">清除密码保护</option></Select></Field>
               {projectResourcePasswordResetForm.accessPasswordAction === 'set' ? <Field id="project-resource-password-reset-value" label="新访问密码" required><TextInput type="password" autoComplete="new-password" minLength={4} maxLength={128} value={projectResourcePasswordResetForm.accessPassword} onChange={(event) => setProjectResourcePasswordResetForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
             </form>
+          </Modal>
+          <Modal open={Boolean(appUpdatePrompt)} title="发现新版本" onClose={closeAppUpdatePrompt} footer={<><Button variant="secondary" onClick={closeAppUpdatePrompt}>稍后刷新</Button><Button onClick={confirmAppUpdateRefresh}>立即刷新</Button></>}>
+            <div className="app-update-copy"><p>系统已发布新版本。刷新后可继续使用最新功能。</p></div>
+            <div className="app-update-meta" aria-label="版本信息">
+              <div className="app-update-meta-item"><span>当前版本</span><strong>{runtime.readAppReleaseVersion?.() || '--'}</strong></div>
+              <div className="app-update-meta-arrow" aria-hidden="true" />
+              <div className="app-update-meta-item is-next"><span>最新版本</span><strong>{appUpdatePrompt?.version || '--'}</strong></div>
+            </div>
           </Modal>
         </>
       )}

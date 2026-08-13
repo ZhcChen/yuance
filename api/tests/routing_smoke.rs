@@ -348,7 +348,7 @@ async fn web_app_entry_serves_index_and_deep_links_without_cache() {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
         fs::write(
             dist_dir.join("index.html"),
-            "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/web/app/assets/index-abc123.js\"></script></body></html>",
+            "<!doctype html><html><head><script>window.__YUANCE_APP_RELEASE_VERSION__ = \"__YUANCE_RELEASE_VERSION_PLACEHOLDER__\";</script></head><body><div id=\"root\"></div><script type=\"module\" src=\"/web/app/assets/index-abc123.js\"></script></body></html>",
         )
         .expect("index should write");
         fs::write(dist_dir.join("manifest.json"), "{}")
@@ -379,6 +379,8 @@ async fn web_app_entry_serves_index_and_deep_links_without_cache() {
         );
         let body = response_body(response).await;
         assert!(body.contains("/web/app/assets/index-abc123.js"));
+        assert!(body.contains("window.__YUANCE_APP_RELEASE_VERSION__ = \"0.1.0\""));
+        assert!(!body.contains("__YUANCE_RELEASE_VERSION_PLACEHOLDER__"));
 
         let deep_link = app
             .oneshot(
