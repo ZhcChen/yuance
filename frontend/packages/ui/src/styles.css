@@ -1456,7 +1456,6 @@ html[data-theme="dark"] {
 }
 
 .yc-rich-toolbar-select-label {
-  min-width: 42px;
   font-weight: 750;
   text-align: left;
 }
