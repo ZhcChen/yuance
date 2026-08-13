@@ -1364,6 +1364,10 @@ html[data-theme="dark"] {
   justify-content: flex-end;
 }
 
+.yc-rich-text-root {
+  position: relative;
+}
+
 .yc-rich-text-editor {
   overflow: hidden;
   border: 1px solid var(--yc-line);
@@ -1482,7 +1486,7 @@ html[data-theme="dark"] {
 }
 
 .yc-rich-more-menu {
-  position: fixed;
+  position: absolute;
   z-index: 200;
   width: 264px;
   display: grid;
@@ -1496,7 +1500,7 @@ html[data-theme="dark"] {
 }
 
 .yc-rich-toolbar-popover {
-  position: fixed;
+  position: absolute;
   z-index: 200;
   width: 172px;
   padding: 6px;

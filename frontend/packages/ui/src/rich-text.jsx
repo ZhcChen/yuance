@@ -4,6 +4,7 @@
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
 const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'style', 'title'];
@@ -272,6 +273,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', fontSize: /** @type {string | null} */ (null), color: /** @type {string | null} */ (null), align: /** @type {string | null} */ (null) });
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
+  const [toolbarMenuRoot, setToolbarMenuRoot] = useState(/** @type {HTMLDivElement | null} */ (null));
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
     .filter((option) => {
       const query = mentionQuery.toLocaleLowerCase();
@@ -419,10 +421,13 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     for (const ref of [paragraphCloseRef, sizeCloseRef, colorCloseRef]) ref.current?.();
     captureToolbarRange();
     const rect = trigger.getBoundingClientRect();
+    const rootRect = toolbarMenuRoot?.getBoundingClientRect() || null;
     const menuWidth = 264;
-    const left = Math.min(Math.max(8, rect.right - menuWidth), Math.max(8, view.innerWidth - menuWidth - 8));
-    const top = Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420));
-    setMoreMenuPosition({ left, top, maxHeight: Math.min(460, view.innerHeight - top - 8) });
+    const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
+    const left = Math.min(Math.max(8, rect.right - (rootRect?.left || 0) - menuWidth), Math.max(8, availableRight - menuWidth - 8));
+    const top = (rootRect ? rect.bottom - rootRect.top + 6 : Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420)));
+    const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
+    setMoreMenuPosition({ left, top, maxHeight: Math.max(120, maxHeight) });
     setMoreMenuOpen(true);
   }
 
@@ -721,7 +726,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   }
 
   return (
-    <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
+    <div className="yc-rich-text-root" ref={setToolbarMenuRoot}>
+      <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
       <div className="yc-rich-text-toolbar" role="toolbar" aria-label="富文本工具栏">
         <ToolbarDropdown
           label="段落格式"
@@ -729,6 +735,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           disabled={disabled}
           triggerRef={paragraphTriggerRef}
           menuRef={paragraphMenuRef}
+          menuRoot={toolbarMenuRoot}
           closeRef={paragraphCloseRef}
           onOpen={() => openToolbarDropdown(paragraphCloseRef)}
           onClose={clearToolbarRange}
@@ -755,6 +762,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           disabled={disabled}
           triggerRef={sizeTriggerRef}
           menuRef={sizeMenuRef}
+          menuRoot={toolbarMenuRoot}
           closeRef={sizeCloseRef}
           onOpen={() => openToolbarDropdown(sizeCloseRef)}
           onClose={clearToolbarRange}
@@ -781,6 +789,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           disabled={disabled}
           triggerRef={colorTriggerRef}
           menuRef={colorMenuRef}
+          menuRoot={toolbarMenuRoot}
           closeRef={colorCloseRef}
           onOpen={() => openToolbarDropdown(colorCloseRef)}
           onClose={clearToolbarRange}
@@ -858,22 +867,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           更多<span className="yc-rich-toolbar-caret" aria-hidden="true" />
         </button>
       </div>
-      {moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
-        onMouseEnter={cancelMoreMenuClose}
-        onMouseLeave={(event) => {
-          if (relatedInside(event, moreTriggerRef)) return;
-          scheduleMoreMenuClose();
-        }}
-      >
-        <section className="yc-rich-more-section" aria-label="更多操作">
-          <div className="yc-rich-more-grid yc-rich-more-actions">
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'pre'); closeMoreMenu(); }}>&lt;/&gt; 代码块</button>
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { convertMarkdown(); closeMoreMenu(); }}>MD 转换</button>
-            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { clearFormat(); closeMoreMenu(); }}>清除格式</button>
-          </div>
-        </section>
-      </div> : null}
       <div
         id={id}
         ref={inputRef}
@@ -960,6 +953,23 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           </button>
         )) : <p>没有匹配成员</p>}
       </div> : null}
+      </div>
+      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
+        onMouseEnter={cancelMoreMenuClose}
+        onMouseLeave={(event) => {
+          if (relatedInside(event, moreTriggerRef)) return;
+          scheduleMoreMenuClose();
+        }}
+      >
+        <section className="yc-rich-more-section" aria-label="更多操作">
+          <div className="yc-rich-more-grid yc-rich-more-actions">
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'pre'); closeMoreMenu(); }}>&lt;/&gt; 代码块</button>
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { convertMarkdown(); closeMoreMenu(); }}>MD 转换</button>
+            <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { clearFormat(); closeMoreMenu(); }}>清除格式</button>
+          </div>
+        </section>
+      </div> : null, toolbarMenuRoot) : null}
     </div>
   );
 
@@ -1240,8 +1250,8 @@ function ToolbarButton({ active = false, label, title, disabled = false, onClick
   );
 }
 
-/** @param {{ label: string, value: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, children: React.ReactNode }} props */
-function ToolbarDropdown({ label, value, disabled = false, active = false, triggerRef, menuRef, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, children }) {
+/** @param {{ label: string, value: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, menuRoot: HTMLDivElement | null, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, children: React.ReactNode }} props */
+function ToolbarDropdown({ label, value, disabled = false, active = false, triggerRef, menuRef, menuRoot, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, children }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
@@ -1292,10 +1302,13 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
     const view = trigger?.ownerDocument.defaultView;
     if (!trigger || !view || disabled) return;
     const rect = trigger.getBoundingClientRect();
+    const rootRect = menuRoot?.getBoundingClientRect() || null;
     const menuWidth = 172;
-    const left = Math.min(Math.max(8, rect.left), Math.max(8, view.innerWidth - menuWidth - 8));
-    const top = Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420));
-    setPosition({ left, top, maxHeight: Math.min(460, view.innerHeight - top - 8) });
+    const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
+    const left = Math.min(Math.max(8, rect.left - (rootRect?.left || 0)), Math.max(8, availableRight - menuWidth - 8));
+    const top = (rootRect ? rect.bottom - rootRect.top + 6 : Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420)));
+    const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
+    setPosition({ left, top, maxHeight: Math.max(120, maxHeight) });
     onOpen?.();
     setOpen(true);
   }
@@ -1354,7 +1367,7 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
         {triggerExtra}
         <span className="yc-rich-toolbar-caret" aria-hidden="true" />
       </button>
-      {open ? <div
+      {open && menuRoot ? createPortal(<div
         ref={(node) => {
           if (typeof menuRef === 'function') menuRef(node);
           else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
@@ -1371,7 +1384,7 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
         }}
       >
         {children}
-      </div> : null}
+      </div>, menuRoot) : null}
     </>
   );
 }
