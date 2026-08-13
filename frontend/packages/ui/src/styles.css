@@ -1487,17 +1487,6 @@ html[data-theme="dark"] {
   box-shadow: var(--yc-shadow), var(--yc-shadow-soft);
 }
 
-.yc-rich-menu-arrow {
-  position: absolute;
-  z-index: 199;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--yc-panel);
-  pointer-events: none;
-  transform: rotate(45deg);
-}
-
 .yc-rich-toolbar-popover {
   position: absolute;
   z-index: 200;
