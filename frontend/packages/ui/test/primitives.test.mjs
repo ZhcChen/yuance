@@ -121,10 +121,11 @@ test('content tabs retain the sliding indicator transition after resize observat
   assert.match(styles, /\.yc-content-tabs-indicator \{[^}]*transition: width 360ms[^;]*, transform 360ms/u);
 });
 
-test('wide modal follows the legacy work form width', async () => {
+test('wide modal fills 90% of the viewport width and height', async () => {
   const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-  assert.match(styles, /\.yc-modal-wide\s*\{[^}]*width:\s*min\(1040px,\s*calc\(100% - 40px\)\)/u);
+  assert.match(styles, /\.yc-modal-wide\s*\{[^}]*width:\s*90vw/u);
+  assert.match(styles, /\.yc-modal-wide\s*\{[^}]*height:\s*90vh/u);
 });
 
 test('table, pagination and skeleton cover empty and boundary states', () => {

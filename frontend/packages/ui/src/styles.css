@@ -419,10 +419,10 @@ html[data-theme="dark"] {
   .yc-content-tabs-indicator { top: 9px; height: calc(100% - 13px); }
 }
 
-.yc-modal { width: min(560px, calc(100% - 36px)); max-height: min(720px, calc(100% - 56px)); padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 14px; background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 22px 60px rgb(24 39 58 / 20%); opacity: 0; transform: translateY(12px) scale(.98); }
+.yc-modal { box-sizing: border-box; width: min(560px, calc(100% - 36px)); max-height: min(720px, calc(100% - 56px)); padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 14px; background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 22px 60px rgb(24 39 58 / 20%); opacity: 0; transform: translateY(12px) scale(.98); }
 .yc-modal[open] { display: flex; flex-direction: column; opacity: 1; transform: translateY(0) scale(1); animation: yc-modal-enter 200ms cubic-bezier(.22, .8, .24, 1); }
 .yc-modal.yc-modal-closing { opacity: 0; transform: translateY(10px) scale(.985); animation: yc-modal-exit 180ms cubic-bezier(.4, 0, .6, 1) forwards; }
-.yc-modal-wide { width: min(1040px, calc(100% - 40px)); max-height: min(860px, calc(100% - 36px)); }
+.yc-modal-wide { width: 90vw; height: 90vh; max-width: none; max-height: none; }
 .yc-modal::backdrop { background: rgb(15 23 42 / 36%); animation: yc-backdrop-enter 200ms ease; }
 .yc-modal.yc-modal-closing::backdrop { animation: yc-backdrop-exit 180ms ease forwards; }
 .yc-modal-wide .yc-rich-text-input { min-height: 248px; }
