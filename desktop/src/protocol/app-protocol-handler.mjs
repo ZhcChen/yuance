@@ -70,6 +70,24 @@ export async function registerAppProtocol({ protocol, fs, rendererRoot, manifest
   await protocol.handle("app", createAppProtocolHandler({ fs, rendererRoot, manifest, previewHandler }));
 }
 
+/**
+ * Dev renderers do not serve the packaged manifest, but inline previews still
+ * use app:// capabilities. Register a handler that only exposes the dynamic
+ * preview path and rejects every other app:// request.
+ */
+export function createDevPreviewHandler({ previewHandler }) {
+  if (typeof previewHandler !== "function") throw new TypeError("previewHandler must be a function");
+  return async (request) => {
+    if (isPreviewRequest(request)) return previewHandler(request);
+    return errorResponse(404);
+  };
+}
+
+export async function registerDevPreviewProtocol({ protocol, previewHandler }) {
+  if (typeof protocol?.handle !== "function") throw new TypeError("protocol.handle is required");
+  return protocol.handle("app", createDevPreviewHandler({ previewHandler }));
+}
+
 function isPreviewRequest(request) {
   try { return new URL(String(request?.url || "")).pathname.startsWith("/.preview/"); }
   catch { return false; }

@@ -7,8 +7,10 @@ import test from "node:test";
 
 import {
   createAppProtocolHandler,
+  createDevPreviewHandler,
   loadResourceManifest,
   registerAppProtocol,
+  registerDevPreviewProtocol,
   verifyManifestResources,
 } from "../src/protocol/app-protocol-handler.mjs";
 
@@ -71,6 +73,32 @@ test("delegates only the reserved dynamic preview path", async () => {
     assert.equal((await handler({ method: "GET", url: "app://yuance/.preview-not-reserved" })).status, 404);
     assert.deepEqual(calls, [`app://yuance/.preview/${capability}`]);
   });
+});
+
+test("dev preview handler exposes only the dynamic preview path", async () => {
+  const calls = [];
+  const handler = createDevPreviewHandler({ previewHandler: async (request) => { calls.push(request.url); return new Response("preview"); } });
+  const capability = `ypv_${"a".repeat(32)}`;
+  assert.equal(await (await handler({ method: "GET", url: `app://yuance/.preview/${capability}` })).text(), "preview");
+  assert.equal((await handler({ method: "GET", url: "app://yuance/index.html" })).status, 404);
+  assert.equal((await handler({ method: "GET", url: "app://other/.preview-not-reserved" })).status, 404);
+  assert.deepEqual(calls, [`app://yuance/.preview/${capability}`]);
+});
+
+test("dev preview registration binds the app scheme and rejects missing handler", async () => {
+  const registrations = [];
+  const protocol = {
+    async handle(scheme, handler) {
+      registrations.push({ scheme, handler });
+    },
+  };
+  const capability = `ypv_${"a".repeat(32)}`;
+  await registerDevPreviewProtocol({ protocol, previewHandler: async (request) => new Response(request.url) });
+  assert.equal(registrations.length, 1);
+  assert.equal(registrations[0].scheme, "app");
+  assert.equal(await (await registrations[0].handler({ method: "GET", url: `app://yuance/.preview/${capability}` })).text(), `app://yuance/.preview/${capability}`);
+  assert.equal((await registrations[0].handler({ method: "GET", url: "app://yuance/" })).status, 404);
+  await assert.rejects(registerDevPreviewProtocol({ protocol, previewHandler: null }), /previewHandler must be a function/);
 });
 
 test("rejects runtime symbolic links even when bytes match the manifest", async (context) => {

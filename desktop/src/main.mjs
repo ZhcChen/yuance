@@ -48,7 +48,10 @@ import {
   createIpcSenderPolicy,
   createRendererReadinessTracker,
 } from "./ipc/sender-policy.mjs";
-import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
+import {
+  registerAppProtocol,
+  registerDevPreviewProtocol,
+} from "./protocol/app-protocol-handler.mjs";
 import { enrollDesktop } from "./network/enrollment-client.mjs";
 import { createTrustedNetworkSession } from "./network/network-session.mjs";
 import { createNetworkCoordinator } from "./network/network-coordinator.mjs";
@@ -1662,6 +1665,12 @@ if (singleInstanceProbe) {
     app.whenReady().then(async () => {
       try {
         const initialTheme = await appearanceStore.getTheme().catch(() => "light");
+        const rendererPreviewHandler = createPreviewProtocolHandler({ resolveSnapshot: (capability) => {
+          const current = fileRuntime?.preview;
+          const window = mainWindow;
+          if (!current || !window || window.isDestroyed()) throw new Error("preview unavailable");
+          return current.vault.resolve(capability, Object.freeze({ ...current.runtime.fileBindingVersion(), webContentsId: window.webContents.id, frameRoutingId: window.webContents.mainFrame.routingId }));
+        } });
         if (rendererTarget.kind === "app-protocol") {
           const rendererRoot = path.join(moduleDir, "..", "renderer-dist");
           const rendererSession = session.fromPartition(rendererTarget.partition);
@@ -1670,12 +1679,7 @@ if (singleInstanceProbe) {
             fs,
             rendererRoot,
             manifestPath: path.join(rendererRoot, "resource-manifest.json"),
-            previewHandler: createPreviewProtocolHandler({ resolveSnapshot: (capability) => {
-              const current = fileRuntime?.preview;
-              const window = mainWindow;
-              if (!current || !window || window.isDestroyed()) throw new Error("preview unavailable");
-              return current.vault.resolve(capability, Object.freeze({ ...current.runtime.fileBindingVersion(), webContentsId: window.webContents.id, frameRoutingId: window.webContents.mainFrame.routingId }));
-            } }),
+            previewHandler: rendererPreviewHandler,
           });
           if (appProtocolSmoke) {
             rendererSession.webRequest.onBeforeRequest((details, callback) => {
@@ -1698,6 +1702,12 @@ if (singleInstanceProbe) {
               callback({ responseHeaders: details.responseHeaders });
             });
           }
+        } else {
+          const rendererSession = session.fromPartition(rendererTarget.partition);
+          await registerDevPreviewProtocol({
+            protocol: rendererSession.protocol,
+            previewHandler: rendererPreviewHandler,
+          });
         }
         applyRuntimeBrandIcon();
         mainWindow = createMainWindow(initialTheme);
