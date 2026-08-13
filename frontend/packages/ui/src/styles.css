@@ -1475,16 +1475,6 @@ html[data-theme="dark"] {
   border-radius: 999px;
 }
 
-.yc-rich-toolbar-caret {
-  width: 0;
-  height: 0;
-  margin-left: 4px;
-  border-right: 4px solid transparent;
-  border-bottom: 5px solid currentColor;
-  border-left: 4px solid transparent;
-  transform: translateY(-1px);
-}
-
 .yc-rich-more-menu {
   position: absolute;
   z-index: 200;

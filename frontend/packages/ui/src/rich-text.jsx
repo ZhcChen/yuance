@@ -864,7 +864,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           }}
           onClick={() => { cancelMoreMenuClose(); openMoreMenu(); }}
         >
-          更多<span className="yc-rich-toolbar-caret" aria-hidden="true" />
+          更多
         </button>
       </div>
       <div
@@ -1365,7 +1365,6 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
       >
         <span className="yc-rich-toolbar-select-label">{value}</span>
         {triggerExtra}
-        <span className="yc-rich-toolbar-caret" aria-hidden="true" />
       </button>
       {open && menuRoot ? createPortal(<div
         ref={(node) => {
