@@ -1,4 +1,5 @@
 // @ts-check
+/* global setTimeout, clearTimeout */
 
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -262,6 +263,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const colorTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const colorMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const toolbarRangeRef = useRef(/** @type {Range | null} */ (null));
+  const moreHoverCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
   const paragraphCloseRef = useRef(/** @type {(() => void) | null} */ (null));
   const sizeCloseRef = useRef(/** @type {(() => void) | null} */ (null));
   const colorCloseRef = useRef(/** @type {(() => void) | null} */ (null));
@@ -352,6 +354,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   }, [moreMenuOpen]);
 
   function openToolbarDropdown(exceptRef) {
+    if (moreMenuOpen) closeMoreMenu();
     for (const ref of [paragraphCloseRef, sizeCloseRef, colorCloseRef]) {
       if (ref !== exceptRef) ref.current?.();
     }
@@ -426,6 +429,27 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   function closeMoreMenu() {
     setMoreMenuOpen(false);
     clearToolbarRange();
+  }
+
+  function scheduleMoreMenuClose() {
+    if (moreHoverCloseTimerRef.current) clearTimeout(moreHoverCloseTimerRef.current);
+    moreHoverCloseTimerRef.current = setTimeout(() => {
+      moreHoverCloseTimerRef.current = null;
+      closeMoreMenu();
+    }, 160);
+  }
+
+  function cancelMoreMenuClose() {
+    if (!moreHoverCloseTimerRef.current) return;
+    clearTimeout(moreHoverCloseTimerRef.current);
+    moreHoverCloseTimerRef.current = null;
+  }
+
+  /** @param {React.MouseEvent<HTMLElement>} event @param {{ current: HTMLElement | null }} otherRef @returns {boolean} */
+  function relatedInside(event, otherRef) {
+    const view = event.currentTarget.ownerDocument.defaultView;
+    const related = event.relatedTarget;
+    return Boolean(view && related instanceof view.Node && otherRef.current?.contains(related));
   }
 
   /** @param {'p' | 'h1' | 'h2' | 'h3'} tag */
@@ -824,12 +848,23 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           aria-haspopup="menu"
           aria-expanded={moreMenuOpen}
           disabled={disabled}
-          onClick={() => { if (moreMenuOpen) closeMoreMenu(); else openMoreMenu(); }}
+          onMouseEnter={() => { cancelMoreMenuClose(); openMoreMenu(); }}
+          onMouseLeave={(event) => {
+            if (relatedInside(event, moreMenuRef)) return;
+            scheduleMoreMenuClose();
+          }}
+          onClick={() => { cancelMoreMenuClose(); openMoreMenu(); }}
         >
           更多<span className="yc-rich-toolbar-caret" aria-hidden="true" />
         </button>
       </div>
-      {moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}>
+      {moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
+        onMouseEnter={cancelMoreMenuClose}
+        onMouseLeave={(event) => {
+          if (relatedInside(event, moreTriggerRef)) return;
+          scheduleMoreMenuClose();
+        }}
+      >
         <section className="yc-rich-more-section" aria-label="更多操作">
           <div className="yc-rich-more-grid yc-rich-more-actions">
             <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
@@ -1211,11 +1246,18 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
   const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const localMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const hoverCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
 
   useEffect(() => {
     if (closeRef) closeRef.current = closeDropdown;
     return () => { if (closeRef) closeRef.current = null; };
   });
+
+  useEffect(() => () => {
+    if (!hoverCloseTimerRef.current) return;
+    clearTimeout(hoverCloseTimerRef.current);
+    hoverCloseTimerRef.current = null;
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -1264,6 +1306,27 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
     onClose?.();
   }
 
+  function scheduleCloseDropdown() {
+    if (hoverCloseTimerRef.current) clearTimeout(hoverCloseTimerRef.current);
+    hoverCloseTimerRef.current = setTimeout(() => {
+      hoverCloseTimerRef.current = null;
+      closeDropdown();
+    }, 160);
+  }
+
+  function cancelCloseDropdown() {
+    if (!hoverCloseTimerRef.current) return;
+    clearTimeout(hoverCloseTimerRef.current);
+    hoverCloseTimerRef.current = null;
+  }
+
+  /** @param {React.MouseEvent<HTMLElement>} event @param {{ current: HTMLElement | null }} otherRef @returns {boolean} */
+  function relatedInside(event, otherRef) {
+    const view = event.currentTarget.ownerDocument.defaultView;
+    const related = event.relatedTarget;
+    return Boolean(view && related instanceof view.Node && otherRef.current?.contains(related));
+  }
+
   return (
     <>
       <button
@@ -1280,7 +1343,12 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
         aria-expanded={open}
         disabled={disabled}
         onMouseDown={(event) => event.preventDefault()}
-        onClick={() => { if (open) closeDropdown(); else openDropdown(); }}
+        onMouseEnter={() => { cancelCloseDropdown(); openDropdown(); }}
+        onMouseLeave={(event) => {
+          if (relatedInside(event, localMenuRef)) return;
+          scheduleCloseDropdown();
+        }}
+        onClick={() => { cancelCloseDropdown(); openDropdown(); }}
       >
         <span className="yc-rich-toolbar-select-label">{value}</span>
         {triggerExtra}
@@ -1296,6 +1364,11 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
         aria-label={label}
         style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
         onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={cancelCloseDropdown}
+        onMouseLeave={(event) => {
+          if (relatedInside(event, localTriggerRef)) return;
+          scheduleCloseDropdown();
+        }}
       >
         {children}
       </div> : null}
