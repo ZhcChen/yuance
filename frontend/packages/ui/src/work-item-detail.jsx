@@ -156,16 +156,18 @@ export function WorkItemDetail({
       </div>
 
       {canEditPrimaryPost && !isDeleted ? <Modal wide open={activePanel === 'edit'} title="编辑工作项" onClose={closePanel} footer={<><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" form="work-item-edit-form" loading={editSubmitting}>保存修改</Button></>}>
-        <form id="work-item-edit-form" className="work-item-action-form" onSubmit={async (event) => { if (await onSubmitEdit(event)) setActivePanel(null); }}>
+        <form id="work-item-edit-form" className="work-item-action-form work-item-edit-form" onSubmit={async (event) => { if (await onSubmitEdit(event)) setActivePanel(null); }}>
           <div className="work-item-form-field work-item-form-field-wide"><label htmlFor="work-item-edit-title">标题</label><TextInput id="work-item-edit-title" name="title" value={editForm.title} onChange={onChangeEdit} required /></div>
-          <div className="work-item-form-field work-item-form-field-wide yc-rich-field"><span>主内容</span><RichTextEditor id="work-item-primary-post" value={editForm.description} disabled={mutationBusy} label="主内容" onPasteFile={onPasteFile} onChange={onChangeDescription} /></div>
-          <div className="work-item-form-field"><label htmlFor="work-item-edit-status">状态</label><Select id="work-item-edit-status" name="status" value={editForm.status} onChange={onChangeEdit}>{statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</Select></div>
-          <div className="work-item-form-field"><label htmlFor="work-item-edit-priority">优先级</label><Select id="work-item-edit-priority" name="priority" value={editForm.priority} onChange={onChangeEdit}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</Select></div>
-          <div className="work-item-form-field"><label htmlFor="work-item-edit-assignee">处理人</label><Select id="work-item-edit-assignee" name="assigneeUsername" value={editForm.assigneeUsername} onChange={onChangeEdit}><option value="">未分配</option>{assigneeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></div>
-          <div className="work-item-form-field"><label htmlFor="work-item-edit-due-date">截止日期</label><TextInput id="work-item-edit-due-date" name="dueDate" type="date" value={editForm.dueDate} onChange={onChangeEdit} /></div>
+          <div className="work-item-edit-meta-fields">
+            <div className="work-item-form-field"><label htmlFor="work-item-edit-status">状态</label><Select id="work-item-edit-status" name="status" value={editForm.status} onChange={onChangeEdit}>{statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</Select></div>
+            <div className="work-item-form-field"><label htmlFor="work-item-edit-priority">优先级</label><Select id="work-item-edit-priority" name="priority" value={editForm.priority} onChange={onChangeEdit}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</Select></div>
+            <div className="work-item-form-field"><label htmlFor="work-item-edit-assignee">处理人</label><Select id="work-item-edit-assignee" name="assigneeUsername" value={editForm.assigneeUsername} onChange={onChangeEdit}><option value="">未分配</option>{assigneeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></div>
+            <div className="work-item-form-field"><label htmlFor="work-item-edit-due-date">截止日期</label><TextInput id="work-item-edit-due-date" name="dueDate" type="date" value={editForm.dueDate} onChange={onChangeEdit} /></div>
+          </div>
           {item.item_type === 'task' ? (
             <div className="work-item-form-field work-item-form-field-wide"><label htmlFor="work-item-edit-parent">父级需求</label><Select id="work-item-edit-parent" name="parentItemKey" value={editForm.parentItemKey} onChange={onChangeEdit}><option value="">不关联</option>{parentOptions.map((option) => <option key={option.key} value={option.key}>{option.key} · {option.title}</option>)}</Select></div>
           ) : null}
+          <div className="work-item-form-field work-item-form-field-wide yc-rich-field"><span>主内容</span><RichTextEditor id="work-item-primary-post" value={editForm.description} disabled={mutationBusy} label="主内容" onPasteFile={onPasteFile} onChange={onChangeDescription} /></div>
         </form>
       </Modal> : null}
       {canManageWorkItems && !isDeleted ? <Modal open={activePanel === 'handoff'} title="指派 / 流转" onClose={closePanel} footer={<><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" form="work-item-handoff-form" loading={handoffSubmitting}>确认推进</Button></>}>
