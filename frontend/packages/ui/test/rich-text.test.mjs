@@ -29,6 +29,9 @@ test('plain text conversion escapes markup and rich content detection rejects em
 test('rich text editor exposes the shared formatting toolbar and textbox', () => {
   const html = renderToStaticMarkup(React.createElement(RichTextEditor, { id: 'body', value: '<p>正文</p>', onChange() {}, required: true, mentionOptions: [{ username: 'alice', displayName: 'Alice' }] }));
   assert.match(html, /aria-label="富文本工具栏"/);
+  assert.match(html, /aria-label="段落格式"/);
+  assert.match(html, /aria-label="字号"/);
+  assert.match(html, /aria-label="文字颜色"/);
   assert.match(html, /role="group" aria-label="文本样式"/);
   assert.match(html, /role="group" aria-label="列表"/);
   assert.match(html, /aria-label="加粗"/);

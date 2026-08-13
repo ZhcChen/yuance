@@ -17,6 +17,18 @@ const RICH_TEXT_COLORS = [
   { label: '紫色', value: '#6941c6' },
   { label: '灰色', value: '#475467' },
 ];
+const RICH_TEXT_BLOCK_OPTIONS = [
+  { value: 'p', label: '正文' },
+  { value: 'h1', label: '标题 1' },
+  { value: 'h2', label: '标题 2' },
+  { value: 'h3', label: '标题 3' },
+];
+const RICH_TEXT_SIZE_OPTIONS = [
+  { value: 'small', label: '小' },
+  { value: 'medium', label: '正常' },
+  { value: 'large', label: '大' },
+  { value: 'x-large', label: '特大' },
+];
 const DOCUMENT_FILE_TYPES = ['doc', 'txt', 'log', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'xls', 'xlsx', 'ods', 'ppt', 'docx', 'pptx', 'pdf'];
 
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
@@ -243,9 +255,19 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const pendingUploadSequenceRef = useRef(0);
   const moreTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const moreMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const paragraphTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const paragraphMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const sizeTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const sizeMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const colorTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const colorMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const toolbarRangeRef = useRef(/** @type {Range | null} */ (null));
+  const paragraphCloseRef = useRef(/** @type {(() => void) | null} */ (null));
+  const sizeCloseRef = useRef(/** @type {(() => void) | null} */ (null));
+  const colorCloseRef = useRef(/** @type {(() => void) | null} */ (null));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
-  const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', align: /** @type {string | null} */ (null) });
+  const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', fontSize: /** @type {string | null} */ (null), color: /** @type {string | null} */ (null), align: /** @type {string | null} */ (null) });
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
@@ -299,10 +321,15 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     if (!moreMenuOpen) return undefined;
     const view = moreMenuRef.current?.ownerDocument.defaultView;
     if (!view) return undefined;
-    const close = () => setMoreMenuOpen(false);
+    const close = () => {
+      setMoreMenuOpen(false);
+      clearToolbarRange();
+    };
     const closeOnOutsidePointer = (event) => {
       const target = event.target instanceof view.Node ? event.target : null;
-      if (target && (moreMenuRef.current?.contains(target) || moreTriggerRef.current?.contains(target))) return;
+      const menus = [moreMenuRef.current, paragraphMenuRef.current, sizeMenuRef.current, colorMenuRef.current];
+      const triggers = [moreTriggerRef.current, paragraphTriggerRef.current, sizeTriggerRef.current, colorTriggerRef.current];
+      if (target && (menus.some((menu) => menu?.contains(target)) || triggers.some((trigger) => trigger?.contains(target)))) return;
       close();
     };
     const closeOnEscape = (event) => {
@@ -324,10 +351,18 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     };
   }, [moreMenuOpen]);
 
+  function openToolbarDropdown(exceptRef) {
+    for (const ref of [paragraphCloseRef, sizeCloseRef, colorCloseRef]) {
+      if (ref !== exceptRef) ref.current?.();
+    }
+    captureToolbarRange();
+  }
+
   /** @param {string} command @param {string | undefined} [argument] */
   function execute(command, argument) {
     const input = inputRef.current;
     if (!input || disabled) return;
+    restoreToolbarRange();
     input.focus();
     input.ownerDocument.execCommand(command, false, argument);
     publish(input);
@@ -367,6 +402,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   function clearFormat() {
     const input = inputRef.current;
     if (!input || disabled) return;
+    restoreToolbarRange();
     input.focus();
     input.ownerDocument.execCommand('removeFormat');
     publish(input);
@@ -377,6 +413,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const trigger = moreTriggerRef.current;
     const view = trigger?.ownerDocument.defaultView;
     if (!trigger || !view || disabled) return;
+    for (const ref of [paragraphCloseRef, sizeCloseRef, colorCloseRef]) ref.current?.();
+    captureToolbarRange();
     const rect = trigger.getBoundingClientRect();
     const menuWidth = 264;
     const left = Math.min(Math.max(8, rect.right - menuWidth), Math.max(8, view.innerWidth - menuWidth - 8));
@@ -387,12 +425,14 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
 
   function closeMoreMenu() {
     setMoreMenuOpen(false);
+    clearToolbarRange();
   }
 
   /** @param {'p' | 'h1' | 'h2' | 'h3'} tag */
   function applyBlock(tag) {
     const input = inputRef.current;
     if (!input || disabled) return;
+    restoreToolbarRange();
     input.focus();
     input.ownerDocument.execCommand('formatBlock', false, tag);
     publish(input);
@@ -404,6 +444,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   function applyInlineStyle(action, after) {
     const input = inputRef.current;
     if (!input || disabled) return;
+    restoreToolbarRange();
     input.focus();
     const doc = input.ownerDocument;
     try {
@@ -419,12 +460,48 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
 
   /** @param {string} size */
   function applyFontSize(size) {
-    applyInlineStyle(() => inputRef.current?.ownerDocument.execCommand('fontSize', false, size), closeMoreMenu);
+    applyInlineStyle(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.ownerDocument.execCommand('fontSize', false, size);
+      if (!input.querySelector('span[style*="font-size"]')) wrapSelectionInStyledSpan(input, 'font-size', size);
+      normalizeInlineStyles(input);
+    }, closeMoreMenu);
   }
 
   /** @param {string} color */
   function applyColor(color) {
     applyInlineStyle(() => inputRef.current?.ownerDocument.execCommand('foreColor', false, color), closeMoreMenu);
+  }
+
+  function clearTextColor() {
+    const input = inputRef.current;
+    if (!input || disabled) return;
+    restoreToolbarRange();
+    input.focus();
+    const selection = input.ownerDocument.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const anchor = selection?.anchorNode || null;
+    const element = anchor?.nodeType === 1 ? /** @type {Element} */ (anchor) : anchor?.parentElement;
+    const colored = element?.closest('span[style*="color"]');
+    if (range && colored && input.contains(colored)) {
+      const kept = [];
+      const style = colored.getAttribute('style') || '';
+      for (const declaration of style.split(';')) {
+        const colon = declaration.indexOf(':');
+        if (colon < 1) continue;
+        const name = declaration.slice(0, colon).trim().toLowerCase();
+        if (name === 'color') continue;
+        kept.push(declaration.trim());
+      }
+      if (kept.length) colored.setAttribute('style', kept.join(';'));
+      else colored.removeAttribute('style');
+      publish(input);
+      syncFormatState();
+    } else {
+      applyInlineStyle(() => inputRef.current?.ownerDocument.execCommand('foreColor', false, ''), closeMoreMenu);
+    }
+    closeMoreMenu();
   }
 
   function openMentionPicker() {
@@ -481,8 +558,31 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       unorderedList: queryCommandState(input, 'insertUnorderedList'),
       orderedList: queryCommandState(input, 'insertOrderedList'),
       block: currentBlockName(input),
+      fontSize: selectedInlineStyle(input, 'font-size'),
+      color: selectedInlineStyle(input, 'color'),
       align: block?.getAttribute('data-yuance-align') || null,
     });
+  }
+
+  function restoreToolbarRange() {
+    const input = inputRef.current;
+    const range = toolbarRangeRef.current;
+    const view = input?.ownerDocument.defaultView;
+    if (!input || !range || !view || !input.contains(range.startContainer) || !input.contains(range.endContainer)) return;
+    const selection = view.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
+  function captureToolbarRange() {
+    const input = inputRef.current;
+    if (!input) return;
+    toolbarRangeRef.current = currentInsertionRange(input);
+    syncFormatState();
+  }
+
+  function clearToolbarRange() {
+    toolbarRangeRef.current = null;
   }
 
   /** @param {File} file @param {Range | null} [insertRange] */
@@ -599,6 +699,100 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   return (
     <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
       <div className="yc-rich-text-toolbar" role="toolbar" aria-label="富文本工具栏">
+        <ToolbarDropdown
+          label="段落格式"
+          value={RICH_TEXT_BLOCK_OPTIONS.find((option) => option.value === formatState.block)?.label || '正文'}
+          disabled={disabled}
+          triggerRef={paragraphTriggerRef}
+          menuRef={paragraphMenuRef}
+          closeRef={paragraphCloseRef}
+          onOpen={() => openToolbarDropdown(paragraphCloseRef)}
+          onClose={clearToolbarRange}
+        >
+          <div className="yc-rich-toolbar-popover-grid">
+            {RICH_TEXT_BLOCK_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitem"
+                className={`yc-rich-toolbar-popover-option${formatState.block === option.value ? ' is-active' : ''}`}
+                disabled={disabled}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => { restoreToolbarRange(); applyBlock(/** @type {'p' | 'h1' | 'h2' | 'h3'} */ (option.value)); paragraphCloseRef.current?.(); }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </ToolbarDropdown>
+        <ToolbarDropdown
+          label="字号"
+          value={RICH_TEXT_SIZE_OPTIONS.find((option) => option.value === formatState.fontSize)?.label || '字号'}
+          disabled={disabled}
+          triggerRef={sizeTriggerRef}
+          menuRef={sizeMenuRef}
+          closeRef={sizeCloseRef}
+          onOpen={() => openToolbarDropdown(sizeCloseRef)}
+          onClose={clearToolbarRange}
+        >
+          <div className="yc-rich-toolbar-popover-grid">
+            {RICH_TEXT_SIZE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitem"
+                className={`yc-rich-toolbar-popover-option${formatState.fontSize === option.value ? ' is-active' : ''}`}
+                disabled={disabled}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => { restoreToolbarRange(); applyFontSize(option.value); sizeCloseRef.current?.(); }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </ToolbarDropdown>
+        <ToolbarDropdown
+          label="文字颜色"
+          value="A"
+          disabled={disabled}
+          triggerRef={colorTriggerRef}
+          menuRef={colorMenuRef}
+          closeRef={colorCloseRef}
+          onOpen={() => openToolbarDropdown(colorCloseRef)}
+          onClose={clearToolbarRange}
+          triggerClassName="yc-rich-toolbar-color-trigger"
+          triggerExtra={<span className="yc-rich-toolbar-color-mark" style={{ background: formatState.color || 'currentColor' }} aria-hidden="true" />}
+        >
+          <div className="yc-rich-toolbar-color-menu">
+            <button
+              type="button"
+              role="menuitem"
+              className={`yc-rich-toolbar-popover-option${formatState.color ? '' : ' is-active'}`}
+              disabled={disabled}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { restoreToolbarRange(); clearTextColor(); colorCloseRef.current?.(); }}
+            >
+              默认颜色
+            </button>
+            <div className="yc-rich-more-colors">
+              {RICH_TEXT_COLORS.map((color) => (
+                <button
+                  key={color.value}
+                  type="button"
+                  role="menuitem"
+                  className={`yc-rich-more-color${normalizeRichTextColor(formatState.color) === color.value ? ' is-active' : ''}`}
+                  aria-label={color.label}
+                  title={color.label}
+                  style={{ background: color.value }}
+                  disabled={disabled}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => { restoreToolbarRange(); applyColor(color.value); colorCloseRef.current?.(); }}
+                />
+              ))}
+            </div>
+          </div>
+        </ToolbarDropdown>
+        <span className="yc-rich-toolbar-sep" aria-hidden="true" />
         <div className="yc-rich-toolbar-group" role="group" aria-label="文本样式">
           <ToolbarButton active={formatState.bold} label="加粗" title="加粗" disabled={disabled} onClick={() => execute('bold')}><strong>B</strong></ToolbarButton>
           <ToolbarButton active={formatState.italic} label="斜体" title="斜体" disabled={disabled} onClick={() => execute('italic')}><em>I</em></ToolbarButton>
@@ -636,30 +830,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         </button>
       </div>
       {moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}>
-        <section className="yc-rich-more-section" aria-label="段落样式">
-          <h3>段落</h3>
-          <div className="yc-rich-more-grid">
-            {[['p', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3']].map(([tag, name]) => (
-              <button key={tag} type="button" role="menuitem" className={`yc-rich-more-option${formatState.block === tag ? ' is-active' : ''}`} disabled={disabled} onClick={() => applyBlock(/** @type {'p' | 'h1' | 'h2' | 'h3'} */ (tag))}>{name}</button>
-            ))}
-          </div>
-        </section>
-        <section className="yc-rich-more-section" aria-label="文字大小">
-          <h3>文字大小</h3>
-          <div className="yc-rich-more-grid yc-rich-more-sizes">
-            {[['2', '小'], ['3', '正常'], ['4', '大'], ['5', '特大']].map(([size, name]) => (
-              <button key={size} type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => applyFontSize(size)}>{name}</button>
-            ))}
-          </div>
-        </section>
-        <section className="yc-rich-more-section" aria-label="文字颜色">
-          <h3>文字颜色</h3>
-          <div className="yc-rich-more-colors">
-            {RICH_TEXT_COLORS.map((color) => (
-              <button key={color.value} type="button" role="menuitem" className="yc-rich-more-color" aria-label={color.label} title={color.label} style={{ background: color.value }} disabled={disabled} onClick={() => applyColor(color.value)} />
-            ))}
-          </div>
-        </section>
         <section className="yc-rich-more-section" aria-label="更多操作">
           <div className="yc-rich-more-grid yc-rich-more-actions">
             <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
@@ -1035,6 +1205,104 @@ function ToolbarButton({ active = false, label, title, disabled = false, onClick
   );
 }
 
+/** @param {{ label: string, value: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, children: React.ReactNode }} props */
+function ToolbarDropdown({ label, value, disabled = false, active = false, triggerRef, menuRef, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, children }) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
+  const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const localMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+
+  useEffect(() => {
+    if (closeRef) closeRef.current = closeDropdown;
+    return () => { if (closeRef) closeRef.current = null; };
+  });
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const view = localMenuRef.current?.ownerDocument.defaultView;
+    if (!view) return undefined;
+    const close = () => closeDropdown();
+    const closeOnOutsidePointer = (event) => {
+      const target = event.target instanceof view.Node ? event.target : null;
+      if (target && (localMenuRef.current?.contains(target) || localTriggerRef.current?.contains(target))) return;
+      close();
+    };
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      close();
+      localTriggerRef.current?.focus();
+    };
+    view.addEventListener('pointerdown', closeOnOutsidePointer);
+    view.addEventListener('keydown', closeOnEscape);
+    view.addEventListener('scroll', close, true);
+    view.addEventListener('resize', close);
+    return () => {
+      view.removeEventListener('pointerdown', closeOnOutsidePointer);
+      view.removeEventListener('keydown', closeOnEscape);
+      view.removeEventListener('scroll', close, true);
+      view.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  function openDropdown() {
+    const trigger = localTriggerRef.current;
+    const view = trigger?.ownerDocument.defaultView;
+    if (!trigger || !view || disabled) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = 172;
+    const left = Math.min(Math.max(8, rect.left), Math.max(8, view.innerWidth - menuWidth - 8));
+    const top = Math.min(rect.bottom + 6, Math.max(8, view.innerHeight - 420));
+    setPosition({ left, top, maxHeight: Math.min(460, view.innerHeight - top - 8) });
+    onOpen?.();
+    setOpen(true);
+  }
+
+  function closeDropdown() {
+    if (!open) return;
+    setOpen(false);
+    onClose?.();
+  }
+
+  return (
+    <>
+      <button
+        ref={(node) => {
+          localTriggerRef.current = node;
+          if (typeof triggerRef === 'function') triggerRef(node);
+          else /** @type {{ current: HTMLButtonElement | null }} */ (triggerRef).current = node;
+        }}
+        type="button"
+        className={`yc-rich-toolbar-button yc-rich-toolbar-select${active ? ' is-active' : ''}${triggerClassName ? ` ${triggerClassName}` : ''}`}
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => { if (open) closeDropdown(); else openDropdown(); }}
+      >
+        <span className="yc-rich-toolbar-select-label">{value}</span>
+        {triggerExtra}
+        <span className="yc-rich-toolbar-caret" aria-hidden="true" />
+      </button>
+      {open ? <div
+        ref={(node) => {
+          if (typeof menuRef === 'function') menuRef(node);
+          else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
+        }}
+        className="yc-rich-toolbar-popover"
+        role="menu"
+        aria-label={label}
+        style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
+        onMouseDown={(event) => event.preventDefault()}
+      >
+        {children}
+      </div> : null}
+    </>
+  );
+}
+
 /** @param {HTMLDivElement} input @param {string} command @returns {boolean} */
 function queryCommandState(input, command) {
   try { return input.ownerDocument.queryCommandState(command); } catch { return false; }
@@ -1046,6 +1314,82 @@ function currentBlockName(input) {
     const value = String(input.ownerDocument.queryCommandValue('formatBlock') || '').replace(/[<>]/g, '').toLowerCase();
     return value || 'p';
   } catch { return 'p'; }
+}
+
+/** @param {HTMLDivElement} input @param {string} property @returns {string | null} */
+function selectedInlineStyle(input, property) {
+  const selection = input.ownerDocument.getSelection();
+  const anchor = selection?.anchorNode || null;
+  const element = anchor?.nodeType === 1 ? /** @type {Element} */ (anchor) : anchor?.parentElement;
+  const styled = element?.closest(`span[style*="${property}"]`);
+  if (!styled || !input.contains(styled)) return null;
+  const style = styled.getAttribute('style') || '';
+  for (const declaration of style.split(';')) {
+    const colon = declaration.indexOf(':');
+    if (colon < 1) continue;
+    if (declaration.slice(0, colon).trim().toLowerCase() !== property) continue;
+    const value = declaration.slice(colon + 1).trim();
+    return property === 'font-size' ? normalizeFontSizeValue(value) : value;
+  }
+  return null;
+}
+
+/** @param {string} value @returns {string | null} */
+function normalizeFontSizeValue(value) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'x-small' || normalized === '1' || normalized === 'small') return 'small';
+  if (normalized === 'medium' || normalized === '3') return 'medium';
+  if (normalized === 'large' || normalized === '4') return 'large';
+  if (normalized === 'x-large' || normalized === '5') return 'x-large';
+  return normalized || null;
+}
+
+/** @param {string | null} value @returns {string | null} */
+function normalizeRichTextColor(value) {
+  if (!value) return null;
+  const match = value.trim().match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/iu);
+  if (!match) return value.trim().toLowerCase();
+  return `#${[match[1], match[2], match[3]].map((part) => Number(part).toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** @param {HTMLDivElement} input */
+function normalizeInlineStyles(input) {
+  for (const element of [...input.querySelectorAll('font[size]')]) {
+    const size = element.getAttribute('size') || '';
+    const span = input.ownerDocument.createElement('span');
+    if (['small', 'medium', 'large', 'x-large'].includes(size)) span.setAttribute('style', `font-size:${size}`);
+    span.replaceChildren(...element.childNodes);
+    element.replaceWith(span);
+  }
+  for (const element of [...input.querySelectorAll('span:not([style])')]) {
+    if (!element.childElementCount) element.replaceWith(...element.childNodes);
+  }
+}
+
+/** @param {HTMLDivElement} input @param {string} property @param {string} value */
+function wrapSelectionInStyledSpan(input, property, value) {
+  const view = input.ownerDocument.defaultView;
+  const selection = input.ownerDocument.getSelection();
+  if (!view || !selection || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  if (!input.contains(range.startContainer) || !input.contains(range.endContainer)) return;
+  splitTextNodeAt(/** @type {Text} */ (range.startContainer), range.startOffset);
+  if (range.endContainer === range.startContainer) splitTextNodeAt(/** @type {Text} */ (range.endContainer), range.endOffset - range.startOffset);
+  else splitTextNodeAt(/** @type {Text} */ (range.endContainer), range.endOffset);
+  const span = input.ownerDocument.createElement('span');
+  span.setAttribute('style', `${property}:${value}`);
+  try { range.surroundContents(span); } catch { return; }
+  const collapsed = input.ownerDocument.createRange();
+  collapsed.setStartAfter(span);
+  collapsed.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(collapsed);
+}
+
+/** @param {Text} node @param {number} offset */
+function splitTextNodeAt(node, offset) {
+  if (offset <= 0 || offset >= node.data.length) return;
+  node.splitText(offset);
 }
 
 /** @param {string} html @param {Window} view @returns {string} */
