@@ -241,7 +241,7 @@ button:disabled {
 
 .work-item-detail-center {
   max-width: none;
-  padding: 0;
+  padding: 0 40px;
   border-radius: 0;
   background: transparent;
   box-shadow: none;

@@ -1133,8 +1133,6 @@ html[data-theme="dark"] {
 .work-item-back { display: inline-flex; align-items: center; gap: 8px; width: max-content; min-height: 32px; margin-bottom: 10px; padding: 0 10px 0 2px; border: 0; border-radius: 8px; background: transparent; color: var(--yc-muted-strong); font-size: 14px; font-weight: 650; text-decoration: none; white-space: nowrap; transition: background-color var(--yc-motion-fast) ease, color var(--yc-motion-fast) ease; }
 .work-item-back-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--yc-brand-line); border-radius: 50%; background: var(--yc-panel); color: var(--yc-brand-strong); box-shadow: 0 1px 2px rgb(24 39 58 / 5%); transition: border-color var(--yc-motion-fast) ease, background-color var(--yc-motion-fast) ease, transform var(--yc-motion-fast) ease; }
 .work-item-back-icon svg { width: 16px; height: 16px; }
-.work-item-back:hover { background: var(--yc-panel-soft); color: var(--yc-brand-strong); }
-.work-item-back:hover .work-item-back-icon { border-color: var(--yc-brand); background: var(--yc-brand-soft); transform: translateX(-2px); }
 .work-item-back:focus-visible { outline: 2px solid color-mix(in srgb, var(--yc-brand) 58%, transparent); outline-offset: 2px; }
 .work-item-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .work-item-title-row h1 { max-width: 920px; margin: 8px 0 0; font-size: 26px; line-height: 1.35; letter-spacing: 0; }
