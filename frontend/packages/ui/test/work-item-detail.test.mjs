@@ -29,7 +29,6 @@ function renderDetail(overrides = {}) {
   return renderToStaticMarkup(createElement(WorkItemDetail, {
     item,
     primaryPost: null,
-    primaryPostAttachments: [],
     editForm: { title: item.title, description: item.description, status: item.status, priority: item.priority, assigneeUsername: 'alice', dueDate: item.due_date, parentItemKey: item.parent_item_key },
     handoffForm: { status: 'pending_confirmation', assigneeUsername: 'bob', body: '请确认' },
     statusOptions: [{ value: 'in_progress', label: '处理中' }, { value: 'pending_confirmation', label: '待确认' }],
@@ -59,7 +58,6 @@ function renderDetail(overrides = {}) {
     onSubmitEdit: () => {},
     onSubmitHandoff: () => {},
     onRequestLifecycleAction: () => {},
-    onRequestDeletePrimaryPostAttachment: () => {},
     backHref: '/web/app/work-items/tasks',
     onOpenBack: () => {},
     ...overrides,
@@ -91,12 +89,12 @@ test('work item detail prefers the canonical HTML primary post over the legacy s
   const html = renderDetail({
     primaryPost: { id: 91, body: primaryBody, body_format: 'html' },
     editForm: { title: item.title, description: primaryBody, status: item.status, priority: item.priority, assigneeUsername: 'alice', dueDate: item.due_date, parentItemKey: item.parent_item_key },
-    primaryPostAttachments: [{ id: 7, filename: 'primary.txt', contentType: 'text/plain', url: '/web/work-items/YCE-TASK-2/comments/91/attachments/7/download' }],
   });
 
   assert.match(html, /yc-rich-text-content/);
   assert.doesNotMatch(html, />提取共享 UI</);
-  assert.match(html, /primary\.txt[\s\S]*移除引用/);
+  assert.doesNotMatch(html, /移除引用/);
+  assert.doesNotMatch(html, /插入正文/);
 });
 
 test('work item detail keeps handoff available while hiding author-only primary post editing', () => {

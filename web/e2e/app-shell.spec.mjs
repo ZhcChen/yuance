@@ -1799,45 +1799,6 @@ test('work item comment edit confirms attachment deletion and removes its rich t
   expect(updateRequests[0].body).not.toContain('data-yuance-attachment-id="811"');
 });
 
-test('work item primary post confirms attachment deletion through its fixed editor context', async ({ page }) => {
-  const attachment = attachmentFixture({ id: 812, filename: 'primary-note.txt', content_type: 'text/plain' });
-  const primaryPost = workItemCommentFixture({
-    id: 903,
-    body: '<p>主内容正文</p><a data-yuance-attachment-id="812" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/903/attachments/812/download">primary-note.txt</a>',
-    body_format: 'html',
-  });
-  const deleteRequests = [];
-  await login(page, '/web/app/work-items/YCE-TASK-2');
-  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
-    const response = await route.fetch();
-    const payload = await response.json();
-    payload.data.primary_post = primaryPost;
-    payload.data.permissions.can_edit_primary_post = true;
-    await route.fulfill({ response, json: payload });
-  });
-  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [primaryPost] }) }));
-  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/903/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [attachment] }) }));
-  await page.route(/\/api\/v1\/work-items\/YCE-TASK-2\/comments\/903\/attachments\/812$/u, async (route) => {
-    deleteRequests.push(route.request().headers());
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...attachment, status: 'deleted' } }) });
-  });
-
-  await page.goto('/web/app/work-items/YCE-TASK-2');
-  await page.getByRole('button', { name: '编辑内容' }).click();
-  await page.getByRole('button', { name: '移除引用' }).click();
-  const dialog = page.getByRole('dialog', { name: '删除主内容附件' });
-  await expect(dialog).toContainText('主内容中的附件引用都会立即删除');
-  await dialog.getByRole('button', { name: '取消' }).click();
-  await expect(dialog).toBeHidden();
-  expect(deleteRequests).toHaveLength(0);
-  await page.getByRole('button', { name: '移除引用' }).click();
-  await dialog.getByRole('button', { name: '确认删除' }).click();
-  await expect.poll(() => deleteRequests.length).toBe(1);
-  expect(deleteRequests[0]['x-yuance-editor-context']).toBe('work-item-primary-post');
-  await expect(page.getByLabel('主内容').locator('[data-yuance-attachment-id="812"]')).toHaveCount(0);
-  await expect(page.locator('.yc-rich-text-attachments')).toHaveCount(0);
-});
-
 test('work item attachments can list download and upload for item and comments', async ({ page }) => {
   const workItemAttachments = [
     attachmentFixture(),
@@ -4147,7 +4108,11 @@ test('shared project resource attachments render inline and are managed from the
   await expect(previewDialog).toHaveCount(0);
   await page.getByRole('button', { name: '编辑' }).click();
   const resourceDialog = page.getByRole('dialog', { name: '编辑项目资料' });
-  await resourceDialog.getByRole('button', { name: '移除引用' }).click();
+  const resourceEditor = resourceDialog.getByRole('textbox', { name: '资料正文' });
+  await resourceEditor.evaluate((editor) => {
+    editor.querySelector('[data-yuance-attachment-id="961"]')?.remove();
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   await resourceDialog.getByRole('button', { name: '保存' }).click();
   await expect(resourceDialog).not.toBeVisible();
   await expect.poll(() => inlineOperations.length).toBe(2);

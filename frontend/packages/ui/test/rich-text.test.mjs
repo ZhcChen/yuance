@@ -41,18 +41,6 @@ test('rich text editor exposes the shared formatting toolbar and textbox', () =>
   assert.doesNotMatch(html, /<p>正文<\/p>/);
 });
 
-test('rich text editor distinguishes inserted and available uploaded attachments', () => {
-  const html = renderToStaticMarkup(React.createElement(RichTextEditor, {
-    id: 'body', value: '<p>正文</p><a data-yuance-attachment-id="9" data-yuance-attachment-kind="file" href="/web/projects/YCE/resources/8/attachments/9/download">plan.txt</a>', onChange() {},
-    attachments: [
-      { id: 9, filename: 'plan.txt', contentType: 'text/plain', url: '/web/projects/YCE/resources/8/attachments/9/download' },
-      { id: 10, filename: 'design.png', contentType: 'image/png', url: '/web/projects/YCE/resources/8/attachments/10/download' },
-    ],
-  }));
-  assert.match(html, /plan\.txt[\s\S]*移除引用/);
-  assert.match(html, /design\.png[\s\S]*插入正文/);
-});
-
 test('rich text attachment HTML emits canonical escaped file and media nodes', () => {
   assert.equal(richTextAttachmentHtml({ id: 9, filename: 'a<&".txt', contentType: 'text/plain', url: '/web/projects/YCE/resources/8/attachments/9/download' }), '<a data-yuance-attachment-id="9" data-yuance-attachment-kind="file" data-yuance-file-kind="text" data-yuance-file-ext="TXT" data-yuance-align="left" href="/web/projects/YCE/resources/8/attachments/9/download" title="a&lt;&amp;&quot;.txt">a&lt;&amp;".txt</a>');
   assert.match(richTextAttachmentHtml({ id: 10, filename: 'design.png', contentType: 'image/png', url: '/web/projects/YCE/resources/8/attachments/10/download' }), /^<figure[\s\S]*<img[\s\S]*><\/figure>$/u);

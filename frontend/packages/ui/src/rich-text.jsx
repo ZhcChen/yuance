@@ -234,8 +234,8 @@ export const DEFER_RICH_TEXT_PASTE = 'defer';
 
 /** @typedef {{ onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteOptions */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void, onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment, onPasteFile, onFocus, onInputActivity, onBlur }) {
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
@@ -243,7 +243,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const pendingUploadSequenceRef = useRef(0);
   const moreTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const moreMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
-  const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
   const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', align: /** @type {string | null} */ (null) });
@@ -262,14 +261,12 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const pendingNodes = [...input.querySelectorAll('[data-rich-pending-upload]')];
     if (pendingNodes.length) {
       // 保留上传中节点的原始位置；value 由同一编辑器发布，无需重建 DOM。
-      setAttachmentIds(richTextAttachmentIds(value));
       return;
     }
     for (const node of pendingNodes) node.remove();
     const sanitized = sanitizeEditorHtml(input, value);
     if (input.innerHTML !== sanitized) input.innerHTML = sanitized;
     for (const node of pendingNodes) input.appendChild(node);
-    setAttachmentIds(richTextAttachmentIds(sanitized));
     if (sanitized !== value) onChange(sanitized);
   }, [value]);
 
@@ -430,16 +427,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     applyInlineStyle(() => inputRef.current?.ownerDocument.execCommand('foreColor', false, color), closeMoreMenu);
   }
 
-  /** @param {RichTextAttachmentOption} attachment */
-  function insertAttachment(attachment) {
-    const input = inputRef.current;
-    if (!input || disabled || attachmentIds.includes(attachment.id)) return;
-    const node = createAttachmentNode(input.ownerDocument, attachment);
-    insertAtSelection(input, node);
-    publish(input);
-    syncFormatState();
-  }
-
   function openMentionPicker() {
     const input = inputRef.current;
     if (!input || disabled || mentionOptions.length === 0) return;
@@ -470,20 +457,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     selection?.addRange(range);
     mentionRangeRef.current = null;
     setMentionQuery(null);
-    publish(input);
-    syncFormatState();
-  }
-
-  /** @param {number} attachmentId */
-  function removeAttachment(attachmentId) {
-    const input = inputRef.current;
-    if (!input || disabled) return;
-    const attachment = attachments.find((candidate) => candidate.id === attachmentId);
-    if (attachment && onRequestRemoveAttachment) {
-      onRequestRemoveAttachment(attachment);
-      return;
-    }
-    input.querySelector(`[data-yuance-attachment-id="${attachmentId}"]`)?.remove();
     publish(input);
     syncFormatState();
   }
@@ -782,12 +755,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           </button>
         )) : <p>没有匹配成员</p>}
       </div> : null}
-      {attachments.length ? <div className="yc-rich-text-attachments" aria-label="资料正文附件">
-        {attachments.map((attachment) => {
-          const inserted = attachmentIds.includes(attachment.id);
-          return <div key={attachment.id}><span>{attachment.filename}</span>{inserted ? <button type="button" disabled={disabled} onClick={() => removeAttachment(attachment.id)}>移除引用</button> : <button type="button" disabled={disabled} onClick={() => insertAttachment(attachment)}>插入正文</button>}</div>;
-        })}
-      </div> : null}
     </div>
   );
 
@@ -796,7 +763,6 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const clone = /** @type {HTMLDivElement} */ (input.cloneNode(true));
     clone.querySelectorAll('[data-rich-pending-upload]').forEach((node) => node.remove());
     const sanitized = sanitizeEditorHtml(clone, clone.innerHTML);
-    setAttachmentIds(richTextAttachmentIds(sanitized));
     onChange(sanitized);
   }
 }

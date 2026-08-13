@@ -2929,17 +2929,6 @@ export function SharedApp({ services }) {
     setProjectResourceForm((current) => ({ ...current, accessPassword: '' }));
   }
 
-  function projectResourceRichAttachmentOptions() {
-    const current = routeRef.current;
-    if (current.id !== 'project-resource-detail') return [];
-    return projectResourceAttachments.filter(attachmentIsUploaded).map((attachment) => ({
-      id: attachment.id,
-      filename: attachment.filename,
-      contentType: attachment.content_type,
-      url: `/web/projects/${current.projectKey}/resources/${current.resourceId}/attachments/${attachment.id}/download`,
-    }));
-  }
-
   function projectResourcePayload() {
     return {
       title: projectResourceForm.title,
@@ -4101,15 +4090,6 @@ export function SharedApp({ services }) {
     if (workItemEditingCommentId !== commentId || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
     setWorkItemCommentActionError('');
     setWorkItemCommentAttachmentDeleteTarget({ commentId, attachment, editorContext: 'comment-edit' });
-  }
-
-  /** @param {{ id: number, filename: string }} attachment */
-  function requestWorkItemPrimaryPostAttachmentDelete(attachment) {
-    const primaryPostId = activeWorkItemDetailView?.primary_post?.id;
-    if (!primaryPostId || !activeWorkItemDetailView?.permissions.can_edit_primary_post || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
-    setWorkItemActionError('');
-    const source = (workItemCommentAttachments[String(primaryPostId)] || []).find((candidate) => candidate.id === attachment.id);
-    if (source) setWorkItemCommentAttachmentDeleteTarget({ commentId: primaryPostId, attachment: source, editorContext: 'primary-post' });
   }
 
   async function confirmWorkItemCommentAttachmentDelete() {
@@ -6088,7 +6068,6 @@ export function SharedApp({ services }) {
                   <WorkItemDetail
                     item={activeWorkItemDetail}
                     primaryPost={activeWorkItemDetailView?.primary_post || null}
-                    primaryPostAttachments={(workItemCommentAttachments[String(activeWorkItemDetailView?.primary_post?.id || '')] || []).filter((attachment) => attachment.status !== 'deleted').map((attachment) => ({ id: attachment.id, filename: attachment.filename, contentType: attachment.content_type, url: `/web/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${activeWorkItemDetailView?.primary_post?.id}/attachments/${attachment.id}/download` }))}
                     resolveAttachmentSource={activeWorkItemDetailView?.primary_post ? resolveWorkItemPrimaryPostInlineAttachmentSource : undefined}
                     onAttachmentActivate={activeWorkItemDetailView?.primary_post ? activateWorkItemPrimaryPostInlineAttachment : undefined}
                     editForm={workItemEditForm}
@@ -6120,7 +6099,6 @@ export function SharedApp({ services }) {
                     onSubmitEdit={submitWorkItemEdit}
                     onSubmitHandoff={submitWorkItemHandoff}
                     onRequestLifecycleAction={setWorkItemLifecycleAction}
-                    onRequestDeletePrimaryPostAttachment={requestWorkItemPrimaryPostAttachmentDelete}
                     onPasteFile={(file, options) => pasteWorkItemPrimaryPostFile(file, options)}
                     backHref={detailBackPath}
                     onOpenBack={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}
@@ -6261,7 +6239,7 @@ export function SharedApp({ services }) {
               <Field id="project-resource-tags" label="标签"><TextInput value={projectResourceForm.tagsText} placeholder="多个标签使用逗号分隔" onChange={(event) => setProjectResourceForm((current) => ({ ...current, tagsText: event.target.value }))} /></Field>
               <Field id="project-resource-related-item" label="关联工作项 Key"><TextInput value={projectResourceForm.relatedWorkItemKey} maxLength={64} onChange={(event) => setProjectResourceForm((current) => ({ ...current, relatedWorkItemKey: event.target.value }))} /></Field>
               <Field id="project-resource-related-cycle" label="关联周期 ID"><TextInput type="number" min="1" value={projectResourceForm.relatedCycleId} onChange={(event) => setProjectResourceForm((current) => ({ ...current, relatedCycleId: event.target.value }))} /></Field>
-              <div className="yc-field"><label htmlFor="project-resource-body">资料正文<span aria-hidden="true"> *</span></label><RichTextEditor id="project-resource-body" value={projectResourceForm.body} disabled={projectResourceSubmitting} required attachments={projectResourceForm.id ? projectResourceRichAttachmentOptions() : []} onPasteFile={pasteProjectResourceFile} onChange={(body) => setProjectResourceForm((current) => ({ ...current, body, bodyFormat: 'html' }))} /></div>
+              <div className="yc-field"><label htmlFor="project-resource-body">资料正文<span aria-hidden="true"> *</span></label><RichTextEditor id="project-resource-body" value={projectResourceForm.body} disabled={projectResourceSubmitting} required onPasteFile={pasteProjectResourceFile} onChange={(body) => setProjectResourceForm((current) => ({ ...current, body, bodyFormat: 'html' }))} /></div>
               {!projectResourceForm.id ? <div className="yc-field"><div className="shell-panel-header"><label>资料附件</label><Button type="button" variant="secondary" disabled={projectResourceSubmitting || projectResourcePasteUploading || Boolean(projectResourceCreateCheckpoint)} onClick={() => void chooseProjectResourceCreateAttachment()}>选择附件</Button></div>{projectResourceCreateAttachments.length ? <ul className="project-resource-create-attachments">{projectResourceCreateAttachments.map((entry, index) => <li key={entry.key}><div><strong>{entry.filename}</strong><span className="shell-muted">{formatByteSize(entry.byteSize)} · {entry.stage}</span></div><label><input type="checkbox" checked={entry.inline} disabled={projectResourceSubmitting || projectResourcePasteUploading || Boolean(entry.uploadedAttachment)} onChange={(event) => setProjectResourceCreateAttachments((entries) => entries.map((item, itemIndex) => itemIndex === index ? { ...item, inline: event.target.checked } : item))} /> 插入正文</label>{!entry.file && !entry.uploadedAttachment ? <Button type="button" variant="secondary" disabled={projectResourceSubmitting || projectResourcePasteUploading} onClick={() => void chooseProjectResourceCreateAttachment(index)}>重新选择</Button> : null}{!projectResourceCreateCheckpoint || entry.error ? <Button type="button" variant="danger" disabled={projectResourceSubmitting || projectResourcePasteUploading} onClick={() => setProjectResourceCreateAttachments((entries) => entries.filter((_, itemIndex) => itemIndex !== index))}>移除</Button> : null}</li>)}</ul> : <p className="shell-muted">尚未选择附件。</p>}</div> : null}
               {projectResourceForm.id ? <Field id="project-resource-password-action" label="密码处理方式" required><select value={projectResourceForm.accessPasswordAction} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPasswordAction: event.target.value, accessPassword: '' }))}><option value="keep">保持不变</option><option value="set">设置密码</option><option value="clear">清除密码</option></select></Field> : null}
               {(!projectResourceForm.id || projectResourceForm.accessPasswordAction === 'set') ? <Field id="project-resource-access-password" label={projectResourceForm.id ? '新访问密码' : '初始访问密码'}><TextInput type="password" autoComplete="new-password" minLength={projectResourceForm.accessPassword ? 4 : undefined} maxLength={128} value={projectResourceForm.accessPassword} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
