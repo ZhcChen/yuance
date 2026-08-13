@@ -131,6 +131,21 @@ test('work item comments expose draft attachments in the shared composer', () =>
   assert.match(html, /取消草稿/);
 });
 
+test('work item comments render image thumbnails with the shared attachment image control', () => {
+  const html = renderComments({
+    attachmentsByComment: {
+      9: [{ ...attachment, filename: 'design.png', content_type: 'image/png' }],
+    },
+    buildAttachmentThumbnailUrl: () => 'https://example.test/design.png',
+  });
+
+  assert.match(html, /aria-label="预览图片 design\.png"/);
+  assert.match(html, /yc-attachment-image[^"]*is-loading/);
+  assert.match(html, /yc-attachment-image-img/);
+  assert.match(html, /图片加载中…/);
+  assert.doesNotMatch(html, /attachment-image-state/);
+});
+
 test('work item comments render reply composer and hide edit from non-authors', () => {
   const reply = renderComments({ replyingToCommentId: 9, replyCommentBody: '<p>回复内容</p>' });
   assert.match(reply, /回复 alice/);

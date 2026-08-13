@@ -5,6 +5,9 @@ import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+
+import { AttachmentImage } from './attachment-image.jsx';
 
 const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
 const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'style', 'title'];
@@ -62,6 +65,56 @@ const DOCUMENT_FILE_TYPES = ['doc', 'txt', 'log', 'md', 'json', 'xml', 'yaml', '
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
 
 /**
+ * 正文内图片的异步预览源容器，复用统一 AttachmentImage 三态显示。
+ *
+ * @param {{
+ *   attachmentId: number,
+ *   alt?: string,
+ *   initialSrc?: string,
+ *   resolve?: ((attachmentId: number) => Promise<RichTextResolvedSource>) | null,
+ * }} props
+ */
+function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = null }) {
+  const [source, setSource] = useState(initialSrc);
+  const [failed, setFailed] = useState(false);
+  const releaseRef = useRef(/** @type {(() => void | Promise<void>) | null} */ (null));
+
+  useEffect(() => {
+    if (!resolve) return undefined;
+    let active = true;
+    setFailed(false);
+    setSource(initialSrc);
+    void resolve(attachmentId).then((resolved) => {
+      if (!active) { releaseResolvedSource(resolved); return; }
+      releaseRef.current = resolved.release || null;
+      setSource(resolved.source);
+    }).catch(() => {
+      if (active) setFailed(true);
+    });
+    return () => {
+      active = false;
+      if (releaseRef.current) {
+        const release = releaseRef.current;
+        releaseRef.current = null;
+        releaseResolvedSource({ source: '', release });
+      }
+    };
+  }, [attachmentId, initialSrc, resolve]);
+
+  return (
+    <AttachmentImage
+      className="yc-rich-media-root"
+      src={failed ? '' : source}
+      alt={alt}
+      fit="contain"
+      placeholder="图片加载中…"
+      errorText="图片加载失败"
+      error={failed}
+    />
+  );
+}
+
+/**
  * @param {{
  *   html: string,
  *   format?: string,
@@ -101,15 +154,42 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     }
     let active = true;
     const releases = [];
-    if (resolveRef.current) for (const media of [...content.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')]) {
+    const roots = [];
+    for (const media of [...content.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')]) {
       const owner = media.closest('[data-yuance-attachment-id]');
       const attachmentId = Number(owner?.getAttribute('data-yuance-attachment-id'));
       if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) continue;
-      void resolveRef.current(attachmentId).then((resolved) => {
-        if (!active) { releaseResolvedSource(resolved); return; }
-        media.setAttribute('src', resolved.source);
-        if (resolved.release) releases.push(resolved.release);
-      }).catch(() => {});
+      if (media.matches('img')) {
+        const rootContainer = content.ownerDocument.createElement('span');
+        media.replaceWith(rootContainer);
+        const root = createRoot(rootContainer);
+        roots.push(root);
+        root.render(React.createElement(RichMediaImage, {
+          attachmentId,
+          alt: media.getAttribute('alt') || '',
+          initialSrc: media.getAttribute('src') || '',
+          resolve: resolveRef.current || null,
+        }));
+        continue;
+      }
+      const mediaElement = /** @type {HTMLMediaElement} */ (media);
+      mediaElement.dataset.state = 'loading';
+      const onLoaded = () => {
+        if (mediaElement.isConnected) mediaElement.dataset.state = 'ready';
+      };
+      const onError = () => {
+        if (mediaElement.isConnected) mediaElement.dataset.state = 'error';
+      };
+      mediaElement.addEventListener('loadeddata', onLoaded);
+      mediaElement.addEventListener('error', onError);
+      if (mediaElement.readyState >= 2) onLoaded();
+      if (resolveRef.current) {
+        void resolveRef.current(attachmentId).then((resolved) => {
+          if (!active) { releaseResolvedSource(resolved); return; }
+          mediaElement.setAttribute('src', resolved.source);
+          if (resolved.release) releases.push(resolved.release);
+        }).catch(() => { if (mediaElement.isConnected) mediaElement.dataset.state = 'error'; });
+      }
     }
     const activate = (event) => {
       const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
@@ -152,6 +232,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       active = false;
       content.removeEventListener('click', activate);
       content.removeEventListener('contextmenu', openFileMenu);
+      for (const root of roots) root.unmount();
       for (const release of releases) releaseResolvedSource({ source: '', release });
     };
   }, [format, html, Boolean(resolveAttachmentSource)]);

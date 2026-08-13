@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
+import { AttachmentImage } from './attachment-image.jsx';
 import { Button, Select } from './primitives.jsx';
 import { AttachmentList } from './work-item-attachments.jsx';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
@@ -67,22 +68,7 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
                 onClick={() => onPreview(attachment)}
                 disabled={downloadingId === attachment.id}
               >
-                <span className="attachment-image-frame">
-                  {thumbnailSource ? (
-                    <img
-                      src={thumbnailSource}
-                      alt=""
-                      loading="lazy"
-                      onLoad={(event) => event.currentTarget.classList.add('is-loaded')}
-                      onError={(event) => {
-                        event.currentTarget.classList.add('is-error');
-                        const state = event.currentTarget.parentElement?.querySelector('.attachment-image-state');
-                        if (state) state.textContent = '预览不可用';
-                      }}
-                    />
-                  ) : null}
-                  <span className="attachment-image-state">加载预览</span>
-                </span>
+                <AttachmentImage className="attachment-image-frame" src={thumbnailSource} alt="" fit="cover" placeholder="图片加载中…" errorText="预览不可用" />
               </button>
             ) : mediaKind === 'video' ? (
               <button
