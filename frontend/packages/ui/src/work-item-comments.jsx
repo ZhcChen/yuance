@@ -245,7 +245,6 @@ export function WorkItemComments(props) {
     <section id="work-item-comments" className="work-item-comments-panel discussion-section" aria-labelledby="work-item-comments-title">
       <div className="content-section-head discussion-heading">
         <div className="content-section-copy">
-          <span className="section-kicker">协作记录</span>
           <h2 id="work-item-comments-title">讨论</h2>
         </div>
         <div className="discussion-heading-meta">
@@ -255,7 +254,6 @@ export function WorkItemComments(props) {
       </div>
       {canWriteComments ? <div className="discussion-composer-dock">
         <form className="discussion-composer work-item-comment-form" onSubmit={onSubmitNew}>
-          <UserAvatar name="我" className="discussion-avatar discussion-composer-avatar work-item-comment-avatar" />
           <div className="discussion-composer-main">
             <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} onPasteFile={onPasteFile ? (file, options) => onPasteFile('new', null, file, options) : undefined} {...typingCallbacks} />
             {newCommentAttachments.length ? (

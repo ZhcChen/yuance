@@ -2266,8 +2266,8 @@ html[data-theme="dark"] {
 
 .work-item-content .discussion-composer {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
   margin: 0 0 24px;
   padding: 16px;
   border: 0;
@@ -2566,7 +2566,11 @@ html[data-theme="dark"] {
 }
 
 @media (max-width: 620px) {
-  .work-item-content .discussion-composer,
+  .work-item-content .discussion-composer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
   .work-item-content .discussion-post {
     grid-template-columns: 32px minmax(0, 1fr);
     gap: 10px;
