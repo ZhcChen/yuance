@@ -120,7 +120,7 @@ export function WorkItemDetail({
       <header className="work-item-hero">
         <a className="work-item-back" href={backHref} onClick={onOpenBack}><span className="work-item-back-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg></span><span>返回 {item.project_name}</span></a>
         <div className="work-item-title-row">
-          <div><h1 aria-label={`${item.key} · ${item.title}`}><span className="work-kind" data-kind={item.item_type}>{item.item_type === 'requirement' ? '需求' : item.item_type === 'bug' ? 'Bug' : '任务'}</span><span>{item.title}</span><span className="work-item-key">({item.key})</span></h1></div>
+          <div><h1 aria-label={`${item.key} · ${item.title}`}><span className="work-kind" data-kind={item.item_type}>{item.item_type === 'requirement' ? '需求' : item.item_type === 'bug' ? 'Bug' : '任务'}</span><span>{item.title}</span><span className="work-item-key">(ID: {item.key})</span></h1></div>
           <div className="work-item-title-tags"><PriorityBadge priority={item.priority} /><span className={`status status-${item.status}`}>{statusLabel(item.status)}</span></div>
         </div>
       </header>
