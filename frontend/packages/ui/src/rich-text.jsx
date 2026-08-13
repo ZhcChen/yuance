@@ -107,6 +107,7 @@ function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = nul
       src={failed ? '' : source}
       alt={alt}
       fit="contain"
+      loading="eager"
       placeholder="图片加载中…"
       errorText="图片加载失败"
       error={failed}

@@ -2469,13 +2469,14 @@ html[data-theme="dark"] {
 }
 
 .attachment-image-frame .yc-attachment-image-img {
-  display: none;
+  display: block;
   width: 100%;
   height: 100%;
+  opacity: 0;
 }
 
 .attachment-image-frame.yc-attachment-image.is-ready .yc-attachment-image-img {
-  display: block;
+  opacity: 1;
 }
 
 .attachment-image-frame video {
@@ -2532,7 +2533,7 @@ html[data-theme="dark"] {
 .yc-attachment-image.is-loading .yc-attachment-image-img,
 .yc-attachment-image.is-error .yc-attachment-image-img,
 .yc-attachment-image.is-idle .yc-attachment-image-img {
-  display: none;
+  opacity: 0;
 }
 
 .yc-rich-media-root.yc-attachment-image {
