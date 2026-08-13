@@ -908,11 +908,6 @@ function pastedFiles(clipboardData) {
 /** @param {File} file @returns {Promise<string>} */
 async function digestPastedFile(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const subtle = globalThis.crypto?.subtle;
-  if (subtle?.digest) {
-    const digest = await subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-  }
   let hash = 0x811c9dc5;
   for (const byte of bytes) {
     hash ^= byte;
