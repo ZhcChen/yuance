@@ -17,9 +17,27 @@ function localDevelopmentProxy() {
   };
 }
 
+function devWebBaseRedirect() {
+  return {
+    name: 'yuance-dev-web-base-redirect',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathname = (req.url || '').split('?')[0];
+        if (pathname === '/web' || pathname === '/web/' || pathname === '/web/app') {
+          res.statusCode = 302;
+          res.setHeader('Location', '/web/app/');
+          res.end();
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: '/web/app/',
-  plugins: [react()],
+  plugins: [devWebBaseRedirect(), react()],
   resolve: {
     dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
   },
