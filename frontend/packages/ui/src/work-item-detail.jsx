@@ -118,7 +118,7 @@ export function WorkItemDetail({
   return (
     <section className="work-item-page">
       <header className="work-item-hero">
-        <a className="work-item-back" href={backHref} onClick={onOpenBack}>← 返回 {item.project_name}</a>
+        <a className="work-item-back" href={backHref} onClick={onOpenBack}><span className="work-item-back-icon" aria-hidden="true">←</span><span>返回 {item.project_name}</span></a>
         <div className="work-item-title-row">
           <div><div className="work-item-identity"><span className="work-kind" data-kind={item.item_type}>{item.item_type === 'requirement' ? '需求' : item.item_type === 'bug' ? 'Bug' : '任务'}</span><span>{item.key}</span></div><h1 aria-label={`${item.key} · ${item.title}`}>{item.title}</h1></div>
           <div className="work-item-title-tags"><PriorityBadge priority={item.priority} /><span className={`status status-${item.status}`}>{statusLabel(item.status)}</span></div>
