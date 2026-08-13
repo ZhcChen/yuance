@@ -1136,7 +1136,7 @@ html[data-theme="dark"] {
 .work-item-back:focus-visible { outline: 2px solid color-mix(in srgb, var(--yc-brand) 58%, transparent); outline-offset: 2px; }
 .work-item-title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .work-item-title-row h1 { max-width: 920px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 0; font-size: 26px; line-height: 1.35; letter-spacing: 0; }
-.work-kind { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 26px; padding: 0 12px; border-radius: 7px; background: var(--yc-brand); color: #fff; font-size: 13px; font-weight: 800; line-height: 1; white-space: nowrap; }
+.work-kind { flex: 0 0 auto; display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border-radius: 7px; background: var(--yc-brand); color: #fff; font-size: 13px; font-weight: 800; line-height: 1; white-space: nowrap; }
 .work-kind[data-kind="requirement"] { background: var(--yc-violet); }
 .work-kind[data-kind="bug"] { background: var(--yc-danger); }
 .work-item-key { color: var(--yc-muted); font-size: 14px; font-weight: 700; white-space: nowrap; }
