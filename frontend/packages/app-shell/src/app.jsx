@@ -538,6 +538,29 @@ function workItemStatusLabel(status) {
   }
 }
 
+/** @param {string} status */
+function workItemStatusTone(status) {
+  switch (status) {
+    case 'open':
+      return 'sand';
+    case 'in_progress':
+      return 'info';
+    case 'pending_confirmation':
+      return 'warning';
+    case 'done':
+    case 'verified':
+      return 'success';
+    case 'resolved':
+      return 'violet';
+    case 'closed':
+      return 'neutral';
+    case 'cancelled':
+      return 'danger';
+    default:
+      return 'neutral';
+  }
+}
+
 /** @param {string} action */
 function workItemBatchActionLabel(action) {
   return { priority: '修改优先级', status: '修改状态', assignee: '修改处理人', cycle: '修改周期' }[action] || action;
@@ -6076,7 +6099,7 @@ export function SharedApp({ services }) {
                     {workItemSelection.size ? <Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemSelection(new Set())}>清空选择</Button> : null}
                   </div> : null}
                   {workItemBatchError ? <Feedback tone="danger" title="部分工作项未更新">{workItemBatchError}</Feedback> : null}
-                  <div className="yc-table-wrap work-table-wrap"><table className="yc-table work-item-table" aria-label={route.title}><thead><tr>{workItemPage.can_manage_work_items ? <th className="work-table-select"><span className="visually-hidden">选择</span></th> : null}<th>编号</th><th className="work-table-title">标题</th><th>项目</th><th>处理人</th><th>优先级</th><th>状态</th><th className="work-table-actions">操作</th></tr></thead><tbody>{workItemPage.items.map((item) => { const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }); return <tr key={item.key} className="work-item-row">{workItemPage.can_manage_work_items ? <td className="work-table-select"><input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /></td> : null}<td><div className="work-table-key"><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code></div></td><td className="work-table-title"><a className="work-table-title-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>{item.title}</a></td><td className="work-table-muted">{item.project_name || item.project_key}</td><td>{item.assignee || '未分配'}</td><td><PriorityBadge priority={item.priority} /></td><td><Badge>{workItemStatusLabel(item.status)}</Badge></td><td className="work-table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>打开详情</a></td></tr>; })}</tbody></table></div>
+                  <div className="yc-table-wrap work-table-wrap"><table className="yc-table work-item-table" aria-label={route.title}><thead><tr>{workItemPage.can_manage_work_items ? <th className="work-table-select"><span className="visually-hidden">选择</span></th> : null}<th>编号</th><th className="work-table-title">标题</th><th>项目</th><th>处理人</th><th>优先级</th><th>状态</th><th className="work-table-actions">操作</th></tr></thead><tbody>{workItemPage.items.map((item) => { const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }); return <tr key={item.key} className="work-item-row">{workItemPage.can_manage_work_items ? <td className="work-table-select"><input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /></td> : null}<td><div className="work-table-key"><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code></div></td><td className="work-table-title"><a className="work-table-title-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>{item.title}</a></td><td className="work-table-muted">{item.project_name || item.project_key}</td><td>{item.assignee || '未分配'}</td><td><PriorityBadge priority={item.priority} /></td><td><Badge tone={workItemStatusTone(item.status)}>{workItemStatusLabel(item.status)}</Badge></td><td className="work-table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>打开详情</a></td></tr>; })}</tbody></table></div>
 
                   <Pagination ariaLabel="工作项分页" page={workItemPage.pagination.page} totalPages={workItemPage.pagination.total_pages} totalItems={workItemPage.pagination.total_items} rangeLabel={`当前显示 ${workItemRangeStart}-${workItemRangeEnd}`} pageSize={workItemPage.pagination.per_page} onPageSizeChange={changeWorkItemPageSize} onPageChange={changeWorkItemPage} />
                 </>
