@@ -1373,6 +1373,7 @@ html[data-theme="dark"] {
 .work-item-form-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .yc-rich-text-root {

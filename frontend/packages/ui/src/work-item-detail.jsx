@@ -155,7 +155,7 @@ export function WorkItemDetail({
         </section></aside>
       </div>
 
-      {canEditPrimaryPost && !isDeleted ? <Modal wide open={activePanel === 'edit'} title="编辑工作项" onClose={closePanel}>
+      {canEditPrimaryPost && !isDeleted ? <Modal wide open={activePanel === 'edit'} title="编辑工作项" onClose={closePanel} footer={<><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" form="work-item-edit-form" loading={editSubmitting}>保存修改</Button></>}>
         <form id="work-item-edit-form" className="work-item-action-form" onSubmit={async (event) => { if (await onSubmitEdit(event)) setActivePanel(null); }}>
           <div className="work-item-form-field work-item-form-field-wide"><label htmlFor="work-item-edit-title">标题</label><TextInput id="work-item-edit-title" name="title" value={editForm.title} onChange={onChangeEdit} required /></div>
           <div className="work-item-form-field work-item-form-field-wide yc-rich-field"><span>主内容</span><RichTextEditor id="work-item-primary-post" value={editForm.description} disabled={mutationBusy} label="主内容" onPasteFile={onPasteFile} onChange={onChangeDescription} /></div>
@@ -166,17 +166,15 @@ export function WorkItemDetail({
           {item.item_type === 'task' ? (
             <div className="work-item-form-field work-item-form-field-wide"><label htmlFor="work-item-edit-parent">父级需求</label><Select id="work-item-edit-parent" name="parentItemKey" value={editForm.parentItemKey} onChange={onChangeEdit}><option value="">不关联</option>{parentOptions.map((option) => <option key={option.key} value={option.key}>{option.key} · {option.title}</option>)}</Select></div>
           ) : null}
-          <div className="work-item-form-actions"><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" loading={editSubmitting}>保存修改</Button></div>
         </form>
       </Modal> : null}
-      {canManageWorkItems && !isDeleted ? <Modal open={activePanel === 'handoff'} title="指派 / 流转" onClose={closePanel}>
+      {canManageWorkItems && !isDeleted ? <Modal open={activePanel === 'handoff'} title="指派 / 流转" onClose={closePanel} footer={<><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" form="work-item-handoff-form" loading={handoffSubmitting}>确认推进</Button></>}>
         <article className="work-item-detail-panel">
           <h3>推进并指派</h3>
           <form id="work-item-handoff-form" className="work-item-action-form" onSubmit={async (event) => { if (await onSubmitHandoff(event)) setActivePanel(null); }}>
             <div className="work-item-form-field"><label htmlFor="work-item-handoff-status">目标状态</label><Select id="work-item-handoff-status" name="status" value={handoffForm.status} onChange={onChangeHandoff}>{statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</Select></div>
             <div className="work-item-form-field"><label htmlFor="work-item-handoff-assignee">指派给</label><Select id="work-item-handoff-assignee" name="assigneeUsername" value={handoffForm.assigneeUsername} onChange={onChangeHandoff}><option value="">未分配</option>{assigneeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select></div>
             <div className="work-item-form-field work-item-form-field-wide"><label htmlFor="work-item-handoff-body">处理说明</label><TextArea id="work-item-handoff-body" name="body" rows={5} value={handoffForm.body} onChange={onChangeHandoff} placeholder="说明本次指派、处理进展或下一步" /></div>
-            <div className="work-item-form-actions"><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" loading={handoffSubmitting}>确认推进</Button></div>
           </form>
         </article>
       </Modal> : null}
