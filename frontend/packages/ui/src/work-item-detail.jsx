@@ -159,7 +159,7 @@ export function WorkItemDetail({
         </section></aside>
       </div>
 
-      {canEditPrimaryPost && !isDeleted ? <Modal open={activePanel === 'edit'} title="编辑工作项" onClose={closePanel}>
+      {canEditPrimaryPost && !isDeleted ? <Modal wide open={activePanel === 'edit'} title="编辑工作项" onClose={closePanel}>
         <article className="work-item-detail-panel">
           <h3>编辑工作项</h3>
           <form id="work-item-edit-form" className="work-item-action-form" onSubmit={async (event) => { if (await onSubmitEdit(event)) setActivePanel(null); }}>

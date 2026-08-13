@@ -73,6 +73,7 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /处理中/);
   assert.match(html, /YCE-REQ-1/);
   assert.match(html, /编辑工作项/);
+  assert.match(html, /class="yc-modal yc-modal-wide"[\s\S]*编辑工作项/);
   assert.match(html, /推进并指派/);
   assert.match(html, /父级需求/);
   assert.match(html, /Sprint 1/);

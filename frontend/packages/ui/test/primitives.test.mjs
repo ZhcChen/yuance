@@ -121,6 +121,12 @@ test('content tabs retain the sliding indicator transition after resize observat
   assert.match(styles, /\.yc-content-tabs-indicator \{[^}]*transition: width 360ms[^;]*, transform 360ms/u);
 });
 
+test('wide modal follows the legacy work form width', async () => {
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(styles, /\.yc-modal-wide\s*\{[^}]*width:\s*min\(1040px,\s*calc\(100% - 40px\)\)/u);
+});
+
 test('table, pagination and skeleton cover empty and boundary states', () => {
   const table = renderToStaticMarkup(createElement(DataTable, { caption: '成员列表', columns: [{ key: 'name', label: '成员', render: (row) => /** @type {{ name: string }} */ (row).name }], rows: [], rowKey: (row) => /** @type {{ name: string }} */ (row).name }));
   assert.match(table, /暂无数据/u);
