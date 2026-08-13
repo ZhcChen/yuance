@@ -12,12 +12,38 @@ const CONTENT_TAGS = EDITOR_TAGS;
 const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
 const RICH_TEXT_CSS_PROPERTIES = ['color', 'font-size'];
 const RICH_TEXT_COLORS = [
-  { label: '红色', value: '#d92d20' },
-  { label: '橙色', value: '#b54708' },
-  { label: '绿色', value: '#0e7a3d' },
-  { label: '蓝色', value: '#175cd3' },
-  { label: '紫色', value: '#6941c6' },
+  { label: '深红', value: '#d92d20' },
+  { label: '朱红', value: '#e5484d' },
+  { label: '珊瑚', value: '#f97066' },
+  { label: '粉红', value: '#ee46bc' },
+  { label: '玫红', value: '#c11574' },
+  { label: '橙色', value: '#f76808' },
+  { label: '琥珀', value: '#f79009' },
+  { label: '金黄', value: '#fdb022' },
+  { label: '柠檬', value: '#fec84b' },
+  { label: '棕橙', value: '#b54708' },
+  { label: '草绿', value: '#66c61a' },
+  { label: '绿色', value: '#12b76a' },
+  { label: '深绿', value: '#0e7a3d' },
+  { label: '翠绿', value: '#039855' },
+  { label: '墨绿', value: '#027a48' },
+  { label: '青色', value: '#06aed4' },
+  { label: '青绿', value: '#0e9384' },
+  { label: '天蓝', value: '#2e90fa' },
+  { label: '蓝色', value: '#1570ef' },
+  { label: '深蓝', value: '#175cd3' },
+  { label: '藏蓝', value: '#194185' },
+  { label: '靛蓝', value: '#6172f3' },
+  { label: '紫蓝', value: '#3538cd' },
+  { label: '紫色', value: '#a060f6' },
+  { label: '紫罗兰', value: '#7a5af8' },
+  { label: '深紫', value: '#6941c6' },
+  { label: '浅灰', value: '#98a2b3' },
+  { label: '中灰', value: '#667085' },
   { label: '灰色', value: '#475467' },
+  { label: '墨灰', value: '#344054' },
+  { label: '炭灰', value: '#1d2939' },
+  { label: '黑色', value: '#101828' },
 ];
 const RICH_TEXT_BLOCK_OPTIONS = [
   { value: 'p', label: '正文' },
@@ -725,6 +751,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     }
   }
 
+  const currentColor = normalizeRichTextColor(formatState.color) || '#175cd3';
   return (
     <div className="yc-rich-text-root" ref={setToolbarMenuRoot}>
       <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
@@ -785,7 +812,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         </ToolbarDropdown>
         <ToolbarDropdown
           label="文字颜色"
-          value="A"
+          value=""
           disabled={disabled}
           triggerRef={colorTriggerRef}
           menuRef={colorMenuRef}
@@ -794,35 +821,57 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           onOpen={() => openToolbarDropdown(colorCloseRef)}
           onClose={clearToolbarRange}
           triggerClassName="yc-rich-toolbar-color-trigger"
-          triggerExtra={<span className="yc-rich-toolbar-color-mark" style={{ background: formatState.color || 'currentColor' }} aria-hidden="true" />}
+          menuWidth={268}
+          menuClassName="yc-rich-toolbar-color-popover"
+          triggerExtra={<><svg className="yc-rich-toolbar-color-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.7C10.6 4.9 12.8 7.5 12.8 10a4.8 4.8 0 0 1-9.6 0C3.2 7.5 5.4 4.9 8 1.7Z" fill="currentColor" /></svg><span className="yc-rich-toolbar-color-mark" style={{ background: currentColor }} aria-hidden="true" /></>}
         >
           <div className="yc-rich-toolbar-color-menu">
-            <button
-              type="button"
-              role="menuitem"
-              className={`yc-rich-toolbar-popover-option${formatState.color ? '' : ' is-active'}`}
-              disabled={disabled}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => { restoreToolbarRange(); clearTextColor(); colorCloseRef.current?.(); }}
-            >
-              默认颜色
-            </button>
-            <div className="yc-rich-more-colors">
-              {RICH_TEXT_COLORS.map((color) => (
+            <section className="yc-rich-color-section" aria-label="当前颜色">
+              <div className="yc-rich-color-current">
+                <span className="yc-rich-color-current-swatch" style={{ background: currentColor }} aria-hidden="true" />
+                <span className="yc-rich-color-current-value">{currentColor}</span>
                 <button
-                  key={color.value}
                   type="button"
                   role="menuitem"
-                  className={`yc-rich-more-color${normalizeRichTextColor(formatState.color) === color.value ? ' is-active' : ''}`}
-                  aria-label={color.label}
-                  title={color.label}
-                  style={{ background: color.value }}
+                  className={`yc-rich-color-default${formatState.color ? '' : ' is-active'}`}
                   disabled={disabled}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => { restoreToolbarRange(); applyColor(color.value); colorCloseRef.current?.(); }}
-                />
-              ))}
-            </div>
+                  onClick={() => { restoreToolbarRange(); clearTextColor(); colorCloseRef.current?.(); }}
+                >
+                  默认颜色
+                </button>
+              </div>
+            </section>
+            <section className="yc-rich-color-section" aria-label="预设颜色">
+              <h3>预设颜色</h3>
+              <div className="yc-rich-preset-colors">
+                {RICH_TEXT_COLORS.map((color) => (
+                  <button
+                    key={color.value}
+                    type="button"
+                    role="menuitem"
+                    className={`yc-rich-preset-color${normalizeRichTextColor(formatState.color) === color.value ? ' is-active' : ''}`}
+                    aria-label={color.label}
+                    title={color.label}
+                    style={{ background: color.value }}
+                    disabled={disabled}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => { restoreToolbarRange(); applyColor(color.value); colorCloseRef.current?.(); }}
+                  />
+                ))}
+              </div>
+            </section>
+            <label className="yc-rich-color-custom">
+              <input
+                type="color"
+                value={currentColor}
+                disabled={disabled}
+                aria-label="自定义文字颜色"
+                onChange={(event) => { restoreToolbarRange(); applyColor(event.target.value); }}
+              />
+              <span className="yc-rich-color-custom-mark" aria-hidden="true" />
+              <span>自定义颜色</span>
+            </label>
           </div>
         </ToolbarDropdown>
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
@@ -1250,8 +1299,8 @@ function ToolbarButton({ active = false, label, title, disabled = false, onClick
   );
 }
 
-/** @param {{ label: string, value: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, menuRoot: HTMLDivElement | null, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, children: React.ReactNode }} props */
-function ToolbarDropdown({ label, value, disabled = false, active = false, triggerRef, menuRef, menuRoot, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, children }) {
+/** @param {{ label: string, value?: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, menuRoot: HTMLDivElement | null, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, menuWidth?: number, menuClassName?: string, children: React.ReactNode }} props */
+function ToolbarDropdown({ label, value = '', disabled = false, active = false, triggerRef, menuRef, menuRoot, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, menuWidth = 172, menuClassName = '', children }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
@@ -1303,7 +1352,6 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
     if (!trigger || !view || disabled) return;
     const rect = trigger.getBoundingClientRect();
     const rootRect = menuRoot?.getBoundingClientRect() || null;
-    const menuWidth = 172;
     const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
     const left = Math.min(Math.max(8, rect.left - (rootRect?.left || 0)), Math.max(8, availableRight - menuWidth - 8));
     const top = (rootRect ? rect.bottom - rootRect.top + 12 : Math.min(rect.bottom + 12, Math.max(8, view.innerHeight - 420)));
@@ -1363,7 +1411,7 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
         }}
         onClick={() => { cancelCloseDropdown(); openDropdown(); }}
       >
-        <span className="yc-rich-toolbar-select-label">{value}</span>
+        {value ? <span className="yc-rich-toolbar-select-label">{value}</span> : null}
         {triggerExtra}
       </button>
       {open && menuRoot ? createPortal(<div
@@ -1371,11 +1419,10 @@ function ToolbarDropdown({ label, value, disabled = false, active = false, trigg
           if (typeof menuRef === 'function') menuRef(node);
           else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
         }}
-        className="yc-rich-toolbar-popover"
+        className={`yc-rich-toolbar-popover${menuClassName ? ` ${menuClassName}` : ''}`}
         role="menu"
         aria-label={label}
         style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
-        onMouseDown={(event) => event.preventDefault()}
         onMouseEnter={cancelCloseDropdown}
         onMouseLeave={(event) => {
           if (relatedInside(event, localTriggerRef)) return;

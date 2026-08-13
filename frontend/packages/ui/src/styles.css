@@ -1473,11 +1473,16 @@ html[data-theme="dark"] {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+}
+
+.yc-rich-toolbar-color-icon {
+  width: 15px;
+  height: 15px;
 }
 
 .yc-rich-toolbar-color-mark {
-  width: 14px;
+  width: 18px;
   height: 3px;
   display: inline-block;
   border-radius: 999px;
@@ -1543,7 +1548,148 @@ html[data-theme="dark"] {
 
 .yc-rich-toolbar-color-menu {
   display: grid;
+  gap: 10px;
+}
+
+.yc-rich-toolbar-color-popover {
+  width: 268px;
+}
+
+.yc-rich-color-section {
+  display: grid;
+  gap: 6px;
+}
+
+.yc-rich-color-section h3 {
+  margin: 0;
+  color: var(--yc-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.yc-rich-color-current {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--yc-line);
+  border-radius: 8px;
+  background: var(--yc-panel-soft);
+}
+
+.yc-rich-color-current-swatch {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 1px solid var(--yc-line-strong);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--yc-panel);
+}
+
+.yc-rich-color-current-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--yc-muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.yc-rich-color-default {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--yc-muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: background-color var(--yc-motion-fast) ease, color var(--yc-motion-fast) ease;
+}
+
+.yc-rich-color-default:hover,
+.yc-rich-color-default.is-active {
+  background: var(--yc-brand-soft);
+  color: var(--yc-brand-strong);
+}
+
+.yc-rich-preset-colors {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.yc-rich-preset-color {
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid var(--yc-line-strong);
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 2px var(--yc-panel);
+  transition: transform var(--yc-motion-fast) ease, border-color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease;
+}
+
+.yc-rich-preset-color:hover {
+  transform: scale(1.1);
+  border-color: var(--yc-brand);
+  z-index: 1;
+}
+
+.yc-rich-preset-color.is-active {
+  border-color: var(--yc-brand);
+  box-shadow: inset 0 0 0 2px var(--yc-panel), 0 0 0 1.5px var(--yc-brand);
+}
+
+.yc-rich-preset-color:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+.yc-rich-color-custom {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px dashed var(--yc-line-strong);
+  border-radius: 8px;
+  color: var(--yc-muted-strong);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  transition: border-color var(--yc-motion-fast) ease, background-color var(--yc-motion-fast) ease, color var(--yc-motion-fast) ease;
+}
+
+.yc-rich-color-custom:hover {
+  border-color: var(--yc-brand);
+  background: var(--yc-brand-soft);
+  color: var(--yc-brand-strong);
+}
+
+.yc-rich-color-custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.yc-rich-color-custom-mark {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 1px solid var(--yc-line-strong);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--yc-panel);
+  background: conic-gradient(from 0deg, #ef4444, #f97316, #facc15, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
 }
 
 .yc-rich-more-section {
@@ -1599,37 +1745,6 @@ html[data-theme="dark"] {
 }
 
 .yc-rich-more-option:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.yc-rich-more-colors {
-  display: flex;
-  gap: 8px;
-}
-
-.yc-rich-more-color {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--yc-line-strong);
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 2px var(--yc-panel);
-  transition: transform var(--yc-motion-fast) ease, border-color var(--yc-motion-fast) ease;
-}
-
-.yc-rich-more-color:hover {
-  border-color: var(--yc-brand);
-  transform: scale(1.12);
-}
-
-.yc-rich-more-color.is-active {
-  border-color: var(--yc-brand);
-  box-shadow: inset 0 0 0 2px var(--yc-panel), 0 0 0 1px var(--yc-brand);
-}
-
-.yc-rich-more-color:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }

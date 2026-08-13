@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -26,12 +27,16 @@ test('plain text conversion escapes markup and rich content detection rejects em
   assert.deepEqual(richTextAttachmentIds('<figure data-yuance-attachment-id="19"><img></figure><a data-yuance-attachment-id="7"></a><a data-yuance-attachment-id="19"></a>'), [19, 7]);
 });
 
-test('rich text editor exposes the shared formatting toolbar and textbox', () => {
+test('rich text editor exposes the shared formatting toolbar and textbox', async () => {
   const html = renderToStaticMarkup(React.createElement(RichTextEditor, { id: 'body', value: '<p>正文</p>', onChange() {}, required: true, mentionOptions: [{ username: 'alice', displayName: 'Alice' }] }));
+  const source = await readFile(new URL('../src/rich-text.jsx', import.meta.url), 'utf8');
   assert.match(html, /aria-label="富文本工具栏"/);
   assert.match(html, /aria-label="段落格式"/);
   assert.match(html, /aria-label="字号"/);
   assert.match(html, /aria-label="文字颜色"/);
+  assert.match(source, /type="color"/);
+  assert.match(source, /aria-label="自定义文字颜色"/);
+  assert.ok((source.match(/\{ label: '[^']+', value: '#[0-9a-f]{6}' \},/gu) || []).length >= 24);
   assert.match(html, /role="group" aria-label="文本样式"/);
   assert.match(html, /role="group" aria-label="列表"/);
   assert.match(html, /aria-label="加粗"/);
