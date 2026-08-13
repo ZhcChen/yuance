@@ -1482,10 +1482,9 @@ html[data-theme="dark"] {
   gap: 8px;
   padding: 8px;
   overflow-y: auto;
-  border: 1px solid var(--yc-line);
   border-radius: 10px;
   background: var(--yc-panel);
-  box-shadow: var(--yc-shadow);
+  box-shadow: var(--yc-shadow), var(--yc-shadow-soft);
 }
 
 .yc-rich-menu-arrow {
@@ -1493,8 +1492,6 @@ html[data-theme="dark"] {
   z-index: 199;
   width: 10px;
   height: 10px;
-  border-top: 1px solid var(--yc-line);
-  border-left: 1px solid var(--yc-line);
   border-radius: 2px;
   background: var(--yc-panel);
   pointer-events: none;
@@ -1507,10 +1504,9 @@ html[data-theme="dark"] {
   width: 172px;
   padding: 6px;
   overflow-y: auto;
-  border: 1px solid var(--yc-line);
   border-radius: 10px;
   background: var(--yc-panel);
-  box-shadow: var(--yc-shadow);
+  box-shadow: var(--yc-shadow), var(--yc-shadow-soft);
 }
 
 .yc-rich-toolbar-popover-grid {
