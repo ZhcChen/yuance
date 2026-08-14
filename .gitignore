@@ -10,6 +10,9 @@
 !/desktop/release/minisign.pub
 /.context/
 /.local/
+/.artifacts/
+/.tmp-docx-harness/
+/test-results/
 node_modules/
 /.env
 /api/.env
