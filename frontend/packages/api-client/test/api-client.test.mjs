@@ -11,6 +11,8 @@ import {
   projectAttachmentApiPath,
   projectAttachmentPreviewApiPath,
   projectCycleApiPath,
+  projectMemberBatchApiPath,
+  projectMemberCandidatesApiPath,
   projectMemberApiPath,
   projectPersonalAnalysisApiPath,
   projectResourceApiPath,
@@ -389,18 +391,24 @@ test('project detail and member methods use one shared write contract', async ()
   const { client, calls, writes } = createRecordedClient();
   await client.getProject('YCE/1');
   await client.getProjectMembers('YCE/1');
+  await client.getProjectMemberCandidates('YCE/1');
   await client.updateProject('YCE/1', { name: '项目', ownerUsername: 'alice', dueDate: '' });
   await client.addProjectMember('YCE/1', { username: 'bob', memberRole: 'member' });
+  await client.addProjectMembers('YCE/1', { usernames: ['bob', 'carol'], memberRole: 'viewer' });
   await client.updateProjectMemberRole('YCE/1', 'bob/2', 'maintainer');
   await client.removeProjectMember('YCE/1', 'bob/2');
   assert.equal(projectApiPath('YCE/1'), '/api/v1/projects/YCE%2F1');
   assert.equal(projectMemberApiPath('YCE/1', 'bob/2'), '/api/v1/projects/YCE%2F1/members/bob%2F2');
-  assert.deepEqual(writes, ['prepare', 'prepare', 'prepare', 'prepare']);
+  assert.equal(projectMemberCandidatesApiPath('YCE/1'), '/api/v1/projects/YCE%2F1/members/candidates');
+  assert.equal(projectMemberBatchApiPath('YCE/1'), '/api/v1/projects/YCE%2F1/members/batch');
+  assert.deepEqual(writes, ['prepare', 'prepare', 'prepare', 'prepare', 'prepare']);
   assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET', options.body ? JSON.parse(options.body) : undefined]), [
     ['/api/v1/projects/YCE%2F1', 'GET', undefined],
     ['/api/v1/projects/YCE%2F1/members', 'GET', undefined],
+    ['/api/v1/projects/YCE%2F1/members/candidates', 'GET', undefined],
     ['/api/v1/projects/YCE%2F1', 'PATCH', { name: '项目', owner_username: 'alice', due_date: '' }],
     ['/api/v1/projects/YCE%2F1/members', 'POST', { username: 'bob', member_role: 'member' }],
+    ['/api/v1/projects/YCE%2F1/members/batch', 'POST', { usernames: ['bob', 'carol'], member_role: 'viewer' }],
     ['/api/v1/projects/YCE%2F1/members/bob%2F2', 'PATCH', { member_role: 'maintainer' }],
     ['/api/v1/projects/YCE%2F1/members/bob%2F2', 'DELETE', undefined],
   ]);

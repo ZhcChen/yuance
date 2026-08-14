@@ -1177,6 +1177,13 @@ pub struct ProjectMemberPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ProjectMemberCandidatePayload {
+    pub display_name: String,
+    pub username: String,
+    pub roles: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AttachmentPayload {
     pub id: i64,
     pub file_object_id: i64,
@@ -1903,6 +1910,14 @@ pub struct WorkItemTypingRequest {
 #[derive(Debug, Deserialize)]
 pub struct AddProjectMemberRequest {
     username: String,
+    #[serde(default = "default_member_role")]
+    member_role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddProjectMembersRequest {
+    #[serde(default)]
+    usernames: Vec<String>,
     #[serde(default = "default_member_role")]
     member_role: String,
 }
@@ -2799,6 +2814,87 @@ pub async fn list_project_members(
         .collect();
 
     Ok(json(payload))
+}
+
+pub async fn list_project_member_candidates(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectMemberCandidatePayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+
+    let member_usernames = projects::list_project_members(pool, project.id)
+        .await?
+        .into_iter()
+        .map(|member| member.username)
+        .collect::<HashSet<_>>();
+    let payload = users::list_users(pool)
+        .await?
+        .into_iter()
+        .filter(|candidate| {
+            candidate.status == "active" && !member_usernames.contains(&candidate.username)
+        })
+        .map(|candidate| ProjectMemberCandidatePayload {
+            display_name: candidate.display_name,
+            username: candidate.username,
+            roles: candidate.role_names,
+        })
+        .collect();
+
+    Ok(json(payload))
+}
+
+pub async fn add_project_members(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<AddProjectMembersRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    let members = projects::add_project_members(
+        pool,
+        user.id,
+        &project_key,
+        &payload.usernames,
+        &payload.member_role,
+    )
+    .await?;
+    let usernames = members
+        .iter()
+        .map(|member| member.username.as_str())
+        .collect::<Vec<_>>();
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.member.add",
+        "project",
+        &project_key,
+        &principal.audit_details_with(serde_json::json!({
+            "usernames": usernames,
+            "member_role": payload.member_role,
+        })),
+    )
+    .await?;
+
+    let payload: Vec<_> = members.into_iter().map(project_member_payload).collect();
+    Ok((StatusCode::CREATED, json(payload)))
 }
 
 pub async fn update_project_member_role(

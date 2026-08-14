@@ -27,6 +27,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
     ["/api/v1/projects/DEMO", "project.detail", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/members", "project.members", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/members/candidates", "project.membercandidates", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/cycles", "project.cycles", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/cycles/7", "project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
     ["/api/v1/projects/DEMO/my-analysis", "project.personalanalysis", { projectKey: "DEMO" }],
@@ -85,15 +86,17 @@ test("api-client mutations map to fixed domain operations without request primit
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {
     calls.push([operation, input]);
-    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : ["project.resourceattachmentdelete", "workitem.commentattachmentdelete", "workitem.primarypostattachmentdelete"].includes(operation) ? attachmentFixture : {} };
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.membercandidates" ? [{ display_name: "Bob", username: "bob", roles: "项目成员" }] : operation === "project.memberbatchadd" ? [{ user_id: 2, display_name: "Bob", username: "bob", member_role: "member", joined_at: "2026-08-08T00:00:00Z" }] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : ["project.resourceattachmentdelete", "workitem.commentattachmentdelete", "workitem.primarypostattachmentdelete"].includes(operation) ? attachmentFixture : {} };
   } });
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
   await client.createProject({ name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" });
   await client.getProject("DEMO");
   await client.getProjectMembers("DEMO");
+  await client.getProjectMemberCandidates("DEMO");
   await client.updateProject("DEMO", { name: "Updated", ownerUsername: "alice" });
   await client.addProjectMember("DEMO", { username: "bob", memberRole: "member" });
+  await client.addProjectMembers("DEMO", { usernames: ["bob", "carol"], memberRole: "viewer" });
   await client.updateProjectMemberRole("DEMO", "bob", "maintainer");
   await client.removeProjectMember("DEMO", "bob");
   const cycle = { name: "Sprint", goal: "Ship", description: "Cycle", ownerUsername: "alice", startDate: "2026-08-01", endDate: "2026-08-31" };
@@ -134,8 +137,10 @@ test("api-client mutations map to fixed domain operations without request primit
     ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }],
     ["project.detail", { projectKey: "DEMO" }],
     ["project.members", { projectKey: "DEMO" }],
+    ["project.membercandidates", { projectKey: "DEMO" }],
     ["project.update", { projectKey: "DEMO", name: "Updated", ownerUsername: "alice" }],
     ["project.memberadd", { projectKey: "DEMO", username: "bob", memberRole: "member" }],
+    ["project.memberbatchadd", { projectKey: "DEMO", usernames: ["bob", "carol"], memberRole: "viewer" }],
     ["project.memberroleupdate", { projectKey: "DEMO", username: "bob", memberRole: "maintainer" }],
     ["project.memberremove", { projectKey: "DEMO", username: "bob" }],
     ["project.cycles", { projectKey: "DEMO" }],

@@ -6677,6 +6677,107 @@ async fn api_v1_can_add_and_remove_project_member() {
 }
 
 #[tokio::test]
+async fn api_v1_project_member_candidates_and_batch_add_match_project_scope() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    create_regular_user(&pool, "batch_existing", "既有成员").await;
+    let first_candidate = create_regular_user(&pool, "batch_first", "首位候选").await;
+    let second_candidate = create_regular_user(&pool, "batch_second", "第二候选").await;
+    let disabled_candidate = create_regular_user(&pool, "batch_disabled", "停用候选").await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "batch_existing",
+        "member",
+    )
+    .await
+    .expect("existing member should join");
+    sqlx::query("UPDATE users SET status = 'disabled' WHERE id = ?1")
+        .bind(disabled_candidate.user_id)
+        .execute(&pool)
+        .await
+        .expect("candidate should be disabled");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let candidates_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/members/candidates")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(candidates_response.status(), StatusCode::OK);
+    let candidates_body = response_body(candidates_response).await;
+    assert!(candidates_body.contains(r#""username":"batch_first""#));
+    assert!(candidates_body.contains(r#""username":"batch_second""#));
+    assert!(!candidates_body.contains(r#""username":"batch_existing""#));
+    assert!(!candidates_body.contains(r#""username":"batch_disabled""#));
+
+    let invalid_batch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/members/batch")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"usernames":["batch_first","batch_disabled"],"member_role":"viewer"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_batch_response.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        !projects::is_project_member(&pool, 1, first_candidate.user_id)
+            .await
+            .expect("membership should load")
+    );
+
+    let batch_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/members/batch")
+                .header(header::COOKIE, initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"usernames":["batch_first","batch_second","batch_first"],"member_role":"viewer"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(batch_response.status(), StatusCode::CREATED);
+    let batch_body = response_body(batch_response).await;
+    assert_eq!(batch_body.matches(r#""username":"batch_first""#).count(), 1);
+    assert_eq!(
+        batch_body.matches(r#""username":"batch_second""#).count(),
+        1
+    );
+    for user in [first_candidate, second_candidate] {
+        assert_eq!(
+            projects::project_member_role(&pool, 1, user.user_id)
+                .await
+                .expect("role should load")
+                .as_deref(),
+            Some("viewer")
+        );
+    }
+}
+
+#[tokio::test]
 async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

@@ -94,8 +94,10 @@ export const getProjects = /** @type {(query?: { status?: string, page?: number,
 export const createProject = apiClient.createProject;
 export const getProject = apiClient.getProject;
 export const getProjectMembers = apiClient.getProjectMembers;
+export const getProjectMemberCandidates = apiClient.getProjectMemberCandidates;
 export const updateProject = apiClient.updateProject;
 export const addProjectMember = apiClient.addProjectMember;
+export const addProjectMembers = apiClient.addProjectMembers;
 export const updateProjectMemberRole = apiClient.updateProjectMemberRole;
 export const removeProjectMember = apiClient.removeProjectMember;
 export const getProjectCycles = apiClient.getProjectCycles;
@@ -216,6 +218,7 @@ export function openTopbarEvents(callbacks) {
 
 export const webApi = {
   addProjectMember,
+  addProjectMembers,
   archiveProjectAttachment,
   archiveProjectResource,
   resetProjectResourcePassword,
@@ -253,6 +256,7 @@ export const webApi = {
   getProjectCycle,
   getProjectCycles,
   getProjectMembers,
+  getProjectMemberCandidates,
   getProjectPersonalAnalysis,
   getProjectResource,
   getProjectResources,

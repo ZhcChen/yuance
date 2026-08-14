@@ -264,6 +264,13 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
  */
 
 /**
+ * @typedef AppProjectMemberCandidate
+ * @property {string} display_name
+ * @property {string} username
+ * @property {string} roles
+ */
+
+/**
  * @typedef AppProjectPage
  * @property {AppProject[]} items
  * @property {{ page: number, per_page: number, total_items: number, total_pages: number }} pagination
@@ -977,7 +984,12 @@ export function SharedApp({ services }) {
   const [projectEditOpen, setProjectEditOpen] = useState(false);
   const [projectEditForm, setProjectEditForm] = useState({ name: '', description: '', status: 'not_started', ownerUsername: '', startDate: '', dueDate: '' });
   const [projectMemberOpen, setProjectMemberOpen] = useState(false);
-  const [projectMemberForm, setProjectMemberForm] = useState({ username: '', memberRole: 'member' });
+  const [projectMemberCandidates, setProjectMemberCandidates] = useState(/** @type {AppProjectMemberCandidate[]} */ ([]));
+  const [projectMemberCandidateSearch, setProjectMemberCandidateSearch] = useState('');
+  const [projectMemberCandidateLoading, setProjectMemberCandidateLoading] = useState(false);
+  const [projectMemberCandidateError, setProjectMemberCandidateError] = useState('');
+  const [projectMemberSelectedUsernames, setProjectMemberSelectedUsernames] = useState(/** @type {string[]} */ ([]));
+  const [projectMemberForm, setProjectMemberForm] = useState({ memberRole: 'member' });
   const [projectMemberTarget, setProjectMemberTarget] = useState(/** @type {AppProjectMember | null} */ (null));
   const [projectMemberRemoveTarget, setProjectMemberRemoveTarget] = useState(/** @type {AppProjectMember | null} */ (null));
   const [projectSwitchingKey, setProjectSwitchingKey] = useState('');
@@ -1319,6 +1331,9 @@ export function SharedApp({ services }) {
     return [...groups.values()];
   }, [filteredSystemPermissions]);
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
+  const normalizedProjectMemberCandidateSearch = projectMemberCandidateSearch.trim().toLocaleLowerCase('zh-CN');
+  const visibleProjectMemberCandidates = projectMemberCandidates.filter((candidate) => !normalizedProjectMemberCandidateSearch
+    || [candidate.display_name, candidate.username, candidate.roles].some((value) => value.toLocaleLowerCase('zh-CN').includes(normalizedProjectMemberCandidateSearch)));
   const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
   const cycleMemberLoad = projectCycleDetail ? projectCycleMemberLoad(projectCycleDetail, projectMembers) : [];
   const cycleFallbackPath = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab: 'cycles' });
@@ -1381,6 +1396,12 @@ export function SharedApp({ services }) {
         setProjectMutationError('');
         setProjectEditOpen(false);
         setProjectMemberOpen(false);
+        setProjectMemberCandidates([]);
+        setProjectMemberCandidateSearch('');
+        setProjectMemberCandidateLoading(false);
+        setProjectMemberCandidateError('');
+        setProjectMemberSelectedUsernames([]);
+        setProjectMemberForm({ memberRole: 'member' });
         setProjectMemberTarget(null);
         setProjectMemberRemoveTarget(null);
         setProjectCycles([]);
@@ -1849,12 +1870,45 @@ export function SharedApp({ services }) {
 
   async function submitProjectMember(event) {
     event.preventDefault();
-    if (!activeProjectDetail) return;
+    if (!activeProjectDetail || projectMemberCandidateLoading) return;
+    if (!projectMemberSelectedUsernames.length) {
+      setProjectMemberCandidateError('请至少选择一个要加入的项目成员。');
+      return;
+    }
     try {
-      if (await runProjectMutation(() => api.addProjectMember(activeProjectDetail.key, projectMemberForm), '项目成员已添加。')) {
-        setProjectMemberOpen(false); setProjectMemberForm({ username: '', memberRole: 'member' });
+      const usernames = projectMemberSelectedUsernames;
+      if (await runProjectMutation(
+        () => api.addProjectMembers(activeProjectDetail.key, { usernames, memberRole: projectMemberForm.memberRole }),
+        `已添加 ${usernames.length} 名项目成员。`,
+      )) {
+        setProjectMemberCandidates((current) => current.filter((candidate) => !usernames.includes(candidate.username)));
+        setProjectMemberOpen(false);
+        setProjectMemberCandidateSearch('');
+        setProjectMemberCandidateError('');
+        setProjectMemberSelectedUsernames([]);
+        setProjectMemberForm({ memberRole: 'member' });
       }
     } catch { return; }
+  }
+
+  async function openProjectMemberDialog() {
+    if (!activeProjectDetail || projectMutationSubmitting || projectMemberCandidateLoading) return;
+    setProjectMutationError('');
+    setProjectMemberCandidateError('');
+    setProjectMemberCandidateSearch('');
+    setProjectMemberSelectedUsernames([]);
+    setProjectMemberForm({ memberRole: 'member' });
+    setProjectMemberOpen(true);
+    setProjectMemberCandidateLoading(true);
+    try {
+      const candidates = await api.getProjectMemberCandidates(activeProjectDetail.key);
+      if (routeRef.current.id !== 'project-detail' || routeRef.current.projectKey !== activeProjectDetail.key) return;
+      setProjectMemberCandidates(candidates);
+    } catch (caught) {
+      setProjectMemberCandidateError(errorMessage(caught instanceof Error ? caught : new Error('候选成员加载失败。')));
+    } finally {
+      setProjectMemberCandidateLoading(false);
+    }
   }
 
   async function submitProjectMemberRole(event) {
@@ -5865,7 +5919,7 @@ export function SharedApp({ services }) {
 
               {activeProjectDetail && route.tab === 'members' ? (
                 <section className="project-tab-section" aria-labelledby="project-members-title">
-                  <div className="project-tab-section-head"><div><h3 id="project-members-title">项目成员</h3><p>共 {projectMembers.length} 名成员</p></div>{canManageProject ? <Button variant="secondary" onClick={() => { setProjectMutationError(''); setProjectMemberOpen(true); }}>添加成员</Button> : null}</div>
+                  <div className="project-tab-section-head"><div><h3 id="project-members-title">项目成员</h3><p>共 {projectMembers.length} 名成员</p></div>{canManageProject ? <Button variant="secondary" onClick={() => void openProjectMemberDialog()}>添加成员</Button> : null}</div>
                   <DataTable
                     caption="项目成员"
                     rows={projectMembers}
@@ -5936,8 +5990,19 @@ export function SharedApp({ services }) {
                   <Field id="project-edit-description" label="项目描述"><TextArea value={projectEditForm.description} maxLength={2000} onChange={(event) => setProjectEditForm((current) => ({ ...current, description: event.target.value }))} /></Field>
                 </form>
               </Modal>
-              <Modal open={projectMemberOpen} title="添加项目成员" onClose={() => { if (!projectMutationSubmitting) setProjectMemberOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-member-form'))?.requestSubmit()}>添加</Button></>}>
-                <form id="project-member-form" onSubmit={submitProjectMember}><Field id="project-member-username" label="用户名" required><TextInput value={projectMemberForm.username} maxLength={64} onChange={(event) => setProjectMemberForm((current) => ({ ...current, username: event.target.value }))} /></Field><Field id="project-member-role" label="项目角色" required><Select value={projectMemberForm.memberRole} onChange={(event) => setProjectMemberForm((current) => ({ ...current, memberRole: event.target.value }))}><option value="member">项目成员</option><option value="maintainer">项目管理员</option><option value="viewer">只读成员</option></Select></Field></form>
+              <Modal open={projectMemberOpen} title="添加项目成员" onClose={() => { if (!projectMutationSubmitting) setProjectMemberOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} disabled={projectMemberCandidateLoading || projectMemberSelectedUsernames.length === 0} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-member-form'))?.requestSubmit()}>加入项目</Button></>}>
+                <form id="project-member-form" onSubmit={submitProjectMember}>
+                  <Field id="project-member-search" label="搜索用户"><TextInput type="search" value={projectMemberCandidateSearch} placeholder="姓名、用户名或角色" disabled={projectMemberCandidateLoading || !projectMemberCandidates.length} onChange={(event) => setProjectMemberCandidateSearch(event.target.value)} /></Field>
+                  <div className="project-member-picker" aria-busy={projectMemberCandidateLoading}>
+                    <div className="project-member-picker-head"><span>候选用户</span><strong>已选择 {projectMemberSelectedUsernames.length} 人</strong></div>
+                    {projectMemberCandidateLoading ? <p className="shell-muted">正在加载候选用户。</p> : visibleProjectMemberCandidates.length ? <div className="project-member-candidate-list">{visibleProjectMemberCandidates.map((candidate) => {
+                      const selected = projectMemberSelectedUsernames.includes(candidate.username);
+                      return <label className="project-member-candidate" key={candidate.username}><input type="checkbox" checked={selected} onChange={(event) => setProjectMemberSelectedUsernames((current) => event.target.checked ? [...current, candidate.username] : current.filter((username) => username !== candidate.username))} /><span><strong>{candidate.display_name}</strong><em>@{candidate.username}</em></span><small>{candidate.roles || '未配置系统角色'}</small></label>;
+                    })}</div> : <p className="shell-muted">{projectMemberCandidates.length ? '没有匹配用户。' : '没有可加入用户。'}</p>}
+                  </div>
+                  {projectMemberCandidateError ? <Feedback tone="danger" title="添加成员失败">{projectMemberCandidateError}</Feedback> : null}
+                  <Field id="project-member-role" label="项目角色" required><Select value={projectMemberForm.memberRole} onChange={(event) => setProjectMemberForm((current) => ({ ...current, memberRole: event.target.value }))}><option value="member">项目成员</option><option value="maintainer">项目管理员</option><option value="viewer">只读成员</option></Select></Field>
+                </form>
               </Modal>
               <Modal open={Boolean(projectMemberTarget)} title="调整成员角色" onClose={() => { if (!projectMutationSubmitting) setProjectMemberTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberTarget(null)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-member-role-form'))?.requestSubmit()}>保存</Button></>}>
                 <form id="project-member-role-form" onSubmit={submitProjectMemberRole}><p>{projectMemberTarget?.display_name} @{projectMemberTarget?.username}</p><Field id="project-member-role-value" label="项目角色" required><Select key={`${projectMemberTarget?.username || ''}:${projectMemberTarget?.member_role || ''}`} name="memberRole" defaultValue={projectMemberTarget?.member_role || 'member'}><option value="viewer">只读成员</option><option value="member">项目成员</option><option value="maintainer">项目管理员</option></Select></Field></form>

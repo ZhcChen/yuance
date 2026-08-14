@@ -15,6 +15,14 @@ export function projectMemberApiPath(projectKey, username) {
   return username === undefined ? base : `${base}/${encodeURIComponent(String(username))}`;
 }
 
+export function projectMemberCandidatesApiPath(projectKey) {
+  return `${projectMemberApiPath(projectKey)}/candidates`;
+}
+
+export function projectMemberBatchApiPath(projectKey) {
+  return `${projectMemberApiPath(projectKey)}/batch`;
+}
+
 export function projectCycleApiPath(projectKey, cycleId) {
   const base = `${projectApiPath(projectKey)}/cycles`;
   return cycleId === undefined ? base : `${base}/${encodeURIComponent(String(cycleId))}`;
@@ -40,6 +48,9 @@ export function createProjectClient({ request, prepareWrite }) {
     },
     getProjectMembers(projectKey) {
       return request(projectMemberApiPath(projectKey));
+    },
+    getProjectMemberCandidates(projectKey) {
+      return request(projectMemberCandidatesApiPath(projectKey));
     },
     getProjectCycles(projectKey) { return request(projectCycleApiPath(projectKey)); },
     getProjectCycle(projectKey, cycleId) { return request(projectCycleApiPath(projectKey, cycleId)); },
@@ -86,6 +97,13 @@ export function createProjectClient({ request, prepareWrite }) {
       await prepareWrite();
       return request(projectMemberApiPath(projectKey), jsonRequest('POST', {
         username: payload.username,
+        member_role: payload.memberRole,
+      }));
+    },
+    async addProjectMembers(projectKey, payload) {
+      await prepareWrite();
+      return request(projectMemberBatchApiPath(projectKey), jsonRequest('POST', {
+        usernames: payload.usernames,
         member_role: payload.memberRole,
       }));
     },

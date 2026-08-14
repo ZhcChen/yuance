@@ -11,7 +11,7 @@ export { createApiClient } from './http-client.js';
 export { createDashboardClient } from './dashboard.js';
 export { createAccountSecurityClient } from './account-security.js';
 export { createProfileClient } from './profile.js';
-export { createProjectClient, projectApiPath, projectAttachmentApiPath, projectAttachmentPreviewApiPath, projectAttachmentPreviewFromPayload, projectCycleApiPath, projectCycleBody, projectMemberApiPath, projectPersonalAnalysisApiPath, projectUpdateBody } from './projects.js';
+export { createProjectClient, projectApiPath, projectAttachmentApiPath, projectAttachmentPreviewApiPath, projectAttachmentPreviewFromPayload, projectCycleApiPath, projectCycleBody, projectMemberApiPath, projectMemberBatchApiPath, projectMemberCandidatesApiPath, projectPersonalAnalysisApiPath, projectUpdateBody } from './projects.js';
 export { createResourceClient, projectResourceApiPath, projectResourceFromPayload, projectResourceMutationBody, projectResourcesFromPayload } from './resources.js';
 export { createSearchClient } from './search.js';
 export { createSystemClient } from './system.js';

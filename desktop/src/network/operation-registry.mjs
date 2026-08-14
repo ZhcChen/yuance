@@ -86,7 +86,9 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.detail", projectDetailOperation],
     ["project.update", projectUpdateOperation],
     ["project.members", projectMembersOperation],
+    ["project.membercandidates", projectMemberCandidatesOperation],
     ["project.memberadd", projectMemberAddOperation],
+    ["project.memberbatchadd", projectMemberBatchAddOperation],
     ["project.memberroleupdate", projectMemberRoleUpdateOperation],
     ["project.memberremove", projectMemberRemoveOperation],
     ["project.cycles", projectCyclesOperation],
@@ -218,10 +220,23 @@ function projectMembersOperation(input) {
   return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/members`, parseProjectMembers, true, "array");
 }
 
+function projectMemberCandidatesOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/members/candidates`, parseProjectMemberCandidates, true, "array");
+}
+
 function projectMemberAddOperation(input) {
   exactKeys(input, ["memberRole", "projectKey", "username"]);
   return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/members`, parseProjectMember, false, "object", jsonBody({
     username: username(input.username), member_role: requiredEnum(input.memberRole, PROJECT_MEMBER_ROLES, "memberRole", false),
+  }));
+}
+
+function projectMemberBatchAddOperation(input) {
+  exactKeys(input, ["memberRole", "projectKey", "usernames"]);
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/members/batch`, parseProjectMembers, false, "array", jsonBody({
+    usernames: boundedArray(input.usernames, username, 100, "usernames"),
+    member_role: requiredEnum(input.memberRole, PROJECT_MEMBER_ROLES, "memberRole", false),
   }));
 }
 
@@ -1137,6 +1152,10 @@ function parseProjectMembers(data) { return boundedArray(data, parseProjectMembe
 function parseProjectMember(value) { return freezeDto(value, {
   user_id: positiveInteger, display_name: textString, username: shortString,
   member_role: shortString, joined_at: shortString,
+}); }
+function parseProjectMemberCandidates(data) { return boundedArray(data, parseProjectMemberCandidate, 500, "project member candidates"); }
+function parseProjectMemberCandidate(value) { return freezeDto(value, {
+  display_name: textString, username: shortString, roles: textString,
 }); }
 function parseProjectCycles(data) { return boundedArray(data, parseProjectCycle, 500, "project cycles"); }
 function parseProjectPersonalAnalysis(value) { return freezeDto(value, {

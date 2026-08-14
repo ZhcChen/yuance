@@ -624,6 +624,14 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_project_members).post(web::api::add_project_member),
         )
         .route(
+            "/api/v1/projects/{project_key}/members/candidates",
+            get(web::api::list_project_member_candidates),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/members/batch",
+            post(web::api::add_project_members),
+        )
+        .route(
             "/api/v1/projects/{project_key}/members/{username}",
             patch(web::api::update_project_member_role).delete(web::api::remove_project_member),
         )

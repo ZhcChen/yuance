@@ -3603,6 +3603,10 @@ test('shared project detail manages project information and member lifecycle', a
     created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z',
   };
   let members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const memberCandidates = [
+    { display_name: '协作成员', username: 'collaborator', roles: '普通成员' },
+    { display_name: '评审成员', username: 'reviewer', roles: '质量负责人' },
+  ];
   const mutations = [];
   await page.route('**/api/v1/projects/YCE', async (route) => {
     if (route.request().method() === 'PATCH') {
@@ -3612,14 +3616,16 @@ test('shared project detail manages project information and member lifecycle', a
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: detail }) });
   });
   await page.route('**/api/v1/projects/YCE/members', async (route) => {
-    if (route.request().method() === 'POST') {
-      const payload = route.request().postDataJSON();
-      mutations.push(['add', payload]);
-      members.push({ user_id: 2, display_name: '协作成员', username: payload.username, member_role: payload.member_role, joined_at: '2026-08-08T00:00:00Z' });
-      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: members.at(-1) }) });
-      return;
-    }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members/candidates', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: memberCandidates }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members/batch', async (route) => {
+    const payload = route.request().postDataJSON();
+    mutations.push(['batch', payload]);
+    members.push(...payload.usernames.map((username, index) => ({ user_id: index + 2, display_name: memberCandidates.find((candidate) => candidate.username === username).display_name, username, member_role: payload.member_role, joined_at: '2026-08-08T00:00:00Z' })));
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: members.slice(1) }) });
   });
   await page.route('**/api/v1/projects/YCE/members/collaborator', async (route) => {
     if (route.request().method() === 'PATCH') {
@@ -3641,9 +3647,12 @@ test('shared project detail manages project information and member lifecycle', a
   await page.getByRole('link', { name: '成员', exact: true }).click();
   await page.getByRole('button', { name: '添加成员' }).click();
   const addDialog = page.getByRole('dialog', { name: '添加项目成员' });
-  await addDialog.getByLabel('用户名').fill('collaborator');
+  await addDialog.getByLabel('搜索用户').fill('协作');
+  await addDialog.getByRole('checkbox', { name: /协作成员/ }).check();
+  await addDialog.getByLabel('搜索用户').fill('');
+  await addDialog.getByRole('checkbox', { name: /评审成员/ }).check();
   await addDialog.locator('#project-member-role-native').selectOption('member');
-  await addDialog.getByRole('button', { name: '添加' }).click();
+  await addDialog.getByRole('button', { name: '加入项目' }).click();
   const memberRow = page.getByRole('row', { name: /协作成员/ });
   await memberRow.getByRole('button', { name: '调整角色' }).click();
   const roleDialog = page.getByRole('dialog', { name: '调整成员角色' });
@@ -3653,7 +3662,8 @@ test('shared project detail manages project information and member lifecycle', a
   await memberRow.getByRole('button', { name: '移除' }).click();
   await page.getByRole('dialog', { name: '移除项目成员' }).getByRole('button', { name: '确认移除' }).click();
   await expect(page.getByRole('row', { name: /协作成员/ })).toHaveCount(0);
-  expect(mutations.map(([kind]) => kind)).toEqual(['update', 'add', 'role', 'remove']);
+  expect(mutations.map(([kind]) => kind)).toEqual(['update', 'batch', 'role', 'remove']);
+  expect(mutations[1][1]).toEqual({ usernames: ['collaborator', 'reviewer'], member_role: 'member' });
 });
 
 test('shared project files cover empty upload download and archive lifecycle', async ({ page }) => {

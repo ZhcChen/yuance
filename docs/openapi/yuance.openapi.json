@@ -982,6 +982,123 @@
             "description": "成员列表"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "添加单个项目成员",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "username"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string"
+                  },
+                  "member_role": {
+                    "type": "string",
+                    "enum": [
+                      "viewer",
+                      "member",
+                      "maintainer"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "添加成功"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/members/candidates": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "列出可加入项目的成员候选",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已启用且未加入项目的用户列表"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/members/batch": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "批量添加项目成员",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "usernames"
+                ],
+                "properties": {
+                  "usernames": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "member_role": {
+                    "type": "string",
+                    "enum": [
+                      "viewer",
+                      "member",
+                      "maintainer"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "批量添加成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/api/v1/projects/{project_key}/resources": {

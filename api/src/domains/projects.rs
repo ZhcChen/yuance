@@ -7,7 +7,10 @@ use sqlx::{
 use std::{borrow::Cow, collections::HashSet};
 
 use crate::{
-    domains::notifications::{self, CreateNotification},
+    domains::{
+        notifications::{self, CreateNotification},
+        users,
+    },
     platform::{
         error::{AppError, AppResult},
         realtime,
@@ -2053,8 +2056,23 @@ pub async fn add_project_member(
     username: &str,
     member_role: &str,
 ) -> AppResult<ProjectMemberDetail> {
-    let project_key = validate_project_key(project_key)?;
     let username = validate_username_ref(username)?;
+    let mut members =
+        add_project_members(pool, actor_user_id, project_key, &[username], member_role).await?;
+
+    members
+        .pop()
+        .ok_or_else(|| AppError::NotFound("项目成员添加后未找到".to_string()))
+}
+
+pub async fn add_project_members(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    usernames: &[String],
+    member_role: &str,
+) -> AppResult<Vec<ProjectMemberDetail>> {
+    let project_key = validate_project_key(project_key)?;
     let member_role = validate_member_role(member_role)?;
 
     let Some((project_id, project_name, project_status)) =
@@ -2068,63 +2086,87 @@ pub async fn add_project_member(
         return Err(AppError::NotFound("项目不存在".to_string()));
     };
     ensure_project_accepts_writes(&project_status)?;
-    let Some((user_id, display_name)) = sqlx::query_as::<_, (i64, String)>(
-        "SELECT id, display_name FROM users WHERE username = ?1 AND status = 'active'",
-    )
-    .bind(&username)
-    .fetch_optional(pool)
-    .await?
-    else {
-        return Err(AppError::BadRequest("用户不存在或未启用".to_string()));
-    };
+
+    let available_users = users::list_users(pool).await?;
+    let mut seen_usernames = HashSet::new();
+    let mut selected_users = Vec::new();
+    for raw_username in usernames {
+        let raw_username = raw_username.trim();
+        if raw_username.is_empty() {
+            continue;
+        }
+        let username = validate_username_ref(raw_username)?;
+        if !seen_usernames.insert(username.clone()) {
+            continue;
+        }
+        let Some(user) = available_users
+            .iter()
+            .find(|user| user.username == username && user.status == "active")
+        else {
+            return Err(AppError::BadRequest("用户不存在或未启用".to_string()));
+        };
+        selected_users.push((user.id, user.display_name.clone(), username));
+    }
+    if selected_users.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要加入的项目成员".to_string(),
+        ));
+    }
 
     let mut tx = pool.begin().await?;
-    sqlx::query(
-        r#"
-        INSERT INTO project_members (
-            project_id,
-            user_id,
-            member_role
+    for (user_id, display_name, username) in &selected_users {
+        sqlx::query(
+            r#"
+            INSERT INTO project_members (
+                project_id,
+                user_id,
+                member_role
+            )
+            VALUES (?1, ?2, ?3)
+            ON CONFLICT(project_id, user_id) DO UPDATE SET
+                member_role = excluded.member_role,
+                updated_at = datetime('now')
+            "#,
         )
-        VALUES (?1, ?2, ?3)
-        ON CONFLICT(project_id, user_id) DO UPDATE SET
-            member_role = excluded.member_role,
-            updated_at = datetime('now')
-        "#,
-    )
-    .bind(project_id)
-    .bind(user_id)
-    .bind(member_role)
-    .execute(&mut *tx)
-    .await?;
+        .bind(project_id)
+        .bind(user_id)
+        .bind(&member_role)
+        .execute(&mut *tx)
+        .await?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO project_activities (
-            project_id,
-            actor_user_id,
-            action,
-            target_type,
-            target_id,
-            summary,
-            metadata
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                action,
+                target_type,
+                target_id,
+                summary,
+                metadata
+            )
+            VALUES (?1, ?2, 'project.member.added', 'user', ?3, ?4, ?5)
+            "#,
         )
-        VALUES (?1, ?2, 'project.member.added', 'user', ?3, ?4, ?5)
-        "#,
-    )
-    .bind(project_id)
-    .bind(actor_user_id)
-    .bind(&username)
-    .bind(format!("将 {display_name} 加入项目 {project_name}"))
-    .bind(format!(r#"{{"member_role":"{member_role}"}}"#))
-    .execute(&mut *tx)
-    .await?;
+        .bind(project_id)
+        .bind(actor_user_id)
+        .bind(username)
+        .bind(format!("将 {display_name} 加入项目 {project_name}"))
+        .bind(format!(r#"{{"member_role":"{member_role}"}}"#))
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
 
-    get_project_member(pool, project_id, &username)
-        .await?
-        .ok_or_else(|| AppError::NotFound("项目成员添加后未找到".to_string()))
+    let mut members = Vec::with_capacity(selected_users.len());
+    for (_, _, username) in selected_users {
+        let member = get_project_member(pool, project_id, &username)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目成员添加后未找到".to_string()))?;
+        members.push(member);
+    }
+    Ok(members)
 }
 
 pub async fn remove_project_member(

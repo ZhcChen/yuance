@@ -53,6 +53,8 @@ function resolveReadOperation(url, options) {
   if (parsed.pathname === "/api/v1/projects") return { operation: "project.list", input: parseQuery(parsed.searchParams, {
     status: "status", page: "page", per_page: "perPage",
   }) };
+  const projectMemberCandidates = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/members\/candidates$/u, "project.membercandidates", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
+  if (projectMemberCandidates) return projectMemberCandidates;
   const projectMembers = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/members$/u, "project.members", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectMembers) return projectMembers;
   const projectPersonalAnalysis = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/my-analysis$/u, "project.personalanalysis", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
@@ -266,6 +268,11 @@ function resolveMutationOperation(parsed, method, options) {
   if (method === "DELETE" && projectMember) {
     rejectBody(options);
     return { operation: "project.memberremove", input: { projectKey: decodeSegment(projectMember[1]), username: decodeSegment(projectMember[2]) } };
+  }
+  const projectMemberBatch = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/members\/batch$/u);
+  if (method === "POST" && projectMemberBatch) {
+    const body = parseJsonBody(options, ["member_role", "usernames"]);
+    return { operation: "project.memberbatchadd", input: { projectKey: decodeSegment(projectMemberBatch[1]), usernames: body.usernames, memberRole: body.member_role } };
   }
   const projectMembers = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/members$/u);
   if (method === "POST" && projectMembers) {
