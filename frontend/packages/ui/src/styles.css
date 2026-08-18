@@ -327,7 +327,13 @@ html[data-theme="dark"] {
 .yc-select-caret { flex: 0 0 auto; width: 7px; height: 7px; margin: -4px 2px 0 0; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; color: var(--yc-muted-strong); pointer-events: none; transform: rotate(45deg); transition: color var(--yc-motion-fast) ease, transform 180ms cubic-bezier(.22, .8, .24, 1); }
 .yc-select.is-open .yc-select-caret { margin-top: 4px; color: var(--yc-brand); transform: rotate(225deg); }
 .yc-select-menu { position: absolute; z-index: 90; top: calc(100% + 7px); right: 0; left: 0; max-height: 248px; display: grid; gap: 3px; padding: 6px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--yc-line); border-radius: 10px; background: var(--yc-panel); box-shadow: 0 16px 36px rgb(24 39 58 / 16%); opacity: 0; pointer-events: none; transform: translateY(-7px) scale(.985); transform-origin: top center; transition: opacity 150ms ease, transform 180ms cubic-bezier(.22, .8, .24, 1); scrollbar-color: color-mix(in srgb, var(--yc-muted) 48%, transparent) transparent; scrollbar-width: thin; }
+.yc-select-menu.is-searchable { max-height: none; overflow: hidden; }
 .yc-select.is-open .yc-select-menu { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+.yc-select-search { display: block; padding: 2px 2px 5px; }
+.yc-select-search input { box-sizing: border-box; width: 100%; min-height: 34px; padding: 0 10px; border: 1px solid var(--yc-line-strong); border-radius: 7px; outline: 0; background: var(--yc-panel); color: var(--yc-text); font: inherit; font-size: 13px; }
+.yc-select-search input:focus { border-color: var(--yc-brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--yc-brand) 12%, transparent); }
+.yc-select-options { max-height: 202px; display: grid; gap: 3px; overflow-x: hidden; overflow-y: auto; scrollbar-color: color-mix(in srgb, var(--yc-muted) 48%, transparent) transparent; scrollbar-width: thin; }
+.yc-select-empty { padding: 10px; color: var(--yc-muted); font-size: 13px; text-align: center; }
 .yc-select-option { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px; border-radius: 7px; color: var(--yc-muted-strong); cursor: pointer; font-size: 13px; line-height: 18px; transition: background-color 120ms ease, color 120ms ease; }
 .yc-select-option.is-active { background: var(--yc-panel-soft); color: var(--yc-text); }
 .yc-select-option.is-selected { background: var(--yc-brand-soft); color: var(--yc-brand-strong); font-weight: 750; }

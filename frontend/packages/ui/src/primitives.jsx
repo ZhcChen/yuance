@@ -30,20 +30,39 @@ function flattenSelectOptions(children) {
   });
 }
 
-/** @param {React.SelectHTMLAttributes<HTMLSelectElement> & { children?: React.ReactNode }} props */
-export function Select({ children, className = '', id, value, defaultValue = '', disabled = false, onChange, ...selectProps }) {
+/** @param {React.ReactNode} value */
+function selectOptionText(value) {
+  return React.Children.toArray(value).map((child) => {
+    if (typeof child === 'string' || typeof child === 'number') return String(child);
+    if (!React.isValidElement(child)) return '';
+    const element = /** @type {React.ReactElement<{ children?: React.ReactNode }>} */ (child);
+    return selectOptionText(element.props.children);
+  }).join(' ');
+}
+
+/** @param {React.SelectHTMLAttributes<HTMLSelectElement> & { children?: React.ReactNode, searchable?: boolean, searchPlaceholder?: string, emptyText?: string }} props */
+export function Select({ children, className = '', id, value, defaultValue = '', disabled = false, onChange, searchable = false, searchPlaceholder = '搜索选项', emptyText = '没有匹配项', ...selectProps }) {
   const generatedId = useId();
   const controlId = id || `yc-select-${generatedId}`;
   const rootRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
   const nativeRef = useRef(/** @type {HTMLSelectElement | null} */ (null));
+  const triggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
+  const searchRef = useRef(/** @type {HTMLInputElement | null} */ (null));
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState(String(defaultValue ?? ''));
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchQuery, setSearchQuery] = useState('');
   const options = flattenSelectOptions(children);
   const selectedValue = value === undefined ? internalValue : String(value ?? '');
   const selectedIndex = options.findIndex((option) => String(option.props.value ?? '') === selectedValue);
   const selectedOption = options[selectedIndex] || options[0];
   const listboxId = `${controlId}-listbox`;
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const visibleOptionIndices = options.map((option, index) => ({ option, index })).filter(({ option }) => {
+    if (!normalizedSearchQuery) return true;
+    const optionValue = String(option.props.value ?? '');
+    return `${selectOptionText(option.props.children)} ${optionValue}`.toLocaleLowerCase().includes(normalizedSearchQuery);
+  }).map(({ index }) => index);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -51,7 +70,7 @@ export function Select({ children, className = '', id, value, defaultValue = '',
     const ownerDocument = root?.ownerDocument;
     if (!root || !ownerDocument) return undefined;
     const closeOnOutsidePointer = (event) => {
-      if (!root.contains(/** @type {Node} */ (event.target))) setOpen(false);
+      if (!root.contains(/** @type {Node} */ (event.target))) { setOpen(false); setSearchQuery(''); }
     };
     ownerDocument.addEventListener('pointerdown', closeOnOutsidePointer);
     return () => ownerDocument.removeEventListener('pointerdown', closeOnOutsidePointer);
@@ -68,6 +87,8 @@ export function Select({ children, className = '', id, value, defaultValue = '',
       native.dispatchEvent(new Event('change', { bubbles: true }));
     }
     setOpen(false);
+    setSearchQuery('');
+    triggerRef.current?.focus();
   }
 
   function handleNativeChange(event) {
@@ -78,7 +99,9 @@ export function Select({ children, className = '', id, value, defaultValue = '',
   function openAt(index) {
     if (disabled) return;
     setActiveIndex(Math.max(0, index));
+    setSearchQuery('');
     setOpen(true);
+    if (searchable) requestAnimationFrame(() => searchRef.current?.focus());
   }
 
   function handleKeyDown(event) {
@@ -86,9 +109,12 @@ export function Select({ children, className = '', id, value, defaultValue = '',
     if (event.key === 'Escape' && open) {
       event.preventDefault();
       setOpen(false);
+      setSearchQuery('');
+      triggerRef.current?.focus();
       return;
     }
-    if (event.key === 'Enter' || event.key === ' ') {
+    const fromSearch = event.target === searchRef.current;
+    if (event.key === 'Enter' || (event.key === ' ' && !fromSearch)) {
       event.preventDefault();
       if (open) chooseOption(activeIndex);
       else openAt(selectedIndex);
@@ -101,25 +127,41 @@ export function Select({ children, className = '', id, value, defaultValue = '',
       openAt(selectedIndex >= 0 ? selectedIndex : direction > 0 ? 0 : options.length - 1);
       return;
     }
-    let nextIndex = activeIndex;
-    do nextIndex = (nextIndex + direction + options.length) % options.length;
-    while (options[nextIndex]?.props.disabled && nextIndex !== activeIndex);
+    const enabledIndices = visibleOptionIndices.filter((index) => !options[index]?.props.disabled);
+    if (!enabledIndices.length) return;
+    const currentPosition = enabledIndices.indexOf(activeIndex);
+    const nextPosition = currentPosition < 0 ? (direction > 0 ? 0 : enabledIndices.length - 1) : (currentPosition + direction + enabledIndices.length) % enabledIndices.length;
+    const nextIndex = enabledIndices[nextPosition];
     setActiveIndex(nextIndex);
   }
+
+  function handleSearchChange(event) {
+    const nextQuery = event.currentTarget.value;
+    setSearchQuery(nextQuery);
+    const normalized = nextQuery.trim().toLocaleLowerCase();
+    const nextIndex = options.findIndex((option) => {
+      if (option.props.disabled) return false;
+      const optionValue = String(option.props.value ?? '');
+      return !normalized || `${selectOptionText(option.props.children)} ${optionValue}`.toLocaleLowerCase().includes(normalized);
+    });
+    setActiveIndex(nextIndex);
+  }
+
+  const optionNodes = visibleOptionIndices.map((index) => {
+    const option = options[index];
+    const optionValue = String(option.props.value ?? '');
+    const selected = optionValue === selectedValue;
+    return <span key={`${optionValue}:${index}`} className={`yc-select-option${selected ? ' is-selected' : ''}${activeIndex === index ? ' is-active' : ''}${option.props.disabled ? ' is-disabled' : ''}`} role="option" aria-selected={selected} aria-disabled={option.props.disabled || undefined} onPointerMove={() => { if (!option.props.disabled) setActiveIndex(index); }} onClick={() => chooseOption(index)}><span>{option.props.children}</span><span className="yc-select-check" aria-hidden="true">✓</span></span>;
+  });
 
   return (
     <span ref={rootRef} className={`yc-select${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`} onKeyDown={handleKeyDown}>
       <select ref={nativeRef} className="yc-select-native" id={`${controlId}-native`} value={value} defaultValue={value === undefined ? defaultValue : undefined} disabled={disabled} onChange={handleNativeChange} tabIndex={-1} aria-hidden="true" {...selectProps}>{children}</select>
-      <button id={controlId} className="yc-select-trigger" type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listboxId} aria-describedby={selectProps['aria-describedby']} aria-invalid={selectProps['aria-invalid']} onClick={() => open ? setOpen(false) : openAt(selectedIndex)}>
+      <button ref={triggerRef} id={controlId} className="yc-select-trigger" type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listboxId} aria-describedby={selectProps['aria-describedby']} aria-invalid={selectProps['aria-invalid']} onClick={() => { if (open) { setOpen(false); setSearchQuery(''); } else openAt(selectedIndex); }}>
         <span className="yc-select-value">{selectedOption?.props.children || '请选择'}</span><span className="yc-select-caret" aria-hidden="true" />
       </button>
-      <span id={listboxId} className="yc-select-menu" role="listbox" aria-hidden={!open}>
-        {options.map((option, index) => {
-          const optionValue = String(option.props.value ?? '');
-          const selected = optionValue === selectedValue;
-          return <span key={`${optionValue}:${index}`} className={`yc-select-option${selected ? ' is-selected' : ''}${activeIndex === index ? ' is-active' : ''}${option.props.disabled ? ' is-disabled' : ''}`} role="option" aria-selected={selected} aria-disabled={option.props.disabled || undefined} onPointerMove={() => { if (!option.props.disabled) setActiveIndex(index); }} onClick={() => chooseOption(index)}><span>{option.props.children}</span><span className="yc-select-check" aria-hidden="true">✓</span></span>;
-        })}
-      </span>
+      {searchable ? <span className="yc-select-menu is-searchable" aria-hidden={!open}><span className="yc-select-search"><input ref={searchRef} type="search" value={searchQuery} placeholder={searchPlaceholder} aria-label={searchPlaceholder} tabIndex={open ? 0 : -1} onChange={handleSearchChange} /></span><span id={listboxId} className="yc-select-options" role="listbox">{optionNodes.length ? optionNodes : <span className="yc-select-empty">{emptyText}</span>}</span></span>
+        : <span id={listboxId} className="yc-select-menu" role="listbox" aria-hidden={!open}>{optionNodes}</span>}
     </span>
   );
 }

@@ -571,7 +571,10 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await expect.poll(() => taskDialog.locator('#work-item-create-form').evaluate((form) => form.querySelector('.yc-rich-field')?.previousElementSibling?.classList.contains('work-item-create-fields'))).toBe(true);
   await taskDialog.locator('#work-item-create-priority-native').selectOption('P1');
   await expect(taskDialog.locator('#work-item-create-cycle-native')).toHaveValue('');
-  await taskDialog.locator('#work-item-create-assignee-native').selectOption({ index: 1 });
+  await taskDialog.locator('#work-item-create-assignee').click();
+  await taskDialog.getByRole('searchbox', { name: '搜索处理人' }).fill('yuance_admin');
+  await taskDialog.getByRole('option', { name: /yuance_admin/u }).click();
+  await expect(taskDialog.locator('#work-item-create-assignee-native')).toHaveValue('yuance_admin');
   await taskDialog.locator('#work-item-create-parent-native').selectOption('YCE-REQ-1');
   await taskDialog.locator('#work-item-create-due-date').fill('2026-08-31');
   await taskDialog.locator('#work-item-create-title').fill('共享任务创建验收');
@@ -799,7 +802,10 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await editForm.getByLabel('主内容').fill(editedDetail.description);
   await editForm.locator('select[name="status"]').selectOption('in_progress');
   await editForm.locator('select[name="priority"]').selectOption('P1');
-  await editForm.locator('select[name="assigneeUsername"]').selectOption('yuance_admin');
+  await editForm.locator('#work-item-edit-assignee').click();
+  await editForm.getByRole('searchbox', { name: '搜索处理人' }).fill('yuance_admin');
+  await editForm.getByRole('option', { name: '元策开发管理员' }).click();
+  await expect(editForm.locator('select[name="assigneeUsername"]')).toHaveValue('yuance_admin');
   await editForm.getByLabel('截止日期').fill('2026-08-15');
   await editForm.locator('select[name="parentItemKey"]').selectOption('');
   await editDialog.getByRole('button', { name: '保存修改' }).click();

@@ -61,6 +61,13 @@ test('select preserves native form semantics inside the shared control', () => {
     createElement(Select, null, createElement('option', { value: '' }, '请选择'))));
   assert.match(fieldHtml, /<select[^>]*id="priority-native"[^>]*required=""/u);
   assert.match(fieldHtml, /<button id="priority"[^>]*aria-describedby="priority-description" aria-invalid="true"/u);
+
+  const searchableHtml = renderToStaticMarkup(createElement(Select, { searchable: true, searchPlaceholder: '搜索处理人' },
+    createElement('option', { value: '' }, '未分配'),
+    createElement('option', { value: 'alice' }, 'Alice · alice')));
+  assert.match(searchableHtml, /class="yc-select-menu is-searchable"/u);
+  assert.match(searchableHtml, /type="search"[^>]*placeholder="搜索处理人"[^>]*aria-label="搜索处理人"/u);
+  assert.match(searchableHtml, /class="yc-select-options" role="listbox"/u);
 });
 
 test('filter bar and filter field compose compact filter forms', () => {
