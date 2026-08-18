@@ -1888,6 +1888,200 @@ html[data-theme="dark"] {
   margin-left: 0;
 }
 
+.yc-rich-text-input a[data-yuance-attachment-kind="file"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"] {
+  --attachment-file-bg: linear-gradient(180deg, var(--yc-panel), var(--yc-panel-soft));
+  --attachment-file-border: var(--yc-line);
+  --attachment-file-shadow: 0 8px 20px rgb(22 34 50 / 6%);
+  --attachment-file-icon-border: var(--yc-brand-line);
+  --attachment-file-icon-bg: var(--yc-brand-soft);
+  --attachment-file-icon-text: var(--yc-brand-strong);
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--attachment-file-border);
+  border-radius: 12px;
+  background: var(--attachment-file-bg);
+  color: var(--yc-text);
+  cursor: context-menu;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 18px;
+  text-decoration: none;
+  box-shadow: var(--attachment-file-shadow);
+  transition: border-color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease, transform var(--yc-motion-fast) ease;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"]:hover,
+.yc-rich-text-input a[data-yuance-attachment-kind="file"]:focus-visible,
+.yc-rich-text-content a[data-yuance-attachment-kind="file"]:hover,
+.yc-rich-text-content a[data-yuance-attachment-kind="file"]:focus-visible {
+  border-color: var(--yc-brand-line);
+  box-shadow: 0 12px 28px rgb(22 34 50 / 10%), 0 0 0 3px rgb(37 99 235 / 8%);
+  transform: translateY(-1px);
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"]::before,
+.yc-rich-text-content a[data-yuance-attachment-kind="file"]::before {
+  content: "FILE";
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--attachment-file-icon-border);
+  border-radius: 11px;
+  background: var(--attachment-file-icon-bg);
+  color: var(--attachment-file-icon-text);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 28%);
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-ext]::before,
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-ext]::before {
+  content: attr(data-yuance-file-ext);
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="word"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="word"] {
+  --attachment-file-border: rgb(59 130 246 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(239 246 255 / 96%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(37 99 235 / 8%);
+  --attachment-file-icon-border: rgb(96 165 250 / 26%);
+  --attachment-file-icon-bg: rgb(219 234 254 / 92%);
+  --attachment-file-icon-text: #1d4ed8;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="sheet"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="sheet"] {
+  --attachment-file-border: rgb(16 185 129 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(236 253 245 / 96%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(16 185 129 / 8%);
+  --attachment-file-icon-border: rgb(52 211 153 / 26%);
+  --attachment-file-icon-bg: rgb(209 250 229 / 92%);
+  --attachment-file-icon-text: #047857;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="slide"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="slide"] {
+  --attachment-file-border: rgb(249 115 22 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(255 247 237 / 96%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(249 115 22 / 8%);
+  --attachment-file-icon-border: rgb(251 146 60 / 26%);
+  --attachment-file-icon-bg: rgb(255 237 213 / 92%);
+  --attachment-file-icon-text: #c2410c;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="pdf"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="pdf"] {
+  --attachment-file-border: rgb(239 68 68 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(254 242 242 / 96%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(239 68 68 / 8%);
+  --attachment-file-icon-border: rgb(248 113 113 / 26%);
+  --attachment-file-icon-bg: rgb(254 226 226 / 92%);
+  --attachment-file-icon-text: #b91c1c;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="text"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="text"] {
+  --attachment-file-border: rgb(100 116 139 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(248 250 252 / 98%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(100 116 139 / 8%);
+  --attachment-file-icon-border: rgb(148 163 184 / 24%);
+  --attachment-file-icon-bg: rgb(241 245 249 / 96%);
+  --attachment-file-icon-text: #475569;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="code"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="code"] {
+  --attachment-file-border: rgb(139 92 246 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(245 243 255 / 96%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(139 92 246 / 8%);
+  --attachment-file-icon-border: rgb(167 139 250 / 26%);
+  --attachment-file-icon-bg: rgb(237 233 254 / 92%);
+  --attachment-file-icon-text: #6d28d9;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="archive"],
+.yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="archive"] {
+  --attachment-file-border: rgb(245 158 11 / 18%);
+  --attachment-file-bg: linear-gradient(180deg, rgb(255 251 235 / 96%), var(--yc-panel));
+  --attachment-file-shadow: 0 10px 22px rgb(245 158 11 / 8%);
+  --attachment-file-icon-border: rgb(251 191 36 / 26%);
+  --attachment-file-icon-bg: rgb(254 243 199 / 92%);
+  --attachment-file-icon-text: #b45309;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"] {
+  --attachment-file-bg: linear-gradient(180deg, rgb(28 40 56 / 96%), var(--yc-panel-soft));
+  --attachment-file-shadow: 0 10px 22px rgb(0 0 0 / 24%);
+  --attachment-file-icon-bg: var(--yc-brand-soft);
+  --attachment-file-icon-text: var(--yc-brand-strong);
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="word"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="word"] {
+  --attachment-file-border: rgb(120 167 207 / 22%);
+  --attachment-file-icon-border: rgb(120 167 207 / 32%);
+  --attachment-file-icon-bg: rgb(26 52 77 / 92%);
+  --attachment-file-icon-text: #a9c8e2;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="sheet"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="sheet"] {
+  --attachment-file-border: rgb(90 208 154 / 22%);
+  --attachment-file-icon-border: rgb(90 208 154 / 32%);
+  --attachment-file-icon-bg: rgb(24 66 52 / 92%);
+  --attachment-file-icon-text: #7ee2b8;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="slide"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="slide"] {
+  --attachment-file-border: rgb(241 180 95 / 22%);
+  --attachment-file-icon-border: rgb(241 180 95 / 32%);
+  --attachment-file-icon-bg: rgb(73 53 25 / 92%);
+  --attachment-file-icon-text: #f1b45f;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="pdf"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="pdf"] {
+  --attachment-file-border: rgb(255 128 120 / 22%);
+  --attachment-file-icon-border: rgb(255 128 120 / 32%);
+  --attachment-file-icon-bg: rgb(77 32 34 / 92%);
+  --attachment-file-icon-text: #ff9b95;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="text"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="text"] {
+  --attachment-file-border: rgb(145 161 180 / 22%);
+  --attachment-file-icon-border: rgb(145 161 180 / 32%);
+  --attachment-file-icon-bg: rgb(42 52 65 / 92%);
+  --attachment-file-icon-text: #c1ccda;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="code"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="code"] {
+  --attachment-file-border: rgb(180 154 232 / 22%);
+  --attachment-file-icon-border: rgb(180 154 232 / 32%);
+  --attachment-file-icon-bg: rgb(57 45 82 / 92%);
+  --attachment-file-icon-text: #c3b1ec;
+}
+
+html[data-theme="dark"] .yc-rich-text-input a[data-yuance-attachment-kind="file"][data-yuance-file-kind="archive"],
+html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="file"][data-yuance-file-kind="archive"] {
+  --attachment-file-border: rgb(217 185 138 / 22%);
+  --attachment-file-icon-border: rgb(217 185 138 / 32%);
+  --attachment-file-icon-bg: rgb(73 59 31 / 92%);
+  --attachment-file-icon-text: #d9b98a;
+}
+
 .yc-rich-text-input img,
 .yc-rich-text-input video,
 .yc-rich-text-content img,

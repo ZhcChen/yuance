@@ -55,6 +55,17 @@ test('rich text attachment HTML emits canonical escaped file and media nodes', (
   assert.match(richTextAttachmentHtml({ id: 11, filename: 'demo.mp4', contentType: 'video/mp4', url: '/web/projects/YCE/resources/8/attachments/11/download' }), /<video[\s\S]*controls/);
 });
 
+test('rich text file cards share editor and rendered-content styles', async () => {
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const appShellStyles = await readFile(new URL('../../app-shell/src/application.css', import.meta.url), 'utf8');
+
+  assert.match(styles, /\.yc-rich-text-input a\[data-yuance-attachment-kind="file"\],\n\.yc-rich-text-content a\[data-yuance-attachment-kind="file"\] \{/u);
+  for (const kind of ['word', 'sheet', 'slide', 'pdf', 'text', 'code', 'archive']) {
+    assert.match(styles, new RegExp(`\\.yc-rich-text-input a\\[data-yuance-attachment-kind="file"\\]\\[data-yuance-file-kind="${kind}"\\],\\n\\.yc-rich-text-content a\\[data-yuance-attachment-kind="file"\\]\\[data-yuance-file-kind="${kind}"\\]`, 'u'));
+  }
+  assert.doesNotMatch(appShellStyles, /\.resource-rich-body\.discussion-rich-body a\[data-yuance-attachment-kind="file"\]/u);
+});
+
 test('rich text file helpers derive document previewability and file card visuals', () => {
   assert.equal(previewableDocumentFileType('guide.pdf', ''), 'pdf');
   assert.equal(previewableDocumentFileType('plan.txt', 'text/plain'), 'txt');

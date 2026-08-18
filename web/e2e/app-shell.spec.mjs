@@ -861,6 +861,70 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
 });
 
+test('work item rich text file cards keep editor and detail styles aligned', async ({ page }) => {
+  const inlineBody = '<p>附件</p><a data-yuance-attachment-id="990" data-yuance-attachment-kind="file" data-yuance-file-kind="text" data-yuance-file-ext="TXT" data-yuance-align="left" href="/web/work-items/YCE-TASK-2/attachments/990/download" title="same.txt">same.txt</a>';
+  const primaryPost = workItemCommentFixture({ id: 890, body: inlineBody, body_format: 'html' });
+  const comment = workItemCommentFixture({ id: 891, body: inlineBody, body_format: 'html' });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.primary_post = primaryPost;
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { data: [comment] } });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/attachments**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+
+  await page.reload();
+  const detailFile = page.locator('.work-item-description .yc-rich-text-content a[data-yuance-attachment-kind="file"]');
+  const commentFile = page.locator('#comment-891 .yc-rich-text-content a[data-yuance-attachment-kind="file"]');
+  await expect(detailFile).toBeVisible();
+  await expect(commentFile).toBeVisible();
+  await expect(detailFile).toHaveAttribute('data-yuance-file-ext', 'TXT');
+  await expect(commentFile).toHaveAttribute('data-yuance-file-ext', 'TXT');
+
+  const detailStyle = await detailFile.evaluate((element) => {
+    const card = getComputedStyle(element);
+    const badge = getComputedStyle(element, '::before');
+    return {
+      display: card.display,
+      borderRadius: card.borderRadius,
+      padding: card.padding,
+      backgroundImage: card.backgroundImage,
+      boxShadow: card.boxShadow,
+      badgeDisplay: badge.display,
+      badgeWidth: badge.width,
+      badgeHeight: badge.height,
+      badgeBorderRadius: badge.borderRadius,
+    };
+  });
+
+  await page.getByRole('button', { name: '编辑内容' }).click();
+  const editorFile = page.locator('.yc-rich-text-input a[data-yuance-attachment-kind="file"]');
+  await expect(editorFile).toBeVisible();
+  const editorStyle = await editorFile.evaluate((element) => {
+    const card = getComputedStyle(element);
+    const badge = getComputedStyle(element, '::before');
+    return {
+      display: card.display,
+      borderRadius: card.borderRadius,
+      padding: card.padding,
+      backgroundImage: card.backgroundImage,
+      boxShadow: card.boxShadow,
+      badgeDisplay: badge.display,
+      badgeWidth: badge.width,
+      badgeHeight: badge.height,
+      badgeBorderRadius: badge.borderRadius,
+    };
+  });
+  expect(editorStyle).toEqual(detailStyle);
+});
+
 test('work item realtime discussion refresh preserves the mounted page and local draft', async ({ page }) => {
   await page.addInitScript(() => {
     const sources = [];
