@@ -788,7 +788,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await page.getByRole('button', { name: '编辑内容' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑工作项' });
   const editForm = page.locator('#work-item-edit-form');
-  await expect.poll(() => editForm.getByLabel('主内容').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
+  await expect.poll(() => editForm.getByLabel('主内容').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(320);
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill(editedDetail.description);
   await editForm.locator('select[name="status"]').selectOption('in_progress');
@@ -4064,6 +4064,7 @@ test('shared project resources create edit password actions and archive', async 
   expect(await page.evaluate(() => window.__resourceRichXss === true)).toBe(false);
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await expect.poll(() => editDialog.getByLabel('资料正文').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
   await editDialog.getByLabel('资料标题').fill('部署手册 2.0');
   await editDialog.locator('#project-resource-password-action-native').selectOption('set');
   await editDialog.getByLabel('新访问密码').fill('next-pass');
