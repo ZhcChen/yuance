@@ -8,7 +8,6 @@ import {
   createAppUpdateController,
   createWorkItemEventCoordinator,
   createWorkItemTypingController,
-  createProjectResourceWithAttachments,
   buildHomePath,
   buildMessagesPath,
   buildProfilePath,
@@ -74,7 +73,6 @@ import {
   WorkItemComments,
   WorkItemDetail,
   attachmentIsUploaded,
-  formatByteSize,
   isPreviewableDocumentFile,
   plainTextToRichHtml,
   richTextAttachmentHtml,
@@ -910,7 +908,6 @@ export function SharedApp({ services }) {
   const projectAttachmentMutationRef = useRef(false);
   const projectResourceAttachmentActionRef = useRef(0);
   const projectResourceAttachmentMutationRef = useRef(false);
-  const projectResourceCreateAttachmentKeyRef = useRef(0);
   const projectAttachmentPreviewRequestRef = useRef(0);
   const projectAttachmentPreviewCapabilityRef = useRef('');
   const projectResourceActionRef = useRef(0);
@@ -956,7 +953,6 @@ export function SharedApp({ services }) {
   const [projectResourceForm, setProjectResourceForm] = useState({ id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
   const [projectResourceInitialInlineAttachmentIds, setProjectResourceInitialInlineAttachmentIds] = useState(/** @type {number[]} */ ([]));
   const [projectResourceCreateCheckpoint, setProjectResourceCreateCheckpoint] = useState(/** @type {AppProjectResource | null} */ (null));
-  const [projectResourceCreateAttachments, setProjectResourceCreateAttachments] = useState(/** @type {Array<{ key: number, file?: any, existingAttachment?: AppAttachment | null, uploadedAttachment?: AppAttachment | null, filename: string, contentType: string, byteSize: number, inline: boolean, alreadyInline?: boolean, stage: string, error: string }>} */ ([]));
   const [projectResourcePasteUploading, setProjectResourcePasteUploading] = useState(false);
   const [projectResourceArchiveTarget, setProjectResourceArchiveTarget] = useState(/** @type {AppProjectResource | null} */ (null));
   const [projectResourceStatus, setProjectResourceStatus] = useState('');
@@ -2971,31 +2967,8 @@ export function SharedApp({ services }) {
       relatedCycleId: resource.related_cycle ? String(resource.related_cycle.id) : '',
     } : { id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
     setProjectResourceInitialInlineAttachmentIds(resource ? richTextAttachmentIds(resource.body) : []);
-    if (!resource) { setProjectResourceCreateCheckpoint(null); setProjectResourceCreateAttachments([]); }
+    if (!resource) setProjectResourceCreateCheckpoint(null);
     setProjectResourceModalOpen(true);
-  }
-
-  async function chooseProjectResourceCreateAttachment(index = -1) {
-    if (projectResourceSubmitting) return;
-    setProjectResourceError('');
-    let file;
-    try { file = await files.files.chooseFile(); }
-    catch (caught) { setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('选择资料附件失败。'))); return; }
-    if (!file) return;
-    if (!file.byteSize || file.byteSize <= 0) { setProjectResourceError('请选择非空文件。'); return; }
-    if (index >= 0) {
-      setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => {
-        if (entryIndex !== index) return entry;
-        if (entry.filename !== file.filename || entry.contentType !== file.contentType || entry.byteSize !== file.byteSize) {
-          setProjectResourceError(`请选择与 ${entry.filename} 名称、类型和大小一致的原文件。`);
-          return entry;
-        }
-        return { ...entry, file, stage: '已重新选择，等待上传', error: '' };
-      }));
-      return;
-    }
-    projectResourceCreateAttachmentKeyRef.current += 1;
-    setProjectResourceCreateAttachments((entries) => [...entries, { key: projectResourceCreateAttachmentKeyRef.current, file, filename: file.filename || 'attachment.bin', contentType: file.contentType, byteSize: file.byteSize, inline: true, stage: '等待上传', error: '' }]);
   }
 
   function closeProjectResourceForm() {
@@ -3005,7 +2978,6 @@ export function SharedApp({ services }) {
       const path = buildProjectResourceDetailPath({ owner: current.owner, projectKey: String(current.projectKey || ''), resourceId: projectResourceCreateCheckpoint.id });
       setProjectResourceModalOpen(false);
       setProjectResourceCreateCheckpoint(null);
-      setProjectResourceCreateAttachments([]);
       navigate(path, '已打开刚创建的项目资料。');
       return;
     }
@@ -3040,7 +3012,6 @@ export function SharedApp({ services }) {
     projectResourceMutationRef.current = actionId;
     setProjectResourceSubmitting(true);
     setProjectResourceError('');
-    let committedCreateResource = projectResourceCreateCheckpoint;
     const isCurrent = () => {
       const active = routeRef.current;
       return projectResourceActionRef.current === actionId
@@ -3053,60 +3024,7 @@ export function SharedApp({ services }) {
       if (editing) resource = await api.updateProjectResource(projectKey, resourceId, payload);
       else if (projectResourceCreateCheckpoint) {
         resource = await api.updateProjectResource(projectKey, projectResourceCreateCheckpoint.id, payload);
-        committedCreateResource = resource;
         setProjectResourceCreateCheckpoint(resource);
-        if (projectResourceCreateAttachments.length) {
-          const result = await createProjectResourceWithAttachments({
-            api, platform: files, projectKey, payload, resource,
-            attachments: projectResourceCreateAttachments.map((entry) => ({
-              file: entry.file,
-              existingAttachment: entry.existingAttachment,
-              uploadedAttachment: entry.uploadedAttachment,
-              inlineHtml: entry.inline && !entry.alreadyInline ? (/** @type {AppProjectResource} */ created, /** @type {AppAttachment} */ attachment) => richTextAttachmentHtml({
-                id: attachment.id,
-                filename: entry.filename,
-                contentType: entry.contentType,
-                url: `/web/projects/${projectKey}/resources/${created.id}/attachments/${attachment.id}/download`,
-              }) : undefined,
-            })),
-            lifecycle: {
-              isCurrent,
-              onResourceCreated: () => {},
-              onAttachmentStage: (index, stage) => setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, stage: { registering: '正在登记', signing: '正在获取上传签名', uploading: '正在上传', confirming: '正在确认上传结果' }[stage], error: '' } : entry)),
-              onAttachmentCreated: (index, /** @type {AppAttachment} */ attachment) => setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, existingAttachment: attachment } : entry)),
-              onAttachmentUploaded: (index, /** @type {AppAttachment} */ attachment) => setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, uploadedAttachment: attachment, file: undefined, stage: '上传完成', error: '' } : entry)),
-              onBodySaved: (/** @type {AppProjectResource} */ updated) => setProjectResourceCreateCheckpoint(updated),
-            },
-          });
-          resource = result.resource;
-          if (!result.completed) return;
-        }
-      }
-      else if (projectResourceCreateAttachments.length) {
-        const result = await createProjectResourceWithAttachments({
-          api, platform: files, projectKey, payload, resource: projectResourceCreateCheckpoint,
-          attachments: projectResourceCreateAttachments.map((entry) => ({
-            file: entry.file,
-            existingAttachment: entry.existingAttachment,
-            uploadedAttachment: entry.uploadedAttachment,
-            inlineHtml: entry.inline && !entry.alreadyInline ? (/** @type {AppProjectResource} */ created, /** @type {AppAttachment} */ attachment) => richTextAttachmentHtml({
-              id: attachment.id,
-              filename: entry.filename,
-              contentType: entry.contentType,
-              url: `/web/projects/${projectKey}/resources/${created.id}/attachments/${attachment.id}/download`,
-            }) : undefined,
-          })),
-          lifecycle: {
-            isCurrent,
-            onResourceCreated: (/** @type {AppProjectResource} */ created) => { committedCreateResource = created; setProjectResourceCreateCheckpoint(created); setProjectResourceStatus(`资料“${created.title}”已创建，正在上传附件。`); },
-            onAttachmentStage: (index, stage) => setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, stage: { registering: '正在登记', signing: '正在获取上传签名', uploading: '正在上传', confirming: '正在确认上传结果' }[stage], error: '' } : entry)),
-            onAttachmentCreated: (index, /** @type {AppAttachment} */ attachment) => setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, existingAttachment: attachment } : entry)),
-            onAttachmentUploaded: (index, /** @type {AppAttachment} */ attachment) => setProjectResourceCreateAttachments((entries) => entries.map((entry, entryIndex) => entryIndex === index ? { ...entry, uploadedAttachment: attachment, file: undefined, stage: '上传完成', error: '' } : entry)),
-            onBodySaved: (/** @type {AppProjectResource} */ updated) => setProjectResourceCreateCheckpoint(updated),
-          },
-        });
-        resource = result.resource;
-        if (!result.completed) return;
       } else resource = await api.createProjectResource(projectKey, payload);
       if (!isCurrent()) return;
       if (editing) {
@@ -3128,13 +3046,11 @@ export function SharedApp({ services }) {
         if (!isCurrent()) return;
         setProjectResources(resources);
         setProjectResourceCreateCheckpoint(null);
-        setProjectResourceCreateAttachments([]);
         setProjectResourceModalOpen(false);
         setProjectResourceStatus(`资料“${resource.title}”已创建。`);
       }
     } catch (caught) {
       if (isCurrent()) {
-        if (!editing && committedCreateResource) setProjectResourceCreateAttachments((entries) => entries.map((entry) => entry.uploadedAttachment ? entry : { ...entry, file: undefined, stage: entry.existingAttachment ? '上传未完成，需要重新选择原文件' : '等待重新选择', error: '上传未完成' }));
         setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error(editing ? '资料更新失败。' : '资料创建失败。')));
       }
     } finally {
@@ -6373,7 +6289,6 @@ export function SharedApp({ services }) {
                 {projectResourceForm.id ? <Field id="project-resource-password-action" label="密码处理方式" required><Select value={projectResourceForm.accessPasswordAction} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPasswordAction: event.target.value, accessPassword: '' }))}><option value="keep">保持不变</option><option value="set">设置密码</option><option value="clear">清除密码</option></Select></Field> : null}
                 {(!projectResourceForm.id || projectResourceForm.accessPasswordAction === 'set') ? <Field id="project-resource-access-password" label={projectResourceForm.id ? '新访问密码' : '初始访问密码'}><TextInput type="password" autoComplete="new-password" minLength={projectResourceForm.accessPassword ? 4 : undefined} maxLength={128} value={projectResourceForm.accessPassword} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
               </div>
-              {!projectResourceForm.id ? <div className="yc-field project-resource-form-attachments"><div className="shell-panel-header"><label>资料附件</label><Button type="button" variant="secondary" disabled={projectResourceSubmitting || projectResourcePasteUploading || Boolean(projectResourceCreateCheckpoint)} onClick={() => void chooseProjectResourceCreateAttachment()}>选择附件</Button></div>{projectResourceCreateAttachments.length ? <ul className="project-resource-create-attachments">{projectResourceCreateAttachments.map((entry, index) => <li key={entry.key}><div><strong>{entry.filename}</strong><span className="shell-muted">{formatByteSize(entry.byteSize)} · {entry.stage}</span></div><label><input type="checkbox" checked={entry.inline} disabled={projectResourceSubmitting || projectResourcePasteUploading || Boolean(entry.uploadedAttachment)} onChange={(event) => setProjectResourceCreateAttachments((entries) => entries.map((item, itemIndex) => itemIndex === index ? { ...item, inline: event.target.checked } : item))} /> 插入正文</label>{!entry.file && !entry.uploadedAttachment ? <Button type="button" variant="secondary" disabled={projectResourceSubmitting || projectResourcePasteUploading} onClick={() => void chooseProjectResourceCreateAttachment(index)}>重新选择</Button> : null}{!projectResourceCreateCheckpoint || entry.error ? <Button type="button" variant="danger" disabled={projectResourceSubmitting || projectResourcePasteUploading} onClick={() => setProjectResourceCreateAttachments((entries) => entries.filter((_, itemIndex) => itemIndex !== index))}>移除</Button> : null}</li>)}</ul> : <p className="shell-muted">尚未选择附件。</p>}</div> : null}
               <div className="yc-field yc-rich-field"><label htmlFor="project-resource-body">资料正文<span aria-hidden="true"> *</span></label><RichTextEditor id="project-resource-body" value={projectResourceForm.body} disabled={projectResourceSubmitting} required onPasteFile={pasteProjectResourceFile} onChange={(body) => setProjectResourceForm((current) => ({ ...current, body, bodyFormat: 'html' }))} /></div>
             </form>
           </Modal>

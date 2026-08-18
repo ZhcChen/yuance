@@ -916,40 +916,6 @@ html[data-theme="dark"] .shell-code-block {
   flex: 0 0 auto;
 }
 
-.project-resource-form-attachments {
-  flex: 0 0 auto;
-}
-
-.project-resource-create-attachments {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.project-resource-create-attachments li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-top: 1px solid var(--yc-line);
-}
-
-.project-resource-create-attachments li > div {
-  display: grid;
-  flex: 1 1 220px;
-  min-width: 0;
-  margin-right: auto;
-}
-
-.project-resource-create-attachments strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .project-resource-body {
   margin: 0;
   white-space: pre-wrap;

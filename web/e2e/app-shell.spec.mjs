@@ -4028,6 +4028,7 @@ test('shared project resources create edit password actions and archive', async 
   await login(page, '/web/app/projects/YCE?tab=resources');
   await page.getByRole('button', { name: '新建资料' }).click();
   const createDialog = page.getByRole('dialog', { name: '新建项目资料' });
+  await expect(createDialog.getByRole('button', { name: '选择附件' })).toHaveCount(0);
   const createFieldGrid = createDialog.locator('.project-resource-form-fields');
   await expect.poll(() => createFieldGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(3);
   await expect.poll(() => createDialog.locator('#project-resource-form').evaluate((form) => form.lastElementChild?.classList.contains('yc-rich-field'))).toBe(true);
@@ -4092,17 +4093,16 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[5]).toEqual(['archive', null]);
 });
 
-test('shared project resource creation resumes attachment upload without duplicate records', async ({ page }) => {
+test('shared project resource creation uploads attachments through rich text', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
   const operations = [];
   let checksum = '';
-  let uploadAttempts = 0;
   let resource = projectResourceFixture({ id: 970, title: '创建附件资料', body: '<p>正文</p>', url: '/web/projects/YCE/resources/970' });
   let attachment = { id: 971, filename: 'create-notes.txt', content_type: 'text/plain', byte_size: 11, status: 'pending', created_by: '元策开发管理员', created_at: '2026-08-07T00:00:00Z' };
   await page.route('**/api/v1/test-storage/upload**', async (route) => {
-    operations.push('put'); uploadAttempts += 1;
-    await route.fulfill({ status: uploadAttempts === 1 ? 500 : 200, body: '' });
+    operations.push('put');
+    await route.fulfill({ status: 200, body: '' });
   });
   await page.route('**/api/v1/projects/YCE/resources/970/attachments/971/upload-url', async (route) => {
     operations.push('sign');
@@ -4132,16 +4132,18 @@ test('shared project resource creation resumes attachment upload without duplica
   const dialog = page.getByRole('dialog', { name: '新建项目资料' });
   await dialog.getByLabel('资料标题').fill('创建附件资料');
   await dialog.getByLabel('资料正文').evaluate((input) => { input.innerHTML = '<p>正文</p>'; input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' })); });
-  await chooseFile(page, dialog.getByRole('button', { name: '选择附件' }), { name: 'create-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello world') });
-  await expect(dialog).toContainText('create-notes.txt');
-  await dialog.getByRole('button', { name: '保存' }).click();
-  await expect(dialog).toContainText('上传未完成，需要重新选择原文件');
-  await expect(dialog.getByRole('button', { name: '转到资料详情' })).toBeEnabled();
-  expect(operations).toEqual(['create', 'register', 'sign', 'put']);
-  await chooseFile(page, dialog.getByRole('button', { name: '重新选择' }), { name: 'create-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello world') });
+  await expect(dialog.getByRole('button', { name: '选择附件' })).toHaveCount(0);
+  await dialog.getByLabel('资料正文').evaluate((input) => {
+    const file = new File(['hello world'], 'create-notes.txt', { type: 'text/plain' });
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(file);
+    input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData }));
+  });
+  await expect.poll(() => operations.length).toBe(5);
+  await expect(dialog.getByLabel('资料正文').locator('[data-yuance-attachment-id="971"]')).toHaveCount(1);
   await dialog.getByRole('button', { name: '保存' }).click();
   await expect(dialog).not.toBeVisible();
-  expect(operations).toEqual(['create', 'register', 'sign', 'put', 'patch', 'sign', 'put', 'confirm', 'patch']);
+  expect(operations).toEqual(['create', 'register', 'sign', 'put', 'confirm', 'patch']);
   expect(resource.body).toContain('data-yuance-attachment-id="971"');
   expect(resource.body).toContain('/web/projects/YCE/resources/970/attachments/971/download');
 });
