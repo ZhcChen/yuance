@@ -124,6 +124,7 @@ test('content tabs retain the sliding indicator transition after resize observat
 test('wide modal fills 90% of the viewport width and height', async () => {
   const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
 
+  assert.match(styles, /\.yc-modal-body > form:not\(\.work-item-action-form\) \{[^}]*display: grid;[^}]*gap: 16px/u);
   assert.match(styles, /\.yc-modal-wide\s*\{[^}]*width:\s*90vw/u);
   assert.match(styles, /\.yc-modal-wide\s*\{[^}]*height:\s*90vh/u);
   assert.match(styles, /\.yc-modal-wide \.work-item-edit-form \{[^}]*height: 100%/u);

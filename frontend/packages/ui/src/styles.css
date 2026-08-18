@@ -436,6 +436,7 @@ html[data-theme="dark"] {
 .yc-modal-wide .yc-rich-field .yc-rich-text-toolbar { flex: 0 0 auto; }
 .yc-modal-wide .yc-rich-field .yc-rich-text-input { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .yc-modal-wide .yc-rich-text-input { min-height: 248px; }
+.yc-modal-body > form:not(.work-item-action-form) { display: grid; gap: 16px; }
 .yc-modal-header,
 .yc-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
 .yc-modal-header { border-bottom: 1px solid var(--yc-line); }
