@@ -567,6 +567,8 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await page.getByRole('button', { name: '新建任务' }).click();
   const taskDialog = page.getByRole('dialog', { name: '新建任务' });
   await expect(taskDialog).toHaveClass(/yc-modal-wide/u);
+  await expect.poll(() => taskDialog.locator('.work-item-create-fields').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(4);
+  await expect.poll(() => taskDialog.locator('#work-item-create-form').evaluate((form) => form.querySelector('.yc-rich-field')?.previousElementSibling?.classList.contains('work-item-create-fields'))).toBe(true);
   await taskDialog.locator('#work-item-create-priority-native').selectOption('P1');
   await expect(taskDialog.locator('#work-item-create-cycle-native')).toHaveValue('');
   await taskDialog.locator('#work-item-create-assignee-native').selectOption({ index: 1 });
@@ -581,6 +583,7 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await page.goto('/web/app/requirements');
   await page.getByRole('button', { name: '新建需求' }).click();
   const requirementDialog = page.getByRole('dialog', { name: '新建需求' });
+  await expect.poll(() => requirementDialog.locator('.work-item-create-fields').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(4);
   await expect(requirementDialog.locator('#work-item-create-parent-native')).toHaveCount(0);
   await requirementDialog.locator('#work-item-create-title').fill('共享需求创建验收');
   await requirementDialog.getByRole('button', { name: '创建' }).click();
@@ -590,6 +593,7 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await page.goto('/web/app/bugs');
   await page.getByRole('button', { name: '新建 Bug' }).click();
   const bugDialog = page.getByRole('dialog', { name: '新建 Bug' });
+  await expect.poll(() => bugDialog.locator('.work-item-create-fields').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(4);
   await bugDialog.locator('#work-item-create-title').fill('共享缺陷创建验收');
   await bugDialog.getByRole('button', { name: '创建' }).click();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-BUG-\d+/u);
@@ -788,6 +792,8 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await page.getByRole('button', { name: '编辑内容' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑工作项' });
   const editForm = page.locator('#work-item-edit-form');
+  await expect.poll(() => editForm.locator('.work-item-edit-fields').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(4);
+  await expect.poll(() => editForm.evaluate((form) => form.lastElementChild?.classList.contains('yc-rich-field'))).toBe(true);
   await expect.poll(() => editForm.getByLabel('主内容').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(320);
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill(editedDetail.description);
