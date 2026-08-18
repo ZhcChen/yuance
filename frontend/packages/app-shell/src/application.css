@@ -911,7 +911,7 @@ html[data-theme="dark"] .shell-code-block {
 
 .project-resource-form-fields {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   flex: 0 0 auto;
 }

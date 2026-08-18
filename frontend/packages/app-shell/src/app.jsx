@@ -950,7 +950,7 @@ export function SharedApp({ services }) {
   const [projectResourceFilters, setProjectResourceFilters] = useState({ q: '', category: '', status: '', tag: '' });
   const [projectResourceSubmitting, setProjectResourceSubmitting] = useState(false);
   const [projectResourceModalOpen, setProjectResourceModalOpen] = useState(false);
-  const [projectResourceForm, setProjectResourceForm] = useState({ id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
+  const [projectResourceForm, setProjectResourceForm] = useState({ id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '' });
   const [projectResourceInitialInlineAttachmentIds, setProjectResourceInitialInlineAttachmentIds] = useState(/** @type {number[]} */ ([]));
   const [projectResourceCreateCheckpoint, setProjectResourceCreateCheckpoint] = useState(/** @type {AppProjectResource | null} */ (null));
   const [projectResourcePasteUploading, setProjectResourcePasteUploading] = useState(false);
@@ -2963,9 +2963,7 @@ export function SharedApp({ services }) {
       accessPasswordAction: 'keep',
       accessPassword: '',
       tagsText: resource.tags.join('，'),
-      relatedWorkItemKey: resource.related_work_item?.key || '',
-      relatedCycleId: resource.related_cycle ? String(resource.related_cycle.id) : '',
-    } : { id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
+    } : { id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '' });
     setProjectResourceInitialInlineAttachmentIds(resource ? richTextAttachmentIds(resource.body) : []);
     if (!resource) setProjectResourceCreateCheckpoint(null);
     setProjectResourceModalOpen(true);
@@ -2994,8 +2992,6 @@ export function SharedApp({ services }) {
       accessPasswordAction: projectResourceForm.accessPasswordAction,
       accessPassword: projectResourceForm.accessPassword,
       tags: projectResourceForm.tagsText.split(/[,，;；]/u).map((tag) => tag.trim()).filter(Boolean),
-      relatedWorkItemKey: projectResourceForm.relatedWorkItemKey.trim(),
-      relatedCycleId: projectResourceForm.relatedCycleId ? Number(projectResourceForm.relatedCycleId) : null,
     };
   }
 
@@ -6284,8 +6280,6 @@ export function SharedApp({ services }) {
                 <Field id="project-resource-title" label="资料标题" required><TextInput value={projectResourceForm.title} maxLength={120} onChange={(event) => setProjectResourceForm((current) => ({ ...current, title: event.target.value }))} /></Field>
                 <Field id="project-resource-category" label="分类" required><Select value={projectResourceForm.category} onChange={(event) => setProjectResourceForm((current) => ({ ...current, category: event.target.value }))}><option value="integration">集成</option><option value="customer">客户</option><option value="meeting">会议</option><option value="implementation">实施</option><option value="other">其他</option></Select></Field>
                 <Field id="project-resource-tags" label="标签"><TextInput value={projectResourceForm.tagsText} placeholder="多个标签使用逗号分隔" onChange={(event) => setProjectResourceForm((current) => ({ ...current, tagsText: event.target.value }))} /></Field>
-                <Field id="project-resource-related-item" label="关联工作项 Key"><TextInput value={projectResourceForm.relatedWorkItemKey} maxLength={64} onChange={(event) => setProjectResourceForm((current) => ({ ...current, relatedWorkItemKey: event.target.value }))} /></Field>
-                <Field id="project-resource-related-cycle" label="关联周期 ID"><TextInput type="number" min="1" value={projectResourceForm.relatedCycleId} onChange={(event) => setProjectResourceForm((current) => ({ ...current, relatedCycleId: event.target.value }))} /></Field>
                 {projectResourceForm.id ? <Field id="project-resource-password-action" label="密码处理方式" required><Select value={projectResourceForm.accessPasswordAction} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPasswordAction: event.target.value, accessPassword: '' }))}><option value="keep">保持不变</option><option value="set">设置密码</option><option value="clear">清除密码</option></Select></Field> : null}
                 {(!projectResourceForm.id || projectResourceForm.accessPasswordAction === 'set') ? <Field id="project-resource-access-password" label={projectResourceForm.id ? '新访问密码' : '初始访问密码'}><TextInput type="password" autoComplete="new-password" minLength={projectResourceForm.accessPassword ? 4 : undefined} maxLength={128} value={projectResourceForm.accessPassword} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
               </div>
