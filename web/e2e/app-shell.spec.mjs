@@ -788,7 +788,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await page.getByRole('button', { name: '编辑内容' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑工作项' });
   const editForm = page.locator('#work-item-edit-form');
-  await expect.poll(() => editForm.getByLabel('主内容').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(320);
+  await expect.poll(() => editForm.getByLabel('主内容').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill(editedDetail.description);
   await editForm.locator('select[name="status"]').selectOption('in_progress');
