@@ -909,6 +909,17 @@ html[data-theme="dark"] .shell-code-block {
   gap: 12px;
 }
 
+.project-resource-form-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  flex: 0 0 auto;
+}
+
+.project-resource-form-attachments {
+  flex: 0 0 auto;
+}
+
 .project-resource-create-attachments {
   display: grid;
   gap: 8px;
@@ -1403,6 +1414,10 @@ html[data-theme="dark"] .project-stats div {
   .cycle-board-grid { grid-template-columns: 1fr; }
 }
 
+@media (max-width: 900px) {
+  .project-resource-form-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (max-width: 1280px) {
   .project-detail-overview, .cycle-detail-overview { grid-template-columns: 1fr; }
 }
@@ -1428,6 +1443,7 @@ html[data-theme="dark"] .project-stats div {
   .project-tabs-head .yc-content-tabs { width: 100%; }
   .project-detail-dl { grid-template-columns: 1fr; }
   .project-tab-section-head { flex-direction: column; }
+  .project-resource-form-fields { grid-template-columns: 1fr; }
   .project-member-candidate { grid-template-columns: auto minmax(0, 1fr); }
   .project-member-candidate small { grid-column: 2; text-align: left; }
   .cycle-progress-summary { grid-template-columns: 1fr; }

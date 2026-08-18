@@ -4028,6 +4028,9 @@ test('shared project resources create edit password actions and archive', async 
   await login(page, '/web/app/projects/YCE?tab=resources');
   await page.getByRole('button', { name: '新建资料' }).click();
   const createDialog = page.getByRole('dialog', { name: '新建项目资料' });
+  const createFieldGrid = createDialog.locator('.project-resource-form-fields');
+  await expect.poll(() => createFieldGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(3);
+  await expect.poll(() => createDialog.locator('#project-resource-form').evaluate((form) => form.lastElementChild?.classList.contains('yc-rich-field'))).toBe(true);
   await expect.poll(() => createDialog.locator('.yc-rich-text-editor').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
   await createDialog.getByLabel('资料标题').fill('部署手册');
   await createDialog.locator('#project-resource-category-native').selectOption('implementation');
@@ -4065,6 +4068,9 @@ test('shared project resources create edit password actions and archive', async 
   expect(await page.evaluate(() => window.__resourceRichXss === true)).toBe(false);
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  const editFieldGrid = editDialog.locator('.project-resource-form-fields');
+  await expect.poll(() => editFieldGrid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)).toBe(3);
+  await expect.poll(() => editDialog.locator('#project-resource-form').evaluate((form) => form.lastElementChild?.classList.contains('yc-rich-field'))).toBe(true);
   await expect.poll(() => editDialog.locator('.yc-rich-text-editor').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
   await editDialog.getByLabel('资料标题').fill('部署手册 2.0');
   await editDialog.locator('#project-resource-password-action-native').selectOption('set');
