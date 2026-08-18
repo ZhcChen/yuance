@@ -428,7 +428,7 @@ html[data-theme="dark"] {
 .yc-modal-wide .yc-modal-body { display: flex; flex-direction: column; }
 .yc-modal-wide .yc-modal-body > form:not(.work-item-action-form) { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .yc-modal-wide .yc-modal-body > form:not(.work-item-action-form) > .yc-rich-field { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.yc-modal-wide .work-item-edit-form { height: 100%; display: flex; flex-direction: column; gap: 12px; }
+.yc-modal-wide .work-item-edit-form { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
 .yc-modal-wide .work-item-edit-form .work-item-edit-meta-fields { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .yc-modal-wide .work-item-edit-form > .yc-rich-field { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .yc-modal-wide .yc-rich-field .yc-rich-text-root { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -436,6 +436,7 @@ html[data-theme="dark"] {
 .yc-modal-wide .yc-rich-field .yc-rich-text-toolbar { flex: 0 0 auto; }
 .yc-modal-wide .yc-rich-field .yc-rich-text-input { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .yc-modal-wide .yc-rich-text-input { min-height: 248px; }
+.yc-modal-wide .work-item-edit-form .yc-rich-text-input { min-height: clamp(320px, 46vh, 520px); }
 .yc-modal-body > form:not(.work-item-action-form) { display: grid; gap: 16px; }
 .yc-modal-header,
 .yc-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }

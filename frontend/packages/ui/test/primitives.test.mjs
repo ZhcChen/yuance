@@ -127,7 +127,8 @@ test('wide modal fills 90% of the viewport width and height', async () => {
   assert.match(styles, /\.yc-modal-body > form:not\(\.work-item-action-form\) \{[^}]*display: grid;[^}]*gap: 16px/u);
   assert.match(styles, /\.yc-modal-wide\s*\{[^}]*width:\s*90vw/u);
   assert.match(styles, /\.yc-modal-wide\s*\{[^}]*height:\s*90vh/u);
-  assert.match(styles, /\.yc-modal-wide \.work-item-edit-form \{[^}]*height: 100%/u);
+  assert.match(styles, /\.yc-modal-wide \.work-item-edit-form \{[^}]*flex: 1 1 auto;[^}]*min-height: 0/u);
+  assert.match(styles, /\.yc-modal-wide \.work-item-edit-form \.yc-rich-text-input \{[^}]*min-height: clamp\(320px, 46vh, 520px\)/u);
   assert.match(styles, /\.yc-modal-wide \.yc-rich-field \.yc-rich-text-input \{[^}]*min-height: 0/u);
 });
 

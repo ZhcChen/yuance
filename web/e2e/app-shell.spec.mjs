@@ -786,7 +786,9 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   });
 
   await page.getByRole('button', { name: '编辑内容' }).click();
+  const editDialog = page.getByRole('dialog', { name: '编辑工作项' });
   const editForm = page.locator('#work-item-edit-form');
+  await expect.poll(() => editForm.getByLabel('主内容').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(320);
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill(editedDetail.description);
   await editForm.locator('select[name="status"]').selectOption('in_progress');
@@ -794,7 +796,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await editForm.locator('select[name="assigneeUsername"]').selectOption('yuance_admin');
   await editForm.getByLabel('截止日期').fill('2026-08-15');
   await editForm.locator('select[name="parentItemKey"]').selectOption('');
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await editDialog.getByRole('button', { name: '保存修改' }).click();
 
   await expect.poll(() => editRequests.length).toBe(1);
   expect(editRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
@@ -840,11 +842,12 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   });
 
   await page.getByRole('button', { name: '指派 / 流转' }).click();
+  const handoffDialog = page.getByRole('dialog', { name: '指派 / 流转' });
   const handoffForm = page.locator('#work-item-handoff-form');
   await handoffForm.locator('select[name="status"]').selectOption('pending_confirmation');
   await handoffForm.locator('select[name="assigneeUsername"]').selectOption('yuance_admin');
   await handoffForm.getByLabel('处理说明').fill('请确认 Web shell 表单提交。');
-  await handoffForm.getByRole('button', { name: '确认推进' }).click();
+  await handoffDialog.getByRole('button', { name: '确认推进' }).click();
 
   await expect.poll(() => handoffRequests.length).toBe(1);
   expect(handoffRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
