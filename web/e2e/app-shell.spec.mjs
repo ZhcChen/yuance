@@ -4028,6 +4028,7 @@ test('shared project resources create edit password actions and archive', async 
   await login(page, '/web/app/projects/YCE?tab=resources');
   await page.getByRole('button', { name: '新建资料' }).click();
   const createDialog = page.getByRole('dialog', { name: '新建项目资料' });
+  await expect.poll(() => createDialog.locator('.yc-rich-text-editor').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
   await createDialog.getByLabel('资料标题').fill('部署手册');
   await createDialog.locator('#project-resource-category-native').selectOption('implementation');
   await createDialog.getByLabel('标签').fill('发布，运维');
@@ -4064,7 +4065,7 @@ test('shared project resources create edit password actions and archive', async 
   expect(await page.evaluate(() => window.__resourceRichXss === true)).toBe(false);
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
-  await expect.poll(() => editDialog.getByLabel('资料正文').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
+  await expect.poll(() => editDialog.locator('.yc-rich-text-editor').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(400);
   await editDialog.getByLabel('资料标题').fill('部署手册 2.0');
   await editDialog.locator('#project-resource-password-action-native').selectOption('set');
   await editDialog.getByLabel('新访问密码').fill('next-pass');

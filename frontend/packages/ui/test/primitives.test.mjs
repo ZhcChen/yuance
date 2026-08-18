@@ -130,6 +130,8 @@ test('wide modal fills 90% of the viewport width and height', async () => {
   assert.match(styles, /\.yc-modal-wide \.work-item-edit-form \{[^}]*flex: 1 1 auto;[^}]*min-height: 0/u);
   assert.match(styles, /\.yc-modal-wide \.work-item-edit-form \.yc-rich-text-input \{[^}]*min-height: clamp\(320px, 46vh, 520px\)/u);
   assert.match(styles, /\.yc-modal-wide \.project-resource-form \.yc-rich-text-input \{[^}]*min-height: clamp\(400px, 54vh, 640px\)/u);
+  assert.match(styles, /\.yc-modal-wide \.yc-modal-body > form\.project-resource-form > \.yc-rich-field \{[^}]*flex: 0 0 auto/u);
+  assert.match(styles, /\.yc-modal-wide \.project-resource-form \.yc-rich-text-root,\n\.yc-modal-wide \.project-resource-form \.yc-rich-text-editor,\n\.yc-modal-wide \.project-resource-form \.yc-rich-text-input \{[^}]*flex: 0 0 auto/u);
   assert.match(styles, /\.yc-modal-wide \.yc-rich-field \.yc-rich-text-input \{[^}]*min-height: 0/u);
 });
 
