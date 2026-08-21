@@ -20,6 +20,18 @@ test("derives the exact content request from trusted metadata and issues a publi
   assert.equal(calls[1][1].contentPath, "/api/v1/projects/YCE/attachments/7/preview/content");
 });
 
+test("loads text preview strategies with a stable plain text content type", async () => {
+  const calls = [];
+  const snapshot = Object.freeze({ privatePath: "/private/preview", contentType: "text/plain; charset=utf-8", byteSize: 12, remove: async () => {} });
+  const coordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport: { execute: async () => ({ attachment: { ...attachment, filename: "notes.md", content_type: "application/octet-stream" }, preview: { kind: "document", strategy: "text", content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: "/api/v1/projects/YCE/attachments/7/preview/content" }) },
+    loader: { load: async (input) => { calls.push(input); return snapshot; } },
+    vault: { issue: () => ({ capability: "ypv_text", source: "app://yuance/.preview/ypv_text", contentType: snapshot.contentType, byteSize: 12 }), release: () => {} },
+  });
+  await coordinator.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 7, binding, signal: undefined });
+  assert.equal(calls[0].contentType, "text/plain; charset=utf-8");
+});
+
 test("rejects disabled or substituted content metadata before loading bytes", async () => {
   let loaded = false;
   const coordinator = createProjectAttachmentPreviewCoordinator({ restTransport: { execute: async () => ({ attachment, preview: { kind: "document", content_enabled: true }, navigation: {}, content_url: "/api/v1/projects/OTHER/attachments/7/preview/content" }) }, loader: { load: async () => { loaded = true; } }, vault: { issue: () => {}, release: () => {} } });

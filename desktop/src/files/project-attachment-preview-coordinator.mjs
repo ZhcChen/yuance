@@ -1,13 +1,15 @@
 const PROJECT_KEY = /^[A-Z][A-Z0-9-]{1,31}$/u;
 const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
 const MAX_PREVIEW_BYTES = 100 * 1024 * 1024;
+const TEXT_PREVIEW_CONTENT_TYPE = "text/plain; charset=utf-8";
 
 export function createProjectAttachmentPreviewCoordinator({ restTransport, loader, vault } = {}) {
   if (typeof restTransport?.execute !== "function" || typeof loader?.load !== "function" || typeof vault?.issue !== "function" || typeof vault?.release !== "function") throw new TypeError("preview coordinator dependencies are required");
 
   async function openPreviewSnapshot(metadata, attachmentId, expectedContentPath, binding, signal) {
     if (metadata?.attachment?.id !== attachmentId || metadata.attachment.status !== "uploaded" || metadata.attachment.byte_size > MAX_PREVIEW_BYTES || metadata.content_url !== expectedContentPath || metadata.preview?.content_enabled !== true || !["image", "video", "document"].includes(metadata.preview.kind)) throw previewError("preview_unavailable");
-    const snapshot = await loader.load({ contentPath: expectedContentPath, contentType: metadata.attachment.content_type, byteSize: metadata.attachment.byte_size, signal });
+    const contentType = metadata.preview.strategy === "text" ? TEXT_PREVIEW_CONTENT_TYPE : metadata.attachment.content_type;
+    const snapshot = await loader.load({ contentPath: expectedContentPath, contentType, byteSize: metadata.attachment.byte_size, signal });
     try {
       return Object.freeze({ ...vault.issue(snapshot, binding), attachment: metadata.attachment, preview: metadata.preview, navigation: metadata.navigation });
     } catch (error) {

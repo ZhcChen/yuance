@@ -142,9 +142,9 @@ function viewerStatusText(state, total, position, loading, error) {
 }
 
 /**
- * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, fileType: string | null, loading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void }} props
+ * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, loading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void }} props
  */
-export function AttachmentPreview({ open, title, source, kind, fileType, loading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose }) {
+export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, loading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose }) {
   const dialogRef = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const stageRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const panRef = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -561,6 +561,7 @@ export function AttachmentPreview({ open, title, source, kind, fileType, loading
   const fitToggleTarget = state.viewMode === 'fit-screen' ? 'fit-width' : 'fit-screen';
   const fitToggleLabel = state.viewMode === 'fit-screen' ? '适宽' : '适屏';
   const statusText = viewerStatusText(state, total, position, loading, error);
+  const showTextPreview = kind === 'document' && strategy === 'text' && Boolean(source);
 
   return (
     <dialog
@@ -585,7 +586,7 @@ export function AttachmentPreview({ open, title, source, kind, fileType, loading
         onLostPointerCapture={endImageViewerDrag}
         onDoubleClick={handleImageViewerDoubleClick}
       >
-        <div className="attachment-preview-pan" ref={panRef} key={source}>
+        <div className={`attachment-preview-pan${showTextPreview ? ' is-text' : ''}`} ref={panRef} key={source}>
           {!loading && !error && kind === 'image' && source ? (
             <img
               ref={imageRef}
@@ -609,6 +610,14 @@ export function AttachmentPreview({ open, title, source, kind, fileType, loading
               aria-label={title}
             />
           ) : null}
+          {!loading && !error && showTextPreview ? (
+            <iframe
+              className="attachment-preview-text-frame"
+              src={source}
+              title={`${title || '附件'} 文本预览`}
+              sandbox=""
+            />
+          ) : null}
         </div>
         <div className="attachment-preview-overlay">
           {loading ? <p className="attachment-preview-message">正在加载预览…</p> : null}
@@ -616,7 +625,7 @@ export function AttachmentPreview({ open, title, source, kind, fileType, loading
           {!loading && !error && kind === 'image' && state.imageState === 'error' ? (
             <p className="attachment-preview-error" role="alert">图片加载失败，可关闭后重新打开。</p>
           ) : null}
-          {!loading && !error && kind === 'document' ? (
+          {!loading && !error && kind === 'document' && !showTextPreview ? (
             <div className="attachment-preview-document">
               <strong>{fileType?.toUpperCase() || 'DOCUMENT'}</strong>
               <p>此文档暂不支持内嵌渲染，可下载后查看。</p>

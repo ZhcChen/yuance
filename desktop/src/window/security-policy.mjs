@@ -4,6 +4,7 @@ import { isAllowedAppRoute } from "../routes/app-route.mjs";
 export const PRODUCTION_SESSION_PARTITION = "persist:yuance";
 export const DEVELOPMENT_SESSION_PARTITION = "persist:yuance-dev";
 export const DEFAULT_RENDERER_DEV_URL = "http://127.0.0.1:4273";
+const PREVIEW_SUBFRAME_PATH = /^\/\.preview\/ypv_[A-Za-z0-9_-]{32}$/u;
 
 function isLoopbackHostname(hostname) {
   return hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "localhost";
@@ -92,7 +93,16 @@ export function isSafeExternalUrl(value, options) {
 }
 
 export function decideNavigation({ url, isMainFrame, rendererTarget }) {
-  if (!isMainFrame) return Object.freeze({ action: "deny" });
+  if (!isMainFrame) {
+    const parsed = parseCanonicalUrl(url);
+    const isPreviewSubframe = parsed?.protocol === "app:" &&
+      parsed.hostname === APP_HOST &&
+      !parsed.port &&
+      !parsed.search &&
+      !parsed.hash &&
+      PREVIEW_SUBFRAME_PATH.test(parsed.pathname);
+    return Object.freeze({ action: isPreviewSubframe ? "allow" : "deny" });
+  }
   if (isTrustedRendererUrl(url, rendererTarget)) return Object.freeze({ action: "allow" });
   if (
     isSafeExternalUrl(url, {

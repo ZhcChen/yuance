@@ -2126,6 +2126,9 @@ test('work item attachments can list download and upload for item and comments',
       } }),
     });
   });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/preview/content', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: '评论附件原文' });
+  });
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
     await route.fulfill({
       status: 200,
@@ -2169,8 +2172,9 @@ test('work item attachments can list download and upload for item and comments',
   await comment901.getByRole('button', { name: '预览评论附件 comment-log.txt' }).click();
   const commentPreview = page.getByRole('dialog', { name: 'comment-log.txt' });
   await expect(commentPreview).toBeVisible();
-  await expect(commentPreview).toContainText('1 / 1');
-  await commentPreview.getByRole('button', { name: '关闭附件预览' }).click();
+  const commentTextPreview = commentPreview.locator('iframe[title="comment-log.txt 文本预览"]').contentFrame();
+  await expect(commentTextPreview.locator('body')).toContainText('评论附件原文');
+  await commentPreview.getByRole('button', { name: '关闭媒体预览' }).click();
   await expect(commentPreview).toBeHidden();
 
   await attachmentPanel.getByRole('button', { name: '下载附件 spec.pdf' }).click();
@@ -2217,7 +2221,7 @@ test('work item attachments can list download and upload for item and comments',
   await expect(attachmentPanel).toContainText('web-upload.txt');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 附件已上传。');
 
-  await chooseFile(page, comment901.getByRole('button', { name: '选择评论附件' }), {
+  await chooseFile(page, comment901.getByRole('button', { name: '添加附件' }), {
     name: 'comment-upload.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('hello comment'),
@@ -2243,8 +2247,9 @@ test('work item attachments can list download and upload for item and comments',
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论附件已上传。');
 
   const newCommentEditor = page.getByLabel('新增评论');
+  const newCommentForm = page.locator('.work-item-comment-form');
   await newCommentEditor.fill('带附件的新评论');
-  await chooseFile(page, page.getByRole('button', { name: '添加附件' }), {
+  await chooseFile(page, newCommentForm.getByRole('button', { name: '添加附件' }), {
     name: 'draft-note.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('draft attachment'),
@@ -2253,13 +2258,13 @@ test('work item attachments can list download and upload for item and comments',
   await expect.poll(() => commentCreateRequests.some((request) => request.commentId === 950)).toBe(true);
   await expect(page.getByLabel('新评论附件')).toContainText('draft-note.txt');
   await expect(newCommentEditor).toContainText('带附件的新评论');
-  await page.getByRole('button', { name: '发布评论' }).click();
+  await newCommentForm.getByRole('button', { name: '发表', exact: true }).click();
   await expect.poll(() => commentDraftPublishRequests.length).toBe(1);
   expect(commentDraftPublishRequests[0].commentId).toBe(950);
   expect(commentDraftPublishRequests[0].payload.body).toContain('/comments/950/attachments/');
 
   await newCommentEditor.fill('稍后取消');
-  await chooseFile(page, page.getByRole('button', { name: '添加附件' }), {
+  await chooseFile(page, newCommentForm.getByRole('button', { name: '添加附件' }), {
     name: 'cancel-me.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('cancel attachment'),
@@ -2290,7 +2295,7 @@ test('work item attachments can list download and upload for item and comments',
   });
   const pastedImage = newCommentEditor.getByRole('img', { name: 'pasted.png' });
   await expect(pastedImage).toBeVisible();
-  await expect(pastedImage).toHaveAttribute('src', /\/comments\/952\/attachments\/\d+\/preview\/content$/u);
+  await expect(pastedImage).toHaveAttribute('src', /\/comments\/952\/attachments\/\d+\/download$/u);
   await expect(pastedImage.locator('xpath=ancestor::*[@data-yuance-attachment-id][1]')).toHaveAttribute('data-yuance-attachment-id', /\d+/u);
 });
 
@@ -4165,8 +4170,8 @@ test('shared project resource creation uploads attachments through rich text', a
 test('shared project resource attachments render inline and are managed from the editor', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
-  const attachment = attachmentFixture({ id: 961, filename: 'resource-notes.txt', content_type: 'text/plain' });
-  const inlineBody = '<p>正文</p><a data-yuance-attachment-id="961" data-yuance-attachment-kind="file" data-yuance-align="left" href="/web/projects/YCE/resources/960/attachments/961/download" title="resource-notes.txt" data-yuance-file-kind="text" data-yuance-file-ext="TXT" rel="noopener noreferrer">resource-notes.txt</a>';
+  const attachment = attachmentFixture({ id: 961, filename: 'resource-notes.md', content_type: 'text/markdown' });
+  const inlineBody = '<p>正文</p><a data-yuance-attachment-id="961" data-yuance-attachment-kind="file" data-yuance-align="left" href="/web/projects/YCE/resources/960/attachments/961/download" title="resource-notes.md" data-yuance-file-kind="code" data-yuance-file-ext="MD" rel="noopener noreferrer">resource-notes.md</a>';
   let resource = projectResourceFixture({ id: 960, title: '附件资料', body: inlineBody, body_format: 'html', url: '/web/projects/YCE/resources/960' });
   const inlineOperations = [];
   let downloadRequests = 0;
@@ -4176,8 +4181,9 @@ test('shared project resource attachments render inline and are managed from the
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment, request: { method: 'GET', url: '/signed-download/resource-961?token=e2e', headers: [] }, expires_in_seconds: 600 } }) });
   });
   await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/preview**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment, preview: { kind: 'document', strategy: 'text', file_type: 'txt', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/960/attachments/961/preview/content', download_url: '/api/v1/projects/YCE/resources/960/attachments/961/download-url' } }) });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment, preview: { kind: 'document', strategy: 'text', file_type: 'md', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/960/attachments/961/preview/content', download_url: '/api/v1/projects/YCE/resources/960/attachments/961/download-url' } }) });
   });
+  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/preview/content', (route) => route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: '# Markdown 预览\n\n- 保持原文展示' }));
   await page.route('**/api/v1/projects/YCE/resources/960/attachments/961', async (route) => {
     expect(route.request().method()).toBe('DELETE'); inlineOperations.push('delete');
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...attachment, status: 'deleted' } }) });
@@ -4197,11 +4203,13 @@ test('shared project resource attachments render inline and are managed from the
   await page.evaluate(() => { window.__yuanceDownloadClicks = []; HTMLAnchorElement.prototype.click = function click() { window.__yuanceDownloadClicks.push(this.href); }; });
   await expect(page.getByRole('heading', { name: '资料附件' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '选择附件上传' })).toHaveCount(0);
-  const inlineLink = page.getByRole('link', { name: 'resource-notes.txt' });
+  const inlineLink = page.getByRole('link', { name: 'resource-notes.md' });
   await expect(inlineLink).toBeVisible();
   await inlineLink.click();
-  const previewDialog = page.getByRole('dialog', { name: 'resource-notes.txt' });
-  await expect(previewDialog).toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
+  const previewDialog = page.getByRole('dialog', { name: 'resource-notes.md' });
+  const textPreview = previewDialog.locator('iframe[title="resource-notes.md 文本预览"]').contentFrame();
+  await expect(textPreview.locator('body')).toContainText('# Markdown 预览');
+  await expect(textPreview.locator('body')).toContainText('- 保持原文展示');
   await previewDialog.getByRole('button', { name: '下载附件' }).click();
   await expect.poll(() => downloadRequests).toBe(1);
   await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/resource-961?token=e2e');
@@ -4219,7 +4227,7 @@ test('shared project resource attachments render inline and are managed from the
   await expect.poll(() => inlineOperations.length).toBe(2);
   expect(inlineOperations.map((entry) => Array.isArray(entry) ? entry[0] : entry)).toEqual(['patch', 'delete']);
   expect(inlineOperations[0][1]).not.toContain('data-yuance-attachment-id="961"');
-  await expect(page.getByRole('link', { name: 'resource-notes.txt' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'resource-notes.md' })).toHaveCount(0);
 });
 
 test('shared project resources hide mutations from viewers', async ({ page }) => {

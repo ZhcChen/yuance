@@ -9271,6 +9271,11 @@ fn resolved_preview_content_type(
     registered_content_type: &str,
     filename: &str,
 ) -> String {
+    if attachment_preview::strategy(filename, registered_content_type)
+        == Some(attachment_preview::AttachmentPreviewStrategy::Text)
+    {
+        return "text/plain; charset=utf-8".to_string();
+    }
     let normalized_stored = stored_content_type.trim().to_ascii_lowercase();
     if !normalized_stored.is_empty() && normalized_stored != "application/octet-stream" {
         return stored_content_type.to_string();
@@ -9282,6 +9287,27 @@ fn resolved_preview_content_type(
     attachment_preview::image_content_type_for_filename(filename)
         .unwrap_or("application/octet-stream")
         .to_string()
+}
+
+#[cfg(test)]
+mod preview_content_type_tests {
+    use super::resolved_preview_content_type;
+
+    #[test]
+    fn text_preview_uses_stable_plain_text_content_type() {
+        assert_eq!(
+            resolved_preview_content_type(
+                "application/octet-stream",
+                "application/octet-stream",
+                "notes.md",
+            ),
+            "text/plain; charset=utf-8",
+        );
+        assert_eq!(
+            resolved_preview_content_type("text/markdown", "text/markdown", "notes.md"),
+            "text/plain; charset=utf-8",
+        );
+    }
 }
 
 fn parse_single_byte_range(value: &str, total: usize) -> Option<(usize, usize)> {

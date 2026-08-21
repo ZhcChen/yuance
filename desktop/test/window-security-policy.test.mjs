@@ -71,11 +71,19 @@ test("trusted development renderer navigation keeps canonical query and hash sta
   assert.equal(isTrustedRendererUrl("http://127.0.0.1:4274/messages?filter=unread", development), false);
 });
 
-test("navigation policy rejects subframes and only externalizes safe links", () => {
+test("navigation policy only allows exact preview capability subframes", () => {
   const production = resolveRendererTarget({ isPackaged: true });
   assert.equal(decideNavigation({ url: "app://yuance/projects", isMainFrame: true, rendererTarget: production }).action, "allow");
   assert.equal(decideNavigation({ url: "https://example.com/docs", isMainFrame: true, rendererTarget: production }).action, "external");
+  assert.equal(decideNavigation({ url: "app://yuance/.preview/ypv_0123456789abcdefghijklmnopqrstuv", isMainFrame: false, rendererTarget: production }).action, "allow");
   assert.equal(decideNavigation({ url: "https://example.com/docs", isMainFrame: false, rendererTarget: production }).action, "deny");
+  for (const url of [
+    "app://yuance/.preview/ypv_short",
+    "app://yuance/.preview/ypv_0123456789abcdefghijklmnopqrstu!",
+    "app://yuance/.preview/ypv_0123456789abcdefghijklmnopqrstuv/extra",
+    "app://yuance/.preview/ypv_0123456789abcdefghijklmnopqrstuv?download=1",
+    "app://attacker/.preview/ypv_0123456789abcdefghijklmnopqrstuv",
+  ]) assert.equal(decideNavigation({ url, isMainFrame: false, rendererTarget: production }).action, "deny", url);
   assert.equal(decideNavigation({ url: "http://example.com", isMainFrame: true, rendererTarget: production }).action, "deny");
 });
 

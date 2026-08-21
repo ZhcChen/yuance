@@ -30,7 +30,12 @@ test('attachment preview renders video with native controls and hides image-only
   assert.doesNotMatch(html, /aria-label="顺时针旋转图片"/);
 });
 
-test('attachment preview keeps document and error fallbacks actionable', () => {
+test('attachment preview renders text documents inline and keeps unsupported documents actionable', () => {
+  const textHtml = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'notes.md', source: '/preview/content', kind: 'document', strategy: 'text', fileType: 'md', onDownload() {}, onClose() {} }));
+  assert.match(textHtml, /class="attachment-preview-text-frame"/);
+  assert.match(textHtml, /src="\/preview\/content"/);
+  assert.match(textHtml, /title="notes\.md 文本预览"/);
+
   const documentHtml = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'plan.pdf', source: '/preview/content', kind: 'document', fileType: 'pdf', onDownload() {}, onClose() {} }));
   assert.match(documentHtml, /暂不支持内嵌渲染/);
   const errorHtml = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'plan.pdf', source: '', kind: null, fileType: null, error: '预览加载失败', onDownload() {}, onClose() {} }));
