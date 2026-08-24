@@ -1,7 +1,9 @@
 // @ts-check
-/* global document, Element, ResizeObserver */
+/* global document, Element, ResizeObserver, setTimeout, clearTimeout */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+
+import { Button, Modal } from './primitives.jsx';
 
 const PIXELS_PER_DAY_BY_SCALE = {
   day: 24,
@@ -83,7 +85,12 @@ export function TimeAllocationGantt({
   const [busy, setBusy] = useState(false);
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const [selectedAllocation, setSelectedAllocation] = useState(/** @type {TimeAllocation | null} */ (null));
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const itemsRef = useRef(items);
+  const pendingClickIdRef = useRef(0);
+  const pendingDetailTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
+  const dragMovedRef = useRef(false);
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
   const pxPerDay = viewScale === 'day'
@@ -109,6 +116,14 @@ export function TimeAllocationGantt({
   useEffect(() => {
     setItems(allocations.map(normalizeAllocation));
   }, [allocations]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => () => {
+    if (pendingDetailTimerRef.current) clearTimeout(pendingDetailTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (projects.length && !projects.some((project) => project.key === selectedProjectKey)) {
@@ -171,8 +186,17 @@ export function TimeAllocationGantt({
     return visibleMembers.find((member) => member.username === username)?.display_name || username;
   }
 
+  function cancelPendingDetail() {
+    if (pendingDetailTimerRef.current) {
+      clearTimeout(pendingDetailTimerRef.current);
+      pendingDetailTimerRef.current = null;
+    }
+    pendingClickIdRef.current = 0;
+  }
+
   function beginSelection(event, track) {
     if (readOnly) return;
+    cancelPendingDetail();
     event.preventDefault();
     const rect = track.getBoundingClientRect();
     const startDay = Math.floor((event.clientX - rect.left) / pxPerDay);
@@ -226,9 +250,12 @@ export function TimeAllocationGantt({
   }
 
   function beginBlockDrag(event, block, mode) {
-    if (readOnly) return;
+    cancelPendingDetail();
     event.preventDefault();
     const id = Number(block.dataset.id || 0);
+    pendingClickIdRef.current = id;
+    dragMovedRef.current = false;
+    if (readOnly) return;
     const allocation = items.find((item) => item.id === id);
     if (!allocation) return;
     const startIndex = dayIndex(allocation.start_date, computedViewStart);
@@ -263,6 +290,9 @@ export function TimeAllocationGantt({
     }
     drag.nextStart = nextStart;
     drag.nextEnd = nextEnd;
+    if (nextStart !== drag.startIndex || nextEnd !== drag.endIndex) {
+      dragMovedRef.current = true;
+    }
     drag.block.style.left = `${nextStart * pxPerDay}px`;
     drag.block.style.width = `${(nextEnd - nextStart + 1) * pxPerDay}px`;
   }
@@ -303,12 +333,24 @@ export function TimeAllocationGantt({
   }
 
   function handleGanttPointerUp(event) {
+    const clickCandidateId = pendingClickIdRef.current;
+    const moved = dragMovedRef.current;
     commitSelection(event);
     commitBlockDrag();
+    if (clickCandidateId && !moved) {
+      if (pendingDetailTimerRef.current) clearTimeout(pendingDetailTimerRef.current);
+      pendingClickIdRef.current = 0;
+      pendingDetailTimerRef.current = setTimeout(() => {
+        pendingDetailTimerRef.current = null;
+        const allocation = itemsRef.current.find((item) => item.id === clickCandidateId);
+        if (allocation) setSelectedAllocation(allocation);
+      }, 300);
+    }
   }
 
   function handleGanttDoubleClick(event) {
     if (readOnly) return;
+    cancelPendingDetail();
     const target = event.target;
     if (!(target instanceof Element)) return;
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
@@ -449,6 +491,13 @@ export function TimeAllocationGantt({
   }, [computedViewStart, computedViewEnd, viewScale, pxPerDay]);
 
   const todayLeft = dayIndex(dateFromMs(today), computedViewStart) * pxPerDay;
+  const selectedDetail = selectedAllocation
+    ? {
+      ...selectedAllocation,
+      days: Math.max(1, dayIndex(selectedAllocation.end_date, selectedAllocation.start_date) + 1),
+      conflict: conflictKeys.has(String(selectedAllocation.id)),
+    }
+    : null;
 
   return (
     <div className="time-management">
@@ -572,9 +621,44 @@ export function TimeAllocationGantt({
       </div>
       <p className="time-management-tip">
         {readOnly
-          ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
-          : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
+          ? '当前为只读视图：单击色块查看详情；色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
+          : '操作方式：在成员行按住拖动画出一段排期；单击色块查看详情；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
       </p>
+      <Modal open={Boolean(selectedDetail)} title="排期详情" onClose={() => setSelectedAllocation(null)}
+        footer={<Button variant="secondary" onClick={() => setSelectedAllocation(null)}>关闭</Button>}>
+        {selectedDetail ? (
+          <dl className="time-allocation-detail">
+            <div>
+              <dt>成员</dt>
+              <dd>{selectedDetail.display_name || selectedDetail.username}<small>@{selectedDetail.username}</small></dd>
+            </div>
+            <div>
+              <dt>项目</dt>
+              <dd><span className="time-allocation-detail-project"><i style={{ background: projectColor(selectedDetail.project_key) }} aria-hidden="true" />{selectedDetail.project_name}</span></dd>
+            </div>
+            <div>
+              <dt>排期</dt>
+              <dd>{selectedDetail.start_date} ~ {selectedDetail.end_date}</dd>
+            </div>
+            <div>
+              <dt>投入</dt>
+              <dd>每天 {selectedDetail.daily_hours} 小时，共 {selectedDetail.days} 天</dd>
+            </div>
+            {selectedDetail.note ? (
+              <div>
+                <dt>备注</dt>
+                <dd>{selectedDetail.note}</dd>
+              </div>
+            ) : null}
+            {selectedDetail.conflict ? (
+              <div>
+                <dt>状态</dt>
+                <dd className="time-allocation-detail-conflict">同一成员时间重叠</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
+      </Modal>
     </div>
   );
 }

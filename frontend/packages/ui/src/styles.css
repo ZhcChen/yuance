@@ -3308,3 +3308,59 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   font-size: 12px;
   line-height: 1.6;
 }
+
+.time-allocation-detail {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.time-allocation-detail > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--yc-line);
+}
+
+.time-allocation-detail > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.time-allocation-detail dt {
+  color: var(--yc-muted);
+  font-size: 12px;
+}
+
+.time-allocation-detail dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--yc-text);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.time-allocation-detail small {
+  display: block;
+  color: var(--yc-muted);
+  font-size: 12px;
+}
+
+.time-allocation-detail-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-allocation-detail-project i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.time-allocation-detail-conflict {
+  color: var(--yc-danger);
+  font-weight: 600;
+}
