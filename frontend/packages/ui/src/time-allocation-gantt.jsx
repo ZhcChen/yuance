@@ -3,7 +3,12 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-const PIXELS_PER_DAY = 3.4;
+const PIXELS_PER_DAY_BY_SCALE = {
+  day: 14,
+  week: 6,
+  month: 3.4,
+};
+const DEFAULT_TIME_SCALE = 'month';
 const DAY_MS = 86400000;
 const DEFAULT_PROJECT_COLORS = [
   '#1f5fbf',
@@ -60,8 +65,8 @@ export function TimeAllocationGantt({
   const computedViewEnd = viewEnd || dateFromMs(today + 240 * DAY_MS);
   const viewEndIndex = dayIndex(computedViewEnd, computedViewStart);
   const totalDays = viewEndIndex + 1;
-  const totalWidth = totalDays * PIXELS_PER_DAY;
 
+  const [viewScale, setViewScale] = useState(/** @type {'day' | 'week' | 'month'} */ (DEFAULT_TIME_SCALE));
   const [items, setItems] = useState(() => allocations.map(normalizeAllocation));
   const [selectedProjectKey, setSelectedProjectKey] = useState(projects[0]?.key || '');
   const [dailyHours, setDailyHours] = useState(8);
@@ -73,6 +78,8 @@ export function TimeAllocationGantt({
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
+  const pxPerDay = PIXELS_PER_DAY_BY_SCALE[viewScale];
+  const totalWidth = totalDays * pxPerDay;
 
   useEffect(() => {
     setItems(allocations.map(normalizeAllocation));
@@ -143,10 +150,10 @@ export function TimeAllocationGantt({
     if (readOnly) return;
     event.preventDefault();
     const rect = track.getBoundingClientRect();
-    const startDay = Math.floor((event.clientX - rect.left) / PIXELS_PER_DAY);
+    const startDay = Math.floor((event.clientX - rect.left) / pxPerDay);
     const element = document.createElement('div');
     element.className = 'time-gantt-selection';
-    element.style.left = `${startDay * PIXELS_PER_DAY}px`;
+    element.style.left = `${startDay * pxPerDay}px`;
     track.appendChild(element);
     selectionRef.current = {
       track,
@@ -161,11 +168,11 @@ export function TimeAllocationGantt({
     const selection = selectionRef.current;
     if (!selection) return;
     const rect = selection.track.getBoundingClientRect();
-    const currentDay = Math.floor((event.clientX - rect.left) / PIXELS_PER_DAY);
+    const currentDay = Math.floor((event.clientX - rect.left) / pxPerDay);
     const from = Math.min(selection.startDay, currentDay);
     const to = Math.max(selection.startDay, currentDay);
-    selection.element.style.left = `${from * PIXELS_PER_DAY}px`;
-    selection.element.style.width = `${(to - from + 1) * PIXELS_PER_DAY}px`;
+    selection.element.style.left = `${from * pxPerDay}px`;
+    selection.element.style.width = `${(to - from + 1) * pxPerDay}px`;
   }
 
   function commitSelection(event) {
@@ -174,7 +181,7 @@ export function TimeAllocationGantt({
     selection.element.remove();
     selectionRef.current = null;
     const rect = selection.track.getBoundingClientRect();
-    const currentDay = Math.floor((event.clientX - rect.left) / PIXELS_PER_DAY);
+    const currentDay = Math.floor((event.clientX - rect.left) / pxPerDay);
     const from = Math.min(selection.startDay, currentDay);
     const to = Math.max(selection.startDay, currentDay);
     if (from < 0 || to >= totalDays || to < from || !selectedProjectKey || !selection.username) return;
@@ -217,7 +224,7 @@ export function TimeAllocationGantt({
   function updateBlockDrag(event) {
     const drag = blockDragRef.current;
     if (!drag) return;
-    const deltaDays = Math.round((event.clientX - drag.startX) / PIXELS_PER_DAY);
+    const deltaDays = Math.round((event.clientX - drag.startX) / pxPerDay);
     let nextStart = drag.startIndex;
     let nextEnd = drag.endIndex;
     if (drag.mode === 'move') {
@@ -231,8 +238,8 @@ export function TimeAllocationGantt({
     }
     drag.nextStart = nextStart;
     drag.nextEnd = nextEnd;
-    drag.block.style.left = `${nextStart * PIXELS_PER_DAY}px`;
-    drag.block.style.width = `${(nextEnd - nextStart + 1) * PIXELS_PER_DAY}px`;
+    drag.block.style.left = `${nextStart * pxPerDay}px`;
+    drag.block.style.width = `${(nextEnd - nextStart + 1) * pxPerDay}px`;
   }
 
   function commitBlockDrag() {
@@ -364,24 +371,35 @@ export function TimeAllocationGantt({
     void persistCreate(item);
   }
 
-  const monthLabels = useMemo(() => {
+  const axisLabels = useMemo(() => {
     const labels = [];
-    const cursor = new Date(`${computedViewStart}T00:00:00Z`);
+    const start = new Date(`${computedViewStart}T00:00:00Z`);
     const end = new Date(`${computedViewEnd}T00:00:00Z`);
-    cursor.setUTCDate(1);
+    const cursor = new Date(start);
+    if (viewScale === 'month') {
+      cursor.setUTCDate(1);
+    }
     while (cursor <= end) {
       const labelDate = cursor.toISOString().slice(0, 10);
       labels.push({
         key: labelDate,
-        label: `${cursor.getUTCMonth() + 1}月`,
-        left: dayIndex(labelDate, computedViewStart) * PIXELS_PER_DAY,
+        label: viewScale === 'month'
+          ? `${cursor.getUTCMonth() + 1}月`
+          : `${cursor.getUTCMonth() + 1}/${cursor.getUTCDate()}`,
+        left: dayIndex(labelDate, computedViewStart) * pxPerDay,
       });
-      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      if (viewScale === 'month') {
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      } else if (viewScale === 'week') {
+        cursor.setUTCDate(cursor.getUTCDate() + 7);
+      } else {
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
     }
     return labels;
-  }, [computedViewStart, computedViewEnd]);
+  }, [computedViewStart, computedViewEnd, viewScale, pxPerDay]);
 
-  const todayLeft = dayIndex(dateFromMs(today), computedViewStart) * PIXELS_PER_DAY;
+  const todayLeft = dayIndex(dateFromMs(today), computedViewStart) * pxPerDay;
 
   return (
     <div className="time-management">
@@ -416,6 +434,15 @@ export function TimeAllocationGantt({
         </form>
       ) : null}
 
+      <div className="time-management-scale" role="group" aria-label="时间粒度">
+        {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
+          <button key={value} type="button" className={viewScale === value ? 'active' : ''}
+            aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {projects.length ? (
         <div className="time-management-legend" aria-label="项目图例">
           {projects.map((project) => (
@@ -439,8 +466,8 @@ export function TimeAllocationGantt({
           <div className="time-gantt-axis-row">
             <div className="time-gantt-axis-label">成员 / 时间</div>
             <div className="time-gantt-axis" style={{ width: `${totalWidth}px` }}>
-              {monthLabels.map((month) => (
-                <span key={month.key} style={{ left: `${month.left}px` }}>{month.label}</span>
+              {axisLabels.map((label) => (
+                <span key={label.key} style={{ left: `${label.left}px` }}>{label.label}</span>
               ))}
             </div>
           </div>
@@ -459,7 +486,7 @@ export function TimeAllocationGantt({
                       <div key={allocation.id}
                         className={`time-gantt-allocation${conflict ? ' time-gantt-allocation-conflict' : ''}`}
                         data-id={allocation.id}
-                        style={{ left: `${start * PIXELS_PER_DAY}px`, width: `${(end - start + 1) * PIXELS_PER_DAY}px`, background: projectColor(allocation.project_key) }}
+                        style={{ left: `${start * pxPerDay}px`, width: `${(end - start + 1) * pxPerDay}px`, background: projectColor(allocation.project_key) }}
                         title={`${member.display_name || member.username} · ${allocation.project_name}\n${allocation.start_date} ~ ${allocation.end_date}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
                         <span className="time-gantt-allocation-name">{allocation.project_name}</span>
                         <span className="time-gantt-allocation-meta">{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
@@ -481,8 +508,8 @@ export function TimeAllocationGantt({
       </div>
       <p className="time-management-tip">
         {readOnly
-          ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突。'
-          : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告。'}
+          ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度。'
+          : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度。'}
       </p>
     </div>
   );

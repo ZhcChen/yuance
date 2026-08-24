@@ -3002,6 +3002,38 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   cursor: default;
 }
 
+.time-management-scale {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 2px;
+  background: var(--yc-panel-soft);
+  border: 1px solid var(--yc-line);
+  border-radius: 6px;
+}
+
+.time-management-scale button {
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--yc-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.time-management-scale button:hover {
+  color: var(--yc-text);
+}
+
+.time-management-scale button.active {
+  background: var(--yc-panel);
+  color: var(--yc-brand);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(23 33 43 / 12%);
+}
+
 .time-management-legend {
   display: flex;
   flex-wrap: wrap;

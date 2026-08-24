@@ -24,7 +24,7 @@
 - `cargo test --manifest-path api/Cargo.toml -p yuance-api --test project_management_flow time_management_api_supports_overview_and_project_allocation_crud -- --exact`：通过
 - `npm run check --prefix frontend/packages/api-client`：50 项通过
 - `npm run check --prefix frontend/packages/app-core`：74 项通过
-- `npm run check --prefix frontend/packages/ui`：66 项通过
+- `npm run check --prefix frontend/packages/ui`：67 项通过（含时间粒度切换渲染测试）
 - `npm run check --prefix frontend/packages/app-shell`：10 项通过
 - `npm run lint --prefix web`：通过
 
@@ -37,6 +37,8 @@
 3. 拖拽色块，PATCH 请求发出且位置更新；
 4. `/web/app/projects/OPS?tab=time` 显示项目“时间”tab 与项目内排期；
 5. 控制台无 React key 冲突或运行时错误。
+
+补充：时间条新增“日 / 周 / 月”粒度切换，默认月视图；切换后按粒度重排时间轴刻度，并保持拖拽创建/移动/缩放的日粒度换算。
 
 ## 已知边界
 
