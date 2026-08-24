@@ -132,9 +132,48 @@
     }
     .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); pointer-events: none; }
     .tip { padding: 8px 24px 20px; color: var(--muted); font-size: 12px; }
+    .mock-nav {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 0 24px;
+      height: 52px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .mock-nav-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      margin-right: 12px;
+    }
+    .mock-nav-brand i { width: 24px; height: 24px; border-radius: 6px; background: var(--brand); display: inline-block; }
+    .mock-nav a {
+      color: var(--muted);
+      text-decoration: none;
+      padding: 6px 2px;
+      border-bottom: 2px solid transparent;
+    }
+    .mock-nav a:hover { color: var(--text); }
+    .mock-nav a.active { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+    .mock-nav .spacer { flex: 1; }
   </style>
 </head>
 <body>
+  <nav class="mock-nav">
+    <span class="mock-nav-brand"><i></i>元策</span>
+    <a href="#">首页</a>
+    <a href="#">需求</a>
+    <a href="#">任务</a>
+    <a href="#">缺陷</a>
+    <a class="active" href="#">时间管理</a>
+    <span class="spacer"></span>
+    <a href="#">消息</a>
+    <a href="#">系统管理</a>
+  </nav>
+
   <header>
     <h1>时间管理排期表（交互原型）</h1>
     <p>
