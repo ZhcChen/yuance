@@ -2982,6 +2982,10 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   min-width: 92px;
 }
 
+.time-management-select {
+  min-width: 200px;
+}
+
 .time-management-primary {
   height: 34px;
   padding: 0 16px;

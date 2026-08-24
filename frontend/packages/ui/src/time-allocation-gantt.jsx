@@ -3,6 +3,8 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { Select } from './primitives.jsx';
+
 const PIXELS_PER_DAY_BY_SCALE = {
   day: 24,
   week: 6,
@@ -11,6 +13,7 @@ const PIXELS_PER_DAY_BY_SCALE = {
 const DEFAULT_TIME_SCALE = 'week';
 const DAY_MS = 86400000;
 const DEFAULT_SPAN_MONTHS = 4;
+const DEFAULT_DAILY_HOURS = 8;
 const TIME_GANTT_LABEL_WIDTH = 170;
 const TIME_GANTT_BORDER_WIDTH = 2;
 const LEGEND_COLLAPSED_LIMIT = 6;
@@ -75,7 +78,6 @@ export function TimeAllocationGantt({
   const [viewScale, setViewScale] = useState(/** @type {'day' | 'week' | 'month'} */ (DEFAULT_TIME_SCALE));
   const [items, setItems] = useState(() => allocations.map(normalizeAllocation));
   const [selectedProjectKey, setSelectedProjectKey] = useState(projects[0]?.key || '');
-  const [dailyHours, setDailyHours] = useState(8);
   const [selectedMemberUsername, setSelectedMemberUsername] = useState(members[0]?.username || '');
   const [manualStart, setManualStart] = useState(dateFromMs(today));
   const [manualEnd, setManualEnd] = useState(dateFromMs(today + 29 * DAY_MS));
@@ -218,7 +220,7 @@ export function TimeAllocationGantt({
       display_name: memberName(selection.username),
       start_date: dateFromDay(from, computedViewStart),
       end_date: dateFromDay(to, computedViewStart),
-      daily_hours: normalizeHours(dailyHours),
+      daily_hours: DEFAULT_DAILY_HOURS,
       note: '',
     };
     setItems((current) => [...current, item]);
@@ -389,7 +391,7 @@ export function TimeAllocationGantt({
       display_name: memberName(selectedMemberUsername),
       start_date: manualStart,
       end_date: manualEnd,
-      daily_hours: normalizeHours(dailyHours),
+      daily_hours: DEFAULT_DAILY_HOURS,
       note: '',
     };
     setItems((current) => [...current, item]);
@@ -456,20 +458,15 @@ export function TimeAllocationGantt({
         <form className="time-management-toolbar" onSubmit={handleManualAdd}>
           <label className="time-management-field">
             <span>项目（拖拽生成时使用）</span>
-            <select value={selectedProjectKey} onChange={(event) => setSelectedProjectKey(event.currentTarget.value)}>
+            <Select className="time-management-select" searchable searchPlaceholder="搜索项目" value={selectedProjectKey} onChange={(event) => setSelectedProjectKey(event.currentTarget.value)}>
               {projects.map((project) => <option key={project.key} value={project.key}>{project.name}</option>)}
-            </select>
-          </label>
-          <label className="time-management-field">
-            <span>每天投入（小时）</span>
-            <input type="number" min="1" max="24" value={dailyHours}
-              onChange={(event) => setDailyHours(normalizeHours(Number(event.currentTarget.value) || 8))} />
+            </Select>
           </label>
           <label className="time-management-field">
             <span>手动添加成员</span>
-            <select value={selectedMemberUsername} onChange={(event) => setSelectedMemberUsername(event.currentTarget.value)}>
+            <Select className="time-management-select" searchable searchPlaceholder="搜索成员" value={selectedMemberUsername} onChange={(event) => setSelectedMemberUsername(event.currentTarget.value)}>
               {visibleMembers.map((member) => <option key={member.username} value={member.username}>{member.display_name || member.username}</option>)}
-            </select>
+            </Select>
           </label>
           <label className="time-management-field">
             <span>开始日期</span>
@@ -601,13 +598,9 @@ function normalizeAllocation(allocation) {
     ...allocation,
     project_name: allocation.project_name || allocation.project_key,
     display_name: allocation.display_name || allocation.username,
-    daily_hours: Number(allocation.daily_hours) || 8,
+    daily_hours: Number(allocation.daily_hours) || DEFAULT_DAILY_HOURS,
     note: allocation.note || '',
   };
-}
-
-function normalizeHours(value) {
-  return Math.min(24, Math.max(1, Math.round(Number(value) || 8)));
 }
 
 function startOfToday() {
