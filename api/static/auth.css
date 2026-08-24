@@ -252,17 +252,12 @@ textarea:focus-visible {
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
-  transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) ease;
+  transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 
 .btn:hover {
   background: var(--panel-soft);
   color: var(--text);
-  transform: translateY(-1px);
-}
-
-.btn:active {
-  transform: translateY(0);
 }
 
 .btn:disabled,
@@ -1217,15 +1212,7 @@ textarea:focus-visible {
   border-radius: 15px;
   font-weight: 800;
   box-shadow: 0 15px 30px rgb(31 95 191 / 22%);
-  transition: transform 150ms ease, background 150ms ease, border-color 150ms ease;
-}
-
-.auth-form .btn-primary:hover {
-  transform: translateY(-1px);
-}
-
-.auth-form .btn-primary:active {
-  transform: translateY(0);
+  transition: background 150ms ease, border-color 150ms ease;
 }
 
 .auth-form-footer {

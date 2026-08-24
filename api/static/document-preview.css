@@ -82,12 +82,11 @@ body {
   font-weight: 700;
   text-decoration: none;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease;
+  transition: background 160ms ease;
 }
 
 .preview-link:hover {
   background: rgb(59 130 246 / 28%);
-  transform: translateY(-1px);
 }
 
 .preview-link-secondary {
@@ -199,13 +198,12 @@ body {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .preview-tool:hover {
   border-color: rgb(37 99 235 / 44%);
   background: rgb(239 246 255 / 88%);
-  transform: translateY(-1px);
 }
 
 .preview-tool.is-active {
@@ -445,18 +443,16 @@ body {
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+  transition: background 160ms ease, color 160ms ease;
 }
 
 .pdf-toolbar-step:hover:not(:disabled) {
   background: rgb(37 99 235 / 14%);
-  transform: translateY(-1px);
 }
 
 .pdf-toolbar-step:disabled {
   opacity: 0.42;
   cursor: not-allowed;
-  transform: none;
 }
 
 .pdf-toolbar-group input {
@@ -489,12 +485,11 @@ body {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease;
+  transition: background 160ms ease;
 }
 
 .pdf-toolbar-action:hover {
   background: rgb(37 99 235 / 14%);
-  transform: translateY(-1px);
 }
 
 .pdf-sidebar {
@@ -629,12 +624,11 @@ body {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: color 180ms ease, transform 180ms ease, background 180ms ease;
+  transition: color 180ms ease, background 180ms ease;
 }
 
 .pdf-sidebar-tab:hover {
   color: #0f172a;
-  transform: translateY(-1px);
 }
 
 .pdf-sidebar-tab.is-active {
@@ -708,12 +702,11 @@ body {
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease;
+  transition: background 160ms ease;
 }
 
 .pdf-outline-search-clear:hover {
   background: rgb(37 99 235 / 14%);
-  transform: translateY(-1px);
 }
 
 .pdf-sidebar-empty {
@@ -744,11 +737,10 @@ body {
   color: #334155;
   text-align: left;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .pdf-thumb:hover {
-  transform: translateY(-1px);
   border-color: rgb(59 130 246 / 24%);
   background: #fff;
   box-shadow: 0 12px 28px rgb(15 23 42 / 10%);
@@ -823,7 +815,7 @@ body {
   background: rgb(15 23 42 / 6%);
   color: #475569;
   cursor: pointer;
-  transition: background 160ms ease, transform 160ms ease;
+  transition: background 160ms ease;
 }
 
 .pdf-outline-toggle::before {
@@ -838,7 +830,6 @@ body {
 
 .pdf-outline-toggle:hover {
   background: rgb(37 99 235 / 12%);
-  transform: translateY(-1px);
 }
 
 .pdf-outline-toggle.is-collapsed::before {
@@ -859,13 +850,12 @@ body {
   color: #0f172a;
   text-align: left;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: background 160ms ease, border-color 160ms ease;
 }
 
 .pdf-outline-item:hover:not(.is-disabled) {
   background: rgb(239 246 255 / 84%);
   border-color: rgb(59 130 246 / 18%);
-  transform: translateY(-1px);
 }
 
 .pdf-outline-item.is-active {
@@ -1007,13 +997,12 @@ body {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease;
 }
 
 .sheet-preview-tab:hover {
   border-color: rgb(37 99 235 / 34%);
   background: rgb(239 246 255 / 88%);
-  transform: translateY(-1px);
 }
 
 .sheet-preview-tab.is-active {
