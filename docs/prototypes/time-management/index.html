@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>时间管理排期表 - 原型</title>
+  <style>
+    :root {
+      --brand: #1f5fbf;
+      --brand-soft: #e8f0fc;
+      --border: #d9e2ec;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --danger: #d64541;
+      --warning: #f0ad4e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: #f5f7fa;
+    }
+    header {
+      padding: 18px 24px 14px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+    }
+    header h1 { margin: 0 0 6px; font-size: 20px; }
+    header p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+      padding: 14px 24px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+    }
+    .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    .field select, .field input {
+      min-width: 130px;
+      height: 34px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fff;
+    }
+    .field input[type="number"] { min-width: 90px; }
+    .primary {
+      height: 34px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .primary:hover { background: #174e9e; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 24px; background: #fff; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+    .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend-swatch { width: 12px; height: 12px; border-radius: 3px; }
+    .gantt-wrap { padding: 18px 24px 40px; overflow-x: auto; }
+    .gantt { min-width: 1200px; border: 1px solid var(--border); border-radius: 8px; background: #fff; overflow: hidden; }
+    .axis-row, .member-row { display: grid; grid-template-columns: 170px 1fr; }
+    .axis-row { background: #f9fbfd; border-bottom: 1px solid var(--border); }
+    .axis-label { padding: 10px 14px; font-size: 12px; color: var(--muted); border-right: 1px solid var(--border); }
+    .axis { position: relative; height: 38px; }
+    .axis span {
+      position: absolute;
+      top: 10px;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .axis i { position: absolute; top: 0; bottom: 0; width: 1px; background: #edf2f7; }
+    .member-row { border-bottom: 1px solid #eef2f6; }
+    .member-row:last-child { border-bottom: 0; }
+    .row-label {
+      padding: 14px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #fbfcfe;
+      border-right: 1px solid var(--border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .track { position: relative; height: 66px; cursor: crosshair; }
+    .track-line { position: absolute; top: 32px; left: 0; right: 0; height: 1px; background: #edf2f7; }
+    .allocation {
+      position: absolute;
+      top: 10px;
+      height: 46px;
+      border-radius: 7px;
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.25;
+      padding: 5px 8px;
+      overflow: hidden;
+      cursor: grab;
+      user-select: none;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      min-width: 12px;
+    }
+    .allocation:active { cursor: grabbing; }
+    .allocation .name { font-weight: 600; white-space: nowrap; }
+    .allocation .meta { opacity: 0.92; white-space: nowrap; }
+    .allocation.conflict { outline: 2px dashed var(--danger); outline-offset: -2px; }
+    .allocation.conflict::after { content: "⚠"; position: absolute; top: -8px; right: -4px; font-size: 13px; color: var(--danger); background: #fff; border-radius: 50%; padding: 1px 3px; box-shadow: 0 0 0 1px var(--danger); }
+    .resize-l, .resize-r {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 7px;
+      cursor: ew-resize;
+      background: rgba(255, 255, 255, 0.35);
+    }
+    .resize-l { left: 0; border-radius: 7px 0 0 7px; }
+    .resize-r { right: 0; border-radius: 0 7px 7px 0; }
+    .drag-selection {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: rgba(31, 95, 191, 0.22);
+      border: 1px solid var(--brand);
+      border-radius: 6px;
+      pointer-events: none;
+    }
+    .today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); pointer-events: none; }
+    .tip { padding: 8px 24px 20px; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>时间管理排期表（交互原型）</h1>
+    <p>
+      操作方式：在任意成员行的横向时间轴上<b>按住拖动</b>即可画出一段排期（项目取右侧当前选择）；
+      拖动已生成的色块可移动时间，拖动色块左右边缘可调整起止，<b>双击色块删除</b>；同一成员时间重叠会标红警告。
+    </p>
+  </header>
+
+  <div class="toolbar">
+    <div class="field">
+      <label>项目（拖拽生成时使用）</label>
+      <select id="projectSelect"></select>
+    </div>
+    <div class="field">
+      <label>每天投入（小时）</label>
+      <input id="hoursInput" type="number" min="1" max="24" value="8" />
+    </div>
+    <div class="field">
+      <label>手动添加成员</label>
+      <select id="memberSelect"></select>
+    </div>
+    <div class="field">
+      <label>开始日期</label>
+      <input id="startInput" type="date" />
+    </div>
+    <div class="field">
+      <label>结束日期</label>
+      <input id="endInput" type="date" />
+    </div>
+    <button class="primary" id="addBtn">添加排期</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="gantt-wrap">
+    <div class="gantt" id="gantt"></div>
+  </div>
+
+  <p class="tip">当前为纯前端 mock 原型：数据只存在页面内存中，刷新后恢复初始示例。</p>
+
+  <script>
+    // ---------- Mock 数据 ----------
+    const MEMBERS = [
+      { username: 'zhangsan', name: '张三' },
+      { username: 'lisi', name: '李四' },
+      { username: 'wangwu', name: '王五' },
+      { username: 'zhaoliu', name: '赵六' },
+      { username: 'sunqi', name: '孙七' },
+    ];
+
+    const PROJECTS = [
+      { key: 'yuance-api', name: '元策 API' },
+      { key: 'yuance-web', name: '元策 Web' },
+      { key: 'ops-console', name: '运营后台' },
+      { key: 'mobile-app', name: '移动端' },
+      { key: 'data-platform', name: '数据平台' },
+      { key: 'devops', name: '运维平台' },
+    ];
+
+    const PROJECT_COLORS = {
+      'yuance-api': '#1f5fbf',
+      'yuance-web': '#2d8a68',
+      'ops-console': '#b3772e',
+      'mobile-app': '#8a4bb8',
+      'data-platform': '#b0474f',
+      'devops': '#3c6e71',
+    };
+
+    let allocations = [
+      { id: 1, username: 'zhangsan', project: 'yuance-api', start: '2026-07-01', end: '2026-08-15', hours: 8 },
+      { id: 2, username: 'zhangsan', project: 'yuance-web', start: '2026-07-20', end: '2026-08-05', hours: 4, conflict: true },
+      { id: 3, username: 'zhangsan', project: 'mobile-app', start: '2026-09-01', end: '2026-10-10', hours: 6 },
+      { id: 4, username: 'lisi', project: 'yuance-web', start: '2026-06-15', end: '2026-08-31', hours: 8 },
+      { id: 5, username: 'lisi', project: 'ops-console', start: '2026-09-01', end: '2026-11-20', hours: 6 },
+      { id: 6, username: 'wangwu', project: 'data-platform', start: '2026-07-10', end: '2026-10-01', hours: 8 },
+      { id: 7, username: 'zhaoliu', project: 'devops', start: '2026-06-01', end: '2026-09-30', hours: 8 },
+      { id: 8, username: 'zhaoliu', project: 'yuance-api', start: '2026-10-05', end: '2026-12-15', hours: 5 },
+      { id: 9, username: 'sunqi', project: 'ops-console', start: '2026-08-01', end: '2026-09-30', hours: 8 },
+      { id: 10, username: 'sunqi', project: 'mobile-app', start: '2026-10-01', end: '2026-12-20', hours: 6 },
+    ];
+
+    // ---------- 时间轴常量 ----------
+    const VIEW_START = '2026-01-01';
+    const VIEW_END = '2026-12-31';
+    const PX_PER_DAY = 3.4;
+    const DAY_MS = 86400000;
+
+    function parseDate(value) {
+      const [y, m, d] = value.split('-').map(Number);
+      return Date.UTC(y, m - 1, d);
+    }
+
+    function dayIndex(value) {
+      return Math.round((parseDate(value) - parseDate(VIEW_START)) / DAY_MS);
+    }
+
+    function dateFromDay(index) {
+      return new Date(parseDate(VIEW_START) + index * DAY_MS).toISOString().slice(0, 10);
+    }
+
+    function todayIndex() {
+      const now = new Date();
+      return Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - parseDate(VIEW_START)) / DAY_MS);
+    }
+
+    const totalDays = dayIndex(VIEW_END) + 1;
+    const totalWidth = totalDays * PX_PER_DAY;
+
+    // ---------- 表单初始化 ----------
+    const projectSelect = document.getElementById('projectSelect');
+    const memberSelect = document.getElementById('memberSelect');
+    const hoursInput = document.getElementById('hoursInput');
+    const startInput = document.getElementById('startInput');
+    const endInput = document.getElementById('endInput');
+
+    for (const project of PROJECTS) {
+      const option = document.createElement('option');
+      option.value = project.key;
+      option.textContent = project.name;
+      projectSelect.appendChild(option);
+    }
+    for (const member of MEMBERS) {
+      const option = document.createElement('option');
+      option.value = member.username;
+      option.textContent = member.name;
+      memberSelect.appendChild(option);
+    }
+    const now = new Date();
+    const startDefault = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+    const endDefault = new Date(startDefault.getTime() + 29 * DAY_MS);
+    startInput.value = startDefault.toISOString().slice(0, 10);
+    endInput.value = endDefault.toISOString().slice(0, 10);
+
+    // ---------- 图例 ----------
+    const legend = document.getElementById('legend');
+    for (const project of PROJECTS) {
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      const swatch = document.createElement('i');
+      swatch.className = 'legend-swatch';
+      swatch.style.background = PROJECT_COLORS[project.key];
+      item.append(swatch, project.name);
+      legend.appendChild(item);
+    }
+
+    // ---------- 冲突检测 ----------
+    function overlaps(a, b) {
+      return a.username === b.username && a.start <= b.end && b.start <= a.end && a.id !== b.id;
+    }
+
+    function markConflicts() {
+      for (const allocation of allocations) {
+        allocation.conflict = allocations.some((other) => overlaps(allocation, other));
+      }
+    }
+
+    // ---------- 渲染 ----------
+    function render() {
+      markConflicts();
+      const gantt = document.getElementById('gantt');
+      gantt.innerHTML = '';
+
+      const axisRow = document.createElement('div');
+      axisRow.className = 'axis-row';
+      const axisLabel = document.createElement('div');
+      axisLabel.className = 'axis-label';
+      axisLabel.textContent = '成员 / 时间';
+      const axis = document.createElement('div');
+      axis.className = 'axis';
+      axis.style.width = `${totalWidth}px`;
+      for (let month = 1; month <= 12; month += 1) {
+        const date = `${VIEW_START.slice(0, 4)}-${String(month).padStart(2, '0')}-01`;
+        const label = document.createElement('span');
+        label.textContent = `${month}月`;
+        label.style.left = `${dayIndex(date) * PX_PER_DAY}px`;
+        const line = document.createElement('i');
+        line.style.left = `${dayIndex(date) * PX_PER_DAY}px`;
+        axis.append(label, line);
+      }
+      axisRow.append(axisLabel, axis);
+      gantt.appendChild(axisRow);
+
+      for (const member of MEMBERS) {
+        const row = document.createElement('div');
+        row.className = 'member-row';
+
+        const label = document.createElement('div');
+        label.className = 'row-label';
+        label.textContent = member.name;
+
+        const track = document.createElement('div');
+        track.className = 'track';
+        track.dataset.username = member.username;
+        track.style.width = `${totalWidth}px`;
+
+        const line = document.createElement('div');
+        line.className = 'track-line';
+        track.appendChild(line);
+
+        const todayLine = document.createElement('div');
+        todayLine.className = 'today-line';
+        todayLine.style.left = `${todayIndex() * PX_PER_DAY}px`;
+        track.appendChild(todayLine);
+
+        for (const allocation of allocations) {
+          if (allocation.username !== member.username) continue;
+          const project = PROJECTS.find((item) => item.key === allocation.project);
+          const block = document.createElement('div');
+          block.className = 'allocation';
+          if (allocation.conflict) block.classList.add('conflict');
+          block.dataset.id = allocation.id;
+          block.style.left = `${dayIndex(allocation.start) * PX_PER_DAY}px`;
+          block.style.width = `${(dayIndex(allocation.end) - dayIndex(allocation.start) + 1) * PX_PER_DAY}px`;
+          block.style.background = PROJECT_COLORS[allocation.project];
+          block.title = `${member.name} · ${project.name}\n${allocation.start} ~ ${allocation.end}\n每天 ${allocation.hours} 小时`;
+
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = project.name;
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          meta.textContent = `${allocation.start.slice(5)} ~ ${allocation.end.slice(5)} ${allocation.hours}h/天`;
+          block.append(name, meta);
+
+          const resizeL = document.createElement('i');
+          resizeL.className = 'resize-l';
+          const resizeR = document.createElement('i');
+          resizeR.className = 'resize-r';
+          block.append(resizeL, resizeR);
+          track.appendChild(block);
+        }
+
+        row.append(label, track);
+        gantt.appendChild(row);
+      }
+    }
+
+    // ---------- 拖拽创建 ----------
+    let dragSelection = null;
+
+    function startSelection(track, startX) {
+      dragSelection = {
+        track,
+        username: track.dataset.username,
+        startDay: Math.floor((startX - track.getBoundingClientRect().left) / PX_PER_DAY),
+        el: null,
+      };
+      dragSelection.el = document.createElement('div');
+      dragSelection.el.className = 'drag-selection';
+      dragSelection.el.style.left = `${dragSelection.startDay * PX_PER_DAY}px`;
+      track.appendChild(dragSelection.el);
+    }
+
+    function updateSelection(x) {
+      if (!dragSelection) return;
+      const rect = dragSelection.track.getBoundingClientRect();
+      const currentDay = Math.floor((x - rect.left) / PX_PER_DAY);
+      const from = Math.min(dragSelection.startDay, currentDay);
+      const to = Math.max(dragSelection.startDay, currentDay);
+      dragSelection.el.style.left = `${from * PX_PER_DAY}px`;
+      dragSelection.el.style.width = `${(to - from + 1) * PX_PER_DAY}px`;
+    }
+
+    function commitSelection(x) {
+      if (!dragSelection) return;
+      const rect = dragSelection.track.getBoundingClientRect();
+      const currentDay = Math.floor((x - rect.left) / PX_PER_DAY);
+      const from = Math.min(dragSelection.startDay, currentDay);
+      const to = Math.max(dragSelection.startDay, currentDay);
+      dragSelection.el.remove();
+      if (from >= 0 && to < totalDays && to - from >= 0) {
+        const allocation = {
+          id: Date.now(),
+          username: dragSelection.username,
+          project: projectSelect.value,
+          start: dateFromDay(from),
+          end: dateFromDay(to),
+          hours: Math.min(24, Math.max(1, Number(hoursInput.value) || 8)),
+        };
+        allocations.push(allocation);
+      }
+      dragSelection = null;
+      render();
+    }
+
+    // ---------- 块移动 / 缩放 ----------
+    let blockDrag = null;
+
+    function beginBlockDrag(block, event, mode) {
+      const allocation = allocations.find((item) => String(item.id) === block.dataset.id);
+      if (!allocation) return;
+      blockDrag = {
+        block,
+        allocation,
+        mode,
+        startX: event.clientX,
+        startIndex: dayIndex(allocation.start),
+        endIndex: dayIndex(allocation.end),
+      };
+      block.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    }
+
+    function updateBlockDrag(event) {
+      if (!blockDrag) return;
+      const deltaDays = Math.round((event.clientX - blockDrag.startX) / PX_PER_DAY);
+      const { block, allocation, mode, startIndex, endIndex } = blockDrag;
+      let nextStart = startIndex;
+      let nextEnd = endIndex;
+      if (mode === 'move') {
+        const length = endIndex - startIndex;
+        nextStart = Math.max(0, Math.min(startIndex + deltaDays, totalDays - length - 1));
+        nextEnd = nextStart + length;
+      } else if (mode === 'resize-l') {
+        nextStart = Math.max(0, Math.min(startIndex + deltaDays, endIndex - 1));
+      } else {
+        nextEnd = Math.min(totalDays - 1, Math.max(endIndex + deltaDays, startIndex + 1));
+      }
+      allocation.start = dateFromDay(nextStart);
+      allocation.end = dateFromDay(nextEnd);
+      block.style.left = `${nextStart * PX_PER_DAY}px`;
+      block.style.width = `${(nextEnd - nextStart + 1) * PX_PER_DAY}px`;
+    }
+
+    function endBlockDrag() {
+      blockDrag = null;
+      render();
+    }
+
+    // ---------- 事件绑定（事件委托） ----------
+    const gantt = document.getElementById('gantt');
+
+    gantt.addEventListener('pointerdown', (event) => {
+      const block = event.target.closest('.allocation');
+      const handle = event.target.closest('.resize-l, .resize-r');
+      if (block) {
+        beginBlockDrag(block, event, handle ? (handle.classList.contains('resize-l') ? 'resize-l' : 'resize-r') : 'move');
+        return;
+      }
+      const track = event.target.closest('.track');
+      if (track) {
+        startSelection(track, event.clientX);
+        track.setPointerCapture(event.pointerId);
+      }
+    });
+
+    gantt.addEventListener('pointermove', (event) => {
+      if (blockDrag) updateBlockDrag(event);
+      if (dragSelection) updateSelection(event.clientX);
+    });
+
+    gantt.addEventListener('pointerup', (event) => {
+      if (dragSelection) commitSelection(event.clientX);
+      endBlockDrag();
+    });
+
+    gantt.addEventListener('dblclick', (event) => {
+      const block = event.target.closest('.allocation');
+      if (!block) return;
+      const id = Number(block.dataset.id);
+      allocations = allocations.filter((allocation) => allocation.id !== id);
+      render();
+    });
+
+    // ---------- 手动添加 ----------
+    document.getElementById('addBtn').addEventListener('click', () => {
+      const allocation = {
+        id: Date.now(),
+        username: memberSelect.value,
+        project: projectSelect.value,
+        start: startInput.value,
+        end: endInput.value,
+        hours: Math.min(24, Math.max(1, Number(hoursInput.value) || 8)),
+      };
+      if (!allocation.start || !allocation.end || allocation.start > allocation.end) {
+        alert('请选择有效的开始/结束日期');
+        return;
+      }
+      allocations.push(allocation);
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
