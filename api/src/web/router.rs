@@ -640,6 +640,20 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_project_cycles).post(web::api::create_project_cycle),
         )
         .route(
+            "/api/v1/projects/{project_key}/time-allocations",
+            get(web::api::list_project_time_allocations)
+                .post(web::api::create_project_time_allocation),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/time-allocations/{allocation_id}",
+            patch(web::api::update_project_time_allocation)
+                .delete(web::api::delete_project_time_allocation),
+        )
+        .route(
+            "/api/v1/time-management/overview",
+            get(web::api::get_time_management_overview),
+        )
+        .route(
             "/api/v1/projects/{project_key}/my-analysis",
             get(web::api::get_project_personal_analysis),
         )

@@ -4,7 +4,7 @@
 
 - 主题：时间管理：跨项目排期表 + 拖拽时间条
 - 关联 Brainstorm：`docs/brainstorms/2026-08-24-time-management-brainstorm.md`
-- 状态：执行中
+- 状态：已完成 P0-P6，待 Review/Compound
 - 负责人：Codex
 - 日期：2026-08-24
 
@@ -122,4 +122,13 @@ Payload：
 
 ## 下一步
 
-执行 P0（数据库迁移）与 P1（API 领域层与路由），完成后提交推送。
+P0-P6 已全部完成并通过本地联调：
+
+- P0/P1：迁移、领域层、API handler、router 已实现；
+- P2：`time.management.view` / `time.management.edit` 权限种子已加入；
+- P3：`time_management_api_supports_overview_and_project_allocation_crud` 集成测试通过；
+- P4：API client 与路由解析已完成，web 宿主显式导出时间管理方法；
+- P5：时间条组件、全局页面、项目“时间”tab 已挂载；
+- P6：本地临时 SQLite + 本地 API + 独立 dev server 完成浏览器交互验证（添加、拖拽移动、项目 tab）。
+
+剩余：复核记录、提交推送；线上 API 写操作仍不执行，由用户决定代理去向。

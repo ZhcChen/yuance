@@ -16,6 +16,12 @@ export { createResourceClient, projectResourceApiPath, projectResourceFromPayloa
 export { createSearchClient } from './search.js';
 export { createSystemClient } from './system.js';
 export {
+  createTimeManagementClient,
+  projectTimeAllocationApiPath,
+  timeAllocationBody,
+  timeManagementOverviewApiPath,
+} from './time-management.js';
+export {
   attachmentCreateRequestBody,
   attachmentFromPayload,
   attachmentSignedUrlFromPayload,

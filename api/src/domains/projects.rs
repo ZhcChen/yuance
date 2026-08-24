@@ -9314,3 +9314,399 @@ mod tests {
         assert!(rendered.contains("<blockquote>先切到测试项目</blockquote>"));
     }
 }
+
+// ---------- 时间管理排期 ----------
+
+#[derive(Debug, Clone)]
+pub struct TimeAllocationDetail {
+    pub id: i64,
+    pub project_key: String,
+    pub project_name: String,
+    pub username: String,
+    pub display_name: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub daily_hours: f64,
+    pub note: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateTimeAllocationInput {
+    pub username: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub daily_hours: f64,
+    pub note: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateTimeAllocationInput {
+    pub username: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub daily_hours: f64,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TimeAllocationListFilter {
+    pub project_key: String,
+    pub username: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub user_id: i64,
+}
+
+const TIME_ALLOCATION_SELECT: &str = r#"
+SELECT
+    pta.id,
+    p.project_key,
+    p.name AS project_name,
+    u.username,
+    u.display_name,
+    pta.start_date,
+    pta.end_date,
+    pta.daily_hours,
+    pta.note,
+    pta.created_at,
+    pta.updated_at
+FROM project_time_allocations pta
+JOIN projects p ON p.id = pta.project_id
+JOIN users u ON u.id = pta.user_id
+"#;
+
+fn time_allocation_from_row(row: &SqliteRow) -> TimeAllocationDetail {
+    TimeAllocationDetail {
+        id: row.get("id"),
+        project_key: row.get("project_key"),
+        project_name: row.get("project_name"),
+        username: row.get("username"),
+        display_name: row.get("display_name"),
+        start_date: row.get("start_date"),
+        end_date: row.get("end_date"),
+        daily_hours: row.get("daily_hours"),
+        note: row.get("note"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+fn validate_time_allocation_input(
+    username: &str,
+    start_date: &str,
+    end_date: &str,
+    daily_hours: f64,
+    note: &str,
+) -> AppResult<(String, String, String, f64, String)> {
+    let username = validate_username_ref(username)?;
+    let start_date = validate_optional_date(start_date, "开始日期")?;
+    let end_date = validate_optional_date(end_date, "结束日期")?;
+    if start_date.is_empty() {
+        return Err(AppError::BadRequest("开始日期不能为空".to_string()));
+    }
+    if end_date.is_empty() {
+        return Err(AppError::BadRequest("结束日期不能为空".to_string()));
+    }
+    validate_date_range(&start_date, &end_date, "结束日期不能早于开始日期")?;
+    if !(daily_hours > 0.0) || daily_hours > 24.0 {
+        return Err(AppError::BadRequest(
+            "每天投入小时数必须在 0 到 24 之间".to_string(),
+        ));
+    }
+    let note = validate_optional_text(note, "排期备注", 500)?;
+    Ok((username, start_date, end_date, daily_hours, note))
+}
+
+pub async fn get_time_allocation(
+    pool: &SqlitePool,
+    allocation_id: i64,
+) -> AppResult<TimeAllocationDetail> {
+    if allocation_id <= 0 {
+        return Err(AppError::BadRequest("排期 ID 无效".to_string()));
+    }
+    let row = sqlx::query(AssertSqlSafe(format!(
+        "{TIME_ALLOCATION_SELECT} WHERE pta.id = ?1"
+    )))
+    .bind(allocation_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("时间排期不存在".to_string()))?;
+    Ok(time_allocation_from_row(&row))
+}
+
+pub async fn list_project_time_allocations(
+    pool: &SqlitePool,
+    project_key: &str,
+) -> AppResult<Vec<TimeAllocationDetail>> {
+    let project_key = validate_project_key(project_key)?;
+    let rows = sqlx::query(AssertSqlSafe(format!(
+        "{TIME_ALLOCATION_SELECT}
+         WHERE p.project_key = ?1
+         ORDER BY u.display_name ASC, pta.start_date ASC, pta.id ASC"
+    )))
+    .bind(&project_key)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(time_allocation_from_row).collect())
+}
+
+pub async fn list_time_allocations(
+    pool: &SqlitePool,
+    filter: TimeAllocationListFilter,
+) -> AppResult<Vec<TimeAllocationDetail>> {
+    let project_key = filter.project_key.trim().to_string();
+    let username = filter.username.trim().to_string();
+    let start_date = filter.start_date.trim().to_string();
+    let end_date = filter.end_date.trim().to_string();
+    let user_id = filter.user_id;
+    let rows = sqlx::query(AssertSqlSafe(format!(
+        "{TIME_ALLOCATION_SELECT}
+         WHERE (?1 = '' OR p.project_key = ?1)
+           AND (?2 = '' OR u.username = ?2)
+           AND (?3 = '' OR pta.start_date <= ?3)
+           AND (?4 = '' OR pta.end_date >= ?4)
+           AND (?5 = 0 OR EXISTS (
+               SELECT 1
+               FROM project_members pm
+               WHERE pm.project_id = p.id AND pm.user_id = ?5
+           ))
+         ORDER BY u.display_name ASC, pta.start_date ASC, pta.id ASC"
+    )))
+    .bind(&project_key)
+    .bind(&username)
+    .bind(&end_date)
+    .bind(&start_date)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(time_allocation_from_row).collect())
+}
+
+async fn insert_time_allocation_activity(
+    pool: &SqlitePool,
+    project_id: i64,
+    actor_user_id: i64,
+    action: &str,
+    target_id: i64,
+    summary: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, ?3, 'time_allocation', ?4, ?5, '{}')
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(action)
+    .bind(target_id.to_string())
+    .bind(summary)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn create_project_time_allocation(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    input: CreateTimeAllocationInput,
+) -> AppResult<TimeAllocationDetail> {
+    let project_key = validate_project_key(project_key)?;
+    let (username, start_date, end_date, daily_hours, note) = validate_time_allocation_input(
+        &input.username,
+        &input.start_date,
+        &input.end_date,
+        input.daily_hours,
+        &input.note,
+    )?;
+
+    let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, status FROM projects WHERE project_key = ?1",
+    )
+    .bind(&project_key)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_project_accepts_writes(&project_status)?;
+    let user_id = resolve_project_member_user_id(pool, project_id, &username).await?;
+
+    let allocation_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO project_time_allocations (
+            project_id,
+            user_id,
+            start_date,
+            end_date,
+            daily_hours,
+            note,
+            created_by_user_id
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        RETURNING id
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(&start_date)
+    .bind(&end_date)
+    .bind(daily_hours)
+    .bind(&note)
+    .bind(actor_user_id)
+    .fetch_one(pool)
+    .await?;
+
+    insert_time_allocation_activity(
+        pool,
+        project_id,
+        actor_user_id,
+        "time_allocation.created",
+        allocation_id,
+        &format!("创建成员 {username} 的排期 {start_date} ~ {end_date}"),
+    )
+    .await?;
+
+    get_time_allocation(pool, allocation_id).await
+}
+
+pub async fn update_project_time_allocation(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    allocation_id: i64,
+    input: UpdateTimeAllocationInput,
+) -> AppResult<TimeAllocationDetail> {
+    let project_key = validate_project_key(project_key)?;
+    if allocation_id <= 0 {
+        return Err(AppError::BadRequest("排期 ID 无效".to_string()));
+    }
+    let (username, start_date, end_date, daily_hours, note) = validate_time_allocation_input(
+        &input.username,
+        &input.start_date,
+        &input.end_date,
+        input.daily_hours,
+        &input.note,
+    )?;
+
+    let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
+        r#"
+        SELECT p.id, p.status
+        FROM project_time_allocations pta
+        JOIN projects p ON p.id = pta.project_id
+        WHERE p.project_key = ?1 AND pta.id = ?2
+        "#,
+    )
+    .bind(&project_key)
+    .bind(allocation_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("时间排期不存在".to_string()))?;
+    ensure_project_accepts_writes(&project_status)?;
+    let user_id = resolve_project_member_user_id(pool, project_id, &username).await?;
+
+    sqlx::query(
+        r#"
+        UPDATE project_time_allocations
+        SET user_id = ?2,
+            start_date = ?3,
+            end_date = ?4,
+            daily_hours = ?5,
+            note = ?6,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(allocation_id)
+    .bind(user_id)
+    .bind(&start_date)
+    .bind(&end_date)
+    .bind(daily_hours)
+    .bind(&note)
+    .execute(pool)
+    .await?;
+
+    insert_time_allocation_activity(
+        pool,
+        project_id,
+        actor_user_id,
+        "time_allocation.updated",
+        allocation_id,
+        &format!("更新成员 {username} 的排期 {start_date} ~ {end_date}"),
+    )
+    .await?;
+
+    get_time_allocation(pool, allocation_id).await
+}
+
+pub async fn delete_project_time_allocation(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    allocation_id: i64,
+) -> AppResult<()> {
+    let project_key = validate_project_key(project_key)?;
+    if allocation_id <= 0 {
+        return Err(AppError::BadRequest("排期 ID 无效".to_string()));
+    }
+
+    let (project_id, project_status, username) = sqlx::query_as::<_, (i64, String, String)>(
+        r#"
+        SELECT p.id, p.status, u.username
+        FROM project_time_allocations pta
+        JOIN projects p ON p.id = pta.project_id
+        JOIN users u ON u.id = pta.user_id
+        WHERE p.project_key = ?1 AND pta.id = ?2
+        "#,
+    )
+    .bind(&project_key)
+    .bind(allocation_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("时间排期不存在".to_string()))?;
+    ensure_project_accepts_writes(&project_status)?;
+
+    sqlx::query("DELETE FROM project_time_allocations WHERE id = ?1")
+        .bind(allocation_id)
+        .execute(pool)
+        .await?;
+
+    insert_time_allocation_activity(
+        pool,
+        project_id,
+        actor_user_id,
+        "time_allocation.deleted",
+        allocation_id,
+        &format!("删除成员 {username} 的时间排期"),
+    )
+    .await?;
+
+    Ok(())
+}
+
+pub async fn user_can_manage_project_time(
+    pool: &SqlitePool,
+    project_id: i64,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<bool> {
+    if is_super_admin {
+        return Ok(true);
+    }
+
+    Ok(matches!(
+        project_member_role(pool, project_id, user_id)
+            .await?
+            .as_deref(),
+        Some("owner" | "maintainer")
+    ))
+}

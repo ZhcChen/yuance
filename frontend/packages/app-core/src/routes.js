@@ -101,6 +101,10 @@ export function buildSystemPath(owner = 'web') {
   return owner === 'app' ? '/web/app/system' : '/web/system';
 }
 
+export function buildTimeManagementPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/time-management' : '/web/time-management';
+}
+
 export function buildSystemPermissionsPath({ owner = 'web', q = '' } = {}) {
   const base = owner === 'app' ? '/web/app/system/permissions' : '/web/system/permissions';
   const params = new URLSearchParams();
@@ -259,7 +263,7 @@ export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = '
   const basePath = owner === 'app'
     ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
     : `/web/projects/${encodeURIComponent(normalizedKey)}`;
-  return ['members', 'cycles', 'files', 'resources'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
+  return ['members', 'cycles', 'files', 'resources', 'time'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
 }
 
 export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
@@ -442,6 +446,16 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
     };
   }
 
+  if (pathname === '/web/time-management' || pathname === '/web/app/time-management') {
+    return {
+      id: 'time-management',
+      owner,
+      pathname,
+      search,
+      title: '时间管理',
+    };
+  }
+
   if (pathname === '/web/projects' || pathname === '/web/app/projects') {
     return {
       id: 'projects',
@@ -464,7 +478,7 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       pathname,
       search,
       projectKey: decodeURIComponent(projectDetailMatch[1]),
-      tab: ['members', 'cycles', 'files', 'resources'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
+      tab: ['members', 'cycles', 'files', 'resources', 'time'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
       title: '项目详情',
     };
   }

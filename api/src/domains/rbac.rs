@@ -70,6 +70,18 @@ const PERMISSIONS: &[(&str, &str, &str, &str)] = &[
     ("project.manage", "管理项目", "action", "projects"),
     ("work_item.view", "查看工作项", "page", "work-items"),
     ("work_item.manage", "管理工作项", "action", "work-items"),
+    (
+        "time.management.view",
+        "查看时间管理排期",
+        "page",
+        "time-management",
+    ),
+    (
+        "time.management.edit",
+        "管理时间管理排期",
+        "action",
+        "time-management",
+    ),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

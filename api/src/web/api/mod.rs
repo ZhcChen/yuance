@@ -1940,6 +1940,53 @@ pub struct ProjectCycleRequest {
     end_date: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TimeAllocationPayload {
+    pub id: i64,
+    pub project_key: String,
+    pub project_name: String,
+    pub username: String,
+    pub display_name: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub daily_hours: f64,
+    pub note: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TimeAllocationListQuery {
+    #[serde(default)]
+    project_key: String,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    start: String,
+    #[serde(default)]
+    end: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTimeAllocationRequest {
+    username: String,
+    start_date: String,
+    end_date: String,
+    daily_hours: f64,
+    #[serde(default)]
+    note: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateTimeAllocationRequest {
+    username: String,
+    start_date: String,
+    end_date: String,
+    daily_hours: f64,
+    #[serde(default)]
+    note: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateAttachmentRequest {
     original_filename: String,
@@ -3115,6 +3162,153 @@ pub async fn close_project_cycle(
     )
     .await?;
     Ok(json(project_cycle_payload(cycle, Vec::new())))
+}
+
+pub async fn get_time_management_overview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TimeAllocationListQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<TimeAllocationPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let filter = projects::TimeAllocationListFilter {
+        project_key: query.project_key,
+        username: query.username,
+        start_date: query.start,
+        end_date: query.end,
+        user_id: if can_access_all_projects { 0 } else { user.id },
+    };
+    Ok(json(
+        projects::list_time_allocations(pool, filter)
+            .await?
+            .into_iter()
+            .map(time_allocation_payload)
+            .collect(),
+    ))
+}
+
+pub async fn list_project_time_allocations(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<TimeAllocationPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    Ok(json(
+        projects::list_project_time_allocations(pool, &project_key)
+            .await?
+            .into_iter()
+            .map(time_allocation_payload)
+            .collect(),
+    ))
+}
+
+pub async fn create_project_time_allocation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<CreateTimeAllocationRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_time_management_write_access(pool, user, project.id).await?;
+    let allocation = projects::create_project_time_allocation(
+        pool,
+        user.id,
+        &project_key,
+        time_allocation_create_input(payload),
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "time.allocation.create",
+        "time_allocation",
+        &allocation.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok((StatusCode::CREATED, json(time_allocation_payload(allocation))))
+}
+
+pub async fn update_project_time_allocation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, allocation_id)): Path<(String, i64)>,
+    Json(payload): Json<UpdateTimeAllocationRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<TimeAllocationPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_time_management_write_access(pool, user, project.id).await?;
+    let allocation = projects::update_project_time_allocation(
+        pool,
+        user.id,
+        &project_key,
+        allocation_id,
+        time_allocation_update_input(payload),
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "time.allocation.update",
+        "time_allocation",
+        &allocation.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok(json(time_allocation_payload(allocation)))
+}
+
+pub async fn delete_project_time_allocation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, allocation_id)): Path<(String, i64)>,
+) -> AppResult<StatusCode> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_time_management_write_access(pool, user, project.id).await?;
+    projects::delete_project_time_allocation(pool, user.id, &project_key, allocation_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "time.allocation.delete",
+        "time_allocation",
+        &allocation_id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn list_work_items(
@@ -8187,6 +8381,28 @@ async fn ensure_api_project_content_write_access(
     ))
 }
 
+async fn ensure_api_time_management_write_access(
+    pool: &sqlx::SqlitePool,
+    user: &auth::AuthUser,
+    project_id: i64,
+) -> AppResult<()> {
+    if rbac::user_has_permission(pool, user.id, "time.management.edit").await?
+        || projects::user_can_manage_project_time(
+            pool,
+            project_id,
+            user.id,
+            user.is_super_admin,
+        )
+        .await?
+    {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden(
+        "缺少时间排期管理权限".to_string(),
+    ))
+}
+
 fn ensure_api_work_item_accepts_writes(item: &projects::WorkItemDetail) -> AppResult<()> {
     if item.deleted_at.trim().is_empty() {
         return Ok(());
@@ -8917,6 +9133,46 @@ fn cycle_update_input(payload: ProjectCycleRequest) -> projects::UpdateProjectCy
         owner_username: payload.owner_username,
         start_date: payload.start_date,
         end_date: payload.end_date,
+    }
+}
+
+fn time_allocation_payload(allocation: projects::TimeAllocationDetail) -> TimeAllocationPayload {
+    TimeAllocationPayload {
+        id: allocation.id,
+        project_key: allocation.project_key,
+        project_name: allocation.project_name,
+        username: allocation.username,
+        display_name: allocation.display_name,
+        start_date: allocation.start_date,
+        end_date: allocation.end_date,
+        daily_hours: allocation.daily_hours,
+        note: allocation.note,
+        created_at: allocation.created_at,
+        updated_at: allocation.updated_at,
+    }
+}
+
+fn time_allocation_create_input(
+    payload: CreateTimeAllocationRequest,
+) -> projects::CreateTimeAllocationInput {
+    projects::CreateTimeAllocationInput {
+        username: payload.username,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        daily_hours: payload.daily_hours,
+        note: payload.note,
+    }
+}
+
+fn time_allocation_update_input(
+    payload: UpdateTimeAllocationRequest,
+) -> projects::UpdateTimeAllocationInput {
+    projects::UpdateTimeAllocationInput {
+        username: payload.username,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        daily_hours: payload.daily_hours,
+        note: payload.note,
     }
 }
 

@@ -43,6 +43,7 @@ export {
   buildSystemReleasesPath,
   buildSystemStoragePath,
   buildSystemUsersPath,
+  buildTimeManagementPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,

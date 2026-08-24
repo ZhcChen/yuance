@@ -7014,6 +7014,143 @@ async fn project_cycles_reject_invalid_ranges_and_cross_project_links() {
     );
 }
 
+#[tokio::test]
+async fn time_management_api_supports_overview_and_project_allocation_crud() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let overview_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/overview")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(overview_response.status(), StatusCode::OK);
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/time-allocations")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"username":"admin","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let create_body = response_body(create_response).await;
+    let created: serde_json::Value =
+        serde_json::from_str(&create_body).expect("create response should be json");
+    let allocation_id = created["data"]["id"]
+        .as_i64()
+        .expect("allocation id should exist");
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/time-allocations")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let list_status = list_response.status();
+    let list_body = response_body(list_response).await;
+    assert_eq!(list_status, StatusCode::OK, "{list_body}");
+    assert!(list_body.contains("2026-08-01"));
+
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/projects/YCE/time-allocations/{allocation_id}"
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"username":"admin","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let update_status = update_response.status();
+    let update_body = response_body(update_response).await;
+    assert_eq!(update_status, StatusCode::OK, "{update_body}");
+    assert!(update_body.contains("2026-08-03"));
+
+    let filtered_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/overview?username=admin&start=2026-08-01&end=2026-08-31")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let filtered_status = filtered_response.status();
+    let filtered_body = response_body(filtered_response).await;
+    assert_eq!(filtered_status, StatusCode::OK, "{filtered_body}");
+    assert!(filtered_body.contains("2026-08-20"));
+
+    let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
+    let forbidden_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/time-allocations")
+                .header(header::COOKIE, outsider.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"username":"admin","start_date":"2026-09-01","end_date":"2026-09-10","daily_hours":8}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/projects/YCE/time-allocations/{allocation_id}"
+                ))
+                .header(header::COOKIE, admin.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
+}
+
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {
     bootstrap_admin_session(pool).await.user_id
 }

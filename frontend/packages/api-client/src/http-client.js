@@ -10,6 +10,7 @@ import { createWorkItemClient } from './work-items.js';
 import { createProjectClient } from './projects.js';
 import { createResourceClient } from './resources.js';
 import { createDashboardClient } from './dashboard.js';
+import { createTimeManagementClient } from './time-management.js';
 
 /** @typedef {{ method?: string, headers?: Record<string, string>, body?: string }} ApiRequestOptions */
 /** @typedef {(url: string, options?: ApiRequestOptions) => Promise<any>} ApiRequest */
@@ -24,7 +25,8 @@ import { createDashboardClient } from './dashboard.js';
 /** @typedef {import('./projects.js').ProjectClient} ProjectClient */
 /** @typedef {import('./resources.js').ResourceClient} ResourceClient */
 /** @typedef {import('./system.js').SystemClient & import('./system.js').SystemAuditClient & import('./system.js').SystemApiDocsClient} SystemClient */
-/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & SystemClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
+/** @typedef {import('./time-management.js').TimeManagementClient} TimeManagementClient */
+/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & SystemClient & TimeManagementClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**
  * @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies
@@ -41,6 +43,7 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
   const topbar = createTopbarClient({ request });
   const system = createSystemClient({ request, prepareWrite });
   const dashboard = createDashboardClient({ request });
+  const timeManagement = createTimeManagementClient({ request, prepareWrite });
 
   return {
     /** @returns {Promise<AuthUser>} */
@@ -104,5 +107,6 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
     ...profile,
     ...search,
     ...system,
+    ...timeManagement,
   };
 }

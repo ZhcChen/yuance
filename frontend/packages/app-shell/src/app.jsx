@@ -25,6 +25,7 @@ import {
   buildSystemRolesPath,
   buildSystemStoragePath,
   buildSystemUsersPath,
+  buildTimeManagementPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   createWorkItemComment as createWorkItemCommentUseCase,
@@ -68,6 +69,7 @@ import {
   Select,
   TextArea,
   TextInput,
+  TimeAllocationGantt,
   UserAvatar,
   WorkItemAttachments,
   WorkItemComments,
@@ -91,6 +93,36 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
 /** @typedef {{ inline?: boolean, onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteUploadOptions */
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities, releaseAssets?: import('@yuance/frontend-platform-contract').HostDelegatedReleaseAssetCapabilities, selectPastedFile?: (file: import('@yuance/frontend-platform-contract').PastedFile) => Promise<import('@yuance/frontend-platform-contract').SelectedFile | null> }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
+
+const TIME_MANAGEMENT_MOCK_PROJECTS = [
+  { key: 'yuance-api', name: '元策 API' },
+  { key: 'yuance-web', name: '元策 Web' },
+  { key: 'ops-console', name: '运营后台' },
+  { key: 'mobile-app', name: '移动端' },
+  { key: 'data-platform', name: '数据平台' },
+  { key: 'devops', name: '运维平台' },
+];
+
+const TIME_MANAGEMENT_MOCK_MEMBERS = [
+  { username: 'zhangsan', display_name: '张三' },
+  { username: 'lisi', display_name: '李四' },
+  { username: 'wangwu', display_name: '王五' },
+  { username: 'zhaoliu', display_name: '赵六' },
+  { username: 'sunqi', display_name: '孙七' },
+];
+
+const TIME_MANAGEMENT_MOCK_ALLOCATIONS = [
+  { id: 1, project_key: 'yuance-api', project_name: '元策 API', username: 'zhangsan', display_name: '张三', start_date: '2026-07-01', end_date: '2026-08-15', daily_hours: 8, note: '' },
+  { id: 2, project_key: 'yuance-web', project_name: '元策 Web', username: 'zhangsan', display_name: '张三', start_date: '2026-07-20', end_date: '2026-08-05', daily_hours: 4, note: '' },
+  { id: 3, project_key: 'mobile-app', project_name: '移动端', username: 'zhangsan', display_name: '张三', start_date: '2026-09-01', end_date: '2026-10-10', daily_hours: 6, note: '' },
+  { id: 4, project_key: 'yuance-web', project_name: '元策 Web', username: 'lisi', display_name: '李四', start_date: '2026-06-15', end_date: '2026-08-31', daily_hours: 8, note: '' },
+  { id: 5, project_key: 'ops-console', project_name: '运营后台', username: 'lisi', display_name: '李四', start_date: '2026-09-01', end_date: '2026-11-20', daily_hours: 6, note: '' },
+  { id: 6, project_key: 'data-platform', project_name: '数据平台', username: 'wangwu', display_name: '王五', start_date: '2026-07-10', end_date: '2026-10-01', daily_hours: 8, note: '' },
+  { id: 7, project_key: 'devops', project_name: '运维平台', username: 'zhaoliu', display_name: '赵六', start_date: '2026-06-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
+  { id: 8, project_key: 'yuance-api', project_name: '元策 API', username: 'zhaoliu', display_name: '赵六', start_date: '2026-10-05', end_date: '2026-12-15', daily_hours: 5, note: '' },
+  { id: 9, project_key: 'ops-console', project_name: '运营后台', username: 'sunqi', display_name: '孙七', start_date: '2026-08-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
+  { id: 10, project_key: 'mobile-app', project_name: '移动端', username: 'sunqi', display_name: '孙七', start_date: '2026-10-01', end_date: '2026-12-20', daily_hours: 6, note: '' },
+];
 
 /**
  * @typedef AppUser
@@ -210,6 +242,19 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
  * @property {string} created_at
  * @property {string} updated_at
  * @property {Array<{ key: string, item_type: string, title: string, status: string, priority: string, assignee_username: string, assignee: string, due_date: string, updated_at: string }>} work_items
+ */
+
+/**
+ * @typedef AppTimeAllocation
+ * @property {number} id
+ * @property {string} project_key
+ * @property {string} project_name
+ * @property {string} username
+ * @property {string} display_name
+ * @property {string} start_date
+ * @property {string} end_date
+ * @property {number} daily_hours
+ * @property {string} note
  */
 
 /**
@@ -699,6 +744,8 @@ function routeDescription(route) {
       return '资料正文、关联信息和受保护内容解锁由两个宿主共用同一读取流程。';
     case 'project-personal-analysis':
       return '仅统计当前用户在该项目中的实际处理与协作记录，所有口径由服务端统一聚合。';
+    case 'time-management':
+      return '跨项目排期表按成员聚合时间投入，拖拽创建、移动、缩放色块并高亮冲突。';
     case 'requirements':
     case 'tasks':
     case 'bugs':
@@ -747,6 +794,8 @@ function routeEyebrow(route) {
     case 'project-resource-detail':
     case 'project-personal-analysis':
       return 'Projects';
+    case 'time-management':
+      return 'Time Management';
     case 'requirements':
     case 'tasks':
     case 'bugs':
@@ -971,6 +1020,11 @@ export function SharedApp({ services }) {
   const [projectAttachmentPreview, setProjectAttachmentPreview] = useState(/** @type {{ open: boolean, loading: boolean, error: string, attachment: AppAttachment | null, source: string, kind: AppPreviewKind, strategy: string | null, fileType: string | null, position: number, total: number, previousId: number | null, nextId: number | null, commentId?: number } | null} */ (null));
   const [projectCycleDetail, setProjectCycleDetail] = useState(/** @type {AppProjectCycle | null} */ (null));
   const [projectPersonalAnalysis, setProjectPersonalAnalysis] = useState(/** @type {AppProjectPersonalAnalysis | null} */ (null));
+  const [timeAllocations, setTimeAllocations] = useState(/** @type {AppTimeAllocation[]} */ ([]));
+  const [projectTimeAllocations, setProjectTimeAllocations] = useState(/** @type {AppTimeAllocation[]} */ ([]));
+  const [timeProjects, setTimeProjects] = useState(/** @type {Array<{ key: string, name: string }>} */ ([]));
+  const [timeMembers, setTimeMembers] = useState(/** @type {Array<{ username: string, display_name: string }>} */ ([]));
+  const [timeMockMode, setTimeMockMode] = useState(false);
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
   const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
   const [projectCycleCloseTarget, setProjectCycleCloseTarget] = useState(/** @type {AppProjectCycle | null} */ (null));
@@ -1204,6 +1258,7 @@ export function SharedApp({ services }) {
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
   const profilePath = buildProfilePath(route.owner);
+  const timeManagementPath = buildTimeManagementPath(route.owner);
   const systemDatabaseTables = systemDatabaseStats?.snapshot?.tables || [];
   const systemDatabaseTotalRows = systemDatabaseTables.reduce((sum, table) => sum + Number(table.row_count || 0), 0);
   const projectsPath = route.id === 'projects'
@@ -1509,7 +1564,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
+      const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs, nextTimeManagement] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         ['home', 'profile', 'projects'].includes(targetRoute.id)
@@ -1589,6 +1644,7 @@ export function SharedApp({ services }) {
             targetRoute.tab === 'resources'
               ? api.getProjectResources(targetRoute.projectKey, mode === 'load' ? {} : projectResourceFilters)
               : Promise.resolve([]),
+            api.getProjectTimeAllocations(targetRoute.projectKey).catch(() => []),
           ])
           : Promise.resolve(null),
         targetRoute.id === 'project-cycle-detail'
@@ -1650,6 +1706,44 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-api-docs'
           ? api.getSystemApiDocs().then(normalizeSystemApiDocs)
           : Promise.resolve(null),
+        targetRoute.id === 'time-management'
+          ? (async () => {
+            let overview = null;
+            try {
+              overview = await api.getTimeManagementOverview();
+            } catch (caught) {
+              const caughtError = caught instanceof Error ? /** @type {Error & { status?: number }} */ (caught) : null;
+              if (caughtError?.status !== 404) throw caught;
+            }
+            if (!overview) {
+              return {
+                allocations: TIME_MANAGEMENT_MOCK_ALLOCATIONS,
+                projects: TIME_MANAGEMENT_MOCK_PROJECTS,
+                members: TIME_MANAGEMENT_MOCK_MEMBERS,
+                mock: true,
+              };
+            }
+            const projectPage = await api.getProjects({ perPage: 100 }).catch(() => null);
+            const projects = (projectPage?.items || []).map((project) => ({ key: project.key, name: project.name }));
+            const memberGroups = await Promise.all(
+              projects.map((project) => api.getProjectMembers(project.key).catch(() => [])),
+            );
+            const seen = new Map();
+            for (const group of memberGroups) {
+              for (const member of group) {
+                if (!seen.has(member.username)) {
+                  seen.set(member.username, { username: member.username, display_name: member.display_name });
+                }
+              }
+            }
+            return {
+              allocations: overview,
+              projects,
+              members: [...seen.values()],
+              mock: false,
+            };
+          })()
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1680,6 +1774,7 @@ export function SharedApp({ services }) {
         setProjectAttachments(nextProjectBundle?.[3]?.value || []);
         if (nextProjectBundle?.[3]?.error) setProjectAttachmentError('项目文件暂时无法加载，请刷新后重试。');
         setProjectResources(nextProjectBundle?.[4] || []);
+        setProjectTimeAllocations(nextProjectBundle?.[5] || []);
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectCycleDetail(nextCycleDetailBundle?.[0] || null);
@@ -1728,6 +1823,12 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'system-audit') setSystemAuditPage(nextSystemAuditPage);
       if (targetRoute.id === 'system-api-docs') setSystemApiDocs(nextSystemApiDocs);
+      if (targetRoute.id === 'time-management') {
+        setTimeAllocations(nextTimeManagement?.allocations || []);
+        setTimeProjects(nextTimeManagement?.projects || []);
+        setTimeMembers(nextTimeManagement?.members || []);
+        setTimeMockMode(Boolean(nextTimeManagement?.mock));
+      }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
       }
@@ -1815,6 +1916,83 @@ export function SharedApp({ services }) {
     } catch (caught) {
       setProjectCreateError(errorMessage(caught instanceof Error ? caught : new Error('项目创建失败。')));
     } finally { setProjectCreateSubmitting(false); }
+  }
+
+  async function persistTimeCreate(payload) {
+    if (timeMockMode) {
+      setTimeAllocations((current) => [...current, {
+        id: Date.now(),
+        project_key: payload.projectKey,
+        project_name: timeProjects.find((project) => project.key === payload.projectKey)?.name || payload.projectKey,
+        username: payload.username,
+        display_name: timeMembers.find((member) => member.username === payload.username)?.display_name || payload.username,
+        start_date: payload.startDate,
+        end_date: payload.endDate,
+        daily_hours: payload.dailyHours,
+        note: payload.note || '',
+      }]);
+      setStatusMessage('排期已创建（本地 mock 数据）。');
+      return;
+    }
+    await api.createProjectTimeAllocation(payload.projectKey, payload);
+    setTimeAllocations(await api.getTimeManagementOverview());
+    setStatusMessage('排期已创建。');
+  }
+
+  async function persistTimeUpdate(id, payload) {
+    if (timeMockMode) {
+      setTimeAllocations((current) => current.map((item) => (
+        item.id === id
+          ? {
+            ...item,
+            project_key: payload.projectKey,
+            project_name: timeProjects.find((project) => project.key === payload.projectKey)?.name || payload.projectKey,
+            start_date: payload.startDate,
+            end_date: payload.endDate,
+            daily_hours: payload.dailyHours,
+            note: payload.note || '',
+          }
+          : item
+      )));
+      setStatusMessage('排期已更新（本地 mock 数据）。');
+      return;
+    }
+    await api.updateProjectTimeAllocation(payload.projectKey, id, payload);
+    setTimeAllocations(await api.getTimeManagementOverview());
+    setStatusMessage('排期已更新。');
+  }
+
+  async function persistTimeDelete(id) {
+    if (timeMockMode) {
+      setTimeAllocations((current) => current.filter((item) => item.id !== id));
+      setStatusMessage('排期已删除（本地 mock 数据）。');
+      return;
+    }
+    const allocation = timeAllocations.find((item) => item.id === id);
+    if (!allocation) return;
+    await api.deleteProjectTimeAllocation(allocation.project_key, id);
+    setTimeAllocations(await api.getTimeManagementOverview());
+    setStatusMessage('排期已删除。');
+  }
+
+  async function persistProjectTimeCreate(payload) {
+    await api.createProjectTimeAllocation(payload.projectKey, payload);
+    setProjectTimeAllocations(await api.getProjectTimeAllocations(payload.projectKey));
+    setStatusMessage('项目排期已创建。');
+  }
+
+  async function persistProjectTimeUpdate(id, payload) {
+    await api.updateProjectTimeAllocation(payload.projectKey, id, payload);
+    setProjectTimeAllocations(await api.getProjectTimeAllocations(payload.projectKey));
+    setStatusMessage('项目排期已更新。');
+  }
+
+  async function persistProjectTimeDelete(id) {
+    const allocation = projectTimeAllocations.find((item) => item.id === id);
+    if (!allocation) return;
+    await api.deleteProjectTimeAllocation(allocation.project_key, id);
+    setProjectTimeAllocations(await api.getProjectTimeAllocations(allocation.project_key));
+    setStatusMessage('项目排期已删除。');
   }
 
   function openProjectEdit() {
@@ -5205,6 +5383,7 @@ export function SharedApp({ services }) {
           { id: 'requirements', label: '需求', href: requirementsPath, active: route.id === 'requirements', badge: topbar?.requirements_count || 0 },
           { id: 'tasks', label: '任务', href: tasksPath, active: route.id === 'tasks', badge: topbar?.tasks_count || 0 },
           { id: 'bugs', label: 'Bug', href: bugsPath, active: route.id === 'bugs', badge: topbar?.bugs_count || 0 },
+          { id: 'time-management', label: '时间管理', href: timeManagementPath, active: route.id === 'time-management' },
         ]}
         currentProject={currentProject}
         projectOptions={topbar?.project_options || []}
@@ -5260,7 +5439,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases', 'work-item-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
+      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'time-management', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases', 'work-item-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5276,7 +5455,31 @@ export function SharedApp({ services }) {
         </section>
       ) : (
         <>
-          {route.id === 'system-permissions' ? (
+          {route.id === 'time-management' ? (
+            <section className="page-stack time-management-page" aria-labelledby="time-management-title">
+              <header className="page-hero">
+                <div>
+                  <p className="shell-eyebrow">时间管理</p>
+                  <h1 id="time-management-title" ref={headingRef} tabIndex={-1}>时间管理</h1>
+                  <p>跨项目查看和安排每个成员的时间投入，拖动色块即可调整排期。</p>
+                </div>
+                <div className="toolbar-actions">
+                  {timeMockMode ? <Badge>Mock 数据模式</Badge> : null}
+                  <Button variant="secondary" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>刷新</Button>
+                </div>
+              </header>
+              <section className="shell-card">
+                <TimeAllocationGantt
+                  allocations={timeAllocations}
+                  projects={timeProjects}
+                  members={timeMembers}
+                  onCreate={persistTimeCreate}
+                  onUpdate={persistTimeUpdate}
+                  onDelete={persistTimeDelete}
+                />
+              </section>
+            </section>
+          ) : route.id === 'system-permissions' ? (
             <section className="page-stack system-permissions-page" aria-labelledby="system-permissions-title">
               <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-permissions-title" ref={headingRef} tabIndex={-1}>权限点</h1><p>权限点由 core seed 管理；角色权限维护推荐在角色权限工作台完成。</p></div><a className="yc-button yc-button-secondary" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>返回角色权限</a></header>
               <section className="shell-card system-permissions-panel" aria-labelledby="system-permission-tree-title">
@@ -5808,7 +6011,7 @@ export function SharedApp({ services }) {
                 ['成员', projectMembers.length, 'success', 'users'],
               ].map(([label, value, tone, icon]) => <article key={label} className={`metric metric-${tone}`}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section>
               <section className="project-tabs-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">项目详情</p><h2>项目资料</h2></div><ContentTabs ariaLabel="项目详情导航">
-                {[['info', '详情'], ['cycles', '周期'], ['members', '成员'], ['resources', '资料库'], ['files', '项目文件']].map(([tab, label]) => {
+                {[['info', '详情'], ['cycles', '周期'], ['time', '时间'], ['members', '成员'], ['resources', '资料库'], ['files', '项目文件']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <ContentTab key={tab} active={route.tab === tab} href={path} onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), path, `已切换到${label}。`)}>{label}</ContentTab>;
                 })}
@@ -5858,6 +6061,25 @@ export function SharedApp({ services }) {
                     { key: 'status', label: '状态', render: projectCycleStatusLabel },
                     { key: 'actions', label: '操作', render: (cycle) => canManageProject && !cycle.is_closed ? <div className="shell-actions-inline"><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => openProjectCycle(cycle)}>编辑</Button><Button variant="danger" disabled={projectMutationSubmitting} onClick={() => setProjectCycleCloseTarget(cycle)}>关闭</Button></div> : <span className="shell-muted">{cycle.is_closed ? '已关闭' : '只读'}</span> },
                   ]} />
+                </section>
+              ) : null}
+
+              {activeProjectDetail && route.tab === 'time' ? (
+                <section className="project-tab-section" aria-labelledby="project-time-title">
+                  <div className="project-tab-section-head">
+                    <div>
+                      <h3 id="project-time-title">项目时间排期</h3>
+                      <p>为项目成员安排时间投入，拖动色块即可调整起止日期。</p>
+                    </div>
+                  </div>
+                  <TimeAllocationGantt
+                    allocations={projectTimeAllocations}
+                    projects={[{ key: activeProjectDetail.key, name: activeProjectDetail.name }]}
+                    members={projectMembers.map((member) => ({ username: member.username, display_name: member.display_name }))}
+                    onCreate={persistProjectTimeCreate}
+                    onUpdate={persistProjectTimeUpdate}
+                    onDelete={persistProjectTimeDelete}
+                  />
                 </section>
               ) : null}
 
