@@ -12,7 +12,7 @@
     "check:packages": "npm run check --workspaces --if-present",
     "generate:experience-inventory": "node ./scripts/extract-legacy-experience.mjs",
     "generate:interaction-classification": "node ./scripts/classify-legacy-markers.mjs",
-    "lint": "eslint \"scripts/**/*.mjs\" \"test/**/*.mjs\" eslint.config.js",
+    "lint": "eslint --cache --cache-location node_modules/.cache/.eslintcache \"scripts/**/*.mjs\" \"test/**/*.mjs\" eslint.config.js",
     "test": "node --test test/**/*.test.mjs",
     "check": "npm run check:source && npm run check:boundaries && npm run check:packages && npm run lint && npm run test"
   },

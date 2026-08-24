@@ -7,11 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check:js": "tsc -p jsconfig.json",
+    "check:js": "tsc -p jsconfig.json --incremental --tsBuildInfoFile node_modules/.cache/tsconfig.tsbuildinfo",
     "check:source": "node ./scripts/assert-js-only.mjs",
     "capture:main-visual": "node ./scripts/capture-main-visual-baseline.mjs --capture",
     "capture:main-visual:plan": "node ./scripts/capture-main-visual-baseline.mjs --print-plan",
-    "lint": "eslint \"src/**/*.{js,jsx}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" vite.config.js eslint.config.js",
+    "lint": "eslint --cache --cache-location node_modules/.cache/.eslintcache \"src/**/*.{js,jsx}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" vite.config.js eslint.config.js",
     "test": "node --test test/**/*.test.mjs",
     "check": "npm run check:source && npm run check:js && npm run lint && npm run test",
     "test:e2e": "playwright test"

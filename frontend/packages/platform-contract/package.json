@@ -8,8 +8,8 @@
   },
   "scripts": {
     "check:source": "node ../../scripts/assert-js-only.mjs src test",
-    "check:js": "tsc -p jsconfig.json",
-    "lint": "eslint \"src/**/*.js\" \"test/**/*.mjs\"",
+    "check:js": "tsc -p jsconfig.json --incremental --tsBuildInfoFile ../../node_modules/.cache/tsconfig.platform-contract.tsbuildinfo",
+    "lint": "eslint --cache --cache-location ../../node_modules/.cache/.eslintcache \"src/**/*.js\" \"test/**/*.mjs\"",
     "test": "node --test test/**/*.test.mjs",
     "check": "npm run check:source && npm run check:js && npm run lint && npm run test"
   }
