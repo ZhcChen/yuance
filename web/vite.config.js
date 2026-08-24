@@ -52,6 +52,14 @@ export default defineConfig({
       '/version.json': localDevelopmentProxy(),
       '/favicon.ico': localDevelopmentProxy(),
       '/static': localDevelopmentProxy(),
+      '/web/app/favicon.ico': {
+        ...localDevelopmentProxy(),
+        rewrite: (path) => path.replace(/^\/web\/app\/favicon\.ico$/u, '/favicon.ico'),
+      },
+      '/web/app/static': {
+        ...localDevelopmentProxy(),
+        rewrite: (path) => path.replace(/^\/web\/app\/static/u, '/static'),
+      },
     },
   },
   preview: {
