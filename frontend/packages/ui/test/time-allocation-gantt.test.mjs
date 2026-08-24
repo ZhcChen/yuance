@@ -17,6 +17,8 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.match(html, />周<\/button>/);
   assert.match(html, />月<\/button>/);
   assert.match(html, /class="active" aria-pressed="true">周</);
+  assert.match(html, /时间跨度/);
+  assert.match(html, /value="4"/);
   assert.match(html, /class="time-gantt-row-label">管理员<\/div>/);
   assert.match(html, /class="time-gantt-today"/);
   assert.match(html, /class="time-gantt time-gantt-fill"/);

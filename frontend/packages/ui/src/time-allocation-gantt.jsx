@@ -10,6 +10,7 @@ const PIXELS_PER_DAY_BY_SCALE = {
 };
 const DEFAULT_TIME_SCALE = 'week';
 const DAY_MS = 86400000;
+const DEFAULT_SPAN_MONTHS = 4;
 const TIME_GANTT_LABEL_WIDTH = 170;
 const TIME_GANTT_BORDER_WIDTH = 2;
 const DEFAULT_PROJECT_COLORS = [
@@ -64,7 +65,9 @@ export function TimeAllocationGantt({
 }) {
   const today = startOfToday();
   const computedViewStart = viewStart || dateFromMs(today - 30 * DAY_MS);
-  const computedViewEnd = viewEnd || dateFromMs(today + 90 * DAY_MS);
+  const [spanInput, setSpanInput] = useState(String(DEFAULT_SPAN_MONTHS));
+  const spanMonths = normalizeSpanMonths(spanInput);
+  const computedViewEnd = viewEnd || dateFromMs(addUtcMonths(today, spanMonths - 1));
   const viewEndIndex = dayIndex(computedViewEnd, computedViewStart);
   const totalDays = viewEndIndex + 1;
 
@@ -478,13 +481,22 @@ export function TimeAllocationGantt({
         </form>
       ) : null}
 
-      <div className="time-management-scale" role="group" aria-label="时间粒度">
-        {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
-          <button key={value} type="button" className={viewScale === value ? 'active' : ''}
-            aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
-            {label}
-          </button>
-        ))}
+      <div className="time-management-controls">
+        <div className="time-management-scale" role="group" aria-label="时间粒度">
+          {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
+            <button key={value} type="button" className={viewScale === value ? 'active' : ''}
+              aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="time-management-range">
+          <span>时间跨度</span>
+          <input type="number" min="1" max="12" value={spanInput}
+            onChange={(event) => setSpanInput(event.currentTarget.value)}
+            onBlur={() => setSpanInput(String(normalizeSpanMonths(spanInput)))} />
+          <em>月</em>
+        </label>
       </div>
 
       {projects.length ? (
@@ -552,11 +564,28 @@ export function TimeAllocationGantt({
       </div>
       <p className="time-management-tip">
         {readOnly
-          ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度。'
-          : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度。'}
+          ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
+          : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
       </p>
     </div>
   );
+}
+
+function normalizeSpanMonths(value) {
+  if (String(value).trim() === '') return DEFAULT_SPAN_MONTHS;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_SPAN_MONTHS;
+  return Math.min(12, Math.max(1, Math.round(parsed)));
+}
+
+function addUtcMonths(ms, months) {
+  const date = new Date(ms);
+  const day = date.getUTCDate();
+  date.setUTCDate(1);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  date.setUTCDate(Math.min(day, lastDay));
+  return date.getTime();
 }
 
 function normalizeAllocation(allocation) {
