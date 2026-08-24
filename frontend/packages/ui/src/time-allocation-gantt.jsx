@@ -1,15 +1,17 @@
 // @ts-check
-/* global document, Element */
+/* global document, Element, ResizeObserver */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 const PIXELS_PER_DAY_BY_SCALE = {
   day: 24,
   week: 6,
   month: 3.4,
 };
-const DEFAULT_TIME_SCALE = 'month';
+const DEFAULT_TIME_SCALE = 'week';
 const DAY_MS = 86400000;
+const TIME_GANTT_LABEL_WIDTH = 170;
+const TIME_GANTT_BORDER_WIDTH = 2;
 const DEFAULT_PROJECT_COLORS = [
   '#1f5fbf',
   '#2d8a68',
@@ -75,11 +77,29 @@ export function TimeAllocationGantt({
   const [manualEnd, setManualEnd] = useState(dateFromMs(today + 29 * DAY_MS));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
-  const pxPerDay = PIXELS_PER_DAY_BY_SCALE[viewScale];
+  const pxPerDay = viewScale === 'day'
+    ? PIXELS_PER_DAY_BY_SCALE.day
+    : (stretchTrackWidth > 0 ? stretchTrackWidth / totalDays : PIXELS_PER_DAY_BY_SCALE[viewScale]);
   const totalWidth = totalDays * pxPerDay;
+
+  useLayoutEffect(() => {
+    const node = ganttRef.current;
+    if (!node || viewScale === 'day') {
+      setStretchTrackWidth(0);
+      return undefined;
+    }
+    const measure = () => {
+      setStretchTrackWidth(Math.max(0, node.clientWidth - TIME_GANTT_LABEL_WIDTH - TIME_GANTT_BORDER_WIDTH));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [viewScale]);
 
   useEffect(() => {
     setItems(allocations.map(normalizeAllocation));
@@ -481,7 +501,7 @@ export function TimeAllocationGantt({
       {error ? <div className="time-management-error" role="alert">{error}</div> : null}
 
       <div className="time-gantt-wrap">
-        <div className="time-gantt" ref={ganttRef}
+        <div className={`time-gantt${viewScale !== 'day' ? ' time-gantt-fill' : ''}`} ref={ganttRef}
           onPointerDown={handleGanttPointerDown}
           onPointerMove={handleGanttPointerMove}
           onPointerUp={handleGanttPointerUp}

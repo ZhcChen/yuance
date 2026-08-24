@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { TimeAllocationGantt } from '@yuance/frontend-ui';
 
-test('time allocation gantt renders day/week/month scale switch with month default', () => {
+test('time allocation gantt renders day/week/month scale switch with week default', () => {
   const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
     allocations: [],
     projects: [{ key: 'YCE', name: '元策' }],
@@ -16,7 +16,8 @@ test('time allocation gantt renders day/week/month scale switch with month defau
   assert.match(html, />日<\/button>/);
   assert.match(html, />周<\/button>/);
   assert.match(html, />月<\/button>/);
-  assert.match(html, /class="active" aria-pressed="true">月</);
+  assert.match(html, /class="active" aria-pressed="true">周</);
   assert.match(html, /class="time-gantt-row-label">管理员<\/div>/);
   assert.match(html, /class="time-gantt-today"/);
+  assert.match(html, /class="time-gantt time-gantt-fill"/);
 });

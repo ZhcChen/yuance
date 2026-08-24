@@ -3082,6 +3082,10 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   overflow: hidden;
 }
 
+.time-gantt.time-gantt-fill {
+  width: 100%;
+}
+
 .time-gantt-axis-row,
 .time-gantt-member-row {
   display: grid;
