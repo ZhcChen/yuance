@@ -23,3 +23,19 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.match(html, /class="time-gantt-today"/);
   assert.match(html, /class="time-gantt time-gantt-fill"/);
 });
+
+test('time allocation gantt collapses project legend by default when many projects exist', () => {
+  const projects = Array.from({ length: 8 }, (_, index) => ({
+    key: `P-${index + 1}`,
+    name: `项目 ${index + 1}`,
+  }));
+  const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
+    allocations: [],
+    projects,
+    members: [{ username: 'admin', display_name: '管理员' }],
+  }));
+
+  assert.equal((html.match(/class="time-management-legend-item"/g) || []).length, 6);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /\+2 个项目/);
+});

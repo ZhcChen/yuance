@@ -13,6 +13,7 @@ const DAY_MS = 86400000;
 const DEFAULT_SPAN_MONTHS = 4;
 const TIME_GANTT_LABEL_WIDTH = 170;
 const TIME_GANTT_BORDER_WIDTH = 2;
+const LEGEND_COLLAPSED_LIMIT = 6;
 const DEFAULT_PROJECT_COLORS = [
   '#1f5fbf',
   '#2d8a68',
@@ -81,6 +82,7 @@ export function TimeAllocationGantt({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
+  const [legendExpanded, setLegendExpanded] = useState(false);
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
@@ -501,12 +503,18 @@ export function TimeAllocationGantt({
 
       {projects.length ? (
         <div className="time-management-legend" aria-label="项目图例">
-          {projects.map((project) => (
+          {(legendExpanded ? projects : projects.slice(0, LEGEND_COLLAPSED_LIMIT)).map((project) => (
             <span className="time-management-legend-item" key={project.key}>
               <i style={{ background: projectColor(project.key) }} aria-hidden="true" />
               {project.name}
             </span>
           ))}
+          {projects.length > LEGEND_COLLAPSED_LIMIT ? (
+            <button type="button" className="time-management-legend-toggle" aria-expanded={legendExpanded}
+              onClick={() => setLegendExpanded((current) => !current)}>
+              {legendExpanded ? '收起' : `+${projects.length - LEGEND_COLLAPSED_LIMIT} 个项目`}
+            </button>
+          ) : null}
         </div>
       ) : null}
 

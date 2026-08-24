@@ -101,6 +101,12 @@ const TIME_MANAGEMENT_MOCK_PROJECTS = [
   { key: 'mobile-app', name: '移动端' },
   { key: 'data-platform', name: '数据平台' },
   { key: 'devops', name: '运维平台' },
+  { key: 'crm-sync', name: 'CRM 同步' },
+  { key: 'erp-core', name: 'ERP 核心' },
+  { key: 'hr-system', name: '人事系统' },
+  { key: 'finance', name: '财务结算' },
+  { key: 'security-center', name: '安全中心' },
+  { key: 'ai-assistant', name: 'AI 助手' },
 ];
 
 const TIME_MANAGEMENT_MOCK_MEMBERS = [

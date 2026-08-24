@@ -8901,6 +8901,60 @@ async fn seed_demo_projects(pool: &SqlitePool, owner_user_id: i64) -> AppResult<
             "从 CRM 视角验证项目协作和外部集成边界。",
             PROJECT_STATUS_ON_HOLD,
         ),
+        (
+            "BI",
+            "经营分析 BI",
+            "指标看板、报表订阅与经营数据洞察。",
+            PROJECT_STATUS_IN_PROGRESS,
+        ),
+        (
+            "WMS",
+            "仓储管理",
+            "入库、出库、库存盘点与物流协同。",
+            PROJECT_STATUS_IN_PROGRESS,
+        ),
+        (
+            "CMS",
+            "内容中台",
+            "内容发布、审核与多渠道分发。",
+            PROJECT_STATUS_NOT_STARTED,
+        ),
+        (
+            "OA",
+            "OA 办公",
+            "审批、日程、公告与行政协同。",
+            PROJECT_STATUS_NOT_STARTED,
+        ),
+        (
+            "IOT",
+            "设备物联",
+            "设备接入、遥测采集与告警规则。",
+            PROJECT_STATUS_ON_HOLD,
+        ),
+        (
+            "PAY",
+            "支付网关",
+            "交易、账单、退款与渠道对账。",
+            PROJECT_STATUS_IN_PROGRESS,
+        ),
+        (
+            "IM",
+            "即时通讯",
+            "会话、消息、群组与消息回调。",
+            PROJECT_STATUS_ACCEPTANCE,
+        ),
+        (
+            "OPEN",
+            "开放平台",
+            "OpenAPI、应用凭证与第三方接入。",
+            PROJECT_STATUS_COMPLETED,
+        ),
+        (
+            "TRAIN",
+            "培训学习",
+            "课程、学习进度与培训考核。",
+            PROJECT_STATUS_ON_HOLD,
+        ),
     ];
 
     for (project_key, name, description, status) in projects {
@@ -8944,7 +8998,7 @@ async fn seed_demo_members(pool: &SqlitePool, owner_user_id: i64) -> AppResult<(
         )
         SELECT id, ?1, 'owner'
         FROM projects
-        WHERE project_key IN ('YCE', 'OPS', 'CRM')
+        WHERE project_key IN ('YCE', 'OPS', 'CRM', 'BI', 'WMS', 'CMS', 'OA', 'IOT', 'PAY', 'IM', 'OPEN', 'TRAIN')
         ON CONFLICT(project_id, user_id) DO UPDATE SET
             member_role = excluded.member_role,
             updated_at = datetime('now')
