@@ -1,4 +1,4 @@
-.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review crg.guard
+.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review crg.guard clean clean-deep
 
 CRG_VERSION ?= 2.3.7
 CRG := uvx --from code-review-graph==$(CRG_VERSION) code-review-graph
@@ -37,6 +37,8 @@ help:
 	@echo "  make crg.status"
 	@echo "  make crg.review BASE=<git-ref>"
 	@echo "  make crg.guard"
+	@echo "  make clean"
+	@echo "  make clean-deep"
 
 frontend-check:
 	npm run check:frontend
@@ -137,3 +139,13 @@ crg.review: ## 手工审查当前改动影响（可传 BASE=<git-ref>，默认 H
 
 crg.guard: ## 守护 CRG 受控边界（独立手工目标，不进入默认链）
 	@node scripts/assert-crg-guard.mjs
+
+clean:
+	cargo clean
+	cd desktop/native/file-guard && cargo clean
+	rm -rf dist desktop/dist web/dist desktop/renderer-dist
+	@echo "[make] clean 完成：Rust 构建产物与发布产物已清理"
+
+clean-deep: clean
+	rm -rf .artifacts .code-review-graph .context desktop/node_modules web/node_modules frontend/node_modules test-results .tmp-docx-harness
+	@echo "[make] clean-deep 完成：依赖与验证产物已清理，需要时执行 npm ci / make crg.build 恢复"
