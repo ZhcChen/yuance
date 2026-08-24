@@ -5468,6 +5468,7 @@ export function SharedApp({ services }) {
                   allocations={timeAllocations}
                   projects={timeProjects}
                   members={timeMembers}
+                  currentUsername={user?.username || ''}
                   onCreate={persistTimeCreate}
                   onUpdate={persistTimeUpdate}
                   onDelete={persistTimeDelete}

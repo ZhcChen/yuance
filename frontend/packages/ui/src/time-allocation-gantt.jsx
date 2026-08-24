@@ -46,6 +46,7 @@ const DEFAULT_PROJECT_COLORS = [
  *   allocations: TimeAllocation[],
  *   projects: Array<{ key: string, name: string }>,
  *   members: Array<{ username: string, display_name: string }>,
+ *   currentUsername?: string,
  *   viewStart?: string,
  *   viewEnd?: string,
    readOnly?: boolean,
@@ -59,6 +60,7 @@ export function TimeAllocationGantt({
   allocations = [],
   projects = [],
   members = [],
+  currentUsername = '',
   viewStart,
   viewEnd,
   readOnly = false,
@@ -76,6 +78,7 @@ export function TimeAllocationGantt({
   const totalDays = viewEndIndex + 1;
 
   const [viewScale, setViewScale] = useState(/** @type {'day' | 'week' | 'month'} */ (DEFAULT_TIME_SCALE));
+  const [viewScope, setViewScope] = useState(/** @type {'all' | 'self'} */ ('all'));
   const [items, setItems] = useState(() => allocations.map(normalizeAllocation));
   const [selectedProjectKey, setSelectedProjectKey] = useState(projects[0]?.key || '');
   const [selectedMemberUsername, setSelectedMemberUsername] = useState(members[0]?.username || '');
@@ -137,8 +140,16 @@ export function TimeAllocationGantt({
         });
       }
     }
-    return [...seen.values()];
-  }, [members, items]);
+    const allMembers = [...seen.values()];
+    if (viewScope === 'all' || !currentUsername) return allMembers;
+    return allMembers.filter((member) => member.username === currentUsername);
+  }, [members, items, viewScope, currentUsername]);
+
+  useEffect(() => {
+    if (viewScope === 'self' && visibleMembers.length && !visibleMembers.some((member) => member.username === selectedMemberUsername)) {
+      setSelectedMemberUsername(visibleMembers[0].username);
+    }
+  }, [viewScope, visibleMembers, selectedMemberUsername]);
 
   const conflictKeys = useMemo(() => {
     const keys = new Set();
@@ -481,21 +492,35 @@ export function TimeAllocationGantt({
       ) : null}
 
       <div className="time-management-controls">
-        <div className="time-management-scale" role="group" aria-label="时间粒度">
-          {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
-            <button key={value} type="button" className={viewScale === value ? 'active' : ''}
-              aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
-              {label}
-            </button>
-          ))}
+        <div className="time-management-controls-left">
+          <div className="time-management-scale" role="group" aria-label="时间粒度">
+            {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
+              <button key={value} type="button" className={viewScale === value ? 'active' : ''}
+                aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="time-management-range">
+            <span>时间跨度</span>
+            <input type="number" min="1" max="12" value={spanInput}
+              onChange={(event) => setSpanInput(event.currentTarget.value)}
+              onBlur={() => setSpanInput(String(normalizeSpanMonths(spanInput)))} />
+            <em>月</em>
+          </label>
         </div>
-        <label className="time-management-range">
-          <span>时间跨度</span>
-          <input type="number" min="1" max="12" value={spanInput}
-            onChange={(event) => setSpanInput(event.currentTarget.value)}
-            onBlur={() => setSpanInput(String(normalizeSpanMonths(spanInput)))} />
-          <em>月</em>
-        </label>
+        {currentUsername ? (
+          <div className="time-management-view" role="group" aria-label="查看范围">
+            <button type="button" className={viewScope === 'all' ? 'active' : ''}
+              aria-pressed={viewScope === 'all'} onClick={() => setViewScope('all')}>
+              查看全部人
+            </button>
+            <button type="button" className={viewScope === 'self' ? 'active' : ''}
+              aria-pressed={viewScope === 'self'} onClick={() => setViewScope('self')}>
+              查看自己
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {projects.length ? (

@@ -3006,7 +3006,8 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   cursor: default;
 }
 
-.time-management-scale {
+.time-management-scale,
+.time-management-view {
   display: inline-flex;
   align-self: flex-start;
   gap: 4px;
@@ -3016,7 +3017,8 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   border-radius: 6px;
 }
 
-.time-management-scale button {
+.time-management-scale button,
+.time-management-view button {
   height: 28px;
   padding: 0 14px;
   border: 0;
@@ -3027,11 +3029,13 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   cursor: pointer;
 }
 
-.time-management-scale button:hover {
+.time-management-scale button:hover,
+.time-management-view button:hover {
   color: var(--yc-text);
 }
 
-.time-management-scale button.active {
+.time-management-scale button.active,
+.time-management-view button.active {
   background: var(--yc-panel);
   color: var(--yc-brand);
   font-weight: 600;
@@ -3043,6 +3047,13 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
+}
+
+.time-management-controls-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
 }
 

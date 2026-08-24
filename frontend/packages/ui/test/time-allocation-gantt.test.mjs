@@ -10,6 +10,7 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
     allocations: [],
     projects: [{ key: 'YCE', name: '元策' }],
     members: [{ username: 'admin', display_name: '管理员' }],
+    currentUsername: 'admin',
   }));
 
   assert.match(html, /aria-label="时间粒度"/);
@@ -22,6 +23,9 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.doesNotMatch(html, /每天投入/);
   assert.match(html, /搜索项目/);
   assert.match(html, /搜索成员/);
+  assert.match(html, />查看全部人<\/button>/);
+  assert.match(html, />查看自己<\/button>/);
+  assert.match(html, /class="active" aria-pressed="true">查看全部人/);
   assert.match(html, /class="time-gantt-row-label">管理员<\/div>/);
   assert.match(html, /class="time-gantt-today"/);
   assert.match(html, /class="time-gantt time-gantt-fill"/);
