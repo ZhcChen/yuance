@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const PIXELS_PER_DAY_BY_SCALE = {
-  day: 14,
+  day: 24,
   week: 6,
   month: 3.4,
 };
@@ -378,19 +378,43 @@ export function TimeAllocationGantt({
     const cursor = new Date(start);
     if (viewScale === 'month') {
       cursor.setUTCDate(1);
+      while (cursor <= end) {
+        const labelDate = cursor.toISOString().slice(0, 10);
+        labels.push({
+          key: labelDate,
+          label: `${cursor.getUTCMonth() + 1}月`,
+          left: dayIndex(labelDate, computedViewStart) * pxPerDay,
+          tier: 'month',
+        });
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      }
+      return labels;
     }
+
+    const monthCursor = new Date(start);
+    monthCursor.setUTCDate(1);
+    while (monthCursor <= end) {
+      const labelDate = monthCursor.toISOString().slice(0, 10);
+      labels.push({
+        key: `month:${labelDate}`,
+        label: `${monthCursor.getUTCMonth() + 1}月`,
+        left: Math.max(0, dayIndex(labelDate, computedViewStart) * pxPerDay),
+        tier: 'month',
+      });
+      monthCursor.setUTCMonth(monthCursor.getUTCMonth() + 1);
+    }
+
     while (cursor <= end) {
       const labelDate = cursor.toISOString().slice(0, 10);
       labels.push({
         key: labelDate,
-        label: viewScale === 'month'
-          ? `${cursor.getUTCMonth() + 1}月`
-          : `${cursor.getUTCMonth() + 1}/${cursor.getUTCDate()}`,
+        label: viewScale === 'week'
+          ? `${cursor.getUTCMonth() + 1}/${cursor.getUTCDate()}`
+          : String(cursor.getUTCDate()),
         left: dayIndex(labelDate, computedViewStart) * pxPerDay,
+        tier: viewScale === 'week' ? 'date' : 'day',
       });
-      if (viewScale === 'month') {
-        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
-      } else if (viewScale === 'week') {
+      if (viewScale === 'week') {
         cursor.setUTCDate(cursor.getUTCDate() + 7);
       } else {
         cursor.setUTCDate(cursor.getUTCDate() + 1);
@@ -467,7 +491,7 @@ export function TimeAllocationGantt({
             <div className="time-gantt-axis-label">成员 / 时间</div>
             <div className="time-gantt-axis" style={{ width: `${totalWidth}px` }}>
               {axisLabels.map((label) => (
-                <span key={label.key} style={{ left: `${label.left}px` }}>{label.label}</span>
+                <span key={label.key} className={`time-gantt-axis-${label.tier}`} style={{ left: `${label.left}px` }}>{label.label}</span>
               ))}
             </div>
           </div>

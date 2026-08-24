@@ -3102,16 +3102,23 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 
 .time-gantt-axis {
   position: relative;
-  height: 38px;
+  height: 46px;
 }
 
 .time-gantt-axis span {
   position: absolute;
-  top: 10px;
+  top: 24px;
   transform: translateX(-50%);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--yc-muted);
   white-space: nowrap;
+}
+
+.time-gantt-axis span.time-gantt-axis-month {
+  top: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--yc-text);
 }
 
 .time-gantt-member-row {
