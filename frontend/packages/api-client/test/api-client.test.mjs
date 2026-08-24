@@ -57,6 +57,34 @@ test('api-client exposes package root marker', () => {
   assert.equal(API_CLIENT_PACKAGE_NAME, '@yuance/frontend-api-client');
 });
 
+test('time management changes use paginated query path', async () => {
+  const calls = [];
+  const client = createApiClient({
+    async request(url, options = {}) {
+      calls.push({ url, options });
+      return {
+        items: [],
+        pagination: { page: 2, per_page: 10, total_items: 0, total_pages: 1 },
+      };
+    },
+    async prepareWrite() {},
+  });
+
+  const result = await client.getTimeManagementChanges({
+    page: 2,
+    perPage: 10,
+    projectKey: 'YCE',
+    actor: 'admin',
+  });
+
+  assert.equal(
+    calls[0].url,
+    '/api/v1/time-management/changes?page=2&per_page=10&project_key=YCE&actor=admin',
+  );
+  assert.equal(calls[0].options.method || 'GET', 'GET');
+  assert.deepEqual(result.pagination, { page: 2, per_page: 10, total_items: 0, total_pages: 1 });
+});
+
 test('project resources normalize list detail and unlock responses', async () => {
   const calls = [];
   const writes = [];

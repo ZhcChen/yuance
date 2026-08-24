@@ -1968,6 +1968,41 @@ pub struct TimeAllocationListQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TimeAllocationChangeListQuery {
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+    #[serde(default)]
+    project_key: String,
+    #[serde(default)]
+    actor: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TimeAllocationFieldChangePayload {
+    pub field: String,
+    pub before: Option<serde_json::Value>,
+    pub after: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TimeAllocationChangePayload {
+    pub id: i64,
+    pub allocation_id: i64,
+    pub project_key: String,
+    pub project_name: String,
+    pub action: String,
+    pub actor_username: String,
+    pub actor_display_name: String,
+    pub summary: String,
+    pub changes: Vec<TimeAllocationFieldChangePayload>,
+    pub before: Option<serde_json::Value>,
+    pub after: Option<serde_json::Value>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateTimeAllocationRequest {
     username: String,
     start_date: String,
@@ -3244,7 +3279,10 @@ pub async fn create_project_time_allocation(
         &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
     )
     .await?;
-    Ok((StatusCode::CREATED, json(time_allocation_payload(allocation))))
+    Ok((
+        StatusCode::CREATED,
+        json(time_allocation_payload(allocation)),
+    ))
 }
 
 pub async fn update_project_time_allocation(
@@ -3309,6 +3347,44 @@ pub async fn delete_project_time_allocation(
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn list_time_allocation_changes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TimeAllocationChangeListQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<TimeAllocationChangePayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let pagination = normalize_api_pagination(query.page, query.per_page)?;
+    let page = projects::list_time_allocation_change_records_paginated(
+        pool,
+        projects::TimeAllocationChangeFilter {
+            project_key: query.project_key,
+            actor: query.actor,
+            user_id: if can_access_all_projects { 0 } else { user.id },
+        },
+        pagination,
+    )
+    .await?;
+
+    let total_pages = page.total_pages();
+    Ok(json(PaginatedPayload {
+        items: page
+            .items
+            .into_iter()
+            .map(time_allocation_change_payload)
+            .collect(),
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+    }))
 }
 
 pub async fn list_work_items(
@@ -8387,20 +8463,13 @@ async fn ensure_api_time_management_write_access(
     project_id: i64,
 ) -> AppResult<()> {
     if rbac::user_has_permission(pool, user.id, "time.management.edit").await?
-        || projects::user_can_manage_project_time(
-            pool,
-            project_id,
-            user.id,
-            user.is_super_admin,
-        )
-        .await?
+        || projects::user_can_manage_project_time(pool, project_id, user.id, user.is_super_admin)
+            .await?
     {
         return Ok(());
     }
 
-    Err(AppError::Forbidden(
-        "缺少时间排期管理权限".to_string(),
-    ))
+    Err(AppError::Forbidden("缺少时间排期管理权限".to_string()))
 }
 
 fn ensure_api_work_item_accepts_writes(item: &projects::WorkItemDetail) -> AppResult<()> {
@@ -9149,6 +9218,33 @@ fn time_allocation_payload(allocation: projects::TimeAllocationDetail) -> TimeAl
         note: allocation.note,
         created_at: allocation.created_at,
         updated_at: allocation.updated_at,
+    }
+}
+
+fn time_allocation_change_payload(
+    record: projects::TimeAllocationChangeRecord,
+) -> TimeAllocationChangePayload {
+    TimeAllocationChangePayload {
+        id: record.id,
+        allocation_id: record.allocation_id,
+        project_key: record.project_key,
+        project_name: record.project_name,
+        action: record.action,
+        actor_username: record.actor_username,
+        actor_display_name: record.actor_display_name,
+        summary: record.summary,
+        changes: record
+            .changes
+            .into_iter()
+            .map(|change| TimeAllocationFieldChangePayload {
+                field: change.field,
+                before: change.before,
+                after: change.after,
+            })
+            .collect(),
+        before: record.before,
+        after: record.after,
+        created_at: record.created_at,
     }
 }
 

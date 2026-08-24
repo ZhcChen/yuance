@@ -29,6 +29,7 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.doesNotMatch(html, /aria-label="排期编辑操作"/);
   assert.doesNotMatch(html, />回退<\/button>/);
   assert.doesNotMatch(html, />前进<\/button>/);
+  assert.doesNotMatch(html, />记录<\/button>/);
   assert.match(html, /class="time-gantt-row-label">管理员<\/div>/);
   assert.match(html, /class="time-gantt-today"/);
   assert.match(html, /class="time-gantt time-gantt-fill"/);
@@ -41,12 +42,14 @@ test('time allocation gantt shows undo/redo/save controls and save confirmation 
     members: [{ username: 'admin', display_name: '管理员' }],
     currentUsername: 'admin',
     onSave: async () => {},
+    onOpenRecords: () => {},
   }));
 
   assert.match(html, /aria-label="排期编辑操作"/);
   assert.match(html, />回退<\/button>/);
   assert.match(html, />前进<\/button>/);
   assert.match(html, />保存<\/button>/);
+  assert.match(html, />记录<\/button>/);
   assert.match(html, /确认保存排期/);
   assert.match(html, /新增 0 条/);
   assert.match(html, /更新 0 条/);

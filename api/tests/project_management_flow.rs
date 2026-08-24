@@ -7115,7 +7115,48 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     assert_eq!(filtered_status, StatusCode::OK, "{filtered_body}");
     assert!(filtered_body.contains("2026-08-20"));
 
+    let changes_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/changes?per_page=10")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(changes_response.status(), StatusCode::OK);
+    let changes_body = response_body(changes_response).await;
+    assert!(
+        changes_body.contains("\"action\":\"time_allocation.created\""),
+        "{changes_body}"
+    );
+    assert!(
+        changes_body.contains("\"action\":\"time_allocation.updated\""),
+        "{changes_body}"
+    );
+    assert!(changes_body.contains("\"start_date\""), "{changes_body}");
+    assert!(changes_body.contains("\"daily_hours\""), "{changes_body}");
+
     let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
+    let outsider_changes_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/changes")
+                .header(header::COOKIE, outsider.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        outsider_changes_response.status(),
+        StatusCode::FORBIDDEN,
+        "time management changes should require time.management.view"
+    );
+
     let forbidden_response = app
         .clone()
         .oneshot(
@@ -7135,13 +7176,14 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
 
     let delete_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
                 .uri(format!(
                     "/api/v1/projects/YCE/time-allocations/{allocation_id}"
                 ))
-                .header(header::COOKIE, admin.cookie)
+                .header(header::COOKIE, admin.cookie.clone())
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -7149,6 +7191,31 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
         .await
         .expect("router should respond");
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
+
+    let changes_after_delete = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/changes?per_page=1&page=1")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(changes_after_delete.status(), StatusCode::OK);
+    let changes_after_delete_body = response_body(changes_after_delete).await;
+    assert!(
+        changes_after_delete_body.contains("\"action\":\"time_allocation.deleted\""),
+        "{changes_after_delete_body}"
+    );
+    assert!(
+        changes_after_delete_body.contains("\"total_items\":3"),
+        "{changes_after_delete_body}"
+    );
+    assert!(
+        changes_after_delete_body.contains("\"total_pages\":3"),
+        "{changes_after_delete_body}"
+    );
 }
 
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {

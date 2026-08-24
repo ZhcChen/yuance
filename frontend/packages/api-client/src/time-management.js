@@ -21,6 +21,24 @@ export function timeManagementOverviewApiPath(query = {}) {
   return `/api/v1/time-management/overview${suffix}`;
 }
 
+export function timeManagementChangesApiPath(query = {}) {
+  const params = new URLSearchParams();
+  if (typeof query.page === 'number') {
+    params.set('page', String(query.page));
+  }
+  if (typeof query.perPage === 'number') {
+    params.set('per_page', String(query.perPage));
+  }
+  if (typeof query.projectKey === 'string' && query.projectKey.trim()) {
+    params.set('project_key', query.projectKey.trim());
+  }
+  if (typeof query.actor === 'string' && query.actor.trim()) {
+    params.set('actor', query.actor.trim());
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  return `/api/v1/time-management/changes${suffix}`;
+}
+
 export function projectTimeAllocationApiPath(projectKey, allocationId) {
   const base = `/api/v1/projects/${encodeURIComponent(String(projectKey))}/time-allocations`;
   return allocationId === undefined ? base : `${base}/${encodeURIComponent(String(allocationId))}`;
@@ -30,6 +48,9 @@ export function createTimeManagementClient({ request, prepareWrite }) {
   return {
     getTimeManagementOverview(query = {}) {
       return request(timeManagementOverviewApiPath(query));
+    },
+    getTimeManagementChanges(query = {}) {
+      return request(timeManagementChangesApiPath(query));
     },
     getProjectTimeAllocations(projectKey) {
       return request(projectTimeAllocationApiPath(projectKey));

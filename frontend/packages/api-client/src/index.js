@@ -19,6 +19,7 @@ export {
   createTimeManagementClient,
   projectTimeAllocationApiPath,
   timeAllocationBody,
+  timeManagementChangesApiPath,
   timeManagementOverviewApiPath,
 } from './time-management.js';
 export {

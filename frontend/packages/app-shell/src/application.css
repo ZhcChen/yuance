@@ -1179,6 +1179,20 @@ html[data-theme="dark"] .project-stats div {
 
 .page-stack { min-width: 0; display: grid; gap: 16px; }
 .time-management-page > .shell-card { min-width: 0; width: 100%; }
+.time-management-changes-modal-body { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.time-management-changes-list { min-height: 0; display: grid; gap: 10px; }
+.time-management-change-record { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--yc-line); border-radius: 10px; background: var(--yc-panel-soft); }
+.time-management-change-record-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.time-management-change-record-title { min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+.time-management-change-record-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time-management-change-record-head time { flex: 0 0 auto; color: var(--yc-muted); font-size: 12px; white-space: nowrap; }
+.time-management-change-record-summary { margin: 0; color: var(--yc-text); font-size: 13px; line-height: 20px; }
+.time-management-change-record-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--yc-muted); font-size: 12px; line-height: 18px; }
+.time-management-change-diffs { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; }
+.time-management-change-diffs li { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--yc-line); border-radius: 7px; background: var(--yc-panel); }
+.time-management-change-field { color: var(--yc-muted-strong); font-size: 12px; font-weight: 700; }
+.time-management-change-arrow { color: var(--yc-muted); font-size: 12px; }
+.time-management-change-value { color: var(--yc-text); font-size: 12px; font-weight: 700; }
 .page-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px; border: 0; border-radius: var(--yc-card-radius); background: var(--yc-panel); box-shadow: var(--yc-card-shadow); }
 .page-hero h1 { margin: 2px 0 6px; font-size: 24px; line-height: 30px; letter-spacing: 0; }
 .page-hero p { margin: 0; color: var(--yc-muted); line-height: 22px; }

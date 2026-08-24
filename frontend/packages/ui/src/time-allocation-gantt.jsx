@@ -55,6 +55,7 @@ const DEFAULT_PROJECT_COLORS = [
  *   onUpdate?: (id: number, payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, note?: string }) => Promise<unknown> | unknown,
  *   onDelete?: (id: number) => Promise<unknown> | unknown,
  *   onSave?: (items: TimeAllocation[], operations: { created: TimeAllocation[], updated: TimeAllocation[], deleted: TimeAllocation[] }) => Promise<unknown> | unknown,
+ *   onOpenRecords?: () => void,
  * }} props
  */
 export function TimeAllocationGantt({
@@ -70,6 +71,7 @@ export function TimeAllocationGantt({
   onUpdate,
   onDelete,
   onSave,
+  onOpenRecords,
 }) {
   const today = startOfToday();
   const computedViewStart = viewStart || dateFromMs(today - 30 * DAY_MS);
@@ -580,6 +582,9 @@ export function TimeAllocationGantt({
                 查看自己
               </button>
             </div>
+          ) : null}
+          {onOpenRecords ? (
+            <Button variant="secondary" size="sm" onClick={onOpenRecords}>记录</Button>
           ) : null}
         </div>
         {manualSave ? (

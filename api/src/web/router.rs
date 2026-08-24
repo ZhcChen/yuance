@@ -654,6 +654,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::get_time_management_overview),
         )
         .route(
+            "/api/v1/time-management/changes",
+            get(web::api::list_time_allocation_changes),
+        )
+        .route(
             "/api/v1/projects/{project_key}/my-analysis",
             get(web::api::get_project_personal_analysis),
         )
@@ -1585,8 +1589,8 @@ fn serve_web_app_path(state: &AppState, requested_path: &str) -> Response {
     };
     let content = if relative_path == "index.html" {
         let html = String::from_utf8_lossy(&content).into_owned();
-        let version = serde_json::to_string(&app_release_version())
-            .unwrap_or_else(|_| "\"\"".to_string());
+        let version =
+            serde_json::to_string(&app_release_version()).unwrap_or_else(|_| "\"\"".to_string());
         html.replace(WEB_APP_RELEASE_VERSION_PLACEHOLDER, &version)
             .into_bytes()
     } else {

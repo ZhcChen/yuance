@@ -130,6 +130,220 @@ const TIME_MANAGEMENT_MOCK_ALLOCATIONS = [
   { id: 10, project_key: 'mobile-app', project_name: '移动端', username: 'sunqi', display_name: '孙七', start_date: '2026-10-01', end_date: '2026-12-20', daily_hours: 6, note: '' },
 ];
 
+const TIME_MANAGEMENT_MOCK_CHANGES = [
+  {
+    id: 101,
+    allocation_id: 1,
+    project_key: 'yuance-api',
+    project_name: '元策 API',
+    action: 'time_allocation.updated',
+    actor_username: 'zhangsan',
+    actor_display_name: '张三',
+    summary: '更新成员 zhangsan 的排期 2026-07-05 ~ 2026-08-15',
+    changes: [
+      { field: 'start_date', before: '2026-07-01', after: '2026-07-05' },
+      { field: 'daily_hours', before: 8, after: 6 },
+    ],
+    before: { project_key: 'yuance-api', username: 'zhangsan', start_date: '2026-07-01', end_date: '2026-08-15', daily_hours: 8, note: '' },
+    after: { project_key: 'yuance-api', username: 'zhangsan', start_date: '2026-07-05', end_date: '2026-08-15', daily_hours: 6, note: '' },
+    created_at: '2026-08-24 09:10:12',
+  },
+  {
+    id: 102,
+    allocation_id: 11,
+    project_key: 'yuance-web',
+    project_name: '元策 Web',
+    action: 'time_allocation.created',
+    actor_username: 'lisi',
+    actor_display_name: '李四',
+    summary: '创建成员 lisi 的排期 2026-08-01 ~ 2026-08-20',
+    changes: [
+      { field: 'username', before: null, after: 'lisi' },
+      { field: 'start_date', before: null, after: '2026-08-01' },
+      { field: 'end_date', before: null, after: '2026-08-20' },
+      { field: 'daily_hours', before: null, after: 8 },
+    ],
+    before: null,
+    after: { project_key: 'yuance-web', username: 'lisi', start_date: '2026-08-01', end_date: '2026-08-20', daily_hours: 8, note: '' },
+    created_at: '2026-08-24 08:40:22',
+  },
+  {
+    id: 103,
+    allocation_id: 7,
+    project_key: 'devops',
+    project_name: '运维平台',
+    action: 'time_allocation.deleted',
+    actor_username: 'wangwu',
+    actor_display_name: '王五',
+    summary: '删除成员 zhaoliu 的时间排期',
+    changes: [
+      { field: 'start_date', before: '2026-06-01', after: null },
+      { field: 'end_date', before: '2026-09-30', after: null },
+      { field: 'daily_hours', before: 8, after: null },
+    ],
+    before: { project_key: 'devops', username: 'zhaoliu', start_date: '2026-06-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
+    after: null,
+    created_at: '2026-08-23 18:05:03',
+  },
+  {
+    id: 104,
+    allocation_id: 2,
+    project_key: 'yuance-web',
+    project_name: '元策 Web',
+    action: 'time_allocation.updated',
+    actor_username: 'zhangsan',
+    actor_display_name: '张三',
+    summary: '更新成员 zhangsan 的排期 2026-07-25 ~ 2026-08-05',
+    changes: [
+      { field: 'start_date', before: '2026-07-20', after: '2026-07-25' },
+      { field: 'end_date', before: '2026-08-05', after: '2026-08-08' },
+    ],
+    before: { project_key: 'yuance-web', username: 'zhangsan', start_date: '2026-07-20', end_date: '2026-08-05', daily_hours: 4, note: '' },
+    after: { project_key: 'yuance-web', username: 'zhangsan', start_date: '2026-07-25', end_date: '2026-08-08', daily_hours: 4, note: '' },
+    created_at: '2026-08-23 16:20:41',
+  },
+  {
+    id: 105,
+    allocation_id: 9,
+    project_key: 'ops-console',
+    project_name: '运营后台',
+    action: 'time_allocation.updated',
+    actor_username: 'zhaoliu',
+    actor_display_name: '赵六',
+    summary: '更新成员 sunqi 的排期 2026-08-01 ~ 2026-09-30',
+    changes: [
+      { field: 'note', before: '', after: '上线窗口预留' },
+      { field: 'daily_hours', before: 8, after: 6 },
+    ],
+    before: { project_key: 'ops-console', username: 'sunqi', start_date: '2026-08-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
+    after: { project_key: 'ops-console', username: 'sunqi', start_date: '2026-08-01', end_date: '2026-09-30', daily_hours: 6, note: '上线窗口预留' },
+    created_at: '2026-08-23 11:02:18',
+  },
+  {
+    id: 106,
+    allocation_id: 12,
+    project_key: 'data-platform',
+    project_name: '数据平台',
+    action: 'time_allocation.created',
+    actor_username: 'sunqi',
+    actor_display_name: '孙七',
+    summary: '创建成员 wangwu 的排期 2026-08-10 ~ 2026-09-10',
+    changes: [
+      { field: 'username', before: null, after: 'wangwu' },
+      { field: 'start_date', before: null, after: '2026-08-10' },
+      { field: 'end_date', before: null, after: '2026-09-10' },
+      { field: 'daily_hours', before: null, after: 5 },
+    ],
+    before: null,
+    after: { project_key: 'data-platform', username: 'wangwu', start_date: '2026-08-10', end_date: '2026-09-10', daily_hours: 5, note: '' },
+    created_at: '2026-08-22 19:44:09',
+  },
+  {
+    id: 107,
+    allocation_id: 4,
+    project_key: 'yuance-web',
+    project_name: '元策 Web',
+    action: 'time_allocation.updated',
+    actor_username: 'lisi',
+    actor_display_name: '李四',
+    summary: '更新成员 lisi 的排期 2026-06-15 ~ 2026-08-31',
+    changes: [
+      { field: 'end_date', before: '2026-08-31', after: '2026-09-05' },
+    ],
+    before: { project_key: 'yuance-web', username: 'lisi', start_date: '2026-06-15', end_date: '2026-08-31', daily_hours: 8, note: '' },
+    after: { project_key: 'yuance-web', username: 'lisi', start_date: '2026-06-15', end_date: '2026-09-05', daily_hours: 8, note: '' },
+    created_at: '2026-08-22 15:12:30',
+  },
+  {
+    id: 108,
+    allocation_id: 8,
+    project_key: 'yuance-api',
+    project_name: '元策 API',
+    action: 'time_allocation.updated',
+    actor_username: 'zhangsan',
+    actor_display_name: '张三',
+    summary: '更新成员 zhaoliu 的排期 2026-10-05 ~ 2026-12-15',
+    changes: [
+      { field: 'start_date', before: '2026-10-05', after: '2026-10-08' },
+      { field: 'note', before: '', after: '接口联调' },
+    ],
+    before: { project_key: 'yuance-api', username: 'zhaoliu', start_date: '2026-10-05', end_date: '2026-12-15', daily_hours: 5, note: '' },
+    after: { project_key: 'yuance-api', username: 'zhaoliu', start_date: '2026-10-08', end_date: '2026-12-15', daily_hours: 5, note: '接口联调' },
+    created_at: '2026-08-22 10:01:55',
+  },
+  {
+    id: 109,
+    allocation_id: 13,
+    project_key: 'mobile-app',
+    project_name: '移动端',
+    action: 'time_allocation.created',
+    actor_username: 'wangwu',
+    actor_display_name: '王五',
+    summary: '创建成员 sunqi 的排期 2026-08-15 ~ 2026-09-20',
+    changes: [
+      { field: 'username', before: null, after: 'sunqi' },
+      { field: 'start_date', before: null, after: '2026-08-15' },
+      { field: 'end_date', before: null, after: '2026-09-20' },
+      { field: 'daily_hours', before: null, after: 6 },
+    ],
+    before: null,
+    after: { project_key: 'mobile-app', username: 'sunqi', start_date: '2026-08-15', end_date: '2026-09-20', daily_hours: 6, note: '' },
+    created_at: '2026-08-21 17:38:26',
+  },
+  {
+    id: 110,
+    allocation_id: 5,
+    project_key: 'ops-console',
+    project_name: '运营后台',
+    action: 'time_allocation.deleted',
+    actor_username: 'lisi',
+    actor_display_name: '李四',
+    summary: '删除成员 lisi 的时间排期',
+    changes: [
+      { field: 'start_date', before: '2026-09-01', after: null },
+      { field: 'end_date', before: '2026-11-20', after: null },
+    ],
+    before: { project_key: 'ops-console', username: 'lisi', start_date: '2026-09-01', end_date: '2026-11-20', daily_hours: 6, note: '' },
+    after: null,
+    created_at: '2026-08-21 14:26:37',
+  },
+  {
+    id: 111,
+    allocation_id: 3,
+    project_key: 'mobile-app',
+    project_name: '移动端',
+    action: 'time_allocation.updated',
+    actor_username: 'zhaoliu',
+    actor_display_name: '赵六',
+    summary: '更新成员 zhangsan 的排期 2026-09-01 ~ 2026-10-10',
+    changes: [
+      { field: 'end_date', before: '2026-10-10', after: '2026-10-15' },
+    ],
+    before: { project_key: 'mobile-app', username: 'zhangsan', start_date: '2026-09-01', end_date: '2026-10-10', daily_hours: 6, note: '' },
+    after: { project_key: 'mobile-app', username: 'zhangsan', start_date: '2026-09-01', end_date: '2026-10-15', daily_hours: 6, note: '' },
+    created_at: '2026-08-21 09:12:48',
+  },
+  {
+    id: 112,
+    allocation_id: 14,
+    project_key: 'crm-sync',
+    project_name: 'CRM 同步',
+    action: 'time_allocation.created',
+    actor_username: 'zhangsan',
+    actor_display_name: '张三',
+    summary: '创建成员 wangwu 的排期 2026-08-20 ~ 2026-09-15',
+    changes: [
+      { field: 'username', before: null, after: 'wangwu' },
+      { field: 'start_date', before: null, after: '2026-08-20' },
+      { field: 'end_date', before: null, after: '2026-09-15' },
+      { field: 'daily_hours', before: null, after: 4 },
+    ],
+    before: null,
+    after: { project_key: 'crm-sync', username: 'wangwu', start_date: '2026-08-20', end_date: '2026-09-15', daily_hours: 4, note: '' },
+    created_at: '2026-08-20 16:55:14',
+  },
+];
+
 /**
  * @typedef AppUser
  * @property {number} id
@@ -417,6 +631,69 @@ function formatTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function formatChangeTimestamp(value) {
+  const normalized = String(value || '').replace(' ', 'T');
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
+}
+
+function timeAllocationActionLabel(action) {
+  switch (action) {
+    case 'time_allocation.created':
+      return '新增';
+    case 'time_allocation.deleted':
+      return '删除';
+    case 'time_allocation.updated':
+    default:
+      return '更新';
+  }
+}
+
+function timeAllocationActionTone(action) {
+  switch (action) {
+    case 'time_allocation.created':
+      return 'success';
+    case 'time_allocation.deleted':
+      return 'danger';
+    default:
+      return 'info';
+  }
+}
+
+function timeAllocationFieldLabel(field) {
+  switch (field) {
+    case 'username':
+      return '成员';
+    case 'start_date':
+      return '开始日期';
+    case 'end_date':
+      return '结束日期';
+    case 'daily_hours':
+      return '每天投入';
+    case 'note':
+      return '备注';
+    default:
+      return field;
+  }
+}
+
+function timeAllocationChangeValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return '无';
+  }
+  return String(value);
 }
 
 function formatAnalysisAverage(value) {
@@ -1031,6 +1308,10 @@ export function SharedApp({ services }) {
   const [timeProjects, setTimeProjects] = useState(/** @type {Array<{ key: string, name: string }>} */ ([]));
   const [timeMembers, setTimeMembers] = useState(/** @type {Array<{ username: string, display_name: string }>} */ ([]));
   const [timeMockMode, setTimeMockMode] = useState(false);
+  const [timeChangesOpen, setTimeChangesOpen] = useState(false);
+  const [timeChangesPage, setTimeChangesPage] = useState(/** @type {{ items: any[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } } | null} */ (null));
+  const [timeChangesLoading, setTimeChangesLoading] = useState(false);
+  const [timeChangesError, setTimeChangesError] = useState('');
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
   const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
   const [projectCycleCloseTarget, setProjectCycleCloseTarget] = useState(/** @type {AppProjectCycle | null} */ (null));
@@ -2030,6 +2311,34 @@ export function SharedApp({ services }) {
     }
     setTimeAllocations(await api.getTimeManagementOverview());
     setStatusMessage('排期已保存。');
+  }
+
+  async function loadTimeManagementChanges(page = 1) {
+    setTimeChangesLoading(true);
+    setTimeChangesError('');
+    try {
+      if (timeMockMode) {
+        const perPage = 10;
+        const totalItems = TIME_MANAGEMENT_MOCK_CHANGES.length;
+        const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+        const safePage = Math.min(Math.max(1, page), totalPages);
+        setTimeChangesPage({
+          items: TIME_MANAGEMENT_MOCK_CHANGES.slice((safePage - 1) * perPage, safePage * perPage),
+          pagination: {
+            page: safePage,
+            per_page: perPage,
+            total_items: totalItems,
+            total_pages: totalPages,
+          },
+        });
+        return;
+      }
+      setTimeChangesPage(await api.getTimeManagementChanges({ page, perPage: 10 }));
+    } catch (caught) {
+      setTimeChangesError(errorMessage(caught instanceof Error ? caught : new Error('修改记录加载失败。')));
+    } finally {
+      setTimeChangesLoading(false);
+    }
   }
 
   async function persistProjectTimeCreate(payload) {
@@ -5513,20 +5822,86 @@ export function SharedApp({ services }) {
       ) : (
         <>
           {route.id === 'time-management' ? (
-            <section className="page-stack time-management-page" aria-label="时间管理">
-              <section className="shell-card">
-                <TimeAllocationGantt
-                  allocations={timeAllocations}
-                  projects={timeProjects}
-                  members={timeMembers}
-                  currentUsername={user?.username || ''}
-                  onCreate={persistTimeCreate}
-                  onUpdate={persistTimeUpdate}
-                  onDelete={persistTimeDelete}
-                  onSave={persistTimeSave}
-                />
+            <>
+              <section className="page-stack time-management-page" aria-label="时间管理">
+                <section className="shell-card">
+                  <TimeAllocationGantt
+                    allocations={timeAllocations}
+                    projects={timeProjects}
+                    members={timeMembers}
+                    currentUsername={user?.username || ''}
+                    onCreate={persistTimeCreate}
+                    onUpdate={persistTimeUpdate}
+                    onDelete={persistTimeDelete}
+                    onSave={persistTimeSave}
+                    onOpenRecords={() => {
+                      setTimeChangesOpen(true);
+                      void loadTimeManagementChanges(1);
+                    }}
+                  />
+                </section>
               </section>
-            </section>
+              <Modal
+                wide
+                open={timeChangesOpen}
+                title="时间管理修改记录"
+                onClose={() => {
+                  if (!timeChangesLoading) setTimeChangesOpen(false);
+                }}
+                footer={<Button variant="secondary" disabled={timeChangesLoading} onClick={() => setTimeChangesOpen(false)}>关闭</Button>}
+              >
+                <div className="time-management-changes-modal-body">
+                  <p className="shell-muted">记录每次新增、更新或删除排期时的操作人与字段差异，后续可据此回退。</p>
+                  {timeChangesError ? <Feedback tone="danger" title="修改记录加载失败">{timeChangesError}</Feedback> : null}
+                  {timeChangesLoading && !timeChangesPage ? <p className="shell-muted">正在加载修改记录…</p> : null}
+                  {timeChangesPage && !timeChangesPage.items.length ? (
+                    <Feedback tone="info" title="暂无修改记录">还没有人修改过时间排期。</Feedback>
+                  ) : null}
+                  {timeChangesPage && timeChangesPage.items.length ? (
+                    <>
+                      <div className="time-management-changes-list">
+                        {timeChangesPage.items.map((record) => (
+                          <article className="time-management-change-record" key={record.id}>
+                            <header className="time-management-change-record-head">
+                              <div className="time-management-change-record-title">
+                                <Badge tone={timeAllocationActionTone(record.action)}>{timeAllocationActionLabel(record.action)}</Badge>
+                                <strong>{record.project_name || record.project_key}</strong>
+                              </div>
+                              <time>{formatChangeTimestamp(record.created_at)}</time>
+                            </header>
+                            <p className="time-management-change-record-summary">{record.summary}</p>
+                            <div className="time-management-change-record-meta">
+                              <span>操作人：{record.actor_display_name || record.actor_username}</span>
+                              <span>成员：{record.after?.username || record.before?.username || '未知'}</span>
+                            </div>
+                            {record.changes?.length ? (
+                              <ul className="time-management-change-diffs">
+                                {record.changes.map((change, index) => (
+                                  <li key={`${change.field}-${index}`}>
+                                    <span className="time-management-change-field">{timeAllocationFieldLabel(change.field)}</span>
+                                    <span className="time-management-change-arrow">→</span>
+                                    <code className="time-management-change-value">{timeAllocationChangeValue(change.before)}</code>
+                                    <span className="time-management-change-arrow">→</span>
+                                    <code className="time-management-change-value">{timeAllocationChangeValue(change.after)}</code>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                          </article>
+                        ))}
+                      </div>
+                      <Pagination
+                        page={timeChangesPage.pagination.page}
+                        totalPages={timeChangesPage.pagination.total_pages}
+                        totalItems={timeChangesPage.pagination.total_items}
+                        onPageChange={(page) => void loadTimeManagementChanges(page)}
+                        itemLabel="条记录"
+                      />
+                    </>
+                  ) : null}
+                </div>
+              </Modal>
+            </>
           ) : route.id === 'system-permissions' ? (
             <section className="page-stack system-permissions-page" aria-labelledby="system-permissions-title">
               <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-permissions-title" ref={headingRef} tabIndex={-1}>权限点</h1><p>权限点由 core seed 管理；角色权限维护推荐在角色权限工作台完成。</p></div><a className="yc-button yc-button-secondary" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>返回角色权限</a></header>

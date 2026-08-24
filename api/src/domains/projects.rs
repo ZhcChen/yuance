@@ -1,5 +1,7 @@
 use chrono::{Duration, Utc};
 use rand_core::{OsRng, RngCore};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use sqlx::{
     AssertSqlSafe, Row, SqlitePool,
     sqlite::{Sqlite, SqliteRow},
@@ -9413,6 +9415,36 @@ pub struct TimeAllocationListFilter {
     pub user_id: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TimeAllocationFieldChange {
+    pub field: String,
+    pub before: Option<Value>,
+    pub after: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimeAllocationChangeRecord {
+    pub id: i64,
+    pub allocation_id: i64,
+    pub project_key: String,
+    pub project_name: String,
+    pub action: String,
+    pub actor_username: String,
+    pub actor_display_name: String,
+    pub summary: String,
+    pub changes: Vec<TimeAllocationFieldChange>,
+    pub before: Option<Value>,
+    pub after: Option<Value>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TimeAllocationChangeFilter {
+    pub project_key: String,
+    pub actor: String,
+    pub user_id: i64,
+}
+
 const TIME_ALLOCATION_SELECT: &str = r#"
 SELECT
     pta.id,
@@ -9538,6 +9570,72 @@ pub async fn list_time_allocations(
     Ok(rows.iter().map(time_allocation_from_row).collect())
 }
 
+fn time_allocation_snapshot(allocation: &TimeAllocationDetail) -> Value {
+    json!({
+        "project_key": allocation.project_key,
+        "project_name": allocation.project_name,
+        "username": allocation.username,
+        "display_name": allocation.display_name,
+        "start_date": allocation.start_date,
+        "end_date": allocation.end_date,
+        "daily_hours": allocation.daily_hours,
+        "note": allocation.note,
+    })
+}
+
+fn time_allocation_field_value(allocation: &TimeAllocationDetail, field: &str) -> Value {
+    match field {
+        "username" => json!(allocation.username),
+        "start_date" => json!(allocation.start_date),
+        "end_date" => json!(allocation.end_date),
+        "daily_hours" => json!(allocation.daily_hours),
+        "note" => json!(allocation.note),
+        _ => Value::Null,
+    }
+}
+
+fn time_allocation_changes(
+    before: Option<&TimeAllocationDetail>,
+    after: Option<&TimeAllocationDetail>,
+) -> Vec<TimeAllocationFieldChange> {
+    const FIELDS: [&str; 5] = ["username", "start_date", "end_date", "daily_hours", "note"];
+    FIELDS
+        .iter()
+        .filter_map(|field| {
+            let before_value =
+                before.map(|allocation| time_allocation_field_value(allocation, field));
+            let after_value =
+                after.map(|allocation| time_allocation_field_value(allocation, field));
+            if before.is_some() && after.is_some() && before_value == after_value {
+                return None;
+            }
+            Some(TimeAllocationFieldChange {
+                field: (*field).to_string(),
+                before: before_value,
+                after: after_value,
+            })
+        })
+        .collect()
+}
+
+fn time_allocation_change_metadata(
+    before: Option<&TimeAllocationDetail>,
+    after: Option<&TimeAllocationDetail>,
+) -> Value {
+    json!({
+        "before": before.map(time_allocation_snapshot),
+        "after": after.map(time_allocation_snapshot),
+        "changes": time_allocation_changes(before, after)
+            .iter()
+            .map(|change| json!({
+                "field": change.field,
+                "before": change.before,
+                "after": change.after,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
 async fn insert_time_allocation_activity(
     pool: &SqlitePool,
     project_id: i64,
@@ -9545,7 +9643,9 @@ async fn insert_time_allocation_activity(
     action: &str,
     target_id: i64,
     summary: &str,
+    metadata: Value,
 ) -> AppResult<()> {
+    let metadata_json = serde_json::to_string(&metadata).unwrap_or_else(|_| "{}".to_string());
     sqlx::query(
         r#"
         INSERT INTO project_activities (
@@ -9555,9 +9655,11 @@ async fn insert_time_allocation_activity(
             target_type,
             target_id,
             summary,
-            metadata
+            metadata,
+            actor_display_name_snapshot
         )
-        VALUES (?1, ?2, ?3, 'time_allocation', ?4, ?5, '{}')
+        SELECT ?1, ?2, ?3, 'time_allocation', ?4, ?5, ?6,
+            COALESCE((SELECT display_name FROM users WHERE id = ?2), '')
         "#,
     )
     .bind(project_id)
@@ -9565,9 +9667,122 @@ async fn insert_time_allocation_activity(
     .bind(action)
     .bind(target_id.to_string())
     .bind(summary)
+    .bind(metadata_json)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+const TIME_ALLOCATION_CHANGE_RECORD_SELECT: &str = r#"
+SELECT
+    pa.id,
+    CAST(pa.target_id AS INTEGER) AS allocation_id,
+    p.project_key,
+    p.name AS project_name,
+    pa.action,
+    COALESCE(u.username, '') AS actor_username,
+    COALESCE(NULLIF(pa.actor_display_name_snapshot, ''), u.display_name, '') AS actor_display_name,
+    pa.summary,
+    pa.metadata,
+    pa.created_at
+FROM project_activities pa
+JOIN projects p ON p.id = pa.project_id
+LEFT JOIN users u ON u.id = pa.actor_user_id
+WHERE pa.target_type = 'time_allocation'
+"#;
+
+fn optional_json_value(value: Option<&Value>) -> Option<Value> {
+    value.filter(|value| !value.is_null()).cloned()
+}
+
+fn time_allocation_change_record_from_row(row: &SqliteRow) -> TimeAllocationChangeRecord {
+    let metadata_raw: String = row.get("metadata");
+    let metadata: Value = serde_json::from_str(&metadata_raw).unwrap_or_else(|_| json!({}));
+    let changes = metadata
+        .get("changes")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    Some(TimeAllocationFieldChange {
+                        field: item.get("field")?.as_str()?.to_string(),
+                        before: item.get("before").cloned(),
+                        after: item.get("after").cloned(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    TimeAllocationChangeRecord {
+        id: row.get("id"),
+        allocation_id: row.get("allocation_id"),
+        project_key: row.get("project_key"),
+        project_name: row.get("project_name"),
+        action: row.get("action"),
+        actor_username: row.get("actor_username"),
+        actor_display_name: row.get("actor_display_name"),
+        summary: row.get("summary"),
+        changes,
+        before: optional_json_value(metadata.get("before")),
+        after: optional_json_value(metadata.get("after")),
+        created_at: row.get("created_at"),
+    }
+}
+
+pub async fn list_time_allocation_change_records_paginated(
+    pool: &SqlitePool,
+    filter: TimeAllocationChangeFilter,
+    pagination: Pagination,
+) -> AppResult<Paginated<TimeAllocationChangeRecord>> {
+    let project_key = filter.project_key.trim().to_string();
+    let actor = filter.actor.trim().to_string();
+    let scope_sql = r#"
+        AND (?1 = '' OR p.project_key = ?1)
+        AND (?2 = '' OR u.username = ?2 OR COALESCE(NULLIF(pa.actor_display_name_snapshot, ''), u.display_name, '') = ?2)
+        AND (?3 = 0 OR EXISTS (
+            SELECT 1
+            FROM project_members pm
+            WHERE pm.project_id = p.id AND pm.user_id = ?3
+        ))
+    "#;
+    let total_items = sqlx::query_scalar::<_, i64>(AssertSqlSafe(format!(
+        "SELECT COUNT(*)
+         FROM project_activities pa
+         JOIN projects p ON p.id = pa.project_id
+         LEFT JOIN users u ON u.id = pa.actor_user_id
+         WHERE pa.target_type = 'time_allocation'
+         {scope_sql}"
+    )))
+    .bind(&project_key)
+    .bind(&actor)
+    .bind(filter.user_id)
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query(AssertSqlSafe(format!(
+        "{TIME_ALLOCATION_CHANGE_RECORD_SELECT}
+         {scope_sql}
+         ORDER BY pa.created_at DESC, pa.id DESC
+         LIMIT ?4 OFFSET ?5"
+    )))
+    .bind(&project_key)
+    .bind(&actor)
+    .bind(filter.user_id)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(Paginated {
+        items: rows
+            .iter()
+            .map(time_allocation_change_record_from_row)
+            .collect(),
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
 }
 
 pub async fn create_project_time_allocation(
@@ -9620,6 +9835,7 @@ pub async fn create_project_time_allocation(
     .fetch_one(pool)
     .await?;
 
+    let allocation = get_time_allocation(pool, allocation_id).await?;
     insert_time_allocation_activity(
         pool,
         project_id,
@@ -9627,10 +9843,11 @@ pub async fn create_project_time_allocation(
         "time_allocation.created",
         allocation_id,
         &format!("创建成员 {username} 的排期 {start_date} ~ {end_date}"),
+        time_allocation_change_metadata(None, Some(&allocation)),
     )
     .await?;
 
-    get_time_allocation(pool, allocation_id).await
+    Ok(allocation)
 }
 
 pub async fn update_project_time_allocation(
@@ -9667,6 +9884,7 @@ pub async fn update_project_time_allocation(
     .ok_or_else(|| AppError::NotFound("时间排期不存在".to_string()))?;
     ensure_project_accepts_writes(&project_status)?;
     let user_id = resolve_project_member_user_id(pool, project_id, &username).await?;
+    let before = get_time_allocation(pool, allocation_id).await?;
 
     sqlx::query(
         r#"
@@ -9689,6 +9907,7 @@ pub async fn update_project_time_allocation(
     .execute(pool)
     .await?;
 
+    let allocation = get_time_allocation(pool, allocation_id).await?;
     insert_time_allocation_activity(
         pool,
         project_id,
@@ -9696,10 +9915,11 @@ pub async fn update_project_time_allocation(
         "time_allocation.updated",
         allocation_id,
         &format!("更新成员 {username} 的排期 {start_date} ~ {end_date}"),
+        time_allocation_change_metadata(Some(&before), Some(&allocation)),
     )
     .await?;
 
-    get_time_allocation(pool, allocation_id).await
+    Ok(allocation)
 }
 
 pub async fn delete_project_time_allocation(
@@ -9728,6 +9948,7 @@ pub async fn delete_project_time_allocation(
     .await?
     .ok_or_else(|| AppError::NotFound("时间排期不存在".to_string()))?;
     ensure_project_accepts_writes(&project_status)?;
+    let before = get_time_allocation(pool, allocation_id).await?;
 
     sqlx::query("DELETE FROM project_time_allocations WHERE id = ?1")
         .bind(allocation_id)
@@ -9741,6 +9962,7 @@ pub async fn delete_project_time_allocation(
         "time_allocation.deleted",
         allocation_id,
         &format!("删除成员 {username} 的时间排期"),
+        time_allocation_change_metadata(Some(&before), None),
     )
     .await?;
 

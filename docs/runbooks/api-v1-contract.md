@@ -351,6 +351,8 @@ archived    -> completed / cancelled / in_progress
 ```text
 GET    /api/v1/projects/{project_key}/members
 POST   /api/v1/projects/{project_key}/members
+GET    /api/v1/projects/{project_key}/members/candidates
+POST   /api/v1/projects/{project_key}/members/batch
 PATCH  /api/v1/projects/{project_key}/members/{username}
 DELETE /api/v1/projects/{project_key}/members/{username}
 ```
@@ -389,6 +391,47 @@ GET   /api/v1/projects/{project_key}/cycles/{cycle_id}
 PATCH /api/v1/projects/{project_key}/cycles/{cycle_id}
 POST  /api/v1/projects/{project_key}/cycles/{cycle_id}/close
 ```
+
+## 时间管理
+
+时间排期按项目与成员维度安排投入时间，记录每次新增、更新、删除的操作人与字段差异。
+
+```text
+GET   /api/v1/time-management/overview
+GET   /api/v1/time-management/changes
+GET   /api/v1/projects/{project_key}/time-allocations
+POST  /api/v1/projects/{project_key}/time-allocations
+PATCH /api/v1/projects/{project_key}/time-allocations/{allocation_id}
+DELETE /api/v1/projects/{project_key}/time-allocations/{allocation_id}
+```
+
+时间管理排期请求：
+
+```json
+{
+  "username": "zhangsan",
+  "start_date": "2026-08-01",
+  "end_date": "2026-08-15",
+  "daily_hours": 8,
+  "note": "联调排期"
+}
+```
+
+修改记录分页参数：
+
+```text
+page=1
+per_page=20
+project_key=YCE
+actor=zhangsan
+```
+
+修改记录响应项包含操作人、动作（`time_allocation.created` / `time_allocation.updated` / `time_allocation.deleted`）、摘要、字段级 `changes` 以及用于后续回退的 `before` / `after` 排期快照。
+
+权限：
+
+- 查看 overview 与修改记录：需要 `time.management.view`；非全局数据范围仅返回本人可访问项目的记录。
+- 新增、更新、删除排期：需要 `time.management.edit`，或为项目 owner / maintainer。
 
 ## 项目资料库
 
