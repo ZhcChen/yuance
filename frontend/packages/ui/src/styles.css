@@ -3166,10 +3166,14 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 }
 
 .time-gantt-axis-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 10px 14px;
   font-size: 12px;
   color: var(--yc-muted);
   border-right: 1px solid var(--yc-line);
+  text-align: center;
 }
 
 .time-gantt-axis {
@@ -3202,6 +3206,9 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 }
 
 .time-gantt-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 14px;
   font-size: 13px;
   font-weight: 600;
@@ -3211,6 +3218,7 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
 }
 
 .time-gantt-track {
