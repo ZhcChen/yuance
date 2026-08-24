@@ -1,9 +1,9 @@
 // @ts-check
 /* global document, Element, ResizeObserver */
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { Select } from './primitives.jsx';
+import { Button, Modal, Select } from './primitives.jsx';
 
 const PIXELS_PER_DAY_BY_SCALE = {
   day: 24,
@@ -54,6 +54,7 @@ const DEFAULT_PROJECT_COLORS = [
  *   onCreate?: (payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, note?: string }) => Promise<unknown> | unknown,
  *   onUpdate?: (id: number, payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, note?: string }) => Promise<unknown> | unknown,
  *   onDelete?: (id: number) => Promise<unknown> | unknown,
+ *   onSave?: (items: TimeAllocation[], operations: { created: TimeAllocation[], updated: TimeAllocation[], deleted: TimeAllocation[] }) => Promise<unknown> | unknown,
  * }} props
  */
 export function TimeAllocationGantt({
@@ -68,6 +69,7 @@ export function TimeAllocationGantt({
   onCreate,
   onUpdate,
   onDelete,
+  onSave,
 }) {
   const today = startOfToday();
   const computedViewStart = viewStart || dateFromMs(today - 30 * DAY_MS);
@@ -79,13 +81,20 @@ export function TimeAllocationGantt({
 
   const [viewScale, setViewScale] = useState(/** @type {'day' | 'week' | 'month'} */ (DEFAULT_TIME_SCALE));
   const [viewScope, setViewScope] = useState(/** @type {'all' | 'self'} */ ('all'));
-  const [items, setItems] = useState(() => allocations.map(normalizeAllocation));
+  const manualSave = Boolean(onSave);
+  const [timeline, dispatchTimeline] = useReducer(
+    timeAllocationHistoryReducer,
+    allocations,
+    (initial) => ({ items: initial.map(normalizeAllocation), undoStack: [], redoStack: [] }),
+  );
+  const items = timeline.items;
   const [selectedProjectKey, setSelectedProjectKey] = useState(projects[0]?.key || '');
   const [selectedMemberUsername, setSelectedMemberUsername] = useState(members[0]?.username || '');
   const [manualStart, setManualStart] = useState(dateFromMs(today));
   const [manualEnd, setManualEnd] = useState(dateFromMs(today + 29 * DAY_MS));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const [legendExpanded, setLegendExpanded] = useState(false);
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -112,7 +121,10 @@ export function TimeAllocationGantt({
   }, [viewScale]);
 
   useEffect(() => {
-    setItems(allocations.map(normalizeAllocation));
+    dispatchTimeline({
+      type: 'replace',
+      items: allocations.map(normalizeAllocation),
+    });
   }, [allocations]);
 
   useEffect(() => {
@@ -234,8 +246,8 @@ export function TimeAllocationGantt({
       daily_hours: DEFAULT_DAILY_HOURS,
       note: '',
     };
-    setItems((current) => [...current, item]);
-    void persistCreate(item);
+    dispatchTimeline({ type: 'change', items: [...items, item] });
+    if (!manualSave) void persistCreate(item);
   }
 
   function beginBlockDrag(event, block, mode) {
@@ -290,8 +302,8 @@ export function TimeAllocationGantt({
     const endDate = dateFromDay(drag.nextEnd, computedViewStart);
     if (allocation.start_date === startDate && allocation.end_date === endDate) return;
     const next = { ...allocation, start_date: startDate, end_date: endDate };
-    setItems((current) => current.map((item) => item.id === drag.id ? next : item));
-    void persistUpdate(next);
+    dispatchTimeline({ type: 'change', items: items.map((item) => item.id === drag.id ? next : item) });
+    if (!manualSave) void persistUpdate(next);
   }
 
   function handleGanttPointerDown(event) {
@@ -327,8 +339,9 @@ export function TimeAllocationGantt({
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
     if (!block) return;
     const id = Number(block.dataset.id || 0);
-    setItems((current) => current.filter((item) => item.id !== id));
-    void persistDelete(id);
+    const removed = items.find((item) => item.id === id);
+    dispatchTimeline({ type: 'change', items: items.filter((item) => item.id !== id) });
+    if (!manualSave && removed) void persistDelete(id);
   }
 
   async function persistCreate(item) {
@@ -405,8 +418,55 @@ export function TimeAllocationGantt({
       daily_hours: DEFAULT_DAILY_HOURS,
       note: '',
     };
-    setItems((current) => [...current, item]);
-    void persistCreate(item);
+    dispatchTimeline({ type: 'change', items: [...items, item] });
+    if (!manualSave) void persistCreate(item);
+  }
+
+  function undo() {
+    dispatchTimeline({ type: 'undo' });
+  }
+
+  function redo() {
+    dispatchTimeline({ type: 'redo' });
+  }
+
+  function buildSaveOperations() {
+    const original = allocations.map(normalizeAllocation);
+    const created = items.filter((item) => item.id < 0);
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const updated = [];
+    const deleted = [];
+    for (const source of original) {
+      const next = byId.get(source.id);
+      if (!next) {
+        deleted.push(source);
+      } else if (
+        next.project_key !== source.project_key
+        || next.username !== source.username
+        || next.start_date !== source.start_date
+        || next.end_date !== source.end_date
+        || next.daily_hours !== source.daily_hours
+        || next.note !== source.note
+      ) {
+        updated.push(next);
+      }
+    }
+    return { created, updated, deleted };
+  }
+
+  async function confirmSave() {
+    if (!onSave || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onSave(items, buildSaveOperations());
+      dispatchTimeline({ type: 'clearHistory' });
+      setSaveConfirmOpen(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '保存排期失败。');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const axisLabels = useMemo(() => {
@@ -462,6 +522,7 @@ export function TimeAllocationGantt({
   }, [computedViewStart, computedViewEnd, viewScale, pxPerDay]);
 
   const todayLeft = dayIndex(dateFromMs(today), computedViewStart) * pxPerDay;
+  const pendingSaveOperations = saveConfirmOpen ? buildSaveOperations() : null;
 
   return (
     <div className="time-management">
@@ -508,17 +569,24 @@ export function TimeAllocationGantt({
               onBlur={() => setSpanInput(String(normalizeSpanMonths(spanInput)))} />
             <em>月</em>
           </label>
+          {currentUsername ? (
+            <div className="time-management-view" role="group" aria-label="查看范围">
+              <button type="button" className={viewScope === 'all' ? 'active' : ''}
+                aria-pressed={viewScope === 'all'} onClick={() => setViewScope('all')}>
+                查看全部人
+              </button>
+              <button type="button" className={viewScope === 'self' ? 'active' : ''}
+                aria-pressed={viewScope === 'self'} onClick={() => setViewScope('self')}>
+                查看自己
+              </button>
+            </div>
+          ) : null}
         </div>
-        {currentUsername ? (
-          <div className="time-management-view" role="group" aria-label="查看范围">
-            <button type="button" className={viewScope === 'all' ? 'active' : ''}
-              aria-pressed={viewScope === 'all'} onClick={() => setViewScope('all')}>
-              查看全部人
-            </button>
-            <button type="button" className={viewScope === 'self' ? 'active' : ''}
-              aria-pressed={viewScope === 'self'} onClick={() => setViewScope('self')}>
-              查看自己
-            </button>
+        {manualSave ? (
+          <div className="time-management-controls-right" role="group" aria-label="排期编辑操作">
+            <Button variant="secondary" size="sm" disabled={!timeline.undoStack.length || busy} onClick={undo}>回退</Button>
+            <Button variant="secondary" size="sm" disabled={!timeline.redoStack.length || busy} onClick={redo}>前进</Button>
+            <Button disabled={!timeline.undoStack.length || busy} onClick={() => setSaveConfirmOpen(true)}>保存</Button>
           </div>
         ) : null}
       </div>
@@ -595,10 +663,73 @@ export function TimeAllocationGantt({
       <p className="time-management-tip">
         {readOnly
           ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
-          : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
+          : manualSave
+            ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
+            : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
       </p>
+
+      {manualSave ? (
+        <Modal open={saveConfirmOpen} title="确认保存排期" onClose={() => setSaveConfirmOpen(false)}
+          footer={<>
+            <Button variant="secondary" disabled={busy} onClick={() => setSaveConfirmOpen(false)}>取消</Button>
+            <Button loading={busy} onClick={() => void confirmSave()}>确认保存</Button>
+          </>}>
+          <p>保存后将对线上排期生效，本次将：</p>
+          <ul className="time-management-save-summary">
+            <li>新增 {pendingSaveOperations?.created.length || 0} 条</li>
+            <li>更新 {pendingSaveOperations?.updated.length || 0} 条</li>
+            <li>删除 {pendingSaveOperations?.deleted.length || 0} 条</li>
+          </ul>
+        </Modal>
+      ) : null}
     </div>
   );
+}
+
+/**
+ * @param {{
+ *   items: TimeAllocation[],
+ *   undoStack: TimeAllocation[][],
+ *   redoStack: TimeAllocation[][],
+ * }} state
+ * @param {{
+ *   type: 'replace' | 'change' | 'undo' | 'redo' | 'clearHistory',
+ *   items?: TimeAllocation[],
+ * }} action
+ */
+function timeAllocationHistoryReducer(state, action) {
+  switch (action.type) {
+    case 'replace':
+      return { items: action.items || [], undoStack: [], redoStack: [] };
+    case 'change':
+      return {
+        items: action.items || [],
+        undoStack: [...state.undoStack, state.items],
+        redoStack: [],
+      };
+    case 'undo': {
+      const previous = state.undoStack[state.undoStack.length - 1];
+      if (!previous) return state;
+      return {
+        items: previous,
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack, state.items],
+      };
+    }
+    case 'redo': {
+      const next = state.redoStack[state.redoStack.length - 1];
+      if (!next) return state;
+      return {
+        items: next,
+        undoStack: [...state.undoStack, state.items],
+        redoStack: state.redoStack.slice(0, -1),
+      };
+    }
+    case 'clearHistory':
+      return { ...state, undoStack: [], redoStack: [] };
+    default:
+      return state;
+  }
 }
 
 function normalizeSpanMonths(value) {

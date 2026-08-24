@@ -1981,6 +1981,57 @@ export function SharedApp({ services }) {
     setStatusMessage('排期已删除。');
   }
 
+  function timeAllocationApiPayload(item) {
+    return {
+      username: item.username,
+      projectKey: item.project_key,
+      startDate: item.start_date,
+      endDate: item.end_date,
+      dailyHours: item.daily_hours,
+      note: item.note || '',
+    };
+  }
+
+  async function persistTimeSave(_items, operations) {
+    if (timeMockMode) {
+      setTimeAllocations((current) => {
+        const deletedIds = new Set(operations.deleted.map((item) => item.id));
+        const updatedById = new Map(operations.updated.map((item) => [item.id, item]));
+        const next = current
+          .filter((item) => !deletedIds.has(item.id))
+          .map((item) => {
+            const updated = updatedById.get(item.id);
+            if (!updated) return item;
+            return {
+              ...updated,
+              project_name: timeProjects.find((project) => project.key === updated.project_key)?.name || updated.project_key,
+              display_name: timeMembers.find((member) => member.username === updated.username)?.display_name || updated.username,
+            };
+          });
+        const created = operations.created.map((item, index) => ({
+          ...item,
+          id: Date.now() + index + 1,
+          project_name: timeProjects.find((project) => project.key === item.project_key)?.name || item.project_key,
+          display_name: timeMembers.find((member) => member.username === item.username)?.display_name || item.username,
+        }));
+        return [...next, ...created];
+      });
+      setStatusMessage('排期已保存（本地 mock 数据）。');
+      return;
+    }
+    for (const item of operations.created) {
+      await api.createProjectTimeAllocation(item.project_key, timeAllocationApiPayload(item));
+    }
+    for (const item of operations.updated) {
+      await api.updateProjectTimeAllocation(item.project_key, item.id, timeAllocationApiPayload(item));
+    }
+    for (const item of operations.deleted) {
+      await api.deleteProjectTimeAllocation(item.project_key, item.id);
+    }
+    setTimeAllocations(await api.getTimeManagementOverview());
+    setStatusMessage('排期已保存。');
+  }
+
   async function persistProjectTimeCreate(payload) {
     await api.createProjectTimeAllocation(payload.projectKey, payload);
     setProjectTimeAllocations(await api.getProjectTimeAllocations(payload.projectKey));
@@ -5472,6 +5523,7 @@ export function SharedApp({ services }) {
                   onCreate={persistTimeCreate}
                   onUpdate={persistTimeUpdate}
                   onDelete={persistTimeDelete}
+                  onSave={persistTimeSave}
                 />
               </section>
             </section>
