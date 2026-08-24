@@ -5456,18 +5456,7 @@ export function SharedApp({ services }) {
       ) : (
         <>
           {route.id === 'time-management' ? (
-            <section className="page-stack time-management-page" aria-labelledby="time-management-title">
-              <header className="page-hero">
-                <div>
-                  <p className="shell-eyebrow">时间管理</p>
-                  <h1 id="time-management-title" ref={headingRef} tabIndex={-1}>时间管理</h1>
-                  <p>跨项目查看和安排每个成员的时间投入，拖动色块即可调整排期。</p>
-                </div>
-                <div className="toolbar-actions">
-                  {timeMockMode ? <Badge>Mock 数据模式</Badge> : null}
-                  <Button variant="secondary" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>刷新</Button>
-                </div>
-              </header>
+            <section className="page-stack time-management-page" aria-label="时间管理">
               <section className="shell-card">
                 <TimeAllocationGantt
                   allocations={timeAllocations}
