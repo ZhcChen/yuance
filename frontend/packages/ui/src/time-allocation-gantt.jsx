@@ -61,8 +61,8 @@ export function TimeAllocationGantt({
   onDelete,
 }) {
   const today = startOfToday();
-  const computedViewStart = viewStart || dateFromMs(today - 120 * DAY_MS);
-  const computedViewEnd = viewEnd || dateFromMs(today + 240 * DAY_MS);
+  const computedViewStart = viewStart || dateFromMs(today - 30 * DAY_MS);
+  const computedViewEnd = viewEnd || dateFromMs(today + 90 * DAY_MS);
   const viewEndIndex = dayIndex(computedViewEnd, computedViewStart);
   const totalDays = viewEndIndex + 1;
 

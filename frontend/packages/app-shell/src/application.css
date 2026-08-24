@@ -1178,6 +1178,7 @@ html[data-theme="dark"] .project-stats div {
 }
 
 .page-stack { min-width: 0; display: grid; gap: 16px; }
+.time-management-page > .shell-card { min-width: 0; width: 100%; }
 .page-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px; border: 0; border-radius: var(--yc-card-radius); background: var(--yc-panel); box-shadow: var(--yc-card-shadow); }
 .page-hero h1 { margin: 2px 0 6px; font-size: 24px; line-height: 30px; letter-spacing: 0; }
 .page-hero p { margin: 0; color: var(--yc-muted); line-height: 22px; }
