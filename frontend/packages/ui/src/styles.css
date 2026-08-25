@@ -3332,6 +3332,68 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   color: var(--yc-muted);
 }
 
+.time-gantt-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: transparent;
+}
+
+.time-gantt-popover {
+  position: fixed;
+  z-index: 1001;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  padding: 16px;
+  background: var(--yc-panel);
+  border: 1px solid var(--yc-line-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgb(23 33 43 / 22%);
+  color: var(--yc-text);
+}
+
+.time-gantt-popover h4 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.time-gantt-popover-meta {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--yc-muted);
+}
+
+.time-gantt-popover-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--yc-muted);
+}
+
+.time-gantt-popover-field .yc-text-input,
+.time-gantt-popover-field .yc-textarea {
+  width: 100%;
+}
+
+.time-gantt-popover-dates {
+  display: flex;
+  gap: 10px;
+}
+
+.time-gantt-popover-dates .time-gantt-popover-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.time-gantt-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .time-management-tip {
   margin: 0;
   padding: 0 2px;

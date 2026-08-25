@@ -3,7 +3,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { Button, Modal, Select } from './primitives.jsx';
+import { Button, Modal, Select, TextArea, TextInput } from './primitives.jsx';
 
 const PIXELS_PER_DAY_BY_SCALE = {
   day: 24,
@@ -99,6 +99,8 @@ export function TimeAllocationGantt({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
+  const [editDraft, setEditDraft] = useState(/** @type {TimeAllocation | null} */ (null));
+  const [editPopover, setEditPopover] = useState(/** @type {{ left: number, top: number } | null} */ (null));
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const [legendExpanded, setLegendExpanded] = useState(false);
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -310,6 +312,7 @@ export function TimeAllocationGantt({
   }
 
   function handleGanttPointerDown(event) {
+    if (event.button !== 0) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
@@ -345,6 +348,52 @@ export function TimeAllocationGantt({
     const removed = items.find((item) => item.id === id);
     dispatchTimeline({ type: 'change', items: items.filter((item) => item.id !== id) });
     if (!manualSave && removed) void persistDelete(id);
+  }
+
+  function handleGanttContextMenu(event) {
+    if (readOnly) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
+    if (!block) return;
+    const id = Number(block.dataset.id || 0);
+    const allocation = items.find((item) => item.id === id);
+    if (!allocation) return;
+    event.preventDefault();
+    const view = event.currentTarget.ownerDocument.defaultView;
+    const left = Math.min(event.clientX, Math.max(0, (view?.innerWidth || 0) - 336 - 12));
+    const top = Math.min(event.clientY, Math.max(0, (view?.innerHeight || 0) - 430 - 12));
+    setEditDraft({ ...allocation });
+    setEditPopover({ left, top });
+  }
+
+  function closeEditPopover() {
+    setEditDraft(null);
+    setEditPopover(null);
+  }
+
+  function submitEditPopover(event) {
+    event.preventDefault();
+    if (!editDraft) return;
+    if (editDraft.start_date > editDraft.end_date) {
+      setError('结束日期不能早于开始日期。');
+      return;
+    }
+    const current = items.find((item) => item.id === editDraft.id);
+    if (!current) {
+      closeEditPopover();
+      return;
+    }
+    const next = {
+      ...current,
+      start_date: editDraft.start_date,
+      end_date: editDraft.end_date,
+      phase_task_name: editDraft.phase_task_name.trim(),
+      note: editDraft.note.trim(),
+    };
+    dispatchTimeline({ type: 'change', items: items.map((item) => item.id === next.id ? next : item) });
+    if (!manualSave) void persistUpdate(next);
+    closeEditPopover();
   }
 
   async function persistCreate(item) {
@@ -630,7 +679,8 @@ export function TimeAllocationGantt({
           onPointerMove={handleGanttPointerMove}
           onPointerUp={handleGanttPointerUp}
           onPointerCancel={handleGanttPointerUp}
-          onDoubleClick={handleGanttDoubleClick}>
+          onDoubleClick={handleGanttDoubleClick}
+          onContextMenu={handleGanttContextMenu}>
           <div className="time-gantt-axis-row">
             <div className="time-gantt-axis-label">成员 / 时间</div>
             <div className="time-gantt-axis" style={{ width: `${totalWidth}px` }}>
@@ -680,8 +730,8 @@ export function TimeAllocationGantt({
         {readOnly
           ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
           : manualSave
-            ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
-            : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
+            ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
+            : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
       </p>
 
       {manualSave ? (
@@ -697,6 +747,40 @@ export function TimeAllocationGantt({
             <li>删除 {pendingSaveOperations?.deleted.length || 0} 条</li>
           </ul>
         </Modal>
+      ) : null}
+
+      {editDraft && editPopover ? (
+        <>
+          <div className="time-gantt-popover-backdrop" onClick={closeEditPopover} />
+          <div className="time-gantt-popover" role="dialog" aria-label="编辑排期" style={{ left: `${editPopover.left}px`, top: `${editPopover.top}px` }}>
+            <h4>编辑排期</h4>
+            <p className="time-gantt-popover-meta">{editDraft.project_name} · {editDraft.display_name || editDraft.username}</p>
+            <form onSubmit={submitEditPopover}>
+              <label className="time-gantt-popover-field">
+                <span>阶段任务名称</span>
+                <TextInput value={editDraft.phase_task_name || ''} maxLength={200} placeholder="例如：需求分析、开发、联调" onChange={(event) => setEditDraft((current) => current ? { ...current, phase_task_name: event.currentTarget.value } : current)} />
+              </label>
+              <div className="time-gantt-popover-dates">
+                <label className="time-gantt-popover-field">
+                  <span>开始日期</span>
+                  <TextInput type="date" value={editDraft.start_date} onChange={(event) => setEditDraft((current) => current ? { ...current, start_date: event.currentTarget.value } : current)} />
+                </label>
+                <label className="time-gantt-popover-field">
+                  <span>结束日期</span>
+                  <TextInput type="date" value={editDraft.end_date} onChange={(event) => setEditDraft((current) => current ? { ...current, end_date: event.currentTarget.value } : current)} />
+                </label>
+              </div>
+              <label className="time-gantt-popover-field">
+                <span>备注</span>
+                <TextArea rows={3} maxLength={500} placeholder="补充排期说明" value={editDraft.note || ''} onChange={(event) => setEditDraft((current) => current ? { ...current, note: event.currentTarget.value } : current)} />
+              </label>
+              <div className="time-gantt-popover-actions">
+                <Button variant="secondary" type="button" onClick={closeEditPopover}>取消</Button>
+                <Button type="submit">保存</Button>
+              </div>
+            </form>
+          </div>
+        </>
       ) : null}
     </div>
   );
