@@ -224,6 +224,7 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
  * @property {string} start_date
  * @property {string} end_date
  * @property {number} daily_hours
+ * @property {string} phase_task_name
  * @property {string} note
  */
 
@@ -436,6 +437,8 @@ function timeAllocationFieldLabel(field) {
       return '结束日期';
     case 'daily_hours':
       return '每天投入';
+    case 'phase_task_name':
+      return '阶段任务名称';
     case 'note':
       return '备注';
     default:
@@ -1991,6 +1994,7 @@ export function SharedApp({ services }) {
       startDate: item.start_date,
       endDate: item.end_date,
       dailyHours: item.daily_hours,
+      phaseTaskName: item.phase_task_name || '',
       note: item.note || '',
     };
   }

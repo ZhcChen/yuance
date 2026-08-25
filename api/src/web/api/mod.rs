@@ -1950,6 +1950,7 @@ pub struct TimeAllocationPayload {
     pub start_date: String,
     pub end_date: String,
     pub daily_hours: f64,
+    pub phase_task_name: String,
     pub note: String,
     pub created_at: String,
     pub updated_at: String,
@@ -2020,6 +2021,8 @@ pub struct CreateTimeAllocationRequest {
     end_date: String,
     daily_hours: f64,
     #[serde(default)]
+    phase_task_name: String,
+    #[serde(default)]
     note: String,
 }
 
@@ -2029,6 +2032,8 @@ pub struct UpdateTimeAllocationRequest {
     start_date: String,
     end_date: String,
     daily_hours: f64,
+    #[serde(default)]
+    phase_task_name: String,
     #[serde(default)]
     note: String,
 }
@@ -9316,6 +9321,7 @@ fn time_allocation_payload(allocation: projects::TimeAllocationDetail) -> TimeAl
         start_date: allocation.start_date,
         end_date: allocation.end_date,
         daily_hours: allocation.daily_hours,
+        phase_task_name: allocation.phase_task_name,
         note: allocation.note,
         created_at: allocation.created_at,
         updated_at: allocation.updated_at,
@@ -9357,6 +9363,7 @@ fn time_allocation_create_input(
         start_date: payload.start_date,
         end_date: payload.end_date,
         daily_hours: payload.daily_hours,
+        phase_task_name: payload.phase_task_name,
         note: payload.note,
     }
 }
@@ -9369,6 +9376,7 @@ fn time_allocation_update_input(
         start_date: payload.start_date,
         end_date: payload.end_date,
         daily_hours: payload.daily_hours,
+        phase_task_name: payload.phase_task_name,
         note: payload.note,
     }
 }

@@ -91,6 +91,7 @@ export function timeAllocationBody(payload) {
     start_date: payload.startDate,
     end_date: payload.endDate,
     daily_hours: payload.dailyHours,
+    phase_task_name: payload.phaseTaskName || '',
     note: payload.note || '',
   };
 }

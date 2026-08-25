@@ -415,6 +415,7 @@ DELETE /api/v1/projects/{project_key}/time-allocations/{allocation_id}
   "start_date": "2026-08-01",
   "end_date": "2026-08-15",
   "daily_hours": 8,
+  "phase_task_name": "需求分析",
   "note": "联调排期"
 }
 ```

@@ -7094,7 +7094,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"username":"member_all","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+                    r#"{"username":"member_all","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"phase_task_name":"需求分析","note":"联调排期"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -7107,6 +7107,10 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     let allocation_id = created["data"]["id"]
         .as_i64()
         .expect("allocation id should exist");
+    assert_eq!(
+        created["data"]["phase_task_name"], "需求分析",
+        "create response should include phase task name"
+    );
 
     let list_response = app
         .clone()
@@ -7136,7 +7140,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"username":"member_all","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
+                    r#"{"username":"member_all","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"phase_task_name":"开发实现","note":"调整排期"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -7146,6 +7150,10 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     let update_body = response_body(update_response).await;
     assert_eq!(update_status, StatusCode::OK, "{update_body}");
     assert!(update_body.contains("2026-08-03"));
+    assert!(
+        update_body.contains("\"phase_task_name\":\"开发实现\""),
+        "{update_body}"
+    );
 
     let filtered_response = app
         .clone()
@@ -7186,6 +7194,10 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     );
     assert!(changes_body.contains("\"start_date\""), "{changes_body}");
     assert!(changes_body.contains("\"daily_hours\""), "{changes_body}");
+    assert!(
+        changes_body.contains("\"phase_task_name\""),
+        "{changes_body}"
+    );
 
     let restricted = create_user_without_role(&pool, "restricted", "受限用户").await;
     let restricted_changes_response = app
@@ -7336,7 +7348,7 @@ async fn time_management_change_records_support_restore_flow() {
     let _allocation_id = create_time_allocation_for_test(
         &app,
         &admin.cookie,
-        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"phase_task_name":"需求分析","note":"联调排期"}"#,
     )
     .await;
     let created_record_id =
@@ -7374,7 +7386,7 @@ async fn time_management_change_records_support_restore_flow() {
     let allocation_id = create_time_allocation_for_test(
         &app,
         &admin.cookie,
-        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"phase_task_name":"需求分析","note":"联调排期"}"#,
     )
     .await;
     let update_response = app
@@ -7389,7 +7401,7 @@ async fn time_management_change_records_support_restore_flow() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"username":"restore_target","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
+                    r#"{"username":"restore_target","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"phase_task_name":"开发实现","note":"调整排期"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -7416,6 +7428,14 @@ async fn time_management_change_records_support_restore_flow() {
     );
     assert!(
         !list_after_updated_restore.contains("2026-08-03"),
+        "{list_after_updated_restore}"
+    );
+    assert!(
+        list_after_updated_restore.contains("需求分析"),
+        "{list_after_updated_restore}"
+    );
+    assert!(
+        !list_after_updated_restore.contains("开发实现"),
         "{list_after_updated_restore}"
     );
 
@@ -7451,6 +7471,10 @@ async fn time_management_change_records_support_restore_flow() {
     let list_after_deleted_restore = list_project_time_allocations_body(&app, &admin.cookie).await;
     assert!(
         list_after_deleted_restore.contains("2026-08-01"),
+        "{list_after_deleted_restore}"
+    );
+    assert!(
+        list_after_deleted_restore.contains("需求分析"),
         "{list_after_deleted_restore}"
     );
 

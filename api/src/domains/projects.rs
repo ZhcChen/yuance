@@ -9400,6 +9400,7 @@ pub struct TimeAllocationDetail {
     pub start_date: String,
     pub end_date: String,
     pub daily_hours: f64,
+    pub phase_task_name: String,
     pub note: String,
     pub created_at: String,
     pub updated_at: String,
@@ -9411,6 +9412,7 @@ pub struct CreateTimeAllocationInput {
     pub start_date: String,
     pub end_date: String,
     pub daily_hours: f64,
+    pub phase_task_name: String,
     pub note: String,
 }
 
@@ -9420,6 +9422,7 @@ pub struct UpdateTimeAllocationInput {
     pub start_date: String,
     pub end_date: String,
     pub daily_hours: f64,
+    pub phase_task_name: String,
     pub note: String,
 }
 
@@ -9534,6 +9537,7 @@ SELECT
     pta.start_date,
     pta.end_date,
     pta.daily_hours,
+    pta.phase_task_name,
     pta.note,
     pta.created_at,
     pta.updated_at
@@ -9552,6 +9556,7 @@ fn time_allocation_from_row(row: &SqliteRow) -> TimeAllocationDetail {
         start_date: row.get("start_date"),
         end_date: row.get("end_date"),
         daily_hours: row.get("daily_hours"),
+        phase_task_name: row.get("phase_task_name"),
         note: row.get("note"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -9563,8 +9568,9 @@ fn validate_time_allocation_input(
     start_date: &str,
     end_date: &str,
     daily_hours: f64,
+    phase_task_name: &str,
     note: &str,
-) -> AppResult<(String, String, String, f64, String)> {
+) -> AppResult<(String, String, String, f64, String, String)> {
     let username = validate_username_ref(username)?;
     let start_date = validate_optional_date(start_date, "开始日期")?;
     let end_date = validate_optional_date(end_date, "结束日期")?;
@@ -9580,8 +9586,16 @@ fn validate_time_allocation_input(
             "每天投入小时数必须在 0 到 24 之间".to_string(),
         ));
     }
+    let phase_task_name = validate_optional_text(phase_task_name, "阶段任务名称", 200)?;
     let note = validate_optional_text(note, "排期备注", 500)?;
-    Ok((username, start_date, end_date, daily_hours, note))
+    Ok((
+        username,
+        start_date,
+        end_date,
+        daily_hours,
+        phase_task_name,
+        note,
+    ))
 }
 
 pub async fn get_time_allocation(
@@ -9658,6 +9672,7 @@ fn time_allocation_snapshot(allocation: &TimeAllocationDetail) -> Value {
         "start_date": allocation.start_date,
         "end_date": allocation.end_date,
         "daily_hours": allocation.daily_hours,
+        "phase_task_name": allocation.phase_task_name,
         "note": allocation.note,
     })
 }
@@ -9668,6 +9683,7 @@ fn time_allocation_field_value(allocation: &TimeAllocationDetail, field: &str) -
         "start_date" => json!(allocation.start_date),
         "end_date" => json!(allocation.end_date),
         "daily_hours" => json!(allocation.daily_hours),
+        "phase_task_name" => json!(allocation.phase_task_name),
         "note" => json!(allocation.note),
         _ => Value::Null,
     }
@@ -9677,7 +9693,14 @@ fn time_allocation_changes(
     before: Option<&TimeAllocationDetail>,
     after: Option<&TimeAllocationDetail>,
 ) -> Vec<TimeAllocationFieldChange> {
-    const FIELDS: [&str; 5] = ["username", "start_date", "end_date", "daily_hours", "note"];
+    const FIELDS: [&str; 6] = [
+        "username",
+        "start_date",
+        "end_date",
+        "daily_hours",
+        "phase_task_name",
+        "note",
+    ];
     FIELDS
         .iter()
         .filter_map(|field| {
@@ -9907,7 +9930,7 @@ pub async fn get_time_allocation_change_record_meta(
 
 fn time_allocation_snapshot_fields(
     snapshot: &Value,
-) -> AppResult<(String, String, String, f64, String)> {
+) -> AppResult<(String, String, String, f64, String, String)> {
     let missing = || AppError::BadRequest("修改记录回退快照不完整".to_string());
     let username = snapshot
         .get("username")
@@ -9928,12 +9951,24 @@ fn time_allocation_snapshot_fields(
         .get("daily_hours")
         .and_then(Value::as_f64)
         .ok_or_else(missing)?;
+    let phase_task_name = snapshot
+        .get("phase_task_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     let note = snapshot
         .get("note")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    Ok((username, start_date, end_date, daily_hours, note))
+    Ok((
+        username,
+        start_date,
+        end_date,
+        daily_hours,
+        phase_task_name,
+        note,
+    ))
 }
 
 fn time_allocation_restore_metadata(
@@ -10000,14 +10035,15 @@ pub async fn restore_time_allocation_from_record(
                 .before
                 .as_ref()
                 .ok_or_else(|| AppError::BadRequest("该修改记录缺少回退快照".to_string()))?;
-            let (username, start_date, end_date, daily_hours, note) =
+            let (username, start_date, end_date, daily_hours, phase_task_name, note) =
                 time_allocation_snapshot_fields(snapshot)?;
-            let (username, start_date, end_date, daily_hours, note) =
+            let (username, start_date, end_date, daily_hours, phase_task_name, note) =
                 validate_time_allocation_input(
                     &username,
                     &start_date,
                     &end_date,
                     daily_hours,
+                    &phase_task_name,
                     &note,
                 )?;
             let user_id = resolve_active_user_id(pool, &username).await?;
@@ -10018,7 +10054,8 @@ pub async fn restore_time_allocation_from_record(
                     start_date = ?3,
                     end_date = ?4,
                     daily_hours = ?5,
-                    note = ?6,
+                    phase_task_name = ?6,
+                    note = ?7,
                     updated_at = datetime('now')
                 WHERE id = ?1
                 "#,
@@ -10028,6 +10065,7 @@ pub async fn restore_time_allocation_from_record(
             .bind(&start_date)
             .bind(&end_date)
             .bind(daily_hours)
+            .bind(&phase_task_name)
             .bind(&note)
             .execute(pool)
             .await?;
@@ -10052,14 +10090,15 @@ pub async fn restore_time_allocation_from_record(
                 .before
                 .as_ref()
                 .ok_or_else(|| AppError::BadRequest("该修改记录缺少回退快照".to_string()))?;
-            let (username, start_date, end_date, daily_hours, note) =
+            let (username, start_date, end_date, daily_hours, phase_task_name, note) =
                 time_allocation_snapshot_fields(snapshot)?;
-            let (username, start_date, end_date, daily_hours, note) =
+            let (username, start_date, end_date, daily_hours, phase_task_name, note) =
                 validate_time_allocation_input(
                     &username,
                     &start_date,
                     &end_date,
                     daily_hours,
+                    &phase_task_name,
                     &note,
                 )?;
             let user_id = resolve_active_user_id(pool, &username).await?;
@@ -10071,10 +10110,11 @@ pub async fn restore_time_allocation_from_record(
                     start_date,
                     end_date,
                     daily_hours,
+                    phase_task_name,
                     note,
                     created_by_user_id
                 )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                 RETURNING id
                 "#,
             )
@@ -10083,6 +10123,7 @@ pub async fn restore_time_allocation_from_record(
             .bind(&start_date)
             .bind(&end_date)
             .bind(daily_hours)
+            .bind(&phase_task_name)
             .bind(&note)
             .bind(actor_user_id)
             .fetch_one(pool)
@@ -10112,13 +10153,15 @@ pub async fn create_project_time_allocation(
     allow_non_member_target: bool,
 ) -> AppResult<TimeAllocationDetail> {
     let project_key = validate_project_key(project_key)?;
-    let (username, start_date, end_date, daily_hours, note) = validate_time_allocation_input(
-        &input.username,
-        &input.start_date,
-        &input.end_date,
-        input.daily_hours,
-        &input.note,
-    )?;
+    let (username, start_date, end_date, daily_hours, phase_task_name, note) =
+        validate_time_allocation_input(
+            &input.username,
+            &input.start_date,
+            &input.end_date,
+            input.daily_hours,
+            &input.phase_task_name,
+            &input.note,
+        )?;
 
     let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
         "SELECT id, status FROM projects WHERE project_key = ?1",
@@ -10142,10 +10185,11 @@ pub async fn create_project_time_allocation(
             start_date,
             end_date,
             daily_hours,
+            phase_task_name,
             note,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         RETURNING id
         "#,
     )
@@ -10154,6 +10198,7 @@ pub async fn create_project_time_allocation(
     .bind(&start_date)
     .bind(&end_date)
     .bind(daily_hours)
+    .bind(&phase_task_name)
     .bind(&note)
     .bind(actor_user_id)
     .fetch_one(pool)
@@ -10186,13 +10231,15 @@ pub async fn update_project_time_allocation(
     if allocation_id <= 0 {
         return Err(AppError::BadRequest("排期 ID 无效".to_string()));
     }
-    let (username, start_date, end_date, daily_hours, note) = validate_time_allocation_input(
-        &input.username,
-        &input.start_date,
-        &input.end_date,
-        input.daily_hours,
-        &input.note,
-    )?;
+    let (username, start_date, end_date, daily_hours, phase_task_name, note) =
+        validate_time_allocation_input(
+            &input.username,
+            &input.start_date,
+            &input.end_date,
+            input.daily_hours,
+            &input.phase_task_name,
+            &input.note,
+        )?;
 
     let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
         r#"
@@ -10222,7 +10269,8 @@ pub async fn update_project_time_allocation(
             start_date = ?3,
             end_date = ?4,
             daily_hours = ?5,
-            note = ?6,
+            phase_task_name = ?6,
+            note = ?7,
             updated_at = datetime('now')
         WHERE id = ?1
         "#,
@@ -10232,6 +10280,7 @@ pub async fn update_project_time_allocation(
     .bind(&start_date)
     .bind(&end_date)
     .bind(daily_hours)
+    .bind(&phase_task_name)
     .bind(&note)
     .execute(pool)
     .await?;

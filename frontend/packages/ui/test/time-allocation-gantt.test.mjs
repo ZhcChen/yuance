@@ -22,6 +22,7 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.match(html, /value="4"/);
   assert.doesNotMatch(html, /每天投入/);
   assert.match(html, /搜索项目/);
+  assert.match(html, /阶段任务名称/);
   assert.match(html, /搜索成员/);
   assert.match(html, />查看全部人<\/button>/);
   assert.match(html, />查看自己<\/button>/);
@@ -48,6 +49,7 @@ test('time allocation gantt renders rows only for members with allocations', () 
       start_date: '2026-08-01',
       end_date: '2026-08-10',
       daily_hours: 8,
+      phase_task_name: '需求分析',
       note: '',
     }],
     projects: [{ key: 'YCE', name: '元策' }],
@@ -59,6 +61,7 @@ test('time allocation gantt renders rows only for members with allocations', () 
   }));
 
   assert.match(html, /class="time-gantt-row-label">有排期<\/div>/);
+  assert.match(html, /class="time-gantt-allocation-name">需求分析<\/span>/);
   assert.doesNotMatch(html, /class="time-gantt-row-label">无排期<\/div>/);
   assert.match(html, />有排期<\/option>/);
   assert.match(html, />无排期<\/option>/);

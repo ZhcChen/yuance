@@ -38,6 +38,7 @@ const DEFAULT_PROJECT_COLORS = [
  * @property {string} start_date
  * @property {string} end_date
  * @property {number} daily_hours
+ * @property {string} phase_task_name
  * @property {string} note
  */
 
@@ -51,8 +52,8 @@ const DEFAULT_PROJECT_COLORS = [
  *   viewEnd?: string,
    readOnly?: boolean,
  *   projectColors?: Record<string, string>,
- *   onCreate?: (payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, note?: string }) => Promise<unknown> | unknown,
- *   onUpdate?: (id: number, payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, note?: string }) => Promise<unknown> | unknown,
+ *   onCreate?: (payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, phaseTaskName?: string, note?: string }) => Promise<unknown> | unknown,
+ *   onUpdate?: (id: number, payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, phaseTaskName?: string, note?: string }) => Promise<unknown> | unknown,
  *   onDelete?: (id: number) => Promise<unknown> | unknown,
  *   onSave?: (items: TimeAllocation[], operations: { created: TimeAllocation[], updated: TimeAllocation[], deleted: TimeAllocation[] }) => Promise<unknown> | unknown,
  *   onOpenRecords?: () => void,
@@ -94,6 +95,7 @@ export function TimeAllocationGantt({
   const [selectedMemberUsername, setSelectedMemberUsername] = useState(members[0]?.username || '');
   const [manualStart, setManualStart] = useState(dateFromMs(today));
   const [manualEnd, setManualEnd] = useState(dateFromMs(today + 29 * DAY_MS));
+  const [manualTaskName, setManualTaskName] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
@@ -244,6 +246,7 @@ export function TimeAllocationGantt({
       start_date: dateFromDay(from, computedViewStart),
       end_date: dateFromDay(to, computedViewStart),
       daily_hours: DEFAULT_DAILY_HOURS,
+      phase_task_name: manualTaskName.trim(),
       note: '',
     };
     dispatchTimeline({ type: 'change', items: [...items, item] });
@@ -355,6 +358,7 @@ export function TimeAllocationGantt({
         startDate: item.start_date,
         endDate: item.end_date,
         dailyHours: item.daily_hours,
+        phaseTaskName: item.phase_task_name,
         note: item.note,
       });
     } catch (caught) {
@@ -375,6 +379,7 @@ export function TimeAllocationGantt({
         startDate: allocation.start_date,
         endDate: allocation.end_date,
         dailyHours: allocation.daily_hours,
+        phaseTaskName: allocation.phase_task_name,
         note: allocation.note,
       });
     } catch (caught) {
@@ -416,6 +421,7 @@ export function TimeAllocationGantt({
       start_date: manualStart,
       end_date: manualEnd,
       daily_hours: DEFAULT_DAILY_HOURS,
+      phase_task_name: manualTaskName.trim(),
       note: '',
     };
     dispatchTimeline({ type: 'change', items: [...items, item] });
@@ -446,6 +452,7 @@ export function TimeAllocationGantt({
         || next.start_date !== source.start_date
         || next.end_date !== source.end_date
         || next.daily_hours !== source.daily_hours
+        || next.phase_task_name !== source.phase_task_name
         || next.note !== source.note
       ) {
         updated.push(next);
@@ -533,6 +540,10 @@ export function TimeAllocationGantt({
             <Select className="time-management-select" searchable searchPlaceholder="搜索项目" value={selectedProjectKey} onChange={(event) => setSelectedProjectKey(event.currentTarget.value)}>
               {projects.map((project) => <option key={project.key} value={project.key}>{project.name}</option>)}
             </Select>
+          </label>
+          <label className="time-management-field">
+            <span>阶段任务名称</span>
+            <input type="text" maxLength={200} placeholder="例如：需求分析、开发、联调" value={manualTaskName} onChange={(event) => setManualTaskName(event.currentTarget.value)} />
           </label>
           <label className="time-management-field">
             <span>手动添加成员</span>
@@ -644,9 +655,9 @@ export function TimeAllocationGantt({
                         className={`time-gantt-allocation${conflict ? ' time-gantt-allocation-conflict' : ''}`}
                         data-id={allocation.id}
                         style={{ left: `${start * pxPerDay}px`, width: `${(end - start + 1) * pxPerDay}px`, background: projectColor(allocation.project_key) }}
-                        title={`${member.display_name || member.username} · ${allocation.project_name}\n${allocation.start_date} ~ ${allocation.end_date}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
-                        <span className="time-gantt-allocation-name">{allocation.project_name}</span>
-                        <span className="time-gantt-allocation-meta">{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
+                        title={`${member.display_name || member.username} · ${allocation.project_name}${allocation.phase_task_name ? `\n阶段任务：${allocation.phase_task_name}` : ''}\n${allocation.start_date} ~ ${allocation.end_date}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
+                        <span className="time-gantt-allocation-name">{allocation.phase_task_name || allocation.project_name}</span>
+                        <span className="time-gantt-allocation-meta">{allocation.phase_task_name ? `${allocation.project_name} · ` : ''}{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
                         {!readOnly ? <>
                           <i className="time-gantt-resize-l" aria-hidden="true" />
                           <i className="time-gantt-resize-r" aria-hidden="true" />
@@ -760,6 +771,7 @@ function normalizeAllocation(allocation) {
     project_name: allocation.project_name || allocation.project_key,
     display_name: allocation.display_name || allocation.username,
     daily_hours: Number(allocation.daily_hours) || DEFAULT_DAILY_HOURS,
+    phase_task_name: allocation.phase_task_name || '',
     note: allocation.note || '',
   };
 }
