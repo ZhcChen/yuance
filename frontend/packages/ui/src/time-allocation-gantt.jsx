@@ -1,5 +1,5 @@
 // @ts-check
-/* global document, Element, ResizeObserver */
+/* global Element, ResizeObserver */
 
 import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
@@ -203,7 +203,7 @@ export function TimeAllocationGantt({
     event.preventDefault();
     const rect = track.getBoundingClientRect();
     const startDay = Math.floor((event.clientX - rect.left) / pxPerDay);
-    const element = document.createElement('div');
+    const element = track.ownerDocument.createElement('div');
     element.className = 'time-gantt-selection';
     element.style.left = `${startDay * pxPerDay}px`;
     track.appendChild(element);
