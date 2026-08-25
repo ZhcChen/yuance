@@ -9487,8 +9487,9 @@ pub async fn list_time_management_members(
     let rows = if user_id == 0 {
         sqlx::query_as::<_, (String, String)>(
             r#"
-            SELECT u.username, u.display_name
+            SELECT DISTINCT u.username, u.display_name
             FROM users u
+            JOIN project_time_allocations pta ON pta.user_id = u.id
             WHERE u.status = 'active'
               AND u.is_super_admin = 0
             ORDER BY u.display_name ASC, u.username ASC
@@ -9501,6 +9502,7 @@ pub async fn list_time_management_members(
             r#"
             SELECT DISTINCT u.username, u.display_name
             FROM users u
+            JOIN project_time_allocations pta ON pta.user_id = u.id
             JOIN project_members pm ON pm.user_id = u.id
             JOIN project_members mine
               ON mine.project_id = pm.project_id

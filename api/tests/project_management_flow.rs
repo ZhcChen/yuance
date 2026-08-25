@@ -7080,8 +7080,8 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
             .as_array()
             .expect("members should be array")
             .iter()
-            .any(|member| member["username"] == "member_all"),
-        "active non-super-admin user should appear in time management members"
+            .all(|member| member["username"] != "member_all"),
+        "member without allocation should not appear in time management members"
     );
 
     let create_response = app
@@ -7107,6 +7107,30 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     let allocation_id = created["data"]["id"]
         .as_i64()
         .expect("allocation id should exist");
+
+    let members_with_allocation_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/members")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let members_with_allocation_body = response_body(members_with_allocation_response).await;
+    let members_with_allocation: serde_json::Value =
+        serde_json::from_str(&members_with_allocation_body)
+            .expect("members response should be json");
+    assert!(
+        members_with_allocation["data"]
+            .as_array()
+            .expect("members should be array")
+            .iter()
+            .any(|member| member["username"] == "member_all"),
+        "member with allocation should appear in time management members"
+    );
 
     let list_response = app
         .clone()
