@@ -690,7 +690,9 @@ async fn grant_member_permissions(pool: &SqlitePool) -> AppResult<()> {
         JOIN permissions p ON p.permission_key IN (
             'project.view',
             'work_item.view',
-            'work_item.manage'
+            'work_item.manage',
+            'time.management.view',
+            'time.management.edit'
         )
         WHERE r.role_code = 'member'
         ON CONFLICT(role_id, permission_id) DO NOTHING

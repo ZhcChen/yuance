@@ -440,14 +440,14 @@ actor=zhangsan
 
 成员目录返回时间排期表可展示的全部人员：
 
-- 全项目数据范围：返回所有启用且非超级管理员账号；
-- 受限数据范围：仅返回当前用户可访问项目的启用成员，同样排除超级管理员账号。
+- 具备 `time.management.view`（默认普通成员已授予）：返回所有启用且非超级管理员账号；
+- 不具备 `time.management.view`：不允许访问。
 
 权限：
 
-- 查看 overview、成员目录与修改记录：需要 `time.management.view`；非全局数据范围仅返回本人可访问项目的数据。
+- 查看 overview、成员目录与修改记录：需要 `time.management.view`；默认普通成员角色已授予，展示全部启用且非超级管理员账号及全部排期。
 - 回退修改记录：需要时间排期写权限（`time.management.edit`，或为项目 owner / maintainer）。
-- 新增、更新、删除排期：需要 `time.management.edit`，或为项目 owner / maintainer。
+- 新增、更新、删除排期：需要 `time.management.edit`，或为项目 owner / maintainer；具备 `time.management.edit` 时可编辑任意项目排期，访问 Token 的项目范围仍然生效。
 
 ## 项目资料库
 

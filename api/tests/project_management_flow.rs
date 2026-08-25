@@ -7060,7 +7060,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
         "super admin should be excluded from time management members"
     );
 
-    create_regular_user(&pool, "member_all", "普通成员").await;
+    let member_all = create_regular_user(&pool, "member_all", "普通成员").await;
     let members_with_user_response = app
         .clone()
         .oneshot(
@@ -7094,7 +7094,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"username":"admin","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+                    r#"{"username":"member_all","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -7136,7 +7136,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"username":"admin","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
+                    r#"{"username":"member_all","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -7151,7 +7151,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/time-management/overview?username=admin&start=2026-08-01&end=2026-08-31")
+                .uri("/api/v1/time-management/overview?username=member_all&start=2026-08-01&end=2026-08-31")
                 .header(header::COOKIE, admin.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
@@ -7187,20 +7187,20 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     assert!(changes_body.contains("\"start_date\""), "{changes_body}");
     assert!(changes_body.contains("\"daily_hours\""), "{changes_body}");
 
-    let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
-    let outsider_changes_response = app
+    let restricted = create_user_without_role(&pool, "restricted", "受限用户").await;
+    let restricted_changes_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/time-management/changes")
-                .header(header::COOKIE, outsider.cookie.clone())
+                .header(header::COOKIE, restricted.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
     assert_eq!(
-        outsider_changes_response.status(),
+        restricted_changes_response.status(),
         StatusCode::FORBIDDEN,
         "time management changes should require time.management.view"
     );
@@ -7211,7 +7211,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/projects/YCE/time-allocations")
-                .header(header::COOKIE, outsider.cookie)
+                .header(header::COOKIE, restricted.cookie)
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
@@ -7241,6 +7241,7 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
 
     let changes_after_delete = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/time-management/changes?per_page=1&page=1")
@@ -7264,6 +7265,62 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
         changes_after_delete_body.contains("\"total_pages\":3"),
         "{changes_after_delete_body}"
     );
+
+    let member_overview_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/overview")
+                .header(header::COOKIE, member_all.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        member_overview_response.status(),
+        StatusCode::OK,
+        "default member should be able to view time management overview"
+    );
+
+    let member_changes_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/changes")
+                .header(header::COOKIE, member_all.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        member_changes_response.status(),
+        StatusCode::OK,
+        "default member should be able to view time management change records"
+    );
+
+    let member_create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/time-allocations")
+                .header(header::COOKIE, member_all.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"username":"member_all","start_date":"2026-10-01","end_date":"2026-10-05","daily_hours":8,"note":"成员排期"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        member_create_response.status(),
+        StatusCode::CREATED,
+        "default member should be able to edit time management allocations"
+    );
 }
 
 #[tokio::test]
@@ -7274,20 +7331,21 @@ async fn time_management_change_records_support_restore_flow() {
         .await
         .expect("demo seed should apply");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    create_regular_user(&pool, "restore_target", "排期对象").await;
 
     let _allocation_id = create_time_allocation_for_test(
         &app,
         &admin.cookie,
-        r#"{"username":"admin","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
     )
     .await;
     let created_record_id =
         latest_time_allocation_change_id(&app, &admin.cookie, "time_allocation.created").await;
 
-    let outsider = create_regular_user(&pool, "restore_outsider", "回退外部成员").await;
-    let (outsider_status, _) =
-        restore_time_allocation_change(&app, &outsider.cookie, created_record_id).await;
-    assert_eq!(outsider_status, StatusCode::FORBIDDEN);
+    let restricted = create_user_without_role(&pool, "restore_restricted", "回退受限用户").await;
+    let (restricted_status, _) =
+        restore_time_allocation_change(&app, &restricted.cookie, created_record_id).await;
+    assert_eq!(restricted_status, StatusCode::FORBIDDEN);
 
     let (restore_created_status, restore_created_body) =
         restore_time_allocation_change(&app, &admin.cookie, created_record_id).await;
@@ -7316,7 +7374,7 @@ async fn time_management_change_records_support_restore_flow() {
     let allocation_id = create_time_allocation_for_test(
         &app,
         &admin.cookie,
-        r#"{"username":"admin","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
     )
     .await;
     let update_response = app
@@ -7331,7 +7389,7 @@ async fn time_management_change_records_support_restore_flow() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"username":"admin","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
+                    r#"{"username":"restore_target","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -7397,20 +7455,38 @@ async fn time_management_change_records_support_restore_flow() {
     );
 
     let changes_body = response_body(
-        app.oneshot(
-            Request::builder()
-                .uri("/api/v1/time-management/changes?per_page=20")
-                .header(header::COOKIE, admin.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond"),
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/time-management/changes?per_page=20")
+                    .header(header::COOKIE, admin.cookie.clone())
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond"),
     )
     .await;
     assert!(
         changes_body.contains("\"action\":\"time_allocation.restored\""),
         "{changes_body}"
+    );
+
+    let member = create_regular_user(&pool, "restore_member", "回退成员").await;
+    let _member_allocation_id = create_time_allocation_for_test(
+        &app,
+        &admin.cookie,
+        r#"{"username":"restore_target","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"成员回退排期"}"#,
+    )
+    .await;
+    let member_created_record_id =
+        latest_time_allocation_change_id(&app, &admin.cookie, "time_allocation.created").await;
+    let (member_restore_status, member_restore_body) =
+        restore_time_allocation_change(&app, &member.cookie, member_created_record_id).await;
+    assert_eq!(
+        member_restore_status,
+        StatusCode::OK,
+        "default member should be able to restore time management change records: {member_restore_body}"
     );
 }
 
@@ -7609,6 +7685,23 @@ async fn create_user_with_role(
     display_name: &str,
     role_code: &str,
 ) -> InitializedUser {
+    create_user_with_optional_role(pool, username, display_name, Some(role_code)).await
+}
+
+async fn create_user_without_role(
+    pool: &sqlx::SqlitePool,
+    username: &str,
+    display_name: &str,
+) -> InitializedUser {
+    create_user_with_optional_role(pool, username, display_name, None).await
+}
+
+async fn create_user_with_optional_role(
+    pool: &sqlx::SqlitePool,
+    username: &str,
+    display_name: &str,
+    role_code: Option<&str>,
+) -> InitializedUser {
     let password_hash = auth::hash_password("MemberPass2026!").expect("password should hash");
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
@@ -7630,11 +7723,13 @@ async fn create_user_with_role(
     .await
     .expect("regular user should be created");
 
-    let mut tx = pool.begin().await.expect("tx should begin");
-    rbac::assign_role_to_user(&mut tx, user_id, role_code)
-        .await
-        .expect("role should assign");
-    tx.commit().await.expect("tx should commit");
+    if let Some(role_code) = role_code {
+        let mut tx = pool.begin().await.expect("tx should begin");
+        rbac::assign_role_to_user(&mut tx, user_id, role_code)
+            .await
+            .expect("role should assign");
+        tx.commit().await.expect("tx should commit");
+    }
 
     let session = auth::issue_session(pool, user_id, 12 * 60 * 60)
         .await

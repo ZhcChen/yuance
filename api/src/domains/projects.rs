@@ -8651,6 +8651,23 @@ async fn resolve_project_member_user_id(
     .ok_or_else(|| AppError::BadRequest("处理人必须是已启用的项目成员".to_string()))
 }
 
+async fn resolve_active_user_id(pool: &SqlitePool, username: &str) -> AppResult<i64> {
+    let username = validate_username_ref(username)?;
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM users
+        WHERE username = ?1
+          AND status = 'active'
+          AND is_super_admin = 0
+        "#,
+    )
+    .bind(&username)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("排期对象必须是已启用的非超级管理员用户".to_string()))
+}
+
 async fn resolve_project_cycle(
     pool: &SqlitePool,
     project_id: i64,
@@ -9993,7 +10010,7 @@ pub async fn restore_time_allocation_from_record(
                     daily_hours,
                     &note,
                 )?;
-            let user_id = resolve_project_member_user_id(pool, meta.project_id, &username).await?;
+            let user_id = resolve_active_user_id(pool, &username).await?;
             sqlx::query(
                 r#"
                 UPDATE project_time_allocations
@@ -10045,7 +10062,7 @@ pub async fn restore_time_allocation_from_record(
                     daily_hours,
                     &note,
                 )?;
-            let user_id = resolve_project_member_user_id(pool, meta.project_id, &username).await?;
+            let user_id = resolve_active_user_id(pool, &username).await?;
             let allocation_id = sqlx::query_scalar::<_, i64>(
                 r#"
                 INSERT INTO project_time_allocations (
@@ -10092,6 +10109,7 @@ pub async fn create_project_time_allocation(
     actor_user_id: i64,
     project_key: &str,
     input: CreateTimeAllocationInput,
+    allow_non_member_target: bool,
 ) -> AppResult<TimeAllocationDetail> {
     let project_key = validate_project_key(project_key)?;
     let (username, start_date, end_date, daily_hours, note) = validate_time_allocation_input(
@@ -10110,7 +10128,11 @@ pub async fn create_project_time_allocation(
     .await?
     .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_project_accepts_writes(&project_status)?;
-    let user_id = resolve_project_member_user_id(pool, project_id, &username).await?;
+    let user_id = if allow_non_member_target {
+        resolve_active_user_id(pool, &username).await?
+    } else {
+        resolve_project_member_user_id(pool, project_id, &username).await?
+    };
 
     let allocation_id = sqlx::query_scalar::<_, i64>(
         r#"
@@ -10158,6 +10180,7 @@ pub async fn update_project_time_allocation(
     project_key: &str,
     allocation_id: i64,
     input: UpdateTimeAllocationInput,
+    allow_non_member_target: bool,
 ) -> AppResult<TimeAllocationDetail> {
     let project_key = validate_project_key(project_key)?;
     if allocation_id <= 0 {
@@ -10185,7 +10208,11 @@ pub async fn update_project_time_allocation(
     .await?
     .ok_or_else(|| AppError::NotFound("时间排期不存在".to_string()))?;
     ensure_project_accepts_writes(&project_status)?;
-    let user_id = resolve_project_member_user_id(pool, project_id, &username).await?;
+    let user_id = if allow_non_member_target {
+        resolve_active_user_id(pool, &username).await?
+    } else {
+        resolve_project_member_user_id(pool, project_id, &username).await?
+    };
     let before = get_time_allocation(pool, allocation_id).await?;
 
     sqlx::query(

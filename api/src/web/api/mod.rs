@@ -3219,7 +3219,7 @@ pub async fn get_time_management_overview(
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_access_all_projects = api_user_can_access_all_time_management(pool, user).await?;
     let filter = projects::TimeAllocationListFilter {
         project_key: query.project_key,
         username: query.username,
@@ -3244,7 +3244,7 @@ pub async fn get_time_management_members(
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_access_all_projects = api_user_can_access_all_time_management(pool, user).await?;
     let members = projects::list_time_management_members(
         pool,
         if can_access_all_projects { 0 } else { user.id },
@@ -3298,13 +3298,15 @@ pub async fn create_project_time_allocation(
     let project = projects::get_project_detail(pool, &project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
-    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_time_management_write_access(pool, user, project.id).await?;
+    ensure_api_time_management_project_access(pool, &headers, user, project.id).await?;
+    let allow_non_member_target =
+        rbac::user_has_permission(pool, user.id, "time.management.edit").await?;
     let allocation = projects::create_project_time_allocation(
         pool,
         user.id,
         &project_key,
         time_allocation_create_input(payload),
+        allow_non_member_target,
     )
     .await?;
     audit::record(
@@ -3336,14 +3338,16 @@ pub async fn update_project_time_allocation(
     let project = projects::get_project_detail(pool, &project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
-    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_time_management_write_access(pool, user, project.id).await?;
+    ensure_api_time_management_project_access(pool, &headers, user, project.id).await?;
+    let allow_non_member_target =
+        rbac::user_has_permission(pool, user.id, "time.management.edit").await?;
     let allocation = projects::update_project_time_allocation(
         pool,
         user.id,
         &project_key,
         allocation_id,
         time_allocation_update_input(payload),
+        allow_non_member_target,
     )
     .await?;
     audit::record(
@@ -3371,8 +3375,7 @@ pub async fn delete_project_time_allocation(
     let project = projects::get_project_detail(pool, &project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
-    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_time_management_write_access(pool, user, project.id).await?;
+    ensure_api_time_management_project_access(pool, &headers, user, project.id).await?;
     projects::delete_project_time_allocation(pool, user.id, &project_key, allocation_id).await?;
     audit::record(
         pool,
@@ -3395,7 +3398,7 @@ pub async fn list_time_allocation_changes(
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_access_all_projects = api_user_can_access_all_time_management(pool, user).await?;
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     let page = projects::list_time_allocation_change_records_paginated(
         pool,
@@ -8265,6 +8268,20 @@ async fn api_user_can_access_all_projects(
     rbac::user_has_all_data_scope(pool, user.id).await
 }
 
+async fn api_user_can_access_all_time_management(
+    pool: &sqlx::SqlitePool,
+    user: &auth::AuthUser,
+) -> AppResult<bool> {
+    if user.is_super_admin {
+        return Ok(true);
+    }
+    if rbac::user_has_all_data_scope(pool, user.id).await? {
+        return Ok(true);
+    }
+
+    rbac::user_has_permission(pool, user.id, "time.management.view").await
+}
+
 fn search_result_payload(hit: projects::SearchHit) -> SearchResultPayload {
     SearchResultPayload {
         kind: hit.hit_type,
@@ -8538,6 +8555,22 @@ async fn ensure_api_time_management_write_access(
     }
 
     Err(AppError::Forbidden("缺少时间排期管理权限".to_string()))
+}
+
+async fn ensure_api_time_management_project_access(
+    pool: &sqlx::SqlitePool,
+    headers: &HeaderMap,
+    user: &auth::AuthUser,
+    project_id: i64,
+) -> AppResult<()> {
+    if rbac::user_has_permission(pool, user.id, "time.management.edit").await? {
+        ensure_api_token_project_scope(pool, headers, user.id, project_id).await?;
+        return Ok(());
+    }
+
+    ensure_api_project_access(pool, headers, user.id, user.is_super_admin, project_id).await?;
+    ensure_api_time_management_write_access(pool, user, project_id).await?;
+    Ok(())
 }
 
 fn ensure_api_work_item_accepts_writes(item: &projects::WorkItemDetail) -> AppResult<()> {
