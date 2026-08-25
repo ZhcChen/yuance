@@ -688,14 +688,6 @@ export function TimeAllocationGantt({
               项目排期
             </button>
           </div>
-          {viewMode === 'projects' ? (
-            <label className="time-management-field">
-              <span>查看成员</span>
-              <Select className="time-management-select" searchable searchPlaceholder="搜索成员" value={effectiveProjectViewUsername} onChange={(event) => setProjectViewUsername(event.currentTarget.value)}>
-                {visibleMembers.map((member) => <option key={member.username} value={member.username}>{member.display_name || member.username}</option>)}
-              </Select>
-            </label>
-          ) : null}
           {viewMode === 'members' ? (
             <>
               <div className="time-management-scale" role="group" aria-label="时间粒度">
