@@ -108,6 +108,7 @@ test('time allocation gantt project view is read-only and groups allocations by 
   assert.match(html, /time-gantt-allocation-name">需求分析<\/span>/);
   assert.match(html, /time-gantt-allocation-name">联调<\/span>/);
   assert.doesNotMatch(html, /time-gantt-allocation-name">他人排期<\/span>/);
+  assert.match(html, /剩余时间：/);
   assert.match(html, /time-gantt-track-readonly/);
   assert.doesNotMatch(html, /time-gantt-resize-l/);
   assert.doesNotMatch(html, />添加排期<\/button>/);

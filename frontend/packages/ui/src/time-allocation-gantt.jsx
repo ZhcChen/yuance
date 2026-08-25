@@ -248,12 +248,20 @@ export function TimeAllocationGantt({
     const start = Math.max(0, dayIndex(allocation.start_date, computedViewStart));
     const end = Math.min(totalDays - 1, dayIndex(allocation.end_date, computedViewStart));
     const conflict = conflictKeys.has(String(allocation.id));
+    const remainingDays = Math.round((parseDate(allocation.end_date) - today) / DAY_MS);
+    const remainingLabel = remainingDays < 0
+      ? '已结束'
+      : remainingDays === 0
+        ? '今天结束'
+        : parseDate(allocation.start_date) > today
+          ? '未开始'
+          : `剩余 ${remainingDays} 天`;
     return (
       <div key={allocation.id}
         className={`time-gantt-allocation${conflict ? ' time-gantt-allocation-conflict' : ''}`}
         data-id={allocation.id}
         style={{ left: `${start * pxPerDay}px`, width: `${(end - start + 1) * pxPerDay}px`, background: projectColor(allocation.project_key) }}
-        title={`${ownerLabel} · ${allocation.project_name}${allocation.phase_task_name ? `\n阶段任务：${allocation.phase_task_name}` : ''}\n${allocation.start_date} ~ ${allocation.end_date}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
+        title={`${ownerLabel} · ${allocation.project_name}${allocation.phase_task_name ? `\n阶段任务：${allocation.phase_task_name}` : ''}\n${allocation.start_date} ~ ${allocation.end_date}\n剩余时间：${remainingLabel}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
         <span className="time-gantt-allocation-name">{allocation.phase_task_name || allocation.project_name}</span>
         <span className="time-gantt-allocation-meta">{allocation.phase_task_name ? `${allocation.project_name} · ` : ''}{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
         {!viewReadOnly ? <>
