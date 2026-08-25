@@ -30,9 +30,38 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.doesNotMatch(html, />回退<\/button>/);
   assert.doesNotMatch(html, />前进<\/button>/);
   assert.doesNotMatch(html, />记录<\/button>/);
-  assert.match(html, /class="time-gantt-row-label">管理员<\/div>/);
-  assert.match(html, /class="time-gantt-today"/);
+  assert.doesNotMatch(html, /class="time-gantt-row-label">管理员<\/div>/);
+  assert.match(html, /暂无排期，请先通过上方表单添加排期。/);
+  assert.match(html, />管理员<\/option>/);
+  assert.doesNotMatch(html, /class="time-gantt-today"/);
   assert.match(html, /class="time-gantt time-gantt-fill"/);
+});
+
+test('time allocation gantt renders rows only for members with allocations', () => {
+  const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
+    allocations: [{
+      id: 1,
+      project_key: 'YCE',
+      project_name: '元策',
+      username: 'scheduled',
+      display_name: '有排期',
+      start_date: '2026-08-01',
+      end_date: '2026-08-10',
+      daily_hours: 8,
+      note: '',
+    }],
+    projects: [{ key: 'YCE', name: '元策' }],
+    members: [
+      { username: 'scheduled', display_name: '有排期' },
+      { username: 'idle', display_name: '无排期' },
+    ],
+    currentUsername: 'scheduled',
+  }));
+
+  assert.match(html, /class="time-gantt-row-label">有排期<\/div>/);
+  assert.doesNotMatch(html, /class="time-gantt-row-label">无排期<\/div>/);
+  assert.match(html, />有排期<\/option>/);
+  assert.match(html, />无排期<\/option>/);
 });
 
 test('time allocation gantt shows undo/redo/save controls and save confirmation when onSave is provided', () => {

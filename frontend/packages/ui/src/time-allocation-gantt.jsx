@@ -143,14 +143,12 @@ export function TimeAllocationGantt({
 
   const visibleMembers = useMemo(() => {
     const seen = new Map();
-    for (const member of members) {
-      if (!seen.has(member.username)) seen.set(member.username, member);
-    }
     for (const allocation of items) {
       if (!seen.has(allocation.username)) {
+        const member = members.find((candidate) => candidate.username === allocation.username);
         seen.set(allocation.username, {
           username: allocation.username,
-          display_name: allocation.display_name || allocation.username,
+          display_name: member?.display_name || allocation.display_name || allocation.username,
         });
       }
     }
@@ -539,7 +537,7 @@ export function TimeAllocationGantt({
           <label className="time-management-field">
             <span>手动添加成员</span>
             <Select className="time-management-select" searchable searchPlaceholder="搜索成员" value={selectedMemberUsername} onChange={(event) => setSelectedMemberUsername(event.currentTarget.value)}>
-              {visibleMembers.map((member) => <option key={member.username} value={member.username}>{member.display_name || member.username}</option>)}
+              {members.map((member) => <option key={member.username} value={member.username}>{member.display_name || member.username}</option>)}
             </Select>
           </label>
           <label className="time-management-field">
@@ -661,7 +659,9 @@ export function TimeAllocationGantt({
             );
           })}
           {!visibleMembers.length ? (
-            <div className="time-gantt-empty">暂无成员，请先在项目中添加成员。</div>
+            <div className="time-gantt-empty">
+              {members.length ? '暂无排期，请先通过上方表单添加排期。' : '暂无成员，请先在项目中添加成员。'}
+            </div>
           ) : null}
         </div>
       </div>
