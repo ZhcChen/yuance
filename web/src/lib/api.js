@@ -98,6 +98,7 @@ export const getProjectMemberCandidates = apiClient.getProjectMemberCandidates;
 export const getTimeManagementOverview = apiClient.getTimeManagementOverview;
 export const getTimeManagementChanges = apiClient.getTimeManagementChanges;
 export const getTimeManagementMembers = apiClient.getTimeManagementMembers;
+export const restoreTimeManagementChange = apiClient.restoreTimeManagementChange;
 export const getProjectTimeAllocations = apiClient.getProjectTimeAllocations;
 export const createProjectTimeAllocation = apiClient.createProjectTimeAllocation;
 export const updateProjectTimeAllocation = apiClient.updateProjectTimeAllocation;
@@ -267,6 +268,7 @@ export const webApi = {
   getTimeManagementOverview,
   getTimeManagementChanges,
   getTimeManagementMembers,
+  restoreTimeManagementChange,
   getProjectTimeAllocations,
   createProjectTimeAllocation,
   updateProjectTimeAllocation,

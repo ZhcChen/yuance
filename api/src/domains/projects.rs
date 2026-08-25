@@ -9438,6 +9438,18 @@ pub struct TimeAllocationChangeRecord {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct TimeAllocationChangeRecordMeta {
+    pub record_id: i64,
+    pub project_id: i64,
+    pub project_key: String,
+    pub project_status: String,
+    pub allocation_id: i64,
+    pub action: String,
+    pub before: Option<Value>,
+    pub after: Option<Value>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TimeAllocationChangeFilter {
     pub project_key: String,
@@ -9833,6 +9845,246 @@ pub async fn list_time_allocation_change_records_paginated(
         per_page: pagination.per_page,
         total_items,
     })
+}
+
+pub async fn get_time_allocation_change_record_meta(
+    pool: &SqlitePool,
+    record_id: i64,
+) -> AppResult<Option<TimeAllocationChangeRecordMeta>> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            pa.id,
+            pa.project_id,
+            p.project_key,
+            p.status AS project_status,
+            CAST(pa.target_id AS INTEGER) AS allocation_id,
+            pa.action,
+            pa.metadata
+        FROM project_activities pa
+        JOIN projects p ON p.id = pa.project_id
+        WHERE pa.id = ?1
+          AND pa.target_type = 'time_allocation'
+        "#,
+    )
+    .bind(record_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let metadata_raw: String = row.get("metadata");
+    let metadata: Value = serde_json::from_str(&metadata_raw).unwrap_or_else(|_| json!({}));
+    Ok(Some(TimeAllocationChangeRecordMeta {
+        record_id: row.get("id"),
+        project_id: row.get("project_id"),
+        project_key: row.get("project_key"),
+        project_status: row.get("project_status"),
+        allocation_id: row.get("allocation_id"),
+        action: row.get("action"),
+        before: optional_json_value(metadata.get("before")),
+        after: optional_json_value(metadata.get("after")),
+    }))
+}
+
+fn time_allocation_snapshot_fields(
+    snapshot: &Value,
+) -> AppResult<(String, String, String, f64, String)> {
+    let missing = || AppError::BadRequest("修改记录回退快照不完整".to_string());
+    let username = snapshot
+        .get("username")
+        .and_then(Value::as_str)
+        .ok_or_else(missing)?
+        .to_string();
+    let start_date = snapshot
+        .get("start_date")
+        .and_then(Value::as_str)
+        .ok_or_else(missing)?
+        .to_string();
+    let end_date = snapshot
+        .get("end_date")
+        .and_then(Value::as_str)
+        .ok_or_else(missing)?
+        .to_string();
+    let daily_hours = snapshot
+        .get("daily_hours")
+        .and_then(Value::as_f64)
+        .ok_or_else(missing)?;
+    let note = snapshot
+        .get("note")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    Ok((username, start_date, end_date, daily_hours, note))
+}
+
+fn time_allocation_restore_metadata(
+    before: Option<&TimeAllocationDetail>,
+    after: Option<&TimeAllocationDetail>,
+    source_activity_id: i64,
+) -> Value {
+    let mut metadata = time_allocation_change_metadata(before, after);
+    if let Value::Object(ref mut map) = metadata {
+        map.insert("source_activity_id".to_string(), json!(source_activity_id));
+    }
+    metadata
+}
+
+pub async fn restore_time_allocation_from_record(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    meta: &TimeAllocationChangeRecordMeta,
+) -> AppResult<Option<TimeAllocationDetail>> {
+    ensure_project_accepts_writes(&meta.project_status)?;
+    let already_restored = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM project_activities
+        WHERE target_type = 'time_allocation'
+          AND action = 'time_allocation.restored'
+          AND json_extract(metadata, '$.source_activity_id') = ?1
+        "#,
+    )
+    .bind(meta.record_id)
+    .fetch_one(pool)
+    .await?;
+    if already_restored > 0 {
+        return Err(AppError::Conflict(
+            "该修改记录已回退，不能重复回退".to_string(),
+        ));
+    }
+
+    match meta.action.as_str() {
+        "time_allocation.created" => {
+            let before = get_time_allocation(pool, meta.allocation_id).await?;
+            sqlx::query("DELETE FROM project_time_allocations WHERE id = ?1")
+                .bind(meta.allocation_id)
+                .execute(pool)
+                .await?;
+            insert_time_allocation_activity(
+                pool,
+                meta.project_id,
+                actor_user_id,
+                "time_allocation.restored",
+                meta.allocation_id,
+                &format!(
+                    "回退新增：删除成员 {} 的排期 {} ~ {}",
+                    before.username, before.start_date, before.end_date
+                ),
+                time_allocation_restore_metadata(Some(&before), None, meta.record_id),
+            )
+            .await?;
+            Ok(None)
+        }
+        "time_allocation.updated" => {
+            let before = get_time_allocation(pool, meta.allocation_id).await?;
+            let snapshot = meta
+                .before
+                .as_ref()
+                .ok_or_else(|| AppError::BadRequest("该修改记录缺少回退快照".to_string()))?;
+            let (username, start_date, end_date, daily_hours, note) =
+                time_allocation_snapshot_fields(snapshot)?;
+            let (username, start_date, end_date, daily_hours, note) =
+                validate_time_allocation_input(
+                    &username,
+                    &start_date,
+                    &end_date,
+                    daily_hours,
+                    &note,
+                )?;
+            let user_id = resolve_project_member_user_id(pool, meta.project_id, &username).await?;
+            sqlx::query(
+                r#"
+                UPDATE project_time_allocations
+                SET user_id = ?2,
+                    start_date = ?3,
+                    end_date = ?4,
+                    daily_hours = ?5,
+                    note = ?6,
+                    updated_at = datetime('now')
+                WHERE id = ?1
+                "#,
+            )
+            .bind(meta.allocation_id)
+            .bind(user_id)
+            .bind(&start_date)
+            .bind(&end_date)
+            .bind(daily_hours)
+            .bind(&note)
+            .execute(pool)
+            .await?;
+            let after = get_time_allocation(pool, meta.allocation_id).await?;
+            insert_time_allocation_activity(
+                pool,
+                meta.project_id,
+                actor_user_id,
+                "time_allocation.restored",
+                meta.allocation_id,
+                &format!(
+                    "回退记录 #{}：恢复成员 {username} 的排期 {start_date} ~ {end_date}",
+                    meta.record_id
+                ),
+                time_allocation_restore_metadata(Some(&before), Some(&after), meta.record_id),
+            )
+            .await?;
+            Ok(Some(after))
+        }
+        "time_allocation.deleted" => {
+            let snapshot = meta
+                .before
+                .as_ref()
+                .ok_or_else(|| AppError::BadRequest("该修改记录缺少回退快照".to_string()))?;
+            let (username, start_date, end_date, daily_hours, note) =
+                time_allocation_snapshot_fields(snapshot)?;
+            let (username, start_date, end_date, daily_hours, note) =
+                validate_time_allocation_input(
+                    &username,
+                    &start_date,
+                    &end_date,
+                    daily_hours,
+                    &note,
+                )?;
+            let user_id = resolve_project_member_user_id(pool, meta.project_id, &username).await?;
+            let allocation_id = sqlx::query_scalar::<_, i64>(
+                r#"
+                INSERT INTO project_time_allocations (
+                    project_id,
+                    user_id,
+                    start_date,
+                    end_date,
+                    daily_hours,
+                    note,
+                    created_by_user_id
+                )
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                RETURNING id
+                "#,
+            )
+            .bind(meta.project_id)
+            .bind(user_id)
+            .bind(&start_date)
+            .bind(&end_date)
+            .bind(daily_hours)
+            .bind(&note)
+            .bind(actor_user_id)
+            .fetch_one(pool)
+            .await?;
+            let after = get_time_allocation(pool, allocation_id).await?;
+            insert_time_allocation_activity(
+                pool,
+                meta.project_id,
+                actor_user_id,
+                "time_allocation.restored",
+                allocation_id,
+                &format!("回退删除：恢复成员 {username} 的排期 {start_date} ~ {end_date}",),
+                time_allocation_restore_metadata(None, Some(&after), meta.record_id),
+            )
+            .await?;
+            Ok(Some(after))
+        }
+        _ => Err(AppError::BadRequest("该修改记录不支持回退".to_string())),
+    }
 }
 
 pub async fn create_project_time_allocation(

@@ -16,6 +16,7 @@ import {
   projectMemberApiPath,
   projectPersonalAnalysisApiPath,
   projectResourceApiPath,
+  timeManagementChangeRestoreApiPath,
   timeManagementMembersApiPath,
   workItemApiPath,
 } from '@yuance/frontend-api-client';
@@ -102,6 +103,26 @@ test('time management members use fixed directory path', async () => {
   assert.equal(calls[0].url, '/api/v1/time-management/members');
   assert.equal(calls[0].options.method || 'GET', 'GET');
   assert.deepEqual(result, [{ username: 'zhangsan', display_name: '张三' }]);
+});
+
+test('time management change restore uses fixed write path', async () => {
+  const calls = [];
+  const writes = [];
+  const client = createApiClient({
+    async request(url, options = {}) {
+      calls.push({ url, options });
+      return null;
+    },
+    async prepareWrite() {
+      writes.push('prepare');
+    },
+  });
+
+  await client.restoreTimeManagementChange(42);
+
+  assert.equal(timeManagementChangeRestoreApiPath(42), '/api/v1/time-management/changes/42/restore');
+  assert.deepEqual(calls, [{ url: '/api/v1/time-management/changes/42/restore', options: { method: 'POST' } }]);
+  assert.deepEqual(writes, ['prepare']);
 });
 
 test('project resources normalize list detail and unlock responses', async () => {

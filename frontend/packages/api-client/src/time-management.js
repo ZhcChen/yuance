@@ -43,6 +43,10 @@ export function timeManagementMembersApiPath() {
   return '/api/v1/time-management/members';
 }
 
+export function timeManagementChangeRestoreApiPath(recordId) {
+  return `/api/v1/time-management/changes/${encodeURIComponent(String(recordId))}/restore`;
+}
+
 export function projectTimeAllocationApiPath(projectKey, allocationId) {
   const base = `/api/v1/projects/${encodeURIComponent(String(projectKey))}/time-allocations`;
   return allocationId === undefined ? base : `${base}/${encodeURIComponent(String(allocationId))}`;
@@ -58,6 +62,10 @@ export function createTimeManagementClient({ request, prepareWrite }) {
     },
     getTimeManagementMembers() {
       return request(timeManagementMembersApiPath());
+    },
+    async restoreTimeManagementChange(recordId) {
+      await prepareWrite();
+      return request(timeManagementChangeRestoreApiPath(recordId), { method: 'POST' });
     },
     getProjectTimeAllocations(projectKey) {
       return request(projectTimeAllocationApiPath(projectKey));

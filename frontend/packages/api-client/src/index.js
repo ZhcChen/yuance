@@ -19,6 +19,7 @@ export {
   createTimeManagementClient,
   projectTimeAllocationApiPath,
   timeAllocationBody,
+  timeManagementChangeRestoreApiPath,
   timeManagementChangesApiPath,
   timeManagementMembersApiPath,
   timeManagementOverviewApiPath,

@@ -7266,6 +7266,154 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
     );
 }
 
+#[tokio::test]
+async fn time_management_change_records_support_restore_flow() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let _allocation_id = create_time_allocation_for_test(
+        &app,
+        &admin.cookie,
+        r#"{"username":"admin","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+    )
+    .await;
+    let created_record_id =
+        latest_time_allocation_change_id(&app, &admin.cookie, "time_allocation.created").await;
+
+    let outsider = create_regular_user(&pool, "restore_outsider", "回退外部成员").await;
+    let (outsider_status, _) =
+        restore_time_allocation_change(&app, &outsider.cookie, created_record_id).await;
+    assert_eq!(outsider_status, StatusCode::FORBIDDEN);
+
+    let (restore_created_status, restore_created_body) =
+        restore_time_allocation_change(&app, &admin.cookie, created_record_id).await;
+    assert_eq!(
+        restore_created_status,
+        StatusCode::OK,
+        "{restore_created_body}"
+    );
+    assert!(
+        restore_created_body.contains("\"data\":null"),
+        "{restore_created_body}"
+    );
+    let list_after_created_restore = list_project_time_allocations_body(&app, &admin.cookie).await;
+    assert!(
+        !list_after_created_restore.contains("2026-08-01"),
+        "{list_after_created_restore}"
+    );
+    let (duplicate_restore_status, duplicate_restore_body) =
+        restore_time_allocation_change(&app, &admin.cookie, created_record_id).await;
+    assert_eq!(
+        duplicate_restore_status,
+        StatusCode::CONFLICT,
+        "{duplicate_restore_body}"
+    );
+
+    let allocation_id = create_time_allocation_for_test(
+        &app,
+        &admin.cookie,
+        r#"{"username":"admin","start_date":"2026-08-01","end_date":"2026-08-15","daily_hours":8,"note":"联调排期"}"#,
+    )
+    .await;
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/projects/YCE/time-allocations/{allocation_id}"
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"username":"admin","start_date":"2026-08-03","end_date":"2026-08-20","daily_hours":6,"note":"调整排期"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(update_response.status(), StatusCode::OK);
+    let updated_record_id =
+        latest_time_allocation_change_id(&app, &admin.cookie, "time_allocation.updated").await;
+    let (restore_updated_status, restore_updated_body) =
+        restore_time_allocation_change(&app, &admin.cookie, updated_record_id).await;
+    assert_eq!(
+        restore_updated_status,
+        StatusCode::OK,
+        "{restore_updated_body}"
+    );
+    assert!(
+        restore_updated_body.contains("2026-08-01"),
+        "{restore_updated_body}"
+    );
+    let list_after_updated_restore = list_project_time_allocations_body(&app, &admin.cookie).await;
+    assert!(
+        list_after_updated_restore.contains("2026-08-01"),
+        "{list_after_updated_restore}"
+    );
+    assert!(
+        !list_after_updated_restore.contains("2026-08-03"),
+        "{list_after_updated_restore}"
+    );
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/projects/YCE/time-allocations/{allocation_id}"
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::NO_CONTENT);
+    let deleted_record_id =
+        latest_time_allocation_change_id(&app, &admin.cookie, "time_allocation.deleted").await;
+    let (restore_deleted_status, restore_deleted_body) =
+        restore_time_allocation_change(&app, &admin.cookie, deleted_record_id).await;
+    assert_eq!(
+        restore_deleted_status,
+        StatusCode::OK,
+        "{restore_deleted_body}"
+    );
+    assert!(
+        restore_deleted_body.contains("2026-08-01"),
+        "{restore_deleted_body}"
+    );
+    let list_after_deleted_restore = list_project_time_allocations_body(&app, &admin.cookie).await;
+    assert!(
+        list_after_deleted_restore.contains("2026-08-01"),
+        "{list_after_deleted_restore}"
+    );
+
+    let changes_body = response_body(
+        app.oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/changes?per_page=20")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond"),
+    )
+    .await;
+    assert!(
+        changes_body.contains("\"action\":\"time_allocation.restored\""),
+        "{changes_body}"
+    );
+}
+
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {
     bootstrap_admin_session(pool).await.user_id
 }
@@ -7353,6 +7501,92 @@ async fn create_test_api_token(app: axum::Router, cookie: &str, payload: &str) -
         .as_str()
         .expect("raw token should exist")
         .to_string()
+}
+
+async fn create_time_allocation_for_test(app: &axum::Router, cookie: &str, body: &str) -> i64 {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/time-allocations")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(body.to_string()))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let value: serde_json::Value =
+        serde_json::from_str(&response_body(response).await).expect("create should be json");
+    value["data"]["id"]
+        .as_i64()
+        .expect("allocation id should exist")
+}
+
+async fn latest_time_allocation_change_id(app: &axum::Router, cookie: &str, action: &str) -> i64 {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/changes?per_page=50")
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: serde_json::Value =
+        serde_json::from_str(&response_body(response).await).expect("changes should be json");
+    value["data"]["items"]
+        .as_array()
+        .expect("items should be array")
+        .iter()
+        .find(|item| item["action"] == action)
+        .and_then(|item| item["id"].as_i64())
+        .unwrap_or_else(|| panic!("no {action} record"))
+}
+
+async fn restore_time_allocation_change(
+    app: &axum::Router,
+    cookie: &str,
+    record_id: i64,
+) -> (StatusCode, String) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/time-management/changes/{record_id}/restore"
+                ))
+                .header(header::COOKIE, cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    (response.status(), response_body(response).await)
+}
+
+async fn list_project_time_allocations_body(app: &axum::Router, cookie: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/time-allocations")
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    response_body(response).await
 }
 
 async fn create_regular_user_session(pool: &sqlx::SqlitePool) -> String {

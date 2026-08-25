@@ -1974,6 +1974,11 @@ pub struct TimeAllocationListQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TimeAllocationChangePath {
+    record_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct TimeAllocationChangeListQuery {
     #[serde(default)]
     page: Option<i64>,
@@ -3417,6 +3422,37 @@ pub async fn list_time_allocation_changes(
             total_pages,
         },
     }))
+}
+
+pub async fn restore_time_allocation_change(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(path): Path<TimeAllocationChangePath>,
+) -> AppResult<axum::Json<ApiEnvelope<Option<TimeAllocationPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
+    let meta = projects::get_time_allocation_change_record_meta(pool, path.record_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("修改记录不存在".to_string()))?;
+    ensure_api_time_management_write_access(pool, user, meta.project_id).await?;
+    let restored = projects::restore_time_allocation_from_record(pool, user.id, &meta).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "time.allocation.restore",
+        "time_allocation",
+        &meta.record_id.to_string(),
+        &principal.audit_details_with(serde_json::json!({
+            "project_key": meta.project_key,
+            "source_activity_id": meta.record_id,
+        })),
+    )
+    .await?;
+
+    Ok(json(restored.map(time_allocation_payload)))
 }
 
 pub async fn list_work_items(

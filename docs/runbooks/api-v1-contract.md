@@ -400,6 +400,7 @@ POST  /api/v1/projects/{project_key}/cycles/{cycle_id}/close
 GET   /api/v1/time-management/overview
 GET   /api/v1/time-management/members
 GET   /api/v1/time-management/changes
+POST  /api/v1/time-management/changes/{record_id}/restore
 GET   /api/v1/projects/{project_key}/time-allocations
 POST  /api/v1/projects/{project_key}/time-allocations
 PATCH /api/v1/projects/{project_key}/time-allocations/{allocation_id}
@@ -429,6 +430,14 @@ actor=zhangsan
 
 修改记录响应项包含操作人、动作（`time_allocation.created` / `time_allocation.updated` / `time_allocation.deleted`）、摘要、字段级 `changes` 以及用于后续回退的 `before` / `after` 排期快照。
 
+回退修改记录时，服务端按记录中的 `before` 快照恢复：
+
+- 回退“新增”：删除对应排期；
+- 回退“更新”：恢复为操作前字段；
+- 回退“删除”：按操作前快照重新创建排期；
+- 回退本身会新增一条 `time_allocation.restored` 修改记录，供再次审计和追溯。
+- 同一修改记录重复回退返回 `409 conflict`，避免重复删除或重复创建。
+
 成员目录返回时间排期表可展示的全部人员：
 
 - 全项目数据范围：返回所有启用且非超级管理员账号；
@@ -437,6 +446,7 @@ actor=zhangsan
 权限：
 
 - 查看 overview、成员目录与修改记录：需要 `time.management.view`；非全局数据范围仅返回本人可访问项目的数据。
+- 回退修改记录：需要时间排期写权限（`time.management.edit`，或为项目 owner / maintainer）。
 - 新增、更新、删除排期：需要 `time.management.edit`，或为项目 owner / maintainer。
 
 ## 项目资料库

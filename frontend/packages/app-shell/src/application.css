@@ -1188,6 +1188,7 @@ html[data-theme="dark"] .project-stats div {
 .time-management-change-record-head time { flex: 0 0 auto; color: var(--yc-muted); font-size: 12px; white-space: nowrap; }
 .time-management-change-record-summary { margin: 0; color: var(--yc-text); font-size: 13px; line-height: 20px; }
 .time-management-change-record-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--yc-muted); font-size: 12px; line-height: 18px; }
+.time-management-change-record-actions { display: flex; justify-content: flex-end; }
 .time-management-change-diffs { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; }
 .time-management-change-diffs li { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border: 1px solid var(--yc-line); border-radius: 7px; background: var(--yc-panel); }
 .time-management-change-field { color: var(--yc-muted-strong); font-size: 12px; font-weight: 700; }

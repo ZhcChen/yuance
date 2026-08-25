@@ -662,6 +662,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_time_allocation_changes),
         )
         .route(
+            "/api/v1/time-management/changes/{record_id}/restore",
+            post(web::api::restore_time_allocation_change),
+        )
+        .route(
             "/api/v1/projects/{project_key}/my-analysis",
             get(web::api::get_project_personal_analysis),
         )

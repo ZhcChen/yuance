@@ -94,256 +94,6 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities, releaseAssets?: import('@yuance/frontend-platform-contract').HostDelegatedReleaseAssetCapabilities, selectPastedFile?: (file: import('@yuance/frontend-platform-contract').PastedFile) => Promise<import('@yuance/frontend-platform-contract').SelectedFile | null> }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
-const TIME_MANAGEMENT_MOCK_PROJECTS = [
-  { key: 'yuance-api', name: '元策 API' },
-  { key: 'yuance-web', name: '元策 Web' },
-  { key: 'ops-console', name: '运营后台' },
-  { key: 'mobile-app', name: '移动端' },
-  { key: 'data-platform', name: '数据平台' },
-  { key: 'devops', name: '运维平台' },
-  { key: 'crm-sync', name: 'CRM 同步' },
-  { key: 'erp-core', name: 'ERP 核心' },
-  { key: 'hr-system', name: '人事系统' },
-  { key: 'finance', name: '财务结算' },
-  { key: 'security-center', name: '安全中心' },
-  { key: 'ai-assistant', name: 'AI 助手' },
-];
-
-const TIME_MANAGEMENT_MOCK_MEMBERS = [
-  { username: 'zhangsan', display_name: '张三' },
-  { username: 'lisi', display_name: '李四' },
-  { username: 'wangwu', display_name: '王五' },
-  { username: 'zhaoliu', display_name: '赵六' },
-  { username: 'sunqi', display_name: '孙七' },
-];
-
-const TIME_MANAGEMENT_MOCK_ALLOCATIONS = [
-  { id: 1, project_key: 'yuance-api', project_name: '元策 API', username: 'zhangsan', display_name: '张三', start_date: '2026-07-01', end_date: '2026-08-15', daily_hours: 8, note: '' },
-  { id: 2, project_key: 'yuance-web', project_name: '元策 Web', username: 'zhangsan', display_name: '张三', start_date: '2026-07-20', end_date: '2026-08-05', daily_hours: 4, note: '' },
-  { id: 3, project_key: 'mobile-app', project_name: '移动端', username: 'zhangsan', display_name: '张三', start_date: '2026-09-01', end_date: '2026-10-10', daily_hours: 6, note: '' },
-  { id: 4, project_key: 'yuance-web', project_name: '元策 Web', username: 'lisi', display_name: '李四', start_date: '2026-06-15', end_date: '2026-08-31', daily_hours: 8, note: '' },
-  { id: 5, project_key: 'ops-console', project_name: '运营后台', username: 'lisi', display_name: '李四', start_date: '2026-09-01', end_date: '2026-11-20', daily_hours: 6, note: '' },
-  { id: 6, project_key: 'data-platform', project_name: '数据平台', username: 'wangwu', display_name: '王五', start_date: '2026-07-10', end_date: '2026-10-01', daily_hours: 8, note: '' },
-  { id: 7, project_key: 'devops', project_name: '运维平台', username: 'zhaoliu', display_name: '赵六', start_date: '2026-06-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
-  { id: 8, project_key: 'yuance-api', project_name: '元策 API', username: 'zhaoliu', display_name: '赵六', start_date: '2026-10-05', end_date: '2026-12-15', daily_hours: 5, note: '' },
-  { id: 9, project_key: 'ops-console', project_name: '运营后台', username: 'sunqi', display_name: '孙七', start_date: '2026-08-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
-  { id: 10, project_key: 'mobile-app', project_name: '移动端', username: 'sunqi', display_name: '孙七', start_date: '2026-10-01', end_date: '2026-12-20', daily_hours: 6, note: '' },
-];
-
-const TIME_MANAGEMENT_MOCK_CHANGES = [
-  {
-    id: 101,
-    allocation_id: 1,
-    project_key: 'yuance-api',
-    project_name: '元策 API',
-    action: 'time_allocation.updated',
-    actor_username: 'zhangsan',
-    actor_display_name: '张三',
-    summary: '更新成员 zhangsan 的排期 2026-07-05 ~ 2026-08-15',
-    changes: [
-      { field: 'start_date', before: '2026-07-01', after: '2026-07-05' },
-      { field: 'daily_hours', before: 8, after: 6 },
-    ],
-    before: { project_key: 'yuance-api', username: 'zhangsan', start_date: '2026-07-01', end_date: '2026-08-15', daily_hours: 8, note: '' },
-    after: { project_key: 'yuance-api', username: 'zhangsan', start_date: '2026-07-05', end_date: '2026-08-15', daily_hours: 6, note: '' },
-    created_at: '2026-08-24 09:10:12',
-  },
-  {
-    id: 102,
-    allocation_id: 11,
-    project_key: 'yuance-web',
-    project_name: '元策 Web',
-    action: 'time_allocation.created',
-    actor_username: 'lisi',
-    actor_display_name: '李四',
-    summary: '创建成员 lisi 的排期 2026-08-01 ~ 2026-08-20',
-    changes: [
-      { field: 'username', before: null, after: 'lisi' },
-      { field: 'start_date', before: null, after: '2026-08-01' },
-      { field: 'end_date', before: null, after: '2026-08-20' },
-      { field: 'daily_hours', before: null, after: 8 },
-    ],
-    before: null,
-    after: { project_key: 'yuance-web', username: 'lisi', start_date: '2026-08-01', end_date: '2026-08-20', daily_hours: 8, note: '' },
-    created_at: '2026-08-24 08:40:22',
-  },
-  {
-    id: 103,
-    allocation_id: 7,
-    project_key: 'devops',
-    project_name: '运维平台',
-    action: 'time_allocation.deleted',
-    actor_username: 'wangwu',
-    actor_display_name: '王五',
-    summary: '删除成员 zhaoliu 的时间排期',
-    changes: [
-      { field: 'start_date', before: '2026-06-01', after: null },
-      { field: 'end_date', before: '2026-09-30', after: null },
-      { field: 'daily_hours', before: 8, after: null },
-    ],
-    before: { project_key: 'devops', username: 'zhaoliu', start_date: '2026-06-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
-    after: null,
-    created_at: '2026-08-23 18:05:03',
-  },
-  {
-    id: 104,
-    allocation_id: 2,
-    project_key: 'yuance-web',
-    project_name: '元策 Web',
-    action: 'time_allocation.updated',
-    actor_username: 'zhangsan',
-    actor_display_name: '张三',
-    summary: '更新成员 zhangsan 的排期 2026-07-25 ~ 2026-08-05',
-    changes: [
-      { field: 'start_date', before: '2026-07-20', after: '2026-07-25' },
-      { field: 'end_date', before: '2026-08-05', after: '2026-08-08' },
-    ],
-    before: { project_key: 'yuance-web', username: 'zhangsan', start_date: '2026-07-20', end_date: '2026-08-05', daily_hours: 4, note: '' },
-    after: { project_key: 'yuance-web', username: 'zhangsan', start_date: '2026-07-25', end_date: '2026-08-08', daily_hours: 4, note: '' },
-    created_at: '2026-08-23 16:20:41',
-  },
-  {
-    id: 105,
-    allocation_id: 9,
-    project_key: 'ops-console',
-    project_name: '运营后台',
-    action: 'time_allocation.updated',
-    actor_username: 'zhaoliu',
-    actor_display_name: '赵六',
-    summary: '更新成员 sunqi 的排期 2026-08-01 ~ 2026-09-30',
-    changes: [
-      { field: 'note', before: '', after: '上线窗口预留' },
-      { field: 'daily_hours', before: 8, after: 6 },
-    ],
-    before: { project_key: 'ops-console', username: 'sunqi', start_date: '2026-08-01', end_date: '2026-09-30', daily_hours: 8, note: '' },
-    after: { project_key: 'ops-console', username: 'sunqi', start_date: '2026-08-01', end_date: '2026-09-30', daily_hours: 6, note: '上线窗口预留' },
-    created_at: '2026-08-23 11:02:18',
-  },
-  {
-    id: 106,
-    allocation_id: 12,
-    project_key: 'data-platform',
-    project_name: '数据平台',
-    action: 'time_allocation.created',
-    actor_username: 'sunqi',
-    actor_display_name: '孙七',
-    summary: '创建成员 wangwu 的排期 2026-08-10 ~ 2026-09-10',
-    changes: [
-      { field: 'username', before: null, after: 'wangwu' },
-      { field: 'start_date', before: null, after: '2026-08-10' },
-      { field: 'end_date', before: null, after: '2026-09-10' },
-      { field: 'daily_hours', before: null, after: 5 },
-    ],
-    before: null,
-    after: { project_key: 'data-platform', username: 'wangwu', start_date: '2026-08-10', end_date: '2026-09-10', daily_hours: 5, note: '' },
-    created_at: '2026-08-22 19:44:09',
-  },
-  {
-    id: 107,
-    allocation_id: 4,
-    project_key: 'yuance-web',
-    project_name: '元策 Web',
-    action: 'time_allocation.updated',
-    actor_username: 'lisi',
-    actor_display_name: '李四',
-    summary: '更新成员 lisi 的排期 2026-06-15 ~ 2026-08-31',
-    changes: [
-      { field: 'end_date', before: '2026-08-31', after: '2026-09-05' },
-    ],
-    before: { project_key: 'yuance-web', username: 'lisi', start_date: '2026-06-15', end_date: '2026-08-31', daily_hours: 8, note: '' },
-    after: { project_key: 'yuance-web', username: 'lisi', start_date: '2026-06-15', end_date: '2026-09-05', daily_hours: 8, note: '' },
-    created_at: '2026-08-22 15:12:30',
-  },
-  {
-    id: 108,
-    allocation_id: 8,
-    project_key: 'yuance-api',
-    project_name: '元策 API',
-    action: 'time_allocation.updated',
-    actor_username: 'zhangsan',
-    actor_display_name: '张三',
-    summary: '更新成员 zhaoliu 的排期 2026-10-05 ~ 2026-12-15',
-    changes: [
-      { field: 'start_date', before: '2026-10-05', after: '2026-10-08' },
-      { field: 'note', before: '', after: '接口联调' },
-    ],
-    before: { project_key: 'yuance-api', username: 'zhaoliu', start_date: '2026-10-05', end_date: '2026-12-15', daily_hours: 5, note: '' },
-    after: { project_key: 'yuance-api', username: 'zhaoliu', start_date: '2026-10-08', end_date: '2026-12-15', daily_hours: 5, note: '接口联调' },
-    created_at: '2026-08-22 10:01:55',
-  },
-  {
-    id: 109,
-    allocation_id: 13,
-    project_key: 'mobile-app',
-    project_name: '移动端',
-    action: 'time_allocation.created',
-    actor_username: 'wangwu',
-    actor_display_name: '王五',
-    summary: '创建成员 sunqi 的排期 2026-08-15 ~ 2026-09-20',
-    changes: [
-      { field: 'username', before: null, after: 'sunqi' },
-      { field: 'start_date', before: null, after: '2026-08-15' },
-      { field: 'end_date', before: null, after: '2026-09-20' },
-      { field: 'daily_hours', before: null, after: 6 },
-    ],
-    before: null,
-    after: { project_key: 'mobile-app', username: 'sunqi', start_date: '2026-08-15', end_date: '2026-09-20', daily_hours: 6, note: '' },
-    created_at: '2026-08-21 17:38:26',
-  },
-  {
-    id: 110,
-    allocation_id: 5,
-    project_key: 'ops-console',
-    project_name: '运营后台',
-    action: 'time_allocation.deleted',
-    actor_username: 'lisi',
-    actor_display_name: '李四',
-    summary: '删除成员 lisi 的时间排期',
-    changes: [
-      { field: 'start_date', before: '2026-09-01', after: null },
-      { field: 'end_date', before: '2026-11-20', after: null },
-    ],
-    before: { project_key: 'ops-console', username: 'lisi', start_date: '2026-09-01', end_date: '2026-11-20', daily_hours: 6, note: '' },
-    after: null,
-    created_at: '2026-08-21 14:26:37',
-  },
-  {
-    id: 111,
-    allocation_id: 3,
-    project_key: 'mobile-app',
-    project_name: '移动端',
-    action: 'time_allocation.updated',
-    actor_username: 'zhaoliu',
-    actor_display_name: '赵六',
-    summary: '更新成员 zhangsan 的排期 2026-09-01 ~ 2026-10-10',
-    changes: [
-      { field: 'end_date', before: '2026-10-10', after: '2026-10-15' },
-    ],
-    before: { project_key: 'mobile-app', username: 'zhangsan', start_date: '2026-09-01', end_date: '2026-10-10', daily_hours: 6, note: '' },
-    after: { project_key: 'mobile-app', username: 'zhangsan', start_date: '2026-09-01', end_date: '2026-10-15', daily_hours: 6, note: '' },
-    created_at: '2026-08-21 09:12:48',
-  },
-  {
-    id: 112,
-    allocation_id: 14,
-    project_key: 'crm-sync',
-    project_name: 'CRM 同步',
-    action: 'time_allocation.created',
-    actor_username: 'zhangsan',
-    actor_display_name: '张三',
-    summary: '创建成员 wangwu 的排期 2026-08-20 ~ 2026-09-15',
-    changes: [
-      { field: 'username', before: null, after: 'wangwu' },
-      { field: 'start_date', before: null, after: '2026-08-20' },
-      { field: 'end_date', before: null, after: '2026-09-15' },
-      { field: 'daily_hours', before: null, after: 4 },
-    ],
-    before: null,
-    after: { project_key: 'crm-sync', username: 'wangwu', start_date: '2026-08-20', end_date: '2026-09-15', daily_hours: 4, note: '' },
-    created_at: '2026-08-20 16:55:14',
-  },
-];
-
 /**
  * @typedef AppUser
  * @property {number} id
@@ -655,6 +405,8 @@ function timeAllocationActionLabel(action) {
       return '新增';
     case 'time_allocation.deleted':
       return '删除';
+    case 'time_allocation.restored':
+      return '回退';
     case 'time_allocation.updated':
     default:
       return '更新';
@@ -667,6 +419,8 @@ function timeAllocationActionTone(action) {
       return 'success';
     case 'time_allocation.deleted':
       return 'danger';
+    case 'time_allocation.restored':
+      return 'warning';
     default:
       return 'info';
   }
@@ -1307,12 +1061,14 @@ export function SharedApp({ services }) {
   const [projectTimeAllocations, setProjectTimeAllocations] = useState(/** @type {AppTimeAllocation[]} */ ([]));
   const [timeProjects, setTimeProjects] = useState(/** @type {Array<{ key: string, name: string }>} */ ([]));
   const [timeMembers, setTimeMembers] = useState(/** @type {Array<{ username: string, display_name: string }>} */ ([]));
-  const [timeMockMode, setTimeMockMode] = useState(false);
   const [timeChangesOpen, setTimeChangesOpen] = useState(false);
   const [timeChangesPage, setTimeChangesPage] = useState(/** @type {{ items: any[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } } | null} */ (null));
   const [timeChangesPerPage, setTimeChangesPerPage] = useState(10);
   const [timeChangesLoading, setTimeChangesLoading] = useState(false);
   const [timeChangesError, setTimeChangesError] = useState('');
+  const [timeChangeRestoreTarget, setTimeChangeRestoreTarget] = useState(/** @type {{ id: number, summary: string, action: string } | null} */ (null));
+  const [timeChangeRestoring, setTimeChangeRestoring] = useState(false);
+  const [timeChangeRestoreError, setTimeChangeRestoreError] = useState('');
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
   const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
   const [projectCycleCloseTarget, setProjectCycleCloseTarget] = useState(/** @type {AppProjectCycle | null} */ (null));
@@ -1996,21 +1752,13 @@ export function SharedApp({ services }) {
           : Promise.resolve(null),
         targetRoute.id === 'time-management'
           ? (async () => {
-            let overview = null;
-            try {
-              overview = await api.getTimeManagementOverview();
-            } catch (caught) {
+            const overview = await api.getTimeManagementOverview().catch((caught) => {
               const caughtError = caught instanceof Error ? /** @type {Error & { status?: number }} */ (caught) : null;
-              if (caughtError?.status !== 404) throw caught;
-            }
-            if (!overview) {
-              return {
-                allocations: TIME_MANAGEMENT_MOCK_ALLOCATIONS,
-                projects: TIME_MANAGEMENT_MOCK_PROJECTS,
-                members: TIME_MANAGEMENT_MOCK_MEMBERS,
-                mock: true,
-              };
-            }
+              if (caughtError?.status === 404) {
+                throw new Error('当前服务端未提供时间管理接口，请先部署配套 API 版本。');
+              }
+              throw caught;
+            });
             const projectPage = await api.getProjects({ perPage: 100 }).catch(() => null);
             const projects = (projectPage?.items || []).map((project) => ({ key: project.key, name: project.name }));
             const seen = new Map();
@@ -2040,7 +1788,6 @@ export function SharedApp({ services }) {
               allocations: overview,
               projects,
               members: [...seen.values()],
-              mock: false,
             };
           })()
           : Promise.resolve(null),
@@ -2127,7 +1874,6 @@ export function SharedApp({ services }) {
         setTimeAllocations(nextTimeManagement?.allocations || []);
         setTimeProjects(nextTimeManagement?.projects || []);
         setTimeMembers(nextTimeManagement?.members || []);
-        setTimeMockMode(Boolean(nextTimeManagement?.mock));
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -2219,55 +1965,18 @@ export function SharedApp({ services }) {
   }
 
   async function persistTimeCreate(payload) {
-    if (timeMockMode) {
-      setTimeAllocations((current) => [...current, {
-        id: Date.now(),
-        project_key: payload.projectKey,
-        project_name: timeProjects.find((project) => project.key === payload.projectKey)?.name || payload.projectKey,
-        username: payload.username,
-        display_name: timeMembers.find((member) => member.username === payload.username)?.display_name || payload.username,
-        start_date: payload.startDate,
-        end_date: payload.endDate,
-        daily_hours: payload.dailyHours,
-        note: payload.note || '',
-      }]);
-      setStatusMessage('排期已创建（本地 mock 数据）。');
-      return;
-    }
     await api.createProjectTimeAllocation(payload.projectKey, payload);
     setTimeAllocations(await api.getTimeManagementOverview());
     setStatusMessage('排期已创建。');
   }
 
   async function persistTimeUpdate(id, payload) {
-    if (timeMockMode) {
-      setTimeAllocations((current) => current.map((item) => (
-        item.id === id
-          ? {
-            ...item,
-            project_key: payload.projectKey,
-            project_name: timeProjects.find((project) => project.key === payload.projectKey)?.name || payload.projectKey,
-            start_date: payload.startDate,
-            end_date: payload.endDate,
-            daily_hours: payload.dailyHours,
-            note: payload.note || '',
-          }
-          : item
-      )));
-      setStatusMessage('排期已更新（本地 mock 数据）。');
-      return;
-    }
     await api.updateProjectTimeAllocation(payload.projectKey, id, payload);
     setTimeAllocations(await api.getTimeManagementOverview());
     setStatusMessage('排期已更新。');
   }
 
   async function persistTimeDelete(id) {
-    if (timeMockMode) {
-      setTimeAllocations((current) => current.filter((item) => item.id !== id));
-      setStatusMessage('排期已删除（本地 mock 数据）。');
-      return;
-    }
     const allocation = timeAllocations.find((item) => item.id === id);
     if (!allocation) return;
     await api.deleteProjectTimeAllocation(allocation.project_key, id);
@@ -2287,32 +1996,6 @@ export function SharedApp({ services }) {
   }
 
   async function persistTimeSave(_items, operations) {
-    if (timeMockMode) {
-      setTimeAllocations((current) => {
-        const deletedIds = new Set(operations.deleted.map((item) => item.id));
-        const updatedById = new Map(operations.updated.map((item) => [item.id, item]));
-        const next = current
-          .filter((item) => !deletedIds.has(item.id))
-          .map((item) => {
-            const updated = updatedById.get(item.id);
-            if (!updated) return item;
-            return {
-              ...updated,
-              project_name: timeProjects.find((project) => project.key === updated.project_key)?.name || updated.project_key,
-              display_name: timeMembers.find((member) => member.username === updated.username)?.display_name || updated.username,
-            };
-          });
-        const created = operations.created.map((item, index) => ({
-          ...item,
-          id: Date.now() + index + 1,
-          project_name: timeProjects.find((project) => project.key === item.project_key)?.name || item.project_key,
-          display_name: timeMembers.find((member) => member.username === item.username)?.display_name || item.username,
-        }));
-        return [...next, ...created];
-      });
-      setStatusMessage('排期已保存（本地 mock 数据）。');
-      return;
-    }
     for (const item of operations.created) {
       await api.createProjectTimeAllocation(item.project_key, timeAllocationApiPayload(item));
     }
@@ -2330,22 +2013,6 @@ export function SharedApp({ services }) {
     setTimeChangesLoading(true);
     setTimeChangesError('');
     try {
-      if (timeMockMode) {
-        const safePerPage = Math.min(100, Math.max(1, perPage));
-        const totalItems = TIME_MANAGEMENT_MOCK_CHANGES.length;
-        const totalPages = Math.max(1, Math.ceil(totalItems / safePerPage));
-        const safePage = Math.min(Math.max(1, page), totalPages);
-        setTimeChangesPage({
-          items: TIME_MANAGEMENT_MOCK_CHANGES.slice((safePage - 1) * safePerPage, safePage * safePerPage),
-          pagination: {
-            page: safePage,
-            per_page: safePerPage,
-            total_items: totalItems,
-            total_pages: totalPages,
-          },
-        });
-        return;
-      }
       setTimeChangesPage(await api.getTimeManagementChanges({ page, perPage }));
     } catch (caught) {
       setTimeChangesError(errorMessage(caught instanceof Error ? caught : new Error('修改记录加载失败。')));
@@ -2358,6 +2025,23 @@ export function SharedApp({ services }) {
     const perPage = Number(event.currentTarget.value);
     setTimeChangesPerPage(perPage);
     void loadTimeManagementChanges(1, perPage);
+  }
+
+  async function confirmTimeChangeRestore() {
+    if (!timeChangeRestoreTarget || timeChangeRestoring) return;
+    setTimeChangeRestoring(true);
+    setTimeChangeRestoreError('');
+    try {
+      await api.restoreTimeManagementChange(timeChangeRestoreTarget.id);
+      setTimeChangeRestoreTarget(null);
+      setTimeAllocations(await api.getTimeManagementOverview());
+      await loadTimeManagementChanges(timeChangesPage?.pagination.page || 1);
+      setStatusMessage('已回退该修改记录。');
+    } catch (caught) {
+      setTimeChangeRestoreError(errorMessage(caught instanceof Error ? caught : new Error('回退修改记录失败。')));
+    } finally {
+      setTimeChangeRestoring(false);
+    }
   }
 
   async function persistProjectTimeCreate(payload) {
@@ -5893,6 +5577,21 @@ export function SharedApp({ services }) {
                               <span>操作人：{record.actor_display_name || record.actor_username}</span>
                               <span>成员：{record.after?.username || record.before?.username || '未知'}</span>
                             </div>
+                            {record.action !== 'time_allocation.restored' ? (
+                              <div className="time-management-change-record-actions">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={timeChangeRestoring}
+                                  onClick={() => {
+                                    setTimeChangeRestoreError('');
+                                    setTimeChangeRestoreTarget({ id: record.id, summary: record.summary, action: record.action });
+                                  }}
+                                >
+                                  回退
+                                </Button>
+                              </div>
+                            ) : null}
                             {record.changes?.length ? (
                               <ul className="time-management-change-diffs">
                                 {record.changes.map((change, index) => (
@@ -5922,6 +5621,21 @@ export function SharedApp({ services }) {
                     </>
                   ) : null}
                 </div>
+              </Modal>
+              <Modal
+                open={Boolean(timeChangeRestoreTarget)}
+                title="确认回退修改记录"
+                onClose={() => {
+                  if (!timeChangeRestoring) setTimeChangeRestoreTarget(null);
+                }}
+                footer={<>
+                  <Button variant="secondary" disabled={timeChangeRestoring} onClick={() => setTimeChangeRestoreTarget(null)}>取消</Button>
+                  <Button variant="danger" loading={timeChangeRestoring} onClick={() => void confirmTimeChangeRestore()}>确认回退</Button>
+                </>}
+              >
+                <p>将把这条记录对应的排期恢复为操作前状态，回退操作本身也会记录在修改历史中。</p>
+                <p className="shell-muted">{timeChangeRestoreTarget?.summary}</p>
+                {timeChangeRestoreError ? <Feedback tone="danger" title="回退失败">{timeChangeRestoreError}</Feedback> : null}
               </Modal>
             </>
           ) : route.id === 'system-permissions' ? (
