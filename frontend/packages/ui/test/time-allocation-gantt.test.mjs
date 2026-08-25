@@ -14,6 +14,10 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   }));
 
   assert.match(html, /aria-label="时间粒度"/);
+  assert.match(html, /aria-label="排期视角"/);
+  assert.match(html, />人员排期<\/button>/);
+  assert.match(html, />项目排期<\/button>/);
+  assert.match(html, /class="active" aria-pressed="true">人员排期/);
   assert.match(html, />日<\/button>/);
   assert.match(html, />周<\/button>/);
   assert.match(html, />月<\/button>/);
@@ -36,6 +40,77 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.match(html, />管理员<\/option>/);
   assert.doesNotMatch(html, /class="time-gantt-today"/);
   assert.match(html, /class="time-gantt time-gantt-fill"/);
+});
+
+test('time allocation gantt project view is read-only and groups allocations by project', () => {
+  const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
+    initialViewMode: 'projects',
+    allocations: [
+      {
+        id: 1,
+        project_key: 'YCE',
+        project_name: '元策',
+        username: 'scheduled',
+        display_name: '有排期',
+        start_date: '2026-08-01',
+        end_date: '2026-08-10',
+        daily_hours: 8,
+        phase_task_name: '需求分析',
+        note: '',
+      },
+      {
+        id: 2,
+        project_key: 'OPS',
+        project_name: '运维平台',
+        username: 'scheduled',
+        display_name: '有排期',
+        start_date: '2026-08-12',
+        end_date: '2026-08-20',
+        daily_hours: 8,
+        phase_task_name: '联调',
+        note: '',
+      },
+      {
+        id: 3,
+        project_key: 'YCE',
+        project_name: '元策',
+        username: 'other',
+        display_name: '其他成员',
+        start_date: '2026-08-05',
+        end_date: '2026-08-15',
+        daily_hours: 8,
+        phase_task_name: '他人排期',
+        note: '',
+      },
+    ],
+    projects: [
+      { key: 'YCE', name: '元策' },
+      { key: 'OPS', name: '运维平台' },
+    ],
+    members: [
+      { username: 'scheduled', display_name: '有排期' },
+      { username: 'other', display_name: '其他成员' },
+    ],
+    currentUsername: 'scheduled',
+    onSave: async () => {},
+  }));
+
+  assert.match(html, /class="active" aria-pressed="true">项目排期/);
+  assert.match(html, /查看成员/);
+  assert.match(html, />有排期<\/option>/);
+  assert.match(html, />其他成员<\/option>/);
+  assert.match(html, /项目 \/ 时间/);
+  assert.match(html, /time-gantt-row-project-name">元策<\/span>/);
+  assert.match(html, /time-gantt-row-project-name">运维平台<\/span>/);
+  assert.match(html, /time-gantt-allocation-name">需求分析<\/span>/);
+  assert.match(html, /time-gantt-allocation-name">联调<\/span>/);
+  assert.doesNotMatch(html, /time-gantt-allocation-name">他人排期<\/span>/);
+  assert.match(html, /time-gantt-track-readonly/);
+  assert.doesNotMatch(html, /time-gantt-resize-l/);
+  assert.doesNotMatch(html, />添加排期<\/button>/);
+  assert.doesNotMatch(html, />回退<\/button>/);
+  assert.doesNotMatch(html, />保存<\/button>/);
+  assert.match(html, /项目视角为只读：按项目查看成员排期/);
 });
 
 test('time allocation gantt renders rows only for members with allocations', () => {

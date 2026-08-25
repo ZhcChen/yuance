@@ -3217,6 +3217,7 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   padding: 14px;
   font-size: 13px;
   font-weight: 600;
@@ -3229,10 +3230,27 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   text-align: center;
 }
 
+.time-gantt-row-label i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.time-gantt-row-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .time-gantt-track {
   position: relative;
   height: 66px;
   cursor: crosshair;
+}
+
+.time-gantt-track-readonly {
+  cursor: default;
 }
 
 .time-gantt-today {

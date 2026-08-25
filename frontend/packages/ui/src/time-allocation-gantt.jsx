@@ -50,7 +50,8 @@ const DEFAULT_PROJECT_COLORS = [
  *   currentUsername?: string,
  *   viewStart?: string,
  *   viewEnd?: string,
-   readOnly?: boolean,
+ *   initialViewMode?: 'members' | 'projects',
+ *   readOnly?: boolean,
  *   projectColors?: Record<string, string>,
  *   onCreate?: (payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, phaseTaskName?: string, note?: string }) => Promise<unknown> | unknown,
  *   onUpdate?: (id: number, payload: { username: string, projectKey: string, startDate: string, endDate: string, dailyHours: number, phaseTaskName?: string, note?: string }) => Promise<unknown> | unknown,
@@ -66,6 +67,7 @@ export function TimeAllocationGantt({
   currentUsername = '',
   viewStart,
   viewEnd,
+  initialViewMode = 'members',
   readOnly = false,
   projectColors = {},
   onCreate,
@@ -84,7 +86,10 @@ export function TimeAllocationGantt({
 
   const [viewScale, setViewScale] = useState(/** @type {'day' | 'week' | 'month'} */ (DEFAULT_TIME_SCALE));
   const [viewScope, setViewScope] = useState(/** @type {'all' | 'self'} */ ('all'));
+  const [viewMode, setViewMode] = useState(/** @type {'members' | 'projects'} */ (initialViewMode));
+  const [projectViewUsername, setProjectViewUsername] = useState('');
   const manualSave = Boolean(onSave);
+  const viewReadOnly = readOnly || viewMode === 'projects';
   const [timeline, dispatchTimeline] = useReducer(
     timeAllocationHistoryReducer,
     allocations,
@@ -161,6 +166,45 @@ export function TimeAllocationGantt({
     return allMembers.filter((member) => member.username === currentUsername);
   }, [members, items, viewScope, currentUsername]);
 
+  const effectiveProjectViewUsername = (() => {
+    if (projectViewUsername && visibleMembers.some((member) => member.username === projectViewUsername)) {
+      return projectViewUsername;
+    }
+    if (currentUsername && visibleMembers.some((member) => member.username === currentUsername)) {
+      return currentUsername;
+    }
+    return visibleMembers[0]?.username || '';
+  })();
+
+  const projectViewGroups = useMemo(() => {
+    if (viewMode !== 'projects' || !effectiveProjectViewUsername) return [];
+    const groups = new Map();
+    for (const allocation of items) {
+      if (allocation.username !== effectiveProjectViewUsername) continue;
+      const existing = groups.get(allocation.project_key);
+      if (existing) {
+        existing.push(allocation);
+      } else {
+        groups.set(allocation.project_key, [allocation]);
+      }
+    }
+    return [...groups.entries()]
+      .map(([projectKey, allocations]) => ({
+        project_key: projectKey,
+        project_name: projectName(projectKey),
+        allocations,
+      }))
+      .sort((a, b) => a.project_name.localeCompare(b.project_name, 'zh-CN') || a.project_key.localeCompare(b.project_key));
+  }, [items, viewMode, effectiveProjectViewUsername]);
+
+  useEffect(() => {
+    if (viewMode !== 'projects') return;
+    const preferred = currentUsername && visibleMembers.some((member) => member.username === currentUsername)
+      ? currentUsername
+      : visibleMembers[0]?.username || '';
+    setProjectViewUsername(preferred);
+  }, [viewMode, currentUsername, visibleMembers]);
+
   useEffect(() => {
     if (viewScope === 'self' && visibleMembers.length && !visibleMembers.some((member) => member.username === selectedMemberUsername)) {
       setSelectedMemberUsername(visibleMembers[0].username);
@@ -200,8 +244,28 @@ export function TimeAllocationGantt({
     return visibleMembers.find((member) => member.username === username)?.display_name || username;
   }
 
+  function allocationBlock(allocation, ownerLabel) {
+    const start = Math.max(0, dayIndex(allocation.start_date, computedViewStart));
+    const end = Math.min(totalDays - 1, dayIndex(allocation.end_date, computedViewStart));
+    const conflict = conflictKeys.has(String(allocation.id));
+    return (
+      <div key={allocation.id}
+        className={`time-gantt-allocation${conflict ? ' time-gantt-allocation-conflict' : ''}`}
+        data-id={allocation.id}
+        style={{ left: `${start * pxPerDay}px`, width: `${(end - start + 1) * pxPerDay}px`, background: projectColor(allocation.project_key) }}
+        title={`${ownerLabel} · ${allocation.project_name}${allocation.phase_task_name ? `\n阶段任务：${allocation.phase_task_name}` : ''}\n${allocation.start_date} ~ ${allocation.end_date}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
+        <span className="time-gantt-allocation-name">{allocation.phase_task_name || allocation.project_name}</span>
+        <span className="time-gantt-allocation-meta">{allocation.phase_task_name ? `${allocation.project_name} · ` : ''}{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
+        {!viewReadOnly ? <>
+          <i className="time-gantt-resize-l" aria-hidden="true" />
+          <i className="time-gantt-resize-r" aria-hidden="true" />
+        </> : null}
+      </div>
+    );
+  }
+
   function beginSelection(event, track) {
-    if (readOnly) return;
+    if (viewReadOnly) return;
     event.preventDefault();
     const rect = track.getBoundingClientRect();
     const startDay = Math.floor((event.clientX - rect.left) / pxPerDay);
@@ -256,7 +320,7 @@ export function TimeAllocationGantt({
   }
 
   function beginBlockDrag(event, block, mode) {
-    if (readOnly) return;
+    if (viewReadOnly) return;
     event.preventDefault();
     const id = Number(block.dataset.id || 0);
     const allocation = items.find((item) => item.id === id);
@@ -339,7 +403,7 @@ export function TimeAllocationGantt({
   }
 
   function handleGanttDoubleClick(event) {
-    if (readOnly) return;
+    if (viewReadOnly) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
@@ -351,7 +415,7 @@ export function TimeAllocationGantt({
   }
 
   function handleGanttContextMenu(event) {
-    if (readOnly) return;
+    if (viewReadOnly) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
@@ -582,7 +646,7 @@ export function TimeAllocationGantt({
 
   return (
     <div className="time-management">
-      {!readOnly ? (
+      {!viewReadOnly ? (
         <form className="time-management-toolbar" onSubmit={handleManualAdd}>
           <label className="time-management-field">
             <span>项目（拖拽生成时使用）</span>
@@ -614,6 +678,24 @@ export function TimeAllocationGantt({
 
       <div className="time-management-controls">
         <div className="time-management-controls-left">
+          <div className="time-management-view" role="group" aria-label="排期视角">
+            <button type="button" className={viewMode === 'members' ? 'active' : ''}
+              aria-pressed={viewMode === 'members'} onClick={() => setViewMode('members')}>
+              人员排期
+            </button>
+            <button type="button" className={viewMode === 'projects' ? 'active' : ''}
+              aria-pressed={viewMode === 'projects'} onClick={() => setViewMode('projects')}>
+              项目排期
+            </button>
+          </div>
+          {viewMode === 'projects' ? (
+            <label className="time-management-field">
+              <span>查看成员</span>
+              <Select className="time-management-select" searchable searchPlaceholder="搜索成员" value={effectiveProjectViewUsername} onChange={(event) => setProjectViewUsername(event.currentTarget.value)}>
+                {visibleMembers.map((member) => <option key={member.username} value={member.username}>{member.display_name || member.username}</option>)}
+              </Select>
+            </label>
+          ) : null}
           <div className="time-management-scale" role="group" aria-label="时间粒度">
             {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
               <button key={value} type="button" className={viewScale === value ? 'active' : ''}
@@ -645,7 +727,7 @@ export function TimeAllocationGantt({
             <Button variant="secondary" size="sm" onClick={onOpenRecords}>记录</Button>
           ) : null}
         </div>
-        {manualSave ? (
+        {manualSave && !viewReadOnly ? (
           <div className="time-management-controls-right" role="group" aria-label="排期编辑操作">
             <Button variant="secondary" size="sm" disabled={!timeline.undoStack.length || busy} onClick={undo}>回退</Button>
             <Button variant="secondary" size="sm" disabled={!timeline.redoStack.length || busy} onClick={redo}>前进</Button>
@@ -682,44 +764,45 @@ export function TimeAllocationGantt({
           onDoubleClick={handleGanttDoubleClick}
           onContextMenu={handleGanttContextMenu}>
           <div className="time-gantt-axis-row">
-            <div className="time-gantt-axis-label">成员 / 时间</div>
+            <div className="time-gantt-axis-label">{viewMode === 'projects' ? '项目 / 时间' : '成员 / 时间'}</div>
             <div className="time-gantt-axis" style={{ width: `${totalWidth}px` }}>
               {axisLabels.map((label) => (
                 <span key={label.key} className={`time-gantt-axis-${label.tier}`} style={{ left: `${label.left}px` }}>{label.label}</span>
               ))}
             </div>
           </div>
-          {visibleMembers.map((member) => {
-            const memberItems = items.filter((item) => item.username === member.username);
-            return (
-              <div className="time-gantt-member-row" key={member.username}>
-                <div className="time-gantt-row-label">{member.display_name || member.username}</div>
-                <div className="time-gantt-track" data-username={member.username} style={{ width: `${totalWidth}px` }}>
+          {viewMode === 'projects'
+            ? projectViewGroups.map((group) => (
+              <div className="time-gantt-member-row" key={group.project_key}>
+                <div className="time-gantt-row-label">
+                  <i style={{ background: projectColor(group.project_key) }} aria-hidden="true" />
+                  <span className="time-gantt-row-project-name">{group.project_name}</span>
+                </div>
+                <div className="time-gantt-track time-gantt-track-readonly" data-username={effectiveProjectViewUsername} style={{ width: `${totalWidth}px` }}>
                   <span className="time-gantt-today" style={{ left: `${todayLeft}px` }} aria-hidden="true" />
-                  {memberItems.map((allocation) => {
-                    const start = Math.max(0, dayIndex(allocation.start_date, computedViewStart));
-                    const end = Math.min(totalDays - 1, dayIndex(allocation.end_date, computedViewStart));
-                    const conflict = conflictKeys.has(String(allocation.id));
-                    return (
-                      <div key={allocation.id}
-                        className={`time-gantt-allocation${conflict ? ' time-gantt-allocation-conflict' : ''}`}
-                        data-id={allocation.id}
-                        style={{ left: `${start * pxPerDay}px`, width: `${(end - start + 1) * pxPerDay}px`, background: projectColor(allocation.project_key) }}
-                        title={`${member.display_name || member.username} · ${allocation.project_name}${allocation.phase_task_name ? `\n阶段任务：${allocation.phase_task_name}` : ''}\n${allocation.start_date} ~ ${allocation.end_date}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
-                        <span className="time-gantt-allocation-name">{allocation.phase_task_name || allocation.project_name}</span>
-                        <span className="time-gantt-allocation-meta">{allocation.phase_task_name ? `${allocation.project_name} · ` : ''}{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
-                        {!readOnly ? <>
-                          <i className="time-gantt-resize-l" aria-hidden="true" />
-                          <i className="time-gantt-resize-r" aria-hidden="true" />
-                        </> : null}
-                      </div>
-                    );
-                  })}
+                  {group.allocations.map((allocation) => allocationBlock(allocation, memberName(effectiveProjectViewUsername)))}
                 </div>
               </div>
-            );
-          })}
-          {!visibleMembers.length ? (
+            ))
+            : visibleMembers.map((member) => {
+              const memberItems = items.filter((item) => item.username === member.username);
+              return (
+                <div className="time-gantt-member-row" key={member.username}>
+                  <div className="time-gantt-row-label">{member.display_name || member.username}</div>
+                  <div className="time-gantt-track" data-username={member.username} style={{ width: `${totalWidth}px` }}>
+                    <span className="time-gantt-today" style={{ left: `${todayLeft}px` }} aria-hidden="true" />
+                    {memberItems.map((allocation) => allocationBlock(allocation, member.display_name || member.username))}
+                  </div>
+                </div>
+              );
+            })}
+          {viewMode === 'projects'
+            ? !effectiveProjectViewUsername || !projectViewGroups.length ? (
+              <div className="time-gantt-empty">
+                {members.length ? '暂无排期，请先切回“人员排期”添加排期。' : '暂无成员，请先在项目中添加成员。'}
+              </div>
+            ) : null
+            : !visibleMembers.length ? (
             <div className="time-gantt-empty">
               {members.length ? '暂无排期，请先通过上方表单添加排期。' : '暂无成员，请先在项目中添加成员。'}
             </div>
@@ -727,14 +810,16 @@ export function TimeAllocationGantt({
         </div>
       </div>
       <p className="time-management-tip">
-        {readOnly
-          ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
-          : manualSave
-            ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
-            : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
+        {viewMode === 'projects'
+          ? '项目视角为只读：按项目查看成员排期，时间轴上的空白部分即为空窗期；如需调整排期，请切回“人员排期”视图。'
+          : readOnly
+            ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
+            : manualSave
+              ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
+              : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
       </p>
 
-      {manualSave ? (
+      {manualSave && !viewReadOnly ? (
         <Modal open={saveConfirmOpen} title="确认保存排期" onClose={() => setSaveConfirmOpen(false)}
           footer={<>
             <Button variant="secondary" disabled={busy} onClick={() => setSaveConfirmOpen(false)}>取消</Button>
