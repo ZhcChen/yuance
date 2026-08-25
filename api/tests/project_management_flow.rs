@@ -7036,6 +7036,54 @@ async fn time_management_api_supports_overview_and_project_allocation_crud() {
         .expect("router should respond");
     assert_eq!(overview_response.status(), StatusCode::OK);
 
+    let members_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/members")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(members_response.status(), StatusCode::OK);
+    let members_body = response_body(members_response).await;
+    let members: serde_json::Value =
+        serde_json::from_str(&members_body).expect("members response should be json");
+    assert!(
+        members["data"]
+            .as_array()
+            .expect("members should be array")
+            .iter()
+            .all(|member| member["username"] != "admin"),
+        "super admin should be excluded from time management members"
+    );
+
+    create_regular_user(&pool, "member_all", "普通成员").await;
+    let members_with_user_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/time-management/members")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let members_with_user_body = response_body(members_with_user_response).await;
+    let members_with_user: serde_json::Value =
+        serde_json::from_str(&members_with_user_body).expect("members response should be json");
+    assert!(
+        members_with_user["data"]
+            .as_array()
+            .expect("members should be array")
+            .iter()
+            .any(|member| member["username"] == "member_all"),
+        "active non-super-admin user should appear in time management members"
+    );
+
     let create_response = app
         .clone()
         .oneshot(

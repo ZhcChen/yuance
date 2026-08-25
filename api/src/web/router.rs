@@ -654,6 +654,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::get_time_management_overview),
         )
         .route(
+            "/api/v1/time-management/members",
+            get(web::api::get_time_management_members),
+        )
+        .route(
             "/api/v1/time-management/changes",
             get(web::api::list_time_allocation_changes),
         )

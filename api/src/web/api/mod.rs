@@ -1955,6 +1955,12 @@ pub struct TimeAllocationPayload {
     pub updated_at: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct TimeAllocationMemberPayload {
+    pub username: String,
+    pub display_name: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TimeAllocationListQuery {
     #[serde(default)]
@@ -3221,6 +3227,32 @@ pub async fn get_time_management_overview(
             .await?
             .into_iter()
             .map(time_allocation_payload)
+            .collect(),
+    ))
+}
+
+pub async fn get_time_management_members(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<TimeAllocationMemberPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let members = projects::list_time_management_members(
+        pool,
+        if can_access_all_projects { 0 } else { user.id },
+    )
+    .await?;
+
+    Ok(json(
+        members
+            .into_iter()
+            .map(|member| TimeAllocationMemberPayload {
+                username: member.username,
+                display_name: member.display_name,
+            })
             .collect(),
     ))
 }

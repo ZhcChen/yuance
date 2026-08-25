@@ -39,6 +39,10 @@ export function timeManagementChangesApiPath(query = {}) {
   return `/api/v1/time-management/changes${suffix}`;
 }
 
+export function timeManagementMembersApiPath() {
+  return '/api/v1/time-management/members';
+}
+
 export function projectTimeAllocationApiPath(projectKey, allocationId) {
   const base = `/api/v1/projects/${encodeURIComponent(String(projectKey))}/time-allocations`;
   return allocationId === undefined ? base : `${base}/${encodeURIComponent(String(allocationId))}`;
@@ -51,6 +55,9 @@ export function createTimeManagementClient({ request, prepareWrite }) {
     },
     getTimeManagementChanges(query = {}) {
       return request(timeManagementChangesApiPath(query));
+    },
+    getTimeManagementMembers() {
+      return request(timeManagementMembersApiPath());
     },
     getProjectTimeAllocations(projectKey) {
       return request(projectTimeAllocationApiPath(projectKey));

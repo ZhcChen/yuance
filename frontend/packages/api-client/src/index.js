@@ -20,6 +20,7 @@ export {
   projectTimeAllocationApiPath,
   timeAllocationBody,
   timeManagementChangesApiPath,
+  timeManagementMembersApiPath,
   timeManagementOverviewApiPath,
 } from './time-management.js';
 export {

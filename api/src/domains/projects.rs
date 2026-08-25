@@ -9445,6 +9445,56 @@ pub struct TimeAllocationChangeFilter {
     pub user_id: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeAllocationMember {
+    pub username: String,
+    pub display_name: String,
+}
+
+pub async fn list_time_management_members(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<Vec<TimeAllocationMember>> {
+    let rows = if user_id == 0 {
+        sqlx::query_as::<_, (String, String)>(
+            r#"
+            SELECT u.username, u.display_name
+            FROM users u
+            WHERE u.status = 'active'
+              AND u.is_super_admin = 0
+            ORDER BY u.display_name ASC, u.username ASC
+            "#,
+        )
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, String)>(
+            r#"
+            SELECT DISTINCT u.username, u.display_name
+            FROM users u
+            JOIN project_members pm ON pm.user_id = u.id
+            JOIN project_members mine
+              ON mine.project_id = pm.project_id
+             AND mine.user_id = ?1
+            WHERE u.status = 'active'
+              AND u.is_super_admin = 0
+            ORDER BY u.display_name ASC, u.username ASC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+    };
+
+    Ok(rows
+        .into_iter()
+        .map(|(username, display_name)| TimeAllocationMember {
+            username,
+            display_name,
+        })
+        .collect())
+}
+
 const TIME_ALLOCATION_SELECT: &str = r#"
 SELECT
     pta.id,

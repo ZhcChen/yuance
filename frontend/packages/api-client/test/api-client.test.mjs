@@ -16,6 +16,7 @@ import {
   projectMemberApiPath,
   projectPersonalAnalysisApiPath,
   projectResourceApiPath,
+  timeManagementMembersApiPath,
   workItemApiPath,
 } from '@yuance/frontend-api-client';
 
@@ -83,6 +84,24 @@ test('time management changes use paginated query path', async () => {
   );
   assert.equal(calls[0].options.method || 'GET', 'GET');
   assert.deepEqual(result.pagination, { page: 2, per_page: 10, total_items: 0, total_pages: 1 });
+});
+
+test('time management members use fixed directory path', async () => {
+  const calls = [];
+  const client = createApiClient({
+    async request(url, options = {}) {
+      calls.push({ url, options });
+      return [{ username: 'zhangsan', display_name: '张三' }];
+    },
+    async prepareWrite() {},
+  });
+
+  const result = await client.getTimeManagementMembers();
+
+  assert.equal(timeManagementMembersApiPath(), '/api/v1/time-management/members');
+  assert.equal(calls[0].url, '/api/v1/time-management/members');
+  assert.equal(calls[0].options.method || 'GET', 'GET');
+  assert.deepEqual(result, [{ username: 'zhangsan', display_name: '张三' }]);
 });
 
 test('project resources normalize list detail and unlock responses', async () => {

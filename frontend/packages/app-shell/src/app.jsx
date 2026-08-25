@@ -2013,14 +2013,26 @@ export function SharedApp({ services }) {
             }
             const projectPage = await api.getProjects({ perPage: 100 }).catch(() => null);
             const projects = (projectPage?.items || []).map((project) => ({ key: project.key, name: project.name }));
-            const memberGroups = await Promise.all(
-              projects.map((project) => api.getProjectMembers(project.key).catch(() => [])),
-            );
             const seen = new Map();
-            for (const group of memberGroups) {
-              for (const member of group) {
+            const systemMembers = await api.getTimeManagementMembers().catch(() => null);
+            if (systemMembers) {
+              for (const member of systemMembers) {
                 if (!seen.has(member.username)) {
-                  seen.set(member.username, { username: member.username, display_name: member.display_name });
+                  seen.set(member.username, {
+                    username: member.username,
+                    display_name: member.display_name || member.username,
+                  });
+                }
+              }
+            } else {
+              const memberGroups = await Promise.all(
+                projects.map((project) => api.getProjectMembers(project.key).catch(() => [])),
+              );
+              for (const group of memberGroups) {
+                for (const member of group) {
+                  if (!seen.has(member.username)) {
+                    seen.set(member.username, { username: member.username, display_name: member.display_name });
+                  }
                 }
               }
             }
