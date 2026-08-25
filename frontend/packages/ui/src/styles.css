@@ -2963,7 +2963,7 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 .time-management-field select,
 .time-management-field input {
   min-width: 132px;
-  height: 34px;
+  height: 32px;
   padding: 0 8px;
   border: 1px solid var(--yc-line-strong);
   border-radius: 6px;
