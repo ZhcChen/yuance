@@ -3250,7 +3250,12 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   height: 46px;
   border-radius: 7px;
   color: #fff;
-  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
   line-height: 1.25;
   padding: 5px 8px;
   overflow: hidden;
@@ -3268,6 +3273,9 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 .time-gantt-allocation-meta {
   display: block;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .time-gantt-allocation-name {
