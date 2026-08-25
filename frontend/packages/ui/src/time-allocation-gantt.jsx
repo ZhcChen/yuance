@@ -696,35 +696,39 @@ export function TimeAllocationGantt({
               </Select>
             </label>
           ) : null}
-          <div className="time-management-scale" role="group" aria-label="时间粒度">
-            {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
-              <button key={value} type="button" className={viewScale === value ? 'active' : ''}
-                aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <label className="time-management-range">
-            <span>时间跨度</span>
-            <input type="number" min="1" max="12" value={spanInput}
-              onChange={(event) => setSpanInput(event.currentTarget.value)}
-              onBlur={() => setSpanInput(String(normalizeSpanMonths(spanInput)))} />
-            <em>月</em>
-          </label>
-          {currentUsername ? (
-            <div className="time-management-view" role="group" aria-label="查看范围">
-              <button type="button" className={viewScope === 'all' ? 'active' : ''}
-                aria-pressed={viewScope === 'all'} onClick={() => setViewScope('all')}>
-                查看全部人
-              </button>
-              <button type="button" className={viewScope === 'self' ? 'active' : ''}
-                aria-pressed={viewScope === 'self'} onClick={() => setViewScope('self')}>
-                查看自己
-              </button>
-            </div>
-          ) : null}
-          {onOpenRecords ? (
-            <Button variant="secondary" size="sm" onClick={onOpenRecords}>记录</Button>
+          {viewMode === 'members' ? (
+            <>
+              <div className="time-management-scale" role="group" aria-label="时间粒度">
+                {[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => (
+                  <button key={value} type="button" className={viewScale === value ? 'active' : ''}
+                    aria-pressed={viewScale === value} onClick={() => setViewScale(/** @type {'day' | 'week' | 'month'} */ (value))}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="time-management-range">
+                <span>时间跨度</span>
+                <input type="number" min="1" max="12" value={spanInput}
+                  onChange={(event) => setSpanInput(event.currentTarget.value)}
+                  onBlur={() => setSpanInput(String(normalizeSpanMonths(spanInput)))} />
+                <em>月</em>
+              </label>
+              {currentUsername ? (
+                <div className="time-management-view" role="group" aria-label="查看范围">
+                  <button type="button" className={viewScope === 'all' ? 'active' : ''}
+                    aria-pressed={viewScope === 'all'} onClick={() => setViewScope('all')}>
+                    查看全部人
+                  </button>
+                  <button type="button" className={viewScope === 'self' ? 'active' : ''}
+                    aria-pressed={viewScope === 'self'} onClick={() => setViewScope('self')}>
+                    查看自己
+                  </button>
+                </div>
+              ) : null}
+              {onOpenRecords ? (
+                <Button variant="secondary" size="sm" onClick={onOpenRecords}>记录</Button>
+              ) : null}
+            </>
           ) : null}
         </div>
         {manualSave && !viewReadOnly ? (

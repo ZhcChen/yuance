@@ -97,6 +97,10 @@ test('time allocation gantt project view is read-only and groups allocations by 
 
   assert.match(html, /class="active" aria-pressed="true">项目排期/);
   assert.match(html, /查看成员/);
+  assert.doesNotMatch(html, /aria-label="时间粒度"/);
+  assert.doesNotMatch(html, /时间跨度/);
+  assert.doesNotMatch(html, /aria-label="查看范围"/);
+  assert.doesNotMatch(html, />记录<\/button>/);
   assert.match(html, />有排期<\/option>/);
   assert.match(html, />其他成员<\/option>/);
   assert.match(html, /项目 \/ 时间/);
