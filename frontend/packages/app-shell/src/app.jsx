@@ -1752,17 +1752,17 @@ export function SharedApp({ services }) {
           : Promise.resolve(null),
         targetRoute.id === 'time-management'
           ? (async () => {
-            const overview = await api.getTimeManagementOverview().catch((caught) => {
+            const overview = await baseApi.getTimeManagementOverview().catch((caught) => {
               const caughtError = caught instanceof Error ? /** @type {Error & { status?: number }} */ (caught) : null;
               if (caughtError?.status === 404) {
                 throw new Error('当前服务端未提供时间管理接口，请先部署配套 API 版本。');
               }
               throw caught;
             });
-            const projectPage = await api.getProjects({ perPage: 100 }).catch(() => null);
+            const projectPage = await baseApi.getProjects({ perPage: 100 }).catch(() => null);
             const projects = (projectPage?.items || []).map((project) => ({ key: project.key, name: project.name }));
             const seen = new Map();
-            const systemMembers = await api.getTimeManagementMembers().catch(() => null);
+            const systemMembers = await baseApi.getTimeManagementMembers().catch(() => null);
             if (systemMembers) {
               for (const member of systemMembers) {
                 if (!seen.has(member.username)) {
@@ -1774,7 +1774,7 @@ export function SharedApp({ services }) {
               }
             } else {
               const memberGroups = await Promise.all(
-                projects.map((project) => api.getProjectMembers(project.key).catch(() => [])),
+                projects.map((project) => baseApi.getProjectMembers(project.key).catch(() => [])),
               );
               for (const group of memberGroups) {
                 for (const member of group) {
