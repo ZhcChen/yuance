@@ -1310,6 +1310,7 @@ export function SharedApp({ services }) {
   const [timeMockMode, setTimeMockMode] = useState(false);
   const [timeChangesOpen, setTimeChangesOpen] = useState(false);
   const [timeChangesPage, setTimeChangesPage] = useState(/** @type {{ items: any[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } } | null} */ (null));
+  const [timeChangesPerPage, setTimeChangesPerPage] = useState(10);
   const [timeChangesLoading, setTimeChangesLoading] = useState(false);
   const [timeChangesError, setTimeChangesError] = useState('');
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
@@ -2313,32 +2314,38 @@ export function SharedApp({ services }) {
     setStatusMessage('排期已保存。');
   }
 
-  async function loadTimeManagementChanges(page = 1) {
+  async function loadTimeManagementChanges(page = 1, perPage = timeChangesPerPage) {
     setTimeChangesLoading(true);
     setTimeChangesError('');
     try {
       if (timeMockMode) {
-        const perPage = 10;
+        const safePerPage = Math.min(100, Math.max(1, perPage));
         const totalItems = TIME_MANAGEMENT_MOCK_CHANGES.length;
-        const totalPages = Math.max(1, Math.ceil(totalItems / perPage));
+        const totalPages = Math.max(1, Math.ceil(totalItems / safePerPage));
         const safePage = Math.min(Math.max(1, page), totalPages);
         setTimeChangesPage({
-          items: TIME_MANAGEMENT_MOCK_CHANGES.slice((safePage - 1) * perPage, safePage * perPage),
+          items: TIME_MANAGEMENT_MOCK_CHANGES.slice((safePage - 1) * safePerPage, safePage * safePerPage),
           pagination: {
             page: safePage,
-            per_page: perPage,
+            per_page: safePerPage,
             total_items: totalItems,
             total_pages: totalPages,
           },
         });
         return;
       }
-      setTimeChangesPage(await api.getTimeManagementChanges({ page, perPage: 10 }));
+      setTimeChangesPage(await api.getTimeManagementChanges({ page, perPage }));
     } catch (caught) {
       setTimeChangesError(errorMessage(caught instanceof Error ? caught : new Error('修改记录加载失败。')));
     } finally {
       setTimeChangesLoading(false);
     }
+  }
+
+  function changeTimeManagementChangesPageSize(event) {
+    const perPage = Number(event.currentTarget.value);
+    setTimeChangesPerPage(perPage);
+    void loadTimeManagementChanges(1, perPage);
   }
 
   async function persistProjectTimeCreate(payload) {
@@ -5896,6 +5903,9 @@ export function SharedApp({ services }) {
                         totalItems={timeChangesPage.pagination.total_items}
                         onPageChange={(page) => void loadTimeManagementChanges(page)}
                         itemLabel="条记录"
+                        rangeLabel={`当前显示 ${timeChangesPage.pagination.total_items === 0 ? 0 : (timeChangesPage.pagination.page - 1) * timeChangesPage.pagination.per_page + 1}-${Math.min(timeChangesPage.pagination.total_items, timeChangesPage.pagination.page * timeChangesPage.pagination.per_page)}`}
+                        pageSize={timeChangesPage.pagination.per_page}
+                        onPageSizeChange={changeTimeManagementChangesPageSize}
                       />
                     </>
                   ) : null}
