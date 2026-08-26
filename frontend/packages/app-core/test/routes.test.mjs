@@ -166,8 +166,12 @@ test('parseAppRoute supports owner-aware project detail tabs', () => {
   );
   assert.equal(buildProjectDetailPath({ owner: 'web', projectKey: 'YCE / 1', tab: 'members' }), '/web/projects/YCE%20%2F%201?tab=members');
   assert.equal(buildProjectDetailPath({ owner: 'app', projectKey: 'YCE', tab: 'cycles' }), '/web/app/projects/YCE?tab=cycles');
+  assert.equal(buildProjectDetailPath({ owner: 'app', projectKey: 'YCE', tab: 'files' }), '/web/app/projects/YCE?tab=resources');
   assert.equal(buildProjectCycleDetailPath({ owner: 'web', projectKey: 'YCE', cycleId: 7 }), '/web/projects/YCE/cycles/7');
   assert.equal(buildProjectDetailPath({ owner: 'app', projectKey: 'YCE', tab: 'resources' }), '/web/app/projects/YCE?tab=resources');
+  assert.deepEqual(parseAppRoute('/web/app/projects/YCE', '?tab=files'), {
+    id: 'project-detail', owner: 'app', pathname: '/web/app/projects/YCE', search: '?tab=files', projectKey: 'YCE', tab: 'resources', title: '项目详情',
+  });
   assert.equal(buildProjectResourceDetailPath({ owner: 'app', projectKey: 'YCE', resourceId: 9 }), '/web/app/projects/YCE/resources/9');
   assert.equal(buildProjectPersonalAnalysisPath({ owner: 'web', projectKey: 'YCE / 1' }), '/web/projects/YCE%20%2F%201/my-analysis');
   assert.equal(buildProjectPersonalAnalysisPath({ owner: 'app' }), '/web/app/projects');

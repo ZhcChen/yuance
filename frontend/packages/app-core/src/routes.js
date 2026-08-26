@@ -263,7 +263,8 @@ export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = '
   const basePath = owner === 'app'
     ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
     : `/web/projects/${encodeURIComponent(normalizedKey)}`;
-  return ['members', 'cycles', 'files', 'resources', 'time'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
+  const normalizedTab = tab === 'files' ? 'resources' : tab;
+  return ['members', 'cycles', 'resources', 'time'].includes(normalizedTab) ? `${basePath}?tab=${normalizedTab}` : basePath;
 }
 
 export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
@@ -472,13 +473,15 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
 
   const projectDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)$/);
   if (projectDetailMatch) {
+    const tab = query.get('tab') || '';
+    const normalizedTab = tab === 'files' ? 'resources' : tab;
     return {
       id: 'project-detail',
       owner,
       pathname,
       search,
       projectKey: decodeURIComponent(projectDetailMatch[1]),
-      tab: ['members', 'cycles', 'files', 'resources', 'time'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
+      tab: ['members', 'cycles', 'resources', 'time'].includes(normalizedTab) ? normalizedTab : 'info',
       title: '项目详情',
     };
   }
