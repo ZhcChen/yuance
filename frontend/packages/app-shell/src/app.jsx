@@ -1428,7 +1428,7 @@ export function SharedApp({ services }) {
   const cycleBackPath = previousPath && previousPath !== router.currentPath()
     ? previousPath
     : cycleFallbackPath;
-  const resourceFallbackPath = buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey, tab: 'resources' });
+  const resourceFallbackPath = buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey, tab: 'time' });
   const detailBackPath = buildWorkItemListPath({
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
@@ -1664,7 +1664,7 @@ export function SharedApp({ services }) {
             api.getProject(targetRoute.projectKey),
             api.getProjectMembers(targetRoute.projectKey),
             api.getProjectCycles(targetRoute.projectKey),
-            targetRoute.tab === 'resources'
+            targetRoute.tab === 'time'
               ? api.getProjectResources(targetRoute.projectKey, mode === 'load' ? {} : projectResourceFilters)
               : Promise.resolve([]),
             api.getProjectTimeAllocations(targetRoute.projectKey).catch(() => []),
@@ -3006,11 +3006,11 @@ export function SharedApp({ services }) {
     try {
       const resources = await api.getProjectResources(projectKey, filters);
       const currentRoute = routeRef.current;
-      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'resources') return;
+      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'time') return;
       setProjectResources(resources);
     } catch (caught) {
       const currentRoute = routeRef.current;
-      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'resources') return;
+      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'time') return;
       setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料列表加载失败。')));
     }
   }
@@ -3097,7 +3097,7 @@ export function SharedApp({ services }) {
     event.preventDefault();
     const current = routeRef.current;
     const editing = projectResourceForm.id > 0;
-    if (projectResourceMutationRef.current || projectResourceAttachmentMutationRef.current || (editing && current.id !== 'project-resource-detail') || (!editing && (current.id !== 'project-detail' || current.tab !== 'resources'))) return;
+    if (projectResourceMutationRef.current || projectResourceAttachmentMutationRef.current || (editing && current.id !== 'project-resource-detail') || (!editing && (current.id !== 'project-detail' || current.tab !== 'time'))) return;
     if (!richTextHasContent(projectResourceForm.body)) { setProjectResourceError('资料正文不能为空。'); return; }
     const projectKey = String(current.projectKey || '');
     const resourceId = editing ? projectResourceForm.id : 0;
@@ -3110,7 +3110,7 @@ export function SharedApp({ services }) {
       const active = routeRef.current;
       return projectResourceActionRef.current === actionId
         && active.projectKey === projectKey
-        && (editing ? active.id === 'project-resource-detail' && active.resourceId === resourceId : active.id === 'project-detail' && active.tab === 'resources');
+        && (editing ? active.id === 'project-resource-detail' && active.resourceId === resourceId : active.id === 'project-detail' && active.tab === 'time');
     };
     try {
       const payload = projectResourcePayload();
@@ -3173,7 +3173,7 @@ export function SharedApp({ services }) {
       await api.archiveProjectResource(projectKey, target.id);
       if (!isCurrent()) return;
       setProjectResourceArchiveTarget(null);
-      navigate(buildProjectDetailPath({ owner: current.owner, projectKey, tab: 'resources' }), `资料“${target.title}”已归档。`);
+      navigate(buildProjectDetailPath({ owner: current.owner, projectKey, tab: 'time' }), `资料“${target.title}”已归档。`);
     } catch (caught) {
       if (isCurrent()) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料归档失败。')));
     } finally {
@@ -4835,7 +4835,7 @@ export function SharedApp({ services }) {
       if (!uploaded) return null;
       return projectResourceAttachmentOption(projectKey, Number(current.resourceId), uploaded);
     }
-    if (current.id !== 'project-detail' || current.tab !== 'resources' || projectResourceForm.id !== 0 || projectResourceSubmitting) {
+    if (current.id !== 'project-detail' || current.tab !== 'time' || projectResourceForm.id !== 0 || projectResourceSubmitting) {
       options?.onError?.('资料当前不可编辑，无法粘贴文件。');
       return null;
     }
@@ -4861,7 +4861,7 @@ export function SharedApp({ services }) {
       const result = await uploadProjectResourceAttachment({
         api, platform: files, projectKey, resourceId: checkpoint.id, file: selected, existingAttachment: null,
         lifecycle: {
-          isCurrent: () => routeRef.current.id === 'project-detail' && routeRef.current.tab === 'resources' && (options?.isCurrent?.() ?? true),
+          isCurrent: () => routeRef.current.id === 'project-detail' && routeRef.current.tab === 'time' && (options?.isCurrent?.() ?? true),
           onStage: (stage) => options?.onProgress?.(stage),
           onCreated: () => {},
           onUploaded: () => {},
@@ -5306,6 +5306,24 @@ export function SharedApp({ services }) {
       setWorkItemBatchSubmitting(false);
     }
   }
+
+  const projectResourcesPanel = activeProjectDetail && projectDetailRoute ? (
+    <aside className="project-resources-side" aria-labelledby="project-resources-title">
+      <div className="project-tab-section-head"><div><h3 id="project-resources-title">项目资料库</h3><p>当前筛选共 {projectResources.length} 条资料</p></div>{canManageProjectContent ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
+      <FilterBar className="work-item-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></>}>
+        <FilterField id="project-resource-filter-q" label="关键词"><TextInput value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></FilterField>
+        <FilterField id="project-resource-filter-category" label="分类"><TextInput value={projectResourceFilters.category} placeholder="例如 integration" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))} /></FilterField>
+        <FilterField id="project-resource-filter-status" label="状态"><Select value={projectResourceFilters.status} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, status: event.target.value }))}><option value="">全部状态</option><option value="active">生效中</option><option value="archived">已归档</option></Select></FilterField>
+        <FilterField id="project-resource-filter-tag" label="标签"><TextInput value={projectResourceFilters.tag} placeholder="标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></FilterField>
+      </FilterBar>
+      {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
+      {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
+      {projectResources.length ? <ul className="resource-list" aria-label="项目资料列表">{projectResources.map((resource) => {
+        const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
+        return <li key={resource.id}><a className={`resource-card${resource.is_protected ? ' resource-card-protected' : ''}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}><div className="resource-card-main"><div className="resource-card-title-row"><span className="resource-category">{resource.category || '未分类'}</span><Badge tone={resource.status === 'archived' ? undefined : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>{resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}</div><h4>{resource.title}</h4><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}{resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">{resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}{resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}</div> : null}<div className="resource-card-meta"><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div></div></a></li>;
+      })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
+    </aside>
+  ) : null;
 
   if (loading && !shellReady) {
     return <AppShellSkeleton />;
@@ -6044,7 +6062,7 @@ export function SharedApp({ services }) {
                 ['成员', projectMembers.length, 'success', 'users'],
               ].map(([label, value, tone, icon]) => <article key={label} className={`metric metric-${tone}`}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section>
               <section className="project-tabs-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">项目详情</p><h2>项目资料</h2></div><ContentTabs ariaLabel="项目详情导航">
-                {[['info', '详情'], ['cycles', '周期'], ['time', '时间'], ['members', '成员'], ['resources', '资料库']].map(([tab, label]) => {
+                {[['info', '详情'], ['cycles', '周期'], ['time', '时间'], ['members', '成员']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <ContentTab key={tab} active={route.tab === tab} href={path} onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), path, `已切换到${label}。`)}>{label}</ContentTab>;
                 })}
@@ -6098,39 +6116,26 @@ export function SharedApp({ services }) {
               ) : null}
 
               {activeProjectDetail && route.tab === 'time' ? (
-                <section className="project-tab-section" aria-labelledby="project-time-title">
-                  <div className="project-tab-section-head">
-                    <div>
-                      <h3 id="project-time-title">项目时间排期</h3>
-                      <p>为项目成员安排时间投入，拖动色块即可调整起止日期。</p>
+                <section className="project-tab-section project-time-resources-section" aria-labelledby="project-time-title">
+                  <div className="project-time-resources-layout">
+                    <div className="project-time-pane">
+                      <div className="project-tab-section-head">
+                        <div>
+                          <h3 id="project-time-title">项目时间排期</h3>
+                          <p>为项目成员安排时间投入，拖动色块即可调整起止日期。</p>
+                        </div>
+                      </div>
+                      <TimeAllocationGantt
+                        allocations={projectTimeAllocations}
+                        projects={[{ key: activeProjectDetail.key, name: activeProjectDetail.name }]}
+                        members={projectMembers.map((member) => ({ username: member.username, display_name: member.display_name }))}
+                        onCreate={persistProjectTimeCreate}
+                        onUpdate={persistProjectTimeUpdate}
+                        onDelete={persistProjectTimeDelete}
+                      />
                     </div>
+                    {projectResourcesPanel}
                   </div>
-                  <TimeAllocationGantt
-                    allocations={projectTimeAllocations}
-                    projects={[{ key: activeProjectDetail.key, name: activeProjectDetail.name }]}
-                    members={projectMembers.map((member) => ({ username: member.username, display_name: member.display_name }))}
-                    onCreate={persistProjectTimeCreate}
-                    onUpdate={persistProjectTimeUpdate}
-                    onDelete={persistProjectTimeDelete}
-                  />
-                </section>
-              ) : null}
-
-              {activeProjectDetail && route.tab === 'resources' ? (
-                <section className="project-tab-section project-resources-section" aria-labelledby="project-resources-title">
-                  <div className="project-tab-section-head"><div><h3 id="project-resources-title">项目资料库</h3><p>当前筛选共 {projectResources.length} 条资料</p></div>{canManageProjectContent ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
-                  <FilterBar className="work-item-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></>}>
-                    <FilterField id="project-resource-filter-q" label="关键词"><TextInput value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></FilterField>
-                    <FilterField id="project-resource-filter-category" label="分类"><TextInput value={projectResourceFilters.category} placeholder="例如 integration" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))} /></FilterField>
-                    <FilterField id="project-resource-filter-status" label="状态"><Select value={projectResourceFilters.status} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, status: event.target.value }))}><option value="">全部状态</option><option value="active">生效中</option><option value="archived">已归档</option></Select></FilterField>
-                    <FilterField id="project-resource-filter-tag" label="标签"><TextInput value={projectResourceFilters.tag} placeholder="标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></FilterField>
-                  </FilterBar>
-                  {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
-                  {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
-                  {projectResources.length ? <ul className="resource-list" aria-label="项目资料列表">{projectResources.map((resource) => {
-                    const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
-                    return <li key={resource.id}><a className={`resource-card${resource.is_protected ? ' resource-card-protected' : ''}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}><div className="resource-card-main"><div className="resource-card-title-row"><span className="resource-category">{resource.category || '未分类'}</span><Badge tone={resource.status === 'archived' ? undefined : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>{resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}</div><h4>{resource.title}</h4><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}{resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">{resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}{resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}</div> : null}<div className="resource-card-meta"><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div></div></a></li>;
-                  })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
                 </section>
               ) : null}
               </div></section>

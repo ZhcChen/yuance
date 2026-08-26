@@ -263,8 +263,8 @@ export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = '
   const basePath = owner === 'app'
     ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
     : `/web/projects/${encodeURIComponent(normalizedKey)}`;
-  const normalizedTab = tab === 'files' ? 'resources' : tab;
-  return ['members', 'cycles', 'resources', 'time'].includes(normalizedTab) ? `${basePath}?tab=${normalizedTab}` : basePath;
+  const normalizedTab = ['files', 'resources'].includes(tab) ? 'time' : tab;
+  return ['members', 'cycles', 'time'].includes(normalizedTab) ? `${basePath}?tab=${normalizedTab}` : basePath;
 }
 
 export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
@@ -279,7 +279,7 @@ export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cy
 export function buildProjectResourceDetailPath({ owner = 'app', projectKey = '', resourceId = 0 } = {}) {
   const normalizedKey = String(projectKey || '').trim();
   const normalizedId = Number(resourceId);
-  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'resources' });
+  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'time' });
   return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/resources/${normalizedId}`;
 }
 
@@ -474,14 +474,14 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
   const projectDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)$/);
   if (projectDetailMatch) {
     const tab = query.get('tab') || '';
-    const normalizedTab = tab === 'files' ? 'resources' : tab;
+    const normalizedTab = ['files', 'resources'].includes(tab) ? 'time' : tab;
     return {
       id: 'project-detail',
       owner,
       pathname,
       search,
       projectKey: decodeURIComponent(projectDetailMatch[1]),
-      tab: ['members', 'cycles', 'resources', 'time'].includes(normalizedTab) ? normalizedTab : 'info',
+      tab: ['members', 'cycles', 'time'].includes(normalizedTab) ? normalizedTab : 'info',
       title: '项目详情',
     };
   }
