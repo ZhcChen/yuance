@@ -373,6 +373,14 @@ test('restoreWorkItem uses the fixed write endpoint', async () => {
   assert.equal(calls[0].options.method, 'POST');
 });
 
+test('closeWorkItem uses the fixed write endpoint', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.closeWorkItem('YCE-TASK/2');
+  assert.equal(writes.length, 1);
+  assert.equal(calls[0].url, '/api/v1/work-items/YCE-TASK%2F2/close');
+  assert.equal(calls[0].options.method, 'POST');
+});
+
 test('updateWorkItemPrimaryPost uses the fixed sanitized HTML contract', async () => {
   const { client, calls, writes } = createRecordedClient();
   await client.updateWorkItemPrimaryPost('YCE-TASK/2', '<p>共享主帖</p>');

@@ -829,6 +829,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::api::restore_work_item),
         )
         .route(
+            "/api/v1/work-items/{item_key}/close",
+            post(web::api::close_work_item),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/primary-post",
             axum::routing::patch(web::api::update_work_item_primary_post),
         )

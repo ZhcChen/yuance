@@ -4135,10 +4135,7 @@ pub async fn get_work_item_detail_view(
             can_edit_primary_post: !is_deleted
                 && can_manage_work_items
                 && projects::user_can_edit_work_item_post(item.reporter_user_id, user.id),
-            can_close_work_item: can_manage_work_items
-                && !is_deleted
-                && !matches!(current_status, "closed" | "cancelled")
-                && item.assignee_username == user.username,
+            can_close_work_item: !is_deleted && !matches!(current_status, "closed" | "cancelled"),
             can_reopen_work_item: can_manage_work_items
                 && !is_deleted
                 && matches!(current_status, "closed" | "cancelled"),
@@ -4363,6 +4360,38 @@ pub async fn restore_work_item(
     .await?;
 
     Ok(json(work_item_detail_payload(restored)))
+}
+
+pub async fn close_work_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let updated = projects::close_work_item(pool, user.id, &item_key).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.close",
+        "work_item",
+        &updated.item_key,
+        &principal.audit_details(),
+    )
+    .await?;
+
+    Ok(json(work_item_detail_payload(updated)))
 }
 
 pub async fn create_work_item_comment(

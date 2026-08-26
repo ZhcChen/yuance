@@ -4110,9 +4110,11 @@ export function SharedApp({ services }) {
     setWorkItemLifecycleSubmitting(true);
     setWorkItemActionError('');
     try {
-      const updated = action === 'restore'
-        ? await api.restoreWorkItem(itemKey)
-        : await api.updateWorkItem(itemKey, { status: action === 'close' ? 'closed' : 'in_progress' });
+      const updated = action === 'close'
+        ? await api.closeWorkItem(itemKey)
+        : action === 'restore'
+          ? await api.restoreWorkItem(itemKey)
+          : await api.updateWorkItem(itemKey, { status: 'in_progress' });
       const label = action === 'close' ? '已关闭' : action === 'reopen' ? '已重新打开' : '已恢复';
       if (applyWorkItemMutationResult(updated, `${updated.key} ${label}。`, actionId)) {
         await refreshWorkItemCompanionState(updated.key, `工作项${label}`, actionId, updated);

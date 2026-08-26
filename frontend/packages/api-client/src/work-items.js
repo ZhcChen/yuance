@@ -37,6 +37,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(itemKey: string, payload: WorkItemUpdatePayload) => Promise<WorkItemDetail>} updateWorkItem
  * @property {(itemKey: string, body: string) => Promise<WorkItemComment>} updateWorkItemPrimaryPost
  * @property {(itemKey: string) => Promise<WorkItemDetail>} restoreWorkItem
+ * @property {(itemKey: string) => Promise<WorkItemDetail>} closeWorkItem
  * @property {(itemKey: string, payload: WorkItemHandoffPayload) => Promise<WorkItemDetail>} handoffWorkItem
  * @property {(itemKey: string, payload: CommentRequestPayload) => Promise<WorkItemComment>} createWorkItemComment
  * @property {(itemKey: string, payload: CommentRequestPayload) => Promise<WorkItemComment>} createWorkItemCommentDraft
@@ -392,6 +393,12 @@ export function createWorkItemClient({ request, prepareWrite }) {
     async restoreWorkItem(itemKey) {
       await prepareWrite();
       return request(`${workItemApiPath(itemKey)}/restore`, { method: 'POST' });
+    },
+
+    /** @param {string} itemKey */
+    async closeWorkItem(itemKey) {
+      await prepareWrite();
+      return request(`${workItemApiPath(itemKey)}/close`, { method: 'POST' });
     },
 
     /**

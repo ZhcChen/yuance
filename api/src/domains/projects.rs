@@ -3860,11 +3860,6 @@ pub async fn update_work_item_status(
     };
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
-    if status == "closed" && assignee_user_id != Some(actor_user_id) {
-        return Err(AppError::Forbidden(
-            "只有当前处理人可以关闭该工作项。".to_string(),
-        ));
-    }
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
@@ -3940,6 +3935,14 @@ pub async fn update_work_item_status(
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
 }
 
+pub async fn close_work_item(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+) -> AppResult<WorkItemDetail> {
+    update_work_item_status(pool, actor_user_id, item_key, "closed").await
+}
+
 pub async fn handoff_work_item(
     pool: &SqlitePool,
     actor_user_id: i64,
@@ -3998,11 +4001,6 @@ pub async fn handoff_work_item(
     };
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
-    if status == "closed" && current_assignee_user_id != Some(actor_user_id) {
-        return Err(AppError::Forbidden(
-            "只有当前处理人可以关闭该工作项。".to_string(),
-        ));
-    }
     if let Some(comment_id) = input.source_comment_id {
         get_work_item_comment(pool, work_item_id, comment_id).await?;
     }
@@ -4358,12 +4356,6 @@ pub async fn batch_update_work_items(
                     )));
                 }
                 ensure_work_item_status_transition(&item.status, &status)?;
-                if status == "closed" && item.assignee_user_id != Some(actor_user_id) {
-                    return Err(AppError::Forbidden(format!(
-                        "只有当前处理人可以关闭工作项 {}",
-                        item.item_key
-                    )));
-                }
             }
             BatchActionTarget::Status { status }
         }
@@ -4813,11 +4805,6 @@ pub async fn update_work_item(
     }
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
-    if status == "closed" && current_assignee_user_id != Some(actor_user_id) {
-        return Err(AppError::Forbidden(
-            "只有当前处理人可以关闭该工作项。".to_string(),
-        ));
-    }
     let parent_work_item_id =
         resolve_parent_work_item_id(pool, project_id, &item_type, parent_item_key).await?;
 
