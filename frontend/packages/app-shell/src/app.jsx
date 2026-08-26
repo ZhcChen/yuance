@@ -1298,6 +1298,9 @@ export function SharedApp({ services }) {
   const projectsPath = route.id === 'projects'
     ? buildProjectsPath({ owner: route.owner, status: route.status, page: route.page, perPage: route.perPage })
     : buildProjectsPath({ owner: 'app' });
+  const resourceLibraryPath = currentProject
+    ? buildProjectDetailPath({ owner: route.owner, projectKey: currentProject.key, tab: 'time' })
+    : projectsPath;
   const messageRoute = route.id === 'messages' ? route : null;
   const searchRoute = route.id === 'search' ? route : null;
   const projectRoute = route.id === 'projects' ? route : null;
@@ -1367,7 +1370,11 @@ export function SharedApp({ services }) {
   const activeWorkItemDetailView = activeWorkItemDetail && workItemDetailView?.item?.key === activeWorkItemDetail.key
     ? workItemDetailView
     : null;
-  const projectScopeKey = projectDetailRoute?.projectKey || projectResourceDetailRoute?.projectKey || projectPersonalAnalysisRoute?.projectKey || '';
+  const projectScopeKey = projectDetailRoute?.projectKey
+    || projectResourceDetailRoute?.projectKey
+    || projectPersonalAnalysisRoute?.projectKey
+    || (route.id === 'time-management' ? currentProject?.key || '' : '')
+    || '';
   const activeProjectDetail = projectScopeKey && projectDetail?.key === projectScopeKey ? projectDetail : null;
   const personalAnalysisPath = buildProjectPersonalAnalysisPath({ owner: route.owner, projectKey: projectScopeKey });
   const personalAnalysisPendingTotal = projectPersonalAnalysis
@@ -1500,6 +1507,17 @@ export function SharedApp({ services }) {
         setProjectResourceAttachmentUploading(false);
         setProjectCycleOpen(false);
         setProjectCycleCloseTarget(null);
+      }
+      if (targetRoute.id === 'time-management') {
+        projectResourceActionRef.current += 1;
+        setProjectDetail(null);
+        setProjectMembers([]);
+        setProjectResources([]);
+        setProjectResourceFilters({ q: '', category: '', status: '', tag: '' });
+        setProjectResourceError('');
+        setProjectResourceStatus('');
+        setProjectResourceModalOpen(false);
+        setProjectResourceArchiveTarget(null);
       }
       if (targetRoute.id === 'project-resource-detail') {
         projectResourceActionRef.current += 1;
@@ -1848,6 +1866,27 @@ export function SharedApp({ services }) {
         setTimeAllocations(nextTimeManagement?.allocations || []);
         setTimeProjects(nextTimeManagement?.projects || []);
         setTimeMembers(nextTimeManagement?.members || []);
+        const projectKey = String(nextTopbar?.current_project?.key || '');
+        if (projectKey) {
+          try {
+            const [project, members, resources] = await Promise.all([
+              api.getProject(projectKey),
+              api.getProjectMembers(projectKey),
+              api.getProjectResources(projectKey, mode === 'load' ? {} : projectResourceFilters),
+            ]);
+            if (requestRef.current !== requestId) return;
+            setProjectDetail(project);
+            setProjectMembers(members);
+            setProjectResources(resources);
+          } catch (caught) {
+            if (requestRef.current !== requestId) return;
+            setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('当前项目资料加载失败。')));
+          }
+        } else {
+          setProjectDetail(null);
+          setProjectMembers([]);
+          setProjectResources([]);
+        }
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -2982,9 +3021,27 @@ export function SharedApp({ services }) {
     if (completed) setSystemUserAction(null);
   }
 
+  /** @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} currentRoute */
+  function isProjectResourceListRoute(currentRoute) {
+    return currentRoute.id === 'time-management'
+      || (currentRoute.id === 'project-detail' && currentRoute.tab === 'time');
+  }
+
+  /** @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} currentRoute */
+  function projectResourceListProjectKey(currentRoute) {
+    if (currentRoute.id === 'project-detail' && currentRoute.tab === 'time') {
+      return String(currentRoute.projectKey || '');
+    }
+    if (currentRoute.id === 'time-management') {
+      return String(topbarRef.current?.current_project?.key || '');
+    }
+    return '';
+  }
+
   async function submitProjectResourceFilters(event) {
     event.preventDefault();
-    if (!projectDetailRoute) return;
+    const current = routeRef.current;
+    if (!isProjectResourceListRoute(current) || !projectResourceListProjectKey(current)) return;
     await loadFilteredProjectResources(projectResourceFilters);
   }
 
@@ -2995,19 +3052,21 @@ export function SharedApp({ services }) {
   }
 
   async function loadFilteredProjectResources(filters) {
-    if (!projectDetailRoute) return;
-    const projectKey = projectDetailRoute.projectKey;
+    const current = routeRef.current;
+    if (!isProjectResourceListRoute(current)) return;
+    const projectKey = projectResourceListProjectKey(current);
+    if (!projectKey) return;
     const actionId = projectResourceActionRef.current + 1;
     projectResourceActionRef.current = actionId;
     setProjectResourceError('');
     try {
       const resources = await api.getProjectResources(projectKey, filters);
       const currentRoute = routeRef.current;
-      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'time') return;
+      if (projectResourceActionRef.current !== actionId || !isProjectResourceListRoute(currentRoute) || projectResourceListProjectKey(currentRoute) !== projectKey) return;
       setProjectResources(resources);
     } catch (caught) {
       const currentRoute = routeRef.current;
-      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'time') return;
+      if (projectResourceActionRef.current !== actionId || !isProjectResourceListRoute(currentRoute) || projectResourceListProjectKey(currentRoute) !== projectKey) return;
       setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料列表加载失败。')));
     }
   }
@@ -3094,9 +3153,9 @@ export function SharedApp({ services }) {
     event.preventDefault();
     const current = routeRef.current;
     const editing = projectResourceForm.id > 0;
-    if (projectResourceMutationRef.current || projectResourceAttachmentMutationRef.current || (editing && current.id !== 'project-resource-detail') || (!editing && (current.id !== 'project-detail' || current.tab !== 'time'))) return;
+    if (projectResourceMutationRef.current || projectResourceAttachmentMutationRef.current || (editing && current.id !== 'project-resource-detail') || (!editing && !isProjectResourceListRoute(current))) return;
     if (!richTextHasContent(projectResourceForm.body)) { setProjectResourceError('资料正文不能为空。'); return; }
-    const projectKey = String(current.projectKey || '');
+    const projectKey = projectResourceListProjectKey(current) || String(current.projectKey || '');
     const resourceId = editing ? projectResourceForm.id : 0;
     const actionId = projectResourceActionRef.current + 1;
     projectResourceActionRef.current = actionId;
@@ -3106,8 +3165,9 @@ export function SharedApp({ services }) {
     const isCurrent = () => {
       const active = routeRef.current;
       return projectResourceActionRef.current === actionId
-        && active.projectKey === projectKey
-        && (editing ? active.id === 'project-resource-detail' && active.resourceId === resourceId : active.id === 'project-detail' && active.tab === 'time');
+        && (editing
+          ? active.id === 'project-resource-detail' && active.projectKey === projectKey && active.resourceId === resourceId
+          : isProjectResourceListRoute(active) && projectResourceListProjectKey(active) === projectKey);
     };
     try {
       const payload = projectResourcePayload();
@@ -4842,7 +4902,7 @@ export function SharedApp({ services }) {
   /** @param {import('@yuance/frontend-platform-contract').PastedFile} file @param {RichTextPasteUploadOptions} [options] @returns {Promise<AppRichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE>} */
   async function pasteProjectResourceFile(file, options) {
     const current = routeRef.current;
-    const projectKey = String(current.projectKey || '');
+    const projectKey = projectResourceListProjectKey(current) || String(current.projectKey || '');
     if (current.id === 'project-resource-detail') {
       if (!projectResourceDetail || projectResourceLocked) {
         options?.onError?.('资料当前不可编辑，无法粘贴文件。');
@@ -4853,7 +4913,7 @@ export function SharedApp({ services }) {
       if (!uploaded) return null;
       return projectResourceAttachmentOption(projectKey, Number(current.resourceId), uploaded);
     }
-    if (current.id !== 'project-detail' || current.tab !== 'time' || projectResourceForm.id !== 0 || projectResourceSubmitting) {
+    if (!isProjectResourceListRoute(current) || projectResourceForm.id !== 0 || projectResourceSubmitting) {
       options?.onError?.('资料当前不可编辑，无法粘贴文件。');
       return null;
     }
@@ -4879,7 +4939,7 @@ export function SharedApp({ services }) {
       const result = await uploadProjectResourceAttachment({
         api, platform: files, projectKey, resourceId: checkpoint.id, file: selected, existingAttachment: null,
         lifecycle: {
-          isCurrent: () => routeRef.current.id === 'project-detail' && routeRef.current.tab === 'time' && (options?.isCurrent?.() ?? true),
+          isCurrent: () => isProjectResourceListRoute(routeRef.current) && projectResourceListProjectKey(routeRef.current) === projectKey && (options?.isCurrent?.() ?? true),
           onStage: (stage) => options?.onProgress?.(stage),
           onCreated: () => {},
           onUploaded: () => {},
@@ -5325,7 +5385,7 @@ export function SharedApp({ services }) {
     }
   }
 
-  const projectResourcesPanel = activeProjectDetail && projectDetailRoute ? (
+  const projectResourcesPanel = activeProjectDetail && (route.id === 'time-management' || (projectDetailRoute && route.tab === 'time')) ? (
     <aside className="project-resources-side" aria-labelledby="project-resources-title">
       <div className="project-tab-section-head"><div><h3 id="project-resources-title">项目资料库</h3><p>当前筛选共 {projectResources.length} 条资料</p></div>{canManageProjectContent ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
       <FilterBar className="work-item-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></>}>
@@ -5337,7 +5397,7 @@ export function SharedApp({ services }) {
       {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
       {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
       {projectResources.length ? <ul className="resource-list" aria-label="项目资料列表">{projectResources.map((resource) => {
-        const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
+        const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
         return <li key={resource.id}><a className={`resource-card${resource.is_protected ? ' resource-card-protected' : ''}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}><div className="resource-card-main"><div className="resource-card-title-row"><span className="resource-category">{resource.category || '未分类'}</span><Badge tone={resource.status === 'archived' ? undefined : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>{resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}</div><h4>{resource.title}</h4><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}{resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">{resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}{resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}</div> : null}<div className="resource-card-meta"><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div></div></a></li>;
       })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
     </aside>
@@ -5363,6 +5423,7 @@ export function SharedApp({ services }) {
           { id: 'tasks', label: '任务', href: tasksPath, active: route.id === 'tasks', badge: topbar?.tasks_count || 0 },
           { id: 'bugs', label: 'Bug', href: bugsPath, active: route.id === 'bugs', badge: topbar?.bugs_count || 0 },
           { id: 'time-management', label: '时间管理', href: timeManagementPath, active: route.id === 'time-management' },
+          { id: 'resource-library', label: '资料库', href: resourceLibraryPath, active: route.id === 'project-resource-detail' || (route.id === 'project-detail' && route.tab === 'time') },
         ]}
         currentProject={currentProject}
         projectOptions={topbar?.project_options || []}
@@ -5437,21 +5498,26 @@ export function SharedApp({ services }) {
           {route.id === 'time-management' ? (
             <>
               <section className="page-stack time-management-page" aria-label="时间管理">
-                <section className="shell-card">
-                  <TimeAllocationGantt
-                    allocations={timeAllocations}
-                    projects={timeProjects}
-                    members={timeMembers}
-                    currentUsername={user?.username || ''}
-                    onCreate={persistTimeCreate}
-                    onUpdate={persistTimeUpdate}
-                    onDelete={persistTimeDelete}
-                    onSave={persistTimeSave}
-                    onOpenRecords={() => {
-                      setTimeChangesOpen(true);
-                      void loadTimeManagementChanges(1);
-                    }}
-                  />
+                <section className="shell-card project-time-resources-section">
+                  <div className="project-time-resources-layout">
+                    <div className="project-time-pane">
+                      <TimeAllocationGantt
+                        allocations={timeAllocations}
+                        projects={timeProjects}
+                        members={timeMembers}
+                        currentUsername={user?.username || ''}
+                        onCreate={persistTimeCreate}
+                        onUpdate={persistTimeUpdate}
+                        onDelete={persistTimeDelete}
+                        onSave={persistTimeSave}
+                        onOpenRecords={() => {
+                          setTimeChangesOpen(true);
+                          void loadTimeManagementChanges(1);
+                        }}
+                      />
+                    </div>
+                    {projectResourcesPanel}
+                  </div>
                 </section>
               </section>
               <Modal

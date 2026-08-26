@@ -4242,12 +4242,40 @@ test('global navigation indicator slides between application sections', async ({
   const navigation = page.getByRole('navigation', { name: '应用导航' });
   const indicator = navigation.locator('.global-nav-links-indicator');
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
+  const navLabels = await navigation.locator('.global-nav-link').allTextContents();
+  await expect(navigation.getByRole('link', { name: '资料库', exact: true })).toBeVisible();
+  expect(navLabels.indexOf('时间管理')).toBeGreaterThanOrEqual(0);
+  expect(navLabels.indexOf('资料库')).toBeGreaterThan(navLabels.indexOf('时间管理'));
 
   await navigation.getByRole('link', { name: '项目', exact: true }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects/u);
   await expect(navigation.getByRole('link', { name: '项目', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect.poll(() => indicator.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
   await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
+});
+
+test('time management page keeps the project resource library on the right', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const resource = projectResourceFixture({ id: 980, title: '全局时间管理资料', url: '/web/projects/YCE/resources/980' });
+  await page.route('**/api/v1/topbar/status', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+    requirements_count: 0, tasks_count: 0, bugs_count: 0, notifications_count: 0,
+    project_badges: [{ project_key: 'YCE', pending_count: 0 }],
+    project_options: [{ key: 'YCE', name: '元策研发平台', pending_count: 0 }],
+    system_links: [],
+    current_project: { key: 'YCE', name: '元策研发平台', pending_count: 0 },
+  } }) }));
+  await page.route('**/api/v1/time-management/overview', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+  await page.route('**/api/v1/time-management/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+  await page.route(/\/api\/v1\/projects\?per_page=100$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { items: [{ key: 'YCE', name: '元策研发平台' }], pagination: { page: 1, per_page: 100, total_items: 1, total_pages: 1 } } }) }));
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }] }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+  await login(page, '/web/app');
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: 1, username: 'yuance_admin', display_name: '元策开发管理员', email: '', mobile: '', status: 'active', is_super_admin: true, roles: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' } }) }));
+  await page.goto('/web/app/time-management');
+  await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '全局时间管理资料' })).toBeVisible();
+  await expect(page.locator('.project-time-resources-layout')).toBeVisible();
 });
 
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {
