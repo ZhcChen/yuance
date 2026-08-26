@@ -1310,18 +1310,15 @@ export function SharedApp({ services }) {
     : '';
   const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
   const workItemOwner = workItemOwnerForRoute(route);
-  const workItemNavQuery = workItemListRoute
-    ? {
-      q: workItemListRoute.q,
-      status: workItemListRoute.status,
-      priority: workItemListRoute.priority,
-      assigneeUsername: workItemListRoute.assigneeUsername,
-      projectKey: workItemListRoute.projectKey,
-      cycleId: workItemListRoute.cycleId,
-      sort: workItemListRoute.sort,
-      perPage: workItemListRoute.perPage,
-    }
-    : {};
+  const workItemNavQuery = {
+    q: workItemListRoute?.q || '',
+    status: workItemListRoute?.status || '',
+    priority: workItemListRoute?.priority || '',
+    assigneeUsername: workItemListRoute?.assigneeUsername || '',
+    projectKey: currentProject?.key || '',
+    sort: workItemListRoute?.sort || '',
+    perPage: workItemListRoute?.perPage || '',
+  };
   const requirementsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'requirement', ...workItemNavQuery });
   const tasksPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'task', ...workItemNavQuery });
   const bugsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'bug', ...workItemNavQuery });
@@ -3609,7 +3606,28 @@ export function SharedApp({ services }) {
         },
       } : current);
       setStatusMessage(`已切换当前项目到 ${project.key}。`);
-      await loadRouteState(routeRef.current, 'refresh');
+      const currentRoute = routeRef.current;
+      if (isWorkItemListRouteId(currentRoute.id)) {
+        navigate(buildWorkItemListPath({
+          owner: currentRoute.owner,
+          itemType: currentRoute.itemType,
+          q: currentRoute.q,
+          status: currentRoute.status,
+          priority: currentRoute.priority,
+          assigneeUsername: currentRoute.assigneeUsername,
+          projectKey: project.key,
+          sort: currentRoute.sort,
+          perPage: currentRoute.perPage,
+        }), `已切换当前项目到 ${project.key}。`);
+      } else if (['project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis'].includes(currentRoute.id)) {
+        navigate(buildProjectDetailPath({
+          owner: currentRoute.owner,
+          projectKey: project.key,
+          tab: currentRoute.id === 'project-detail' ? currentRoute.tab : 'info',
+        }), `已切换当前项目到 ${project.key}。`);
+      } else {
+        await loadRouteState(routeRef.current, 'refresh');
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error('切换当前项目失败。'));
     } finally {

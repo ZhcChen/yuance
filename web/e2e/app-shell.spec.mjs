@@ -24,7 +24,9 @@ async function login(page, entryPath) {
 async function ensureCurrentProject(page, projectKey) {
   await page.goto('/web/app/projects');
   await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
+  await page.getByLabel('每页').selectOption('20');
   const row = page.locator('.project-row', { hasText: projectKey });
+  await expect(row).toBeVisible();
   const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
   if (await currentButton.count()) {
     return;
@@ -3583,9 +3585,15 @@ test('project list can switch current project inside the app shell', async ({ pa
 
   await expect(page).toHaveURL(/\/web\/app\/projects/);
   await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
-  await page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '设为当前项目' }).click();
+  await page.getByLabel('每页').selectOption('20');
+  const opsRow = page.locator('.project-row', { hasText: 'OPS' });
+  await expect(opsRow).toBeVisible();
+  await opsRow.getByRole('button', { name: '设为当前项目' }).click();
   await expect(page.getByRole('button', { name: '切换当前项目' })).toContainText('交付运维台');
   await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '需求' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: '任务' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: 'Bug' })).toHaveAttribute('href', /project_key=OPS/);
 });
 
 test('project list preserves the main responsive card geometry', async ({ page }) => {
@@ -4468,7 +4476,82 @@ test('project switch serializes repeated input and refreshes the current context
   releaseSwitch();
   await expect(opsRow.getByRole('button', { name: '当前项目' })).toBeVisible();
   await expect(page.getByRole('button', { name: '切换当前项目' })).toContainText('交付运维台');
+  await expect(page.getByRole('link', { name: '需求' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: '任务' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: 'Bug' })).toHaveAttribute('href', /project_key=OPS/);
   expect(patchCount).toBe(1);
+});
+
+test('global project switch navigates the current work item list to the selected project', async ({ page }) => {
+  await login(page, '/web/app/tasks?project_key=YCE');
+  await expect(page.getByRole('heading', { level: 2, name: '任务列表' })).toBeVisible();
+  let switched = false;
+
+  await page.route('**/api/v1/current-project', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    switched = true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { key: 'OPS', name: '交付运维台' } }) });
+  });
+  await page.route('**/api/v1/topbar/status', async (route) => {
+    if (!switched) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      requirements_count: 0, tasks_count: 0, bugs_count: 0, notifications_count: 0,
+      project_badges: [{ project_key: 'OPS', pending_count: 0 }],
+      project_options: [{ key: 'OPS', name: '交付运维台', pending_count: 0 }],
+      current_project: { key: 'OPS', name: '交付运维台', pending_count: 0 },
+    } }) });
+  });
+
+  await page.getByRole('button', { name: '切换当前项目' }).click();
+  await page.locator('.global-nav-project-menu').getByPlaceholder('搜索项目名称').fill('交付');
+  await page.locator('.global-nav-project-menu').getByRole('button', { name: /交付运维台/ }).click();
+  await expect(page).toHaveURL(/\/web\/app\/tasks\?project_key=OPS/);
+  await expect(page.getByRole('link', { name: '需求' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: '任务' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: 'Bug' })).toHaveAttribute('href', /project_key=OPS/);
+});
+
+test('global project switch keeps the current project detail tab on the selected project', async ({ page }) => {
+  await login(page, '/web/app/projects/YCE?tab=time');
+  await expect(page.getByRole('heading', { level: 3, name: '项目时间排期' })).toBeVisible();
+  let switched = false;
+
+  await page.route('**/api/v1/current-project', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    switched = true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { key: 'OPS', name: '交付运维台' } }) });
+  });
+  await page.route('**/api/v1/topbar/status', async (route) => {
+    if (!switched) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      requirements_count: 0, tasks_count: 0, bugs_count: 0, notifications_count: 0,
+      project_badges: [{ project_key: 'OPS', pending_count: 0 }],
+      project_options: [{ key: 'OPS', name: '交付运维台', pending_count: 0 }],
+      current_project: { key: 'OPS', name: '交付运维台', pending_count: 0 },
+    } }) });
+  });
+
+  await page.getByRole('button', { name: '切换当前项目' }).click();
+  await page.locator('.global-nav-project-menu').getByPlaceholder('搜索项目名称').fill('交付');
+  await page.locator('.global-nav-project-menu').getByRole('button', { name: /交付运维台/ }).click();
+  await expect(page).toHaveURL(/\/web\/app\/projects\/OPS\?tab=time/);
+  await expect(page.getByRole('heading', { level: 3, name: '项目时间排期' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '需求' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: '任务' })).toHaveAttribute('href', /project_key=OPS/);
+  await expect(page.getByRole('link', { name: 'Bug' })).toHaveAttribute('href', /project_key=OPS/);
 });
 
 test('shared global shell remains usable at canonical responsive widths', async ({ page }, testInfo) => {
