@@ -5268,7 +5268,7 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
     parent_comment_id: Option<i64>,
     actor_display_name_snapshot: &str,
 ) -> AppResult<WorkItemCommentSummary> {
-    let prepared = prepare_work_item_comment_body(body, body_format)?;
+    let prepared = prepare_work_item_comment_body(body, body_format, "评论")?;
     let actor_display_name_snapshot =
         normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
@@ -5484,7 +5484,7 @@ pub async fn publish_work_item_comment_draft(
     body_format: &str,
     actor_display_name_snapshot: &str,
 ) -> AppResult<WorkItemCommentSummary> {
-    let prepared = prepare_work_item_comment_body(body, body_format)?;
+    let prepared = prepare_work_item_comment_body(body, body_format, "评论")?;
     let actor_display_name_snapshot =
         normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
@@ -5861,7 +5861,7 @@ async fn update_work_item_comment_with_format_internal(
     body_format: &str,
     bypass_manage_permission: bool,
 ) -> AppResult<WorkItemCommentSummary> {
-    let prepared = prepare_work_item_comment_body(body, body_format)?;
+    let prepared = prepare_work_item_comment_body(body, body_format, "评论")?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -7215,6 +7215,7 @@ struct WorkItemMentionTarget {
 fn prepare_work_item_comment_body(
     body: &str,
     body_format: &str,
+    subject: &str,
 ) -> AppResult<PreparedWorkItemCommentBody> {
     let body_format = normalize_comment_body_format(body_format)?;
     match body_format.as_str() {
@@ -7226,7 +7227,9 @@ fn prepare_work_item_comment_body(
             let body = sanitize_comment_html(&raw_body);
             let plain_text = html_to_plain_text(&body);
             if plain_text.is_empty() && !comment_html_has_media_reference(&body) {
-                return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+                return Err(AppError::BadRequest(format!(
+                    "{subject}不能为空：请输入文字或上传图片/附件"
+                )));
             }
             Ok(PreparedWorkItemCommentBody {
                 body,
@@ -7237,7 +7240,9 @@ fn prepare_work_item_comment_body(
         _ => {
             let body = validate_optional_text(body, "评论内容", 5000)?;
             if body.is_empty() {
-                return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+                return Err(AppError::BadRequest(format!(
+                    "{subject}不能为空：请输入文字"
+                )));
             }
             ensure_plain_work_item_comment_body(&body)?;
             Ok(PreparedWorkItemCommentBody {
@@ -7337,7 +7342,7 @@ pub async fn upsert_work_item_primary_post(
     body: &str,
     actor_display_name_snapshot: &str,
 ) -> AppResult<WorkItemCommentSummary> {
-    let prepared = prepare_work_item_comment_body(body, COMMENT_BODY_FORMAT_HTML)?;
+    let prepared = prepare_work_item_comment_body(body, COMMENT_BODY_FORMAT_HTML, "主内容")?;
     let actor_display_name_snapshot =
         normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
@@ -7606,8 +7611,12 @@ pub async fn archive_work_item_comment_inline_attachment(
     else {
         return Err(AppError::NotFound("评论不存在".to_string()));
     };
-    let prepared =
-        prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id)?;
+    let prepared = prepare_work_item_comment_body_without_attachment(
+        &body,
+        &body_format,
+        attachment_id,
+        "内容",
+    )?;
     if let Some(prepared) = &prepared {
         sqlx::query(
             r#"
@@ -7682,7 +7691,7 @@ pub async fn ensure_work_item_comment_inline_attachment_can_be_removed(
     else {
         return Err(AppError::NotFound("评论不存在".to_string()));
     };
-    prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id)?;
+    prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id, "内容")?;
     Ok(())
 }
 
@@ -7690,13 +7699,14 @@ fn prepare_work_item_comment_body_without_attachment(
     body: &str,
     body_format: &str,
     attachment_id: i64,
+    subject: &str,
 ) -> AppResult<Option<PreparedWorkItemCommentBody>> {
     if body_format != COMMENT_BODY_FORMAT_HTML {
         return Ok(None);
     }
     let next_body = strip_inline_attachment_node(body, attachment_id);
     (next_body != body)
-        .then(|| prepare_work_item_comment_body(&next_body, body_format))
+        .then(|| prepare_work_item_comment_body(&next_body, body_format, subject))
         .transpose()
 }
 
@@ -9241,11 +9251,36 @@ async fn seed_demo_activities(pool: &SqlitePool, owner_user_id: i64) -> AppResul
 
 #[cfg(test)]
 mod tests {
+    use crate::platform::error::AppError;
+
     use super::{
-        WorkItemCommentSummary, strip_inline_attachment_node,
+        WorkItemCommentSummary, prepare_work_item_comment_body, strip_inline_attachment_node,
         work_item_comment_body_html_for_display, work_item_description_html_for_display,
         work_item_primary_post, work_item_primary_post_summary,
     };
+
+    #[test]
+    fn empty_primary_post_reports_subject_specific_message() {
+        assert!(matches!(
+            prepare_work_item_comment_body("<p><br></p>", "html", "主内容"),
+            Err(AppError::BadRequest(message)) if message.contains("主内容不能为空")
+        ));
+    }
+
+    #[test]
+    fn media_only_primary_post_body_is_accepted() {
+        let body = concat!(
+            "<figure data-yuance-attachment-id=\"7\" data-yuance-attachment-kind=\"image\">",
+            "<img src=\"/web/work-items/YCE-TASK-1/comments/3/attachments/7/download\">",
+            "</figure>"
+        );
+
+        let prepared =
+            prepare_work_item_comment_body(body, "html", "主内容").expect("只含图片的主内容应通过");
+
+        assert!(prepared.plain_text.is_empty());
+        assert!(prepared.body.contains("/comments/3/attachments/7/download"));
+    }
 
     #[test]
     fn inline_attachment_removal_only_removes_the_target_node() {

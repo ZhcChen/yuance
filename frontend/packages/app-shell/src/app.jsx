@@ -90,7 +90,7 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
 
 /** @typedef {ReturnType<typeof import('@yuance/frontend-api-client').createApiClient> & { restorePendingReturnToHash(): void }} AppApiService */
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} AppRichTextAttachmentOption */
-/** @typedef {{ inline?: boolean, onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteUploadOptions */
+/** @typedef {{ inline?: boolean, onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, onDeferred?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteUploadOptions */
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities, releaseAssets?: import('@yuance/frontend-platform-contract').HostDelegatedReleaseAssetCapabilities, selectPastedFile?: (file: import('@yuance/frontend-platform-contract').PastedFile) => Promise<import('@yuance/frontend-platform-contract').SelectedFile | null> }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
@@ -3990,6 +3990,11 @@ export function SharedApp({ services }) {
       setWorkItemActionError('标题不能为空。');
       return false;
     }
+    if (!richTextHasContent(workItemEditForm.description)) {
+      setWorkItemActionError('主内容不能为空，请输入文字或上传图片/附件。');
+      runtime.scheduleFrame(() => runtime.getElementById('work-item-primary-post')?.focus());
+      return false;
+    }
 
     const itemKey = activeWorkItemDetail.key;
     const fields = {
@@ -4948,10 +4953,25 @@ export function SharedApp({ services }) {
   async function pasteWorkItemPrimaryPostFile(file, options) {
     if (!activeWorkItemDetail) return null;
     if (workItemAttachmentMutationRef.current || workItemMutationRef.current) return DEFER_RICH_TEXT_PASTE;
-    const commentId = activeWorkItemDetailView?.primary_post?.id;
-    if (!commentId) return null;
+    const itemKey = activeWorkItemDetail.key;
+    let commentId = activeWorkItemDetailView?.primary_post?.id || null;
+    if (!commentId) {
+      if (!activeWorkItemDetailView?.permissions.can_edit_primary_post) {
+        options?.onError?.('当前没有主内容编辑权限，无法上传图片。');
+        return null;
+      }
+      try {
+        // 附件必须挂在主帖评论下；没有主帖时先创建占位主帖再上传。
+        const primaryPost = await api.updateWorkItemPrimaryPost(itemKey, '<p>图片上传中…</p>');
+        commentId = primaryPost.id;
+        setWorkItemDetailView((current) => current ? { ...current, primary_post: primaryPost } : current);
+      } catch (caught) {
+        options?.onError?.(errorMessage(caught instanceof Error ? caught : new Error('创建主内容失败。')));
+        return null;
+      }
+    }
     const uploaded = await uploadSelectedWorkItemCommentAttachment(commentId, file, { inline: true, ...options });
-    return uploaded ? workItemCommentAttachmentOption(activeWorkItemDetail.key, commentId, uploaded) : null;
+    return uploaded ? workItemCommentAttachmentOption(itemKey, commentId, uploaded) : null;
   }
 
   /** @param {import('@yuance/frontend-platform-contract').PastedFile} file @param {RichTextPasteUploadOptions} [options] @returns {Promise<AppRichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE>} */
@@ -5205,6 +5225,12 @@ export function SharedApp({ services }) {
       options?.onError?.('当前无法粘贴文件。');
       return null;
     }
+    if (!workItemCreateForm.title.trim()) {
+      options?.onDeferred?.('正在等待填写标题后自动上传…');
+      runtime.getElementById('work-item-create-title')?.focus();
+      return DEFER_RICH_TEXT_PASTE;
+    }
+    options?.onDeferred?.('');
     if (workItemCreateAttachmentMutationRef.current) return DEFER_RICH_TEXT_PASTE;
     workItemCreateAttachmentMutationRef.current = true;
     setWorkItemCreatePasteUploading(true);
@@ -5222,11 +5248,6 @@ export function SharedApp({ services }) {
       }
       if (!selected || !selected.byteSize || selected.byteSize <= 0) {
         options?.onError?.('请粘贴非空文件。');
-        return null;
-      }
-      if (!workItemCreateForm.title.trim()) {
-        options?.onError?.('请先完善工作项标题后再上传附件。');
-        runtime.getElementById('work-item-create-title')?.focus();
         return null;
       }
       const checkpoint = await ensureWorkItemCreateCheckpoint();

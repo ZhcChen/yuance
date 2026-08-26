@@ -355,14 +355,14 @@ export function isPreviewableDocumentFile(filename, contentType) {
 
 export const DEFER_RICH_TEXT_PASTE = 'defer';
 
-/** @typedef {{ onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteOptions */
+/** @typedef {{ onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, onDeferred?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteOptions */
 
 /** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
 export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
-  const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string, deferRetryCount: number }>} */ (new Map()));
+  const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string, deferRetryCount: number, deferMessage: string }>} */ (new Map()));
   const pendingUploadSequenceRef = useRef(0);
   const moreTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const moreMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -739,7 +739,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   async function uploadPastedFile(uploadId) {
     const entry = pendingUploadsRef.current.get(uploadId);
     if (!entry || entry.cancelled || !onPasteFile) return;
-    setPendingUploadState(entry.node, 'uploading', '正在上传');
+    setPendingUploadState(entry.node, 'uploading', entry.deferMessage || '正在上传');
     try {
       const attachment = await Promise.resolve(onPasteFile(entry.file, {
         onProgress: (stage) => {
@@ -754,6 +754,10 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
             setPendingUploadState(current.node, 'error', message || '上传失败，请重试。');
           }
         },
+        onDeferred: (message) => {
+          const current = pendingUploadsRef.current.get(uploadId);
+          if (current && !current.cancelled) current.deferMessage = message || '';
+        },
         isCurrent: () => {
           const current = pendingUploadsRef.current.get(uploadId);
           return Boolean(current && !current.cancelled);
@@ -764,12 +768,12 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       if (attachment === DEFER_RICH_TEXT_PASTE) {
         const entry = pendingUploadsRef.current.get(uploadId);
         if (!entry) return;
-        if (entry.deferRetryCount >= 120) {
-          setPendingUploadState(current.node, 'error', '上传通道繁忙，请重试。');
+        if (entry.deferRetryCount >= 1500) {
+          setPendingUploadState(current.node, 'error', '等待上传条件超时，请重试。');
           return;
         }
         entry.deferRetryCount += 1;
-        setPendingUploadState(current.node, 'uploading', '等待上传通道…');
+        setPendingUploadState(current.node, 'uploading', entry.deferMessage || '等待上传条件…');
         current.node.ownerDocument.defaultView?.setTimeout(() => {
           void uploadPastedFile(uploadId);
         }, 200);
@@ -795,6 +799,11 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
 
   /** @param {string} uploadId */
   function retryPendingUpload(uploadId) {
+    const entry = pendingUploadsRef.current.get(uploadId);
+    if (entry) {
+      entry.deferRetryCount = 0;
+      entry.deferMessage = '';
+    }
     void uploadPastedFile(uploadId);
   }
 
@@ -1335,7 +1344,7 @@ function createPendingUploadEntry(ownerDocument, file, uploadId) {
   overlay.append(progress, overlayStatus, retry);
   node.appendChild(overlay);
 
-  return { node, file, cancelled: false, objectUrl, deferRetryCount: 0 };
+  return { node, file, cancelled: false, objectUrl, deferRetryCount: 0, deferMessage: '' };
 }
 
 /** @param {HTMLElement} node @param {'uploading' | 'error'} state @param {string} message */
