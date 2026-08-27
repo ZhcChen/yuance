@@ -267,6 +267,17 @@ export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = '
   return ['members', 'cycles', 'time'].includes(normalizedTab) ? `${basePath}?tab=${normalizedTab}` : basePath;
 }
 
+export function buildProjectResourceLibraryPath({ owner = 'app', projectKey = '' } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  if (!normalizedKey) {
+    return buildProjectsPath({ owner });
+  }
+  const basePath = owner === 'app'
+    ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
+    : `/web/projects/${encodeURIComponent(normalizedKey)}`;
+  return `${basePath}/resources`;
+}
+
 export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
   const normalizedKey = String(projectKey || '').trim();
   const normalizedId = Number(cycleId);
@@ -279,7 +290,7 @@ export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cy
 export function buildProjectResourceDetailPath({ owner = 'app', projectKey = '', resourceId = 0 } = {}) {
   const normalizedKey = String(projectKey || '').trim();
   const normalizedId = Number(resourceId);
-  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'time' });
+  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) return buildProjectResourceLibraryPath({ owner, projectKey: normalizedKey });
   return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/resources/${normalizedId}`;
 }
 
@@ -470,6 +481,17 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
     };
   }
 
+  const projectResourceLibraryMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/resources$/);
+  if (projectResourceLibraryMatch) {
+    return {
+      id: 'project-resource-library',
+      owner,
+      pathname,
+      search,
+      projectKey: decodeURIComponent(projectResourceLibraryMatch[1]),
+      title: '项目资料库',
+    };
+  }
 
   const projectDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)$/);
   if (projectDetailMatch) {

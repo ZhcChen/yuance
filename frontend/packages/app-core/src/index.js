@@ -30,6 +30,7 @@ export {
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
   buildProjectResourceDetailPath,
+  buildProjectResourceLibraryPath,
   buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,

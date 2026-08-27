@@ -8,6 +8,7 @@ import {
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
   buildProjectResourceDetailPath,
+  buildProjectResourceLibraryPath,
   buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
@@ -176,6 +177,9 @@ test('parseAppRoute supports owner-aware project detail tabs', () => {
     id: 'project-detail', owner: 'app', pathname: '/web/app/projects/YCE', search: '?tab=resources', projectKey: 'YCE', tab: 'time', title: '项目详情',
   });
   assert.equal(buildProjectResourceDetailPath({ owner: 'app', projectKey: 'YCE', resourceId: 9 }), '/web/app/projects/YCE/resources/9');
+  assert.equal(buildProjectResourceLibraryPath({ owner: 'app', projectKey: 'YCE' }), '/web/app/projects/YCE/resources');
+  assert.equal(buildProjectResourceLibraryPath({ owner: 'web', projectKey: 'YCE / 1' }), '/web/projects/YCE%20%2F%201/resources');
+  assert.equal(buildProjectResourceDetailPath({ owner: 'app', projectKey: 'YCE', resourceId: 0 }), '/web/app/projects/YCE/resources');
   assert.equal(buildProjectPersonalAnalysisPath({ owner: 'web', projectKey: 'YCE / 1' }), '/web/projects/YCE%20%2F%201/my-analysis');
   assert.equal(buildProjectPersonalAnalysisPath({ owner: 'app' }), '/web/app/projects');
   assert.deepEqual(parseAppRoute('/web/app/projects/YCE/cycles/7', ''), {
@@ -185,6 +189,12 @@ test('parseAppRoute supports owner-aware project detail tabs', () => {
   assert.equal(buildProjectDetailPath({ owner: 'app' }), '/web/app/projects');
   assert.deepEqual(parseAppRoute('/web/app/projects/YCE/resources/9', ''), {
     id: 'project-resource-detail', owner: 'app', pathname: '/web/app/projects/YCE/resources/9', search: '', projectKey: 'YCE', resourceId: 9, title: '项目资料详情',
+  });
+  assert.deepEqual(parseAppRoute('/web/app/projects/YCE/resources', ''), {
+    id: 'project-resource-library', owner: 'app', pathname: '/web/app/projects/YCE/resources', search: '', projectKey: 'YCE', title: '项目资料库',
+  });
+  assert.deepEqual(parseAppRoute('/web/projects/YCE/resources', ''), {
+    id: 'project-resource-library', owner: 'web', pathname: '/web/projects/YCE/resources', search: '', projectKey: 'YCE', title: '项目资料库',
   });
   assert.deepEqual(parseAppRoute('/web/app/projects/YCE/my-analysis', ''), {
     id: 'project-personal-analysis', owner: 'app', pathname: '/web/app/projects/YCE/my-analysis', search: '', projectKey: 'YCE', title: '个人项目分析',
