@@ -3216,6 +3216,128 @@ async fn api_v1_can_register_comment_attachment() {
 }
 
 #[tokio::test]
+async fn web_download_allows_author_to_see_own_draft_comment_attachment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let other = create_regular_user(&pool, "draft_peer", "草稿旁观者").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "draft_peer", "member")
+        .await
+        .expect("other user should join project");
+    let draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("draft should create");
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            original_filename: "draft-image.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 1024,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("attachment should create");
+    write_test_object(&pool, &attachment)
+        .await
+        .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let download_uri = format!(
+        "/web/work-items/{}/comments/{}/attachments/{}/download",
+        item.item_key, draft.id, attachment.id
+    );
+
+    let author_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&download_uri)
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(author_response.status(), StatusCode::OK);
+    assert_eq!(
+        author_response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("image/png")
+    );
+    assert_eq!(response_bytes(author_response).await.len(), 1024);
+
+    let forbidden_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&download_uri)
+                .header(header::COOKIE, other.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+
+    projects::publish_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        draft.id,
+        "<p>草稿发布</p>",
+        "html",
+        "",
+    )
+    .await
+    .expect("draft should publish");
+    let published_response = app
+        .oneshot(
+            Request::builder()
+                .uri(&download_uri)
+                .header(header::COOKIE, other.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(published_response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

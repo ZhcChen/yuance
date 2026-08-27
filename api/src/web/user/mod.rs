@@ -775,8 +775,13 @@ pub async fn work_item_comment_attachment_download(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, _project, comment) =
-            load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        let (item, _project, comment) = load_comment_attachment_context(
+            pool,
+            &item_key,
+            comment_id,
+            context.user_id,
+        )
+        .await?;
         ensure_project_key_access(
             pool,
             context.user_id,
@@ -816,8 +821,13 @@ pub async fn work_item_comment_attachment_preview(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, _project, comment) =
-            load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        let (item, _project, comment) = load_comment_attachment_context(
+            pool,
+            &item_key,
+            comment_id,
+            context.user_id,
+        )
+        .await?;
         ensure_project_key_access(
             pool,
             context.user_id,
@@ -877,8 +887,13 @@ pub async fn work_item_comment_attachment_preview_content(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, _project, comment) =
-            load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        let (item, _project, comment) = load_comment_attachment_context(
+            pool,
+            &item_key,
+            comment_id,
+            context.user_id,
+        )
+        .await?;
         ensure_project_key_access(
             pool,
             context.user_id,
@@ -2140,6 +2155,7 @@ async fn load_comment_attachment_context(
     pool: &SqlitePool,
     item_key: &str,
     comment_id: i64,
+    actor_user_id: i64,
 ) -> AppResult<(
     projects::WorkItemDetail,
     projects::ProjectDetail,
@@ -2151,7 +2167,11 @@ async fn load_comment_attachment_context(
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-    let comment = projects::get_work_item_comment(pool, item.id, comment_id).await?;
+    let comment =
+        projects::get_work_item_comment_including_drafts(pool, item.id, comment_id).await?;
+    if comment.is_draft && comment.author_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden("无权访问该草稿评论".to_string()));
+    }
 
     Ok((item, project, comment))
 }

@@ -6540,7 +6540,7 @@ export function SharedApp({ services }) {
                     onPasteFile={pasteWorkItemCommentFile}
                     resolveAttachmentSource={resolveWorkItemCommentInlineAttachmentSource}
                     onAttachmentActivate={activateWorkItemCommentInlineAttachment}
-                    buildAttachmentThumbnailUrl={(commentId, attachment) => `/api/v1/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${commentId}/attachments/${attachment.id}/download`}
+                    buildAttachmentThumbnailUrl={(commentId, attachment) => `/web/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${commentId}/attachments/${attachment.id}/download`}
                   />
                   {workItemAttachments.length > 0 || workItemAttachmentUploading || workItemAttachmentStatus || workItemAttachmentLoadWarning || workItemAttachmentActionError ? (
                     <WorkItemAttachments
