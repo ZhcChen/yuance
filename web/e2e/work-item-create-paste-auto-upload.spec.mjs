@@ -14,6 +14,7 @@ async function login(page, entryPath) {
 async function ensureCurrentProject(page, projectKey) {
   await page.goto('/web/app/projects');
   await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
+  await page.getByLabel('每页').selectOption('20');
   const row = page.locator('.project-row', { hasText: projectKey });
   const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
   if (await currentButton.count()) return;
@@ -21,7 +22,7 @@ async function ensureCurrentProject(page, projectKey) {
   await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
-test('work item create keeps pasted images inline and uploads them after title with retry', async ({ page }) => {
+test('work item create keeps pasted images inline and uploads them after title with deferred upload', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
   await page.goto('/web/app/bugs');
@@ -97,7 +98,7 @@ test('work item create keeps pasted images inline and uploads them after title w
   await page.getByRole('button', { name: '新建 Bug' }).click();
   const dialog = page.getByRole('dialog', { name: '新建 Bug' });
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
-  await editor.click();
+  await editor.fill('图片上方的原有内容');
   await editor.evaluate((element) => {
     const bytesA = new Uint8Array([137, 80, 78, 71]);
     const bytesB = new Uint8Array([255, 216, 255]);
@@ -124,15 +125,28 @@ test('work item create keeps pasted images inline and uploads them after title w
   await expect(editor.getByRole('img', { name: 'same-as-pasted.png' })).toHaveCount(0);
   await expect(pendingImage).toBeVisible();
   await expect(pendingImage2).toBeVisible();
-  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');
-  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先完善工作项标题后再上传附件。');
-  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'error');
-  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先完善工作项标题后再上传附件。');
+  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'uploading');
+  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('正在等待填写标题后自动上传…');
+  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'uploading');
+  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('正在等待填写标题后自动上传…');
   expect(attachmentCreates).toHaveLength(0);
 
+  // 图片等待上传时，焦点不应被反复抢回标题输入框，用户应能继续编辑图片上方内容。
+  await editor.evaluate((element) => {
+    element.focus();
+    const range = element.ownerDocument.createRange();
+    range.setStart(element, 0);
+    range.collapse(true);
+    const selection = element.ownerDocument.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  });
+  await page.waitForTimeout(250);
+  await page.keyboard.type('图片上方继续编辑');
+  await expect(editor).toContainText('图片上方继续编辑图片上方的原有内容');
+  await expect(dialog.locator('#work-item-create-title')).not.toHaveValue(/图片上方继续编辑/);
+
   await dialog.locator('#work-item-create-title').fill('自动上传粘贴图片验收');
-  await editor.getByRole('button', { name: '重试上传 pasted.png' }).click();
-  await editor.getByRole('button', { name: '重试上传 pasted-2.png' }).click();
   await expect.poll(() => attachmentCreates.length).toBe(2);
   expect(attachmentCreates[0].payload.original_filename).toBe('pasted.png');
   expect(attachmentCreates[1].payload.original_filename).toBe('pasted-2.png');

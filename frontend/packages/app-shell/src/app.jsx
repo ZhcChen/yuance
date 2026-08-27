@@ -1009,6 +1009,7 @@ export function SharedApp({ services }) {
   const workItemBatchMutationRef = useRef(false);
   const workItemCreateAttachmentMutationRef = useRef(false);
   const workItemCreateDescriptionRef = useRef('');
+  const workItemCreateDeferredFocusRef = useRef(false);
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
   const [shellReady, setShellReady] = useState(false);
@@ -5088,6 +5089,7 @@ export function SharedApp({ services }) {
     setWorkItemCreateError('');
     setWorkItemCreateCheckpoint(null);
     setWorkItemCreatePasteUploading(false);
+    workItemCreateDeferredFocusRef.current = false;
     workItemCreateDescriptionRef.current = '';
     setWorkItemCreateForm({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
     setWorkItemCreateOpen(true);
@@ -5095,6 +5097,7 @@ export function SharedApp({ services }) {
 
   function closeWorkItemCreate() {
     if (workItemCreateSubmitting || workItemCreatePasteUploading) return;
+    workItemCreateDeferredFocusRef.current = false;
     if (workItemCreateCheckpoint) {
       const itemKey = workItemCreateCheckpoint.item.key;
       setWorkItemCreateOpen(false);
@@ -5152,7 +5155,10 @@ export function SharedApp({ services }) {
     }
     if (!workItemCreateForm.title.trim()) {
       options?.onDeferred?.('正在等待填写标题后自动上传…');
-      runtime.getElementById('work-item-create-title')?.focus();
+      if (!workItemCreateDeferredFocusRef.current) {
+        workItemCreateDeferredFocusRef.current = true;
+        runtime.getElementById('work-item-create-title')?.focus();
+      }
       return DEFER_RICH_TEXT_PASTE;
     }
     options?.onDeferred?.('');

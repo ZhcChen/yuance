@@ -360,6 +360,8 @@ export const DEFER_RICH_TEXT_PASTE = 'defer';
 /** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
 export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const onPasteFileRef = useRef(onPasteFile);
+  onPasteFileRef.current = onPasteFile;
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const pasteRangeRef = useRef(/** @type {Range | null} */ (null));
   const pendingUploadsRef = useRef(/** @type {Map<string, { node: HTMLElement, file: File, cancelled: boolean, objectUrl: string, deferRetryCount: number, deferMessage: string }>} */ (new Map()));
@@ -738,10 +740,10 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   /** @param {string} uploadId */
   async function uploadPastedFile(uploadId) {
     const entry = pendingUploadsRef.current.get(uploadId);
-    if (!entry || entry.cancelled || !onPasteFile) return;
+    if (!entry || entry.cancelled || !onPasteFileRef.current) return;
     setPendingUploadState(entry.node, 'uploading', entry.deferMessage || '正在上传');
     try {
-      const attachment = await Promise.resolve(onPasteFile(entry.file, {
+      const attachment = await Promise.resolve(onPasteFileRef.current(entry.file, {
         onProgress: (stage) => {
           const current = pendingUploadsRef.current.get(uploadId);
           if (current && !current.cancelled) {
