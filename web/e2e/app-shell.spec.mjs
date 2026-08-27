@@ -4282,6 +4282,8 @@ test('time management page stays independent from the project resource library',
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources$/);
   await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
   await expect(page.getByRole('link', { name: '全局时间管理资料' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '返回项目' })).toHaveCount(0);
+  await expect.poll(() => page.locator('.project-resource-library-page').evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(1200);
 });
 
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {

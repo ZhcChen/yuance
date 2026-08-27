@@ -1306,8 +1306,8 @@ html[data-theme="dark"] .project-stats div {
 .project-time-resources-section { overflow: visible; }
 .project-time-resources-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
 .project-time-pane { min-width: 0; }
-.project-resource-library-page { max-width: 1200px; }
-.project-resource-library-panel { overflow: visible; }
+.project-resource-library-page { min-width: 0; width: 100%; }
+.project-resource-library-panel { min-width: 0; width: 100%; overflow: visible; }
 .project-resource-library-panel > .work-item-filter-bar { margin: 12px 16px 0; }
 .project-resource-library-panel > .work-item-attachment-status, .project-resource-library-panel > .shell-empty { margin-right: 16px; margin-left: 16px; }
 .project-resource-library-panel > .resource-list { margin: 0; padding: 16px; }

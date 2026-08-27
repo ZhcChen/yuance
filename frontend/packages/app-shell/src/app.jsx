@@ -5607,7 +5607,6 @@ export function SharedApp({ services }) {
             </>
           ) : route.id === 'project-resource-library' ? (
             <section className="page-stack project-resource-library-page" aria-label="项目资料库">
-              <header className="page-hero"><div><p className="shell-eyebrow">资料库 / {route.projectKey}</p><h1 ref={headingRef} tabIndex={-1}>{activeProjectDetail?.name || '项目资料库'}</h1><p>集中维护当前项目资料，正文内附件随资料一起管理与归档。</p></div><a className="yc-button yc-button-secondary" href={buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey }), '已返回项目。')}>返回项目</a></header>
               {activeProjectDetail ? projectResourcesPanel : projectResourceError ? <Feedback tone="danger" title="资料库加载失败">{projectResourceError}</Feedback> : <p className="shell-empty">当前项目资料库不可用。</p>}
             </section>
           ) : route.id === 'system-permissions' ? (
