@@ -50,6 +50,10 @@ SQLite 数据必须位于 WSL Linux 文件系统，不得迁到 `/mnt/c`。`.env
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
 - 必须显式配置并保持 `YUANCE_SERVER_INSTANCE_ID` 稳定；它绑定 Desktop device credential，变更后现有设备必须重新授权。
+- 资料库新附件采用静态加密：文件级 DEK 由服务端主密钥信封封装，OSS 只保存密文。
+  主密钥优先使用 `YUANCE_FILE_MASTER_KEY`；未设置时首次启动自动生成到
+  `/data/secrets/file_master_key`（0600）。生成后必须保持稳定并单独备份，
+  不要随意更换，否则已加密附件无法解密。已上传的明文附件不受影响。
 - 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览。DOC、PPT 属于 legacy 实验性纯前端预览，默认关闭。
 
 ## 自动启动
@@ -148,6 +152,7 @@ YUANCE_SSE_DRAIN_TIMEOUT=30s
 YUANCE_STOP_GRACE_PERIOD=45s
 YUANCE_MAX_RELEASE_WINDOW=10m
 YUANCE_SERVER_INSTANCE_ID=<稳定且唯一的生产实例标识>
+YUANCE_FILE_MASTER_KEY=<可选，留空则自动生成到 /data/secrets/file_master_key>
 YUANCE_DEVICE_TRUSTED_PROXY_CIDRS=127.0.0.0/8,172.16.0.0/12
 YUANCE_DEVICE_AUTHORIZATION_TTL=10m
 YUANCE_DEVICE_ACCESS_TTL=15m
@@ -222,6 +227,10 @@ docker compose --env-file .env -f compose.yaml exec -T api \
 ```
 
 确认后去掉 `--dry-run`。当前命令只做数据库软删除，不删除 OSS 物理对象。
+
+资料库新附件加密主密钥文件 `/data/secrets/file_master_key` 属于数据目录持久化内容，
+发布脚本不会覆盖 `.env` 或数据卷；备份 SQLite 时应同时备份该文件，否则后续新附件
+加密记录无法解密。
 
 ## 回滚到公网旧环境
 
