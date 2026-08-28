@@ -46,7 +46,7 @@ void REVEAL_DOWNLOAD_CAPABILITY;
 /**
  * @typedef {object} FileCapabilities
  * @property {() => Promise<SelectedFile | null>} chooseFile
- * @property {(transfer: SignedTransferCapability, fileCapability: FileCapability) => Promise<void>} uploadSignedRequest
+ * @property {(transfer: SignedTransferCapability, fileCapability: FileCapability) => Promise<{ encryptedChecksumSha256?: string } | void>} uploadSignedRequest
  */
 
 /**

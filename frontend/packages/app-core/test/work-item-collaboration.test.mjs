@@ -10,6 +10,7 @@ import {
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
   uploadProjectAttachment,
+  uploadProjectResourceAttachment,
 } from '@yuance/frontend-app-core';
 
 /** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
@@ -639,4 +640,81 @@ test('stale attachment download does not invoke the platform', async () => {
 
   assert.deepEqual(opened, { completed: false, revealCapability: null });
   assert.deepEqual(events, []);
+});
+
+test('project resource encrypted upload forwards encryption and ciphertext checksum', async () => {
+  const events = [];
+  const encryption = {
+    algorithm: 'AES-256-GCM',
+    format: 'YUANCE-ENC-v1',
+    key: 'data-key',
+  };
+  const result = await uploadProjectResourceAttachment({
+    api: {
+      createProjectResourceAttachment: async () => {
+        events.push(['create']);
+        return { id: 9, status: 'pending' };
+      },
+      getProjectResourceAttachmentUploadUrl: async () => ({
+        request: { method: 'PUT', url: '/storage', headers: [] },
+        expires_in_seconds: 300,
+        encryption,
+      }),
+      markProjectResourceAttachmentUploaded: async (_projectKey, _resourceId, _attachmentId, encryptedSha256) => {
+        events.push(['confirm', encryptedSha256]);
+        return { id: 9, status: 'uploaded' };
+      },
+    },
+    platform: {
+      transfers: {
+        authorizeSignedRequest: (authorization) => {
+          events.push(['authorize', authorization.encryption]);
+          return /** @type {SignedTransferCapability} */ ({});
+        },
+      },
+      files: {
+        uploadSignedRequest: async () => {
+          events.push(['upload']);
+          return { encryptedChecksumSha256: 'cipher-hash' };
+        },
+      },
+    },
+    projectKey: 'YCE',
+    resourceId: 8,
+    file: {
+      capability: /** @type {FileCapability} */ ({}),
+      filename: 'notes.txt',
+      contentType: 'text/plain',
+      byteSize: 7,
+    },
+    lifecycle: {
+      isCurrent: () => true,
+      onStage: (stage) => events.push(['stage', stage]),
+      onCreated: () => events.push(['created']),
+      onUploaded: () => events.push(['uploaded']),
+      refresh: async () => {
+        events.push(['refresh']);
+      },
+    },
+  });
+
+  assert.equal(result.completed, true);
+  assert.equal(
+    /** @type {{ status: string }} */ (/** @type {unknown} */ (result.uploaded))
+      .status,
+    'uploaded',
+  );
+  assert.deepEqual(events, [
+    ['stage', 'registering'],
+    ['create'],
+    ['created'],
+    ['stage', 'signing'],
+    ['authorize', encryption],
+    ['stage', 'uploading'],
+    ['upload'],
+    ['stage', 'confirming'],
+    ['confirm', 'cipher-hash'],
+    ['uploaded'],
+    ['refresh'],
+  ]);
 });

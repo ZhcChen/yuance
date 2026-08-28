@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createBrowserFilePlatform } from '../src/platform/browser/files.js';
+import {
+  decryptFile,
+  encryptFile,
+  sha256Hex,
+} from '../src/platform/browser/file-crypto.js';
 
 test('browser file chooser converts the selected File into an opaque capability', async () => {
   const file = new File(['content'], 'design.txt', { type: 'text/plain' });
@@ -354,3 +359,95 @@ test('browser file platform rejects methods that conflict with transfer purpose'
     /方法与用途不匹配/,
   );
 });
+
+test('browser file platform encrypts uploads and returns the ciphertext checksum', async () => {
+  const calls = [];
+  const file = new File(['protected resource'], 'notes.txt', { type: 'text/plain' });
+  const dataKey = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(dataKey);
+  const plaintext = new Uint8Array(await file.arrayBuffer());
+  const encryption = await encryptionPayload(dataKey, 42, plaintext);
+  const platform = createBrowserFilePlatform({
+    refreshCsrfToken: async () => '',
+    baseUrl: 'https://yuance.test/web/app/',
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), options });
+      return new Response(null, { status: 200 });
+    },
+  });
+  const selected = await platform.selectPastedFile(file);
+  assert.ok(selected);
+  const transfer = platform.transfers.authorizeSignedRequest({
+    purpose: 'upload',
+    expiresInSeconds: 300,
+    encryption,
+    request: {
+      method: 'PUT',
+      url: '/storage/upload',
+      headers: [['content-type', 'application/octet-stream']],
+    },
+  });
+
+  const result = await platform.files.uploadSignedRequest(
+    transfer,
+    selected.capability,
+  );
+
+  assert.equal(new Headers(calls[0].options.headers).get('content-type'), 'application/octet-stream');
+  const ciphertext = calls[0].options.body;
+  assert.equal(ciphertext instanceof Uint8Array, true);
+  assert.deepEqual(
+    await decryptFile(dataKey, 42, ciphertext),
+    plaintext,
+  );
+  assert.equal(result?.encryptedChecksumSha256, await sha256Hex(ciphertext));
+});
+
+test('browser file platform fetches and decrypts encrypted downloads', async () => {
+  const saved = [];
+  const file = new File(['protected download'], 'notes.txt', { type: 'text/plain' });
+  const dataKey = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(dataKey);
+  const plaintext = new Uint8Array(await file.arrayBuffer());
+  const ciphertext = await encryptFile(dataKey, 77, plaintext);
+  const encryptedChecksumSha256 = await sha256Hex(ciphertext);
+  const encryption = {
+    ...(await encryptionPayload(dataKey, 77, plaintext)),
+    encryptedByteSize: ciphertext.byteLength,
+    encryptedChecksumSha256,
+  };
+  const platform = createBrowserFilePlatform({
+    refreshCsrfToken: async () => '',
+    baseUrl: 'https://yuance.test/web/app/',
+    fetchImpl: async () =>
+      new Response(/** @type {BodyInit} */ (ciphertext)),
+    downloadBlob: (bytes, filename) => saved.push({ bytes, filename }),
+  });
+  const transfer = platform.transfers.authorizeSignedRequest({
+    purpose: 'download',
+    expiresInSeconds: 300,
+    encryption,
+    request: { method: 'GET', url: '/download', headers: [] },
+  });
+
+  await platform.downloads.downloadSignedRequest(transfer, 'notes.txt');
+
+  assert.deepEqual(saved[0]?.bytes, plaintext);
+  assert.equal(saved[0]?.filename, 'notes.txt');
+});
+
+/** @param {Uint8Array} dataKey @param {number} fileObjectId @param {Uint8Array} plaintext */
+async function encryptionPayload(dataKey, fileObjectId, plaintext) {
+  const binary = String.fromCharCode(...dataKey);
+  return {
+    algorithm: 'AES-256-GCM',
+    format: 'YUANCE-ENC-v1',
+    chunkSize: 1024 * 1024,
+    key: globalThis.btoa(binary),
+    fileObjectId,
+    plaintextByteSize: plaintext.byteLength,
+    plaintextSha256: await sha256Hex(plaintext),
+    encryptedByteSize: 0,
+    encryptedChecksumSha256: '',
+  };
+}

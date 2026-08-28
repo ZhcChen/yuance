@@ -120,8 +120,8 @@ export function updateWorkItemComment({ api, itemKey, commentId, payload, lifecy
  * @template {{ id: number }} T
  * @param {{
  *   create: (payload: AttachmentCreatePayload) => Promise<T>,
- *   sign: (attachment: T) => Promise<{ request: unknown, expires_in_seconds: number, checksum_sha256?: string }>,
- *   confirm: (attachment: T) => Promise<T>,
+ *   sign: (attachment: T) => Promise<{ request: unknown, expires_in_seconds: number, checksum_sha256?: string, encryption?: unknown }>,
+ *   confirm: (attachment: T, encryptedChecksumSha256?: string) => Promise<T>,
  *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
  *   file: SelectedFile,
  *   existing?: T,
@@ -160,15 +160,22 @@ async function uploadAttachment({ create, sign, confirm, platform, file, existin
     request: signed.request,
     purpose: 'upload',
     expiresInSeconds: signed.expires_in_seconds,
+    ...(signed.encryption ? { encryption: signed.encryption } : {}),
   });
   lifecycle.onStage('uploading');
-  await platform.files.uploadSignedRequest(transfer, file.capability);
+  const uploadResult = await platform.files.uploadSignedRequest(
+    transfer,
+    file.capability,
+  );
 
   const currentBeforeConfirm = lifecycle.isCurrent();
   if (currentBeforeConfirm) {
     lifecycle.onStage('confirming');
   }
-  const uploaded = await confirm(created);
+  const uploaded = await confirm(
+    created,
+    uploadResult?.encryptedChecksumSha256,
+  );
   if (!currentBeforeConfirm || !lifecycle.isCurrent()) {
     return { completed: false, created, uploaded, refreshError: null };
   }
@@ -256,7 +263,7 @@ export function uploadProjectResourceAttachment({ api, platform, projectKey, res
   return uploadAttachment({
     create: (payload) => api.createProjectResourceAttachment(projectKey, resourceId, { ...payload, ...(file.checksumSha256 ? { checksumSha256: file.checksumSha256 } : {}) }),
     sign: (attachment) => api.getProjectResourceAttachmentUploadUrl(projectKey, resourceId, attachment.id),
-    confirm: (attachment) => api.markProjectResourceAttachmentUploaded(projectKey, resourceId, attachment.id),
+    confirm: (attachment, encryptedChecksumSha256) => api.markProjectResourceAttachmentUploaded(projectKey, resourceId, attachment.id, encryptedChecksumSha256),
     platform, file, existing: existingAttachment || undefined, expectedChecksumSha256: file.checksumSha256, lifecycle,
   });
 }

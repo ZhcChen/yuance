@@ -10,7 +10,8 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
 /** @typedef {{ id: number, parent_comment_id: number | null, parent_author: string, body: string, body_format: string, author: string, author_username: string, created_at: string, updated_at: string, is_flow: boolean, is_draft: boolean }} WorkItemComment */
 /** @typedef {{ id: number, filename: string, content_type: string, byte_size: number, status: string, created_by: string, created_at: string }} Attachment */
 /** @typedef {{ method: string, url: string, headers: Array<[string, string]> }} SignedObjectRequest */
-/** @typedef {{ attachment: Attachment, request: SignedObjectRequest, expires_in_seconds: number, checksum_sha256?: string }} AttachmentSignedUrl */
+/** @typedef {{ attachment: Attachment, request: SignedObjectRequest, expires_in_seconds: number, checksum_sha256?: string, encryption?: AttachmentEncryption }} AttachmentSignedUrl */
+/** @typedef {{ algorithm: string, format: string, chunk_size: number, key: string, file_object_id: number, plaintext_byte_size: number, plaintext_sha256: string, encrypted_byte_size: number, encrypted_checksum_sha256: string }} AttachmentEncryption */
 /** @typedef {{ attachment: Attachment, preview: { kind: 'image' | 'video' | 'document' | null, strategy: string | null, file_type: string | null, kind_label: string | null, is_experimental: boolean, legacy_preview_enabled: boolean, content_enabled: boolean }, navigation: { position: number, total: number, previous: { id: number, title: string, url: string } | null, next: { id: number, title: string, url: string } | null }, content_url: string, download_url: string }} AttachmentPreview */
 /** @typedef {{ title?: string, description?: string, status?: string, priority?: string, assigneeUsername?: string, dueDate?: string, parentItemKey?: string, cycleId?: number | null }} WorkItemUpdatePayload */
 /** @typedef {{ projectKey: string, itemType: string, title: string, description?: string, priority?: string, assigneeUsername?: string, cycleId?: number | null, dueDate?: string, parentItemKey?: string }} WorkItemCreatePayload */
@@ -183,7 +184,46 @@ export function attachmentSignedUrlFromPayload(raw) {
     request: payload.request,
     expires_in_seconds: payload.expires_in_seconds,
     ...(payload.checksum_sha256 ? { checksum_sha256: payload.checksum_sha256 } : {}),
+    ...(payload.encryption
+      ? { encryption: attachmentEncryptionFromPayload(payload.encryption) }
+      : {}),
   };
+}
+
+/** @param {unknown} raw @returns {AttachmentEncryption} */
+function attachmentEncryptionFromPayload(raw) {
+  const value = /** @type {Record<string, unknown>} */ (raw || {});
+  return Object.freeze({
+    algorithm: string(value.algorithm, '加密算法'),
+    format: string(value.format, '加密格式'),
+    chunk_size: integer(value.chunk_size, '加密分块大小'),
+    key: string(value.key, '加密数据密钥'),
+    file_object_id: integer(value.file_object_id, '文件对象 ID'),
+    plaintext_byte_size: integer(
+      value.plaintext_byte_size,
+      '明文大小',
+    ),
+    plaintext_sha256: string(value.plaintext_sha256, '明文 SHA-256'),
+    encrypted_byte_size: integer(value.encrypted_byte_size, '密文大小'),
+    encrypted_checksum_sha256: string(
+      value.encrypted_checksum_sha256,
+      '密文 SHA-256',
+    ),
+  });
+}
+
+/** @param {unknown} value @param {string} name @returns {string} */
+function string(value, name) {
+  if (typeof value !== 'string') throw new TypeError(`${name}无效`);
+  return value;
+}
+
+/** @param {unknown} value @param {string} name @returns {number} */
+function integer(value, name) {
+  if (!Number.isSafeInteger(value) || /** @type {number} */ (value) < 0) {
+    throw new TypeError(`${name}无效`);
+  }
+  return /** @type {number} */ (value);
 }
 
 /** @param {WorkItemListQuery} query */

@@ -5,6 +5,13 @@ import {
   defineFileCapabilities,
   defineTransferCapabilities,
 } from '@yuance/frontend-platform-contract';
+import {
+  FILE_CHUNK_SIZE,
+  FILE_ENCRYPTION_FORMAT,
+  decryptFile,
+  encryptFile,
+  sha256Hex,
+} from './file-crypto.js';
 
 const CONTENT_TYPES_BY_EXTENSION = new Map([
   ['.avif', 'image/avif'],
@@ -23,7 +30,20 @@ const GENERIC_CONTENT_TYPES = new Set(['', 'application/octet-stream']);
 /** @typedef {import('@yuance/frontend-platform-contract').PastedFile} PastedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SelectedFile} SelectedFile */
 /** @typedef {import('@yuance/frontend-platform-contract').SignedTransferCapability} SignedTransferCapability */
-/** @typedef {{ file: File, contentType: string }} BrowserFileEntry */
+/** @typedef {{ file: File, contentType: string, checksumSha256?: string }} BrowserFileEntry */
+
+/**
+ * @typedef {object} AttachmentEncryption
+ * @property {string} algorithm
+ * @property {string} format
+ * @property {number} chunkSize
+ * @property {Uint8Array} key
+ * @property {number} fileObjectId
+ * @property {number} plaintextByteSize
+ * @property {string} plaintextSha256
+ * @property {number} encryptedByteSize
+ * @property {string} encryptedChecksumSha256
+ */
 
 /**
  * @typedef {object} SignedObjectRequest
@@ -41,6 +61,7 @@ const GENERIC_CONTENT_TYPES = new Set(['', 'application/octet-stream']);
  *   origin?: string,
  *   allowedTransferOrigins?: string[],
  *   openDownload?: (url: string) => void,
+ *   downloadBlob?: (bytes: Uint8Array, filename: string) => void,
  *   now?: () => number,
  * }} dependencies
  */
@@ -52,6 +73,7 @@ export function createBrowserFilePlatform({
   origin = globalThis.location?.origin || new URL(baseUrl).origin,
   allowedTransferOrigins = [],
   openDownload = openDownloadInDocument,
+  downloadBlob = saveDownloadedBlobInDocument,
   now = Date.now,
 }) {
   const filesByCapability = new WeakMap();
@@ -66,7 +88,14 @@ export function createBrowserFilePlatform({
   function selectFile(file, checksumSha256, bytes) {
     const capability = /** @type {FileCapability} */ ({});
     const contentType = resolveContentType(file.type, file.name, bytes);
-    filesByCapability.set(capability, /** @type {BrowserFileEntry} */ ({ file, contentType }));
+    filesByCapability.set(
+      capability,
+      /** @type {BrowserFileEntry} */ ({
+        file,
+        contentType,
+        ...(checksumSha256 ? { checksumSha256 } : {}),
+      }),
+    );
     return {
       capability,
       filename: file.name || 'attachment.bin',
@@ -113,7 +142,7 @@ export function createBrowserFilePlatform({
       if (!entry) {
         throw new Error('上传 capability 无效或已不属于当前 Browser adapter。');
       }
-      const { request } = authorization;
+      const { request, encryption } = authorization;
       const headers = filteredHeaders(request.headers);
       if (!headers.has('content-type') && entry.contentType) {
         headers.set('content-type', entry.contentType);
@@ -125,25 +154,79 @@ export function createBrowserFilePlatform({
           headers.set('x-yuance-csrf-token', token);
         }
       }
+      let body = entry.file;
+      let encryptedChecksumSha256;
+      if (encryption) {
+        const plaintext = new Uint8Array(await entry.file.arrayBuffer());
+        if (plaintext.byteLength !== encryption.plaintextByteSize) {
+          throw new Error('文件大小与加密登记不一致。');
+        }
+        const actualPlaintextSha256 = await sha256Hex(plaintext);
+        if (actualPlaintextSha256 !== encryption.plaintextSha256) {
+          throw new Error('文件内容与加密登记不一致。');
+        }
+        const ciphertext = await encryptFile(
+          encryption.key,
+          encryption.fileObjectId,
+          plaintext,
+        );
+        encryptedChecksumSha256 = await sha256Hex(ciphertext);
+        body = ciphertext;
+        headers.set('content-type', 'application/octet-stream');
+      }
       const response = await fetchImpl(url, {
         method: request.method,
         headers,
-        body: entry.file,
+        body,
         credentials: url.origin === origin ? 'same-origin' : 'omit',
       });
       if (!response.ok) {
         throw new Error(`对象存储上传失败：${response.status}`);
       }
+      return encryptedChecksumSha256
+        ? { encryptedChecksumSha256 }
+        : undefined;
     },
   });
 
   const downloads = defineDownloadCapabilities({
-    async downloadSignedRequest(transferCapability) {
-      const { request } = consumeTransferCapability(requestsByCapability, transferCapability, 'download', now());
+    async downloadSignedRequest(transferCapability, suggestedFilename) {
+      const { request, encryption } = consumeTransferCapability(requestsByCapability, transferCapability, 'download', now());
       if (request.headers.length > 0) {
         throw new Error('当前下载签名包含浏览器无法附带的请求头。');
       }
-      openDownload(new URL(request.url, baseUrl).toString());
+      const url = new URL(request.url, baseUrl).toString();
+      const downloadUrl = new URL(url);
+      if (!encryption) {
+        openDownload(url);
+        return;
+      }
+      const response = await fetchImpl(url, {
+        credentials: downloadUrl.origin === origin ? 'same-origin' : 'omit',
+        headers: { accept: '*/*' },
+      });
+      if (!response.ok) {
+        throw new Error(`对象存储下载失败：${response.status}`);
+      }
+      const ciphertext = new Uint8Array(await response.arrayBuffer());
+      if (
+        encryption.encryptedByteSize > 0 &&
+        ciphertext.byteLength !== encryption.encryptedByteSize
+      ) {
+        throw new Error('加密文件大小与登记不一致。');
+      }
+      if (
+        encryption.encryptedChecksumSha256 &&
+        (await sha256Hex(ciphertext)) !== encryption.encryptedChecksumSha256
+      ) {
+        throw new Error('加密文件校验值不匹配。');
+      }
+      const plaintext = await decryptFile(
+        encryption.key,
+        encryption.fileObjectId,
+        ciphertext,
+      );
+      downloadBlob(plaintext, suggestedFilename);
     },
   });
 
@@ -221,6 +304,7 @@ function chooseFileFromDocument() {
  * @property {SignedObjectRequest} request
  * @property {'upload' | 'download'} purpose
  * @property {number} expiresAt
+ * @property {AttachmentEncryption | null} encryption
  */
 
 /**
@@ -232,7 +316,7 @@ function normalizeTransferAuthorization(rawAuthorization, context) {
   if (!rawAuthorization || typeof rawAuthorization !== 'object') {
     throw new Error('签名请求格式无效。');
   }
-  const envelope = /** @type {{ request?: unknown, purpose?: unknown, expiresInSeconds?: unknown }} */ (rawAuthorization);
+  const envelope = /** @type {{ request?: unknown, purpose?: unknown, expiresInSeconds?: unknown, encryption?: unknown }} */ (rawAuthorization);
   if (envelope.purpose !== 'upload' && envelope.purpose !== 'download') {
     throw new Error('签名请求缺少有效用途。');
   }
@@ -251,6 +335,7 @@ function normalizeTransferAuthorization(rawAuthorization, context) {
     throw new Error('签名请求目标不在 Browser transfer allowlist 中。');
   }
   validateSignedHeaders(request.headers);
+  const encryption = normalizeEncryption(envelope.encryption);
   return Object.freeze({
     request,
     purpose: envelope.purpose,
@@ -258,7 +343,123 @@ function normalizeTransferAuthorization(rawAuthorization, context) {
     storageOrigin: url.origin,
     storageBucket: storageScope?.bucket || null,
     storageEndpoint: storageScope?.endpoint || null,
+    encryption,
   });
+}
+
+/** @param {unknown} value @returns {AttachmentEncryption | null} */
+function normalizeEncryption(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('附件加密参数格式无效。');
+  }
+  const raw = /** @type {Record<string, unknown>} */ (value);
+  const format = readString(raw, ['format']);
+  if (format !== FILE_ENCRYPTION_FORMAT) {
+    throw new Error('附件加密格式不受支持。');
+  }
+  const algorithm = readString(raw, ['algorithm']);
+  if (algorithm !== 'AES-256-GCM') {
+    throw new Error('附件加密算法不受支持。');
+  }
+  const chunkSize = readInteger(raw, ['chunkSize', 'chunk_size']);
+  if (chunkSize !== FILE_CHUNK_SIZE) {
+    throw new Error('附件加密分块大小不受支持。');
+  }
+  const key = decodeBase64(readString(raw, ['key']));
+  if (key.byteLength !== 32) {
+    throw new Error('附件加密数据密钥长度无效。');
+  }
+  return Object.freeze({
+    algorithm,
+    format,
+    chunkSize,
+    key,
+    fileObjectId: readInteger(raw, ['fileObjectId', 'file_object_id']),
+    plaintextByteSize: readInteger(raw, [
+      'plaintextByteSize',
+      'plaintext_byte_size',
+    ]),
+    plaintextSha256: normalizeSha256(
+      readString(raw, ['plaintextSha256', 'plaintext_sha256']),
+    ),
+    encryptedByteSize: readInteger(raw, [
+      'encryptedByteSize',
+      'encrypted_byte_size',
+    ]),
+    encryptedChecksumSha256: normalizeOptionalSha256(
+      readString(raw, [
+        'encryptedChecksumSha256',
+        'encrypted_checksum_sha256',
+      ]),
+    ),
+  });
+}
+
+/**
+ * @param {Record<string, unknown>} raw
+ * @param {string[]} keys
+ * @returns {string}
+ */
+function readString(raw, keys) {
+  for (const key of keys) {
+    if (typeof raw[key] === 'string') return raw[key];
+  }
+  throw new Error('附件加密参数不完整。');
+}
+
+/**
+ * @param {Record<string, unknown>} raw
+ * @param {string[]} keys
+ * @returns {number}
+ */
+function readInteger(raw, keys) {
+  let found = false;
+  let value = 0;
+  for (const key of keys) {
+    const candidate = raw[key];
+    if (candidate !== undefined && candidate !== null) {
+      found = true;
+      value = Number(candidate);
+      break;
+    }
+  }
+  if (!found) {
+    throw new Error('附件加密参数不完整。');
+  }
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error('附件加密参数无效。');
+  }
+  return value;
+}
+
+/** @param {string} value @returns {Uint8Array} */
+function decodeBase64(value) {
+  let binary;
+  try {
+    binary = globalThis.atob(value);
+  } catch {
+    throw new Error('附件加密密钥格式无效。');
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+/** @param {string} value @returns {string} */
+function normalizeSha256(value) {
+  if (!/^[0-9a-f]{64}$/u.test(value)) {
+    throw new Error('附件加密 SHA-256 校验值无效。');
+  }
+  return value.toLowerCase();
+}
+
+/** @param {string} value @returns {string} */
+function normalizeOptionalSha256(value) {
+  if (!value) return '';
+  return normalizeSha256(value);
 }
 
 /** @param {URL} url */
@@ -353,4 +554,18 @@ function openDownloadInDocument(url) {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
+}
+
+/** @param {Uint8Array} bytes @param {string} filename */
+function saveDownloadedBlobInDocument(bytes, filename) {
+  const url = URL.createObjectURL(
+    new Blob([/** @type {BlobPart} */ (bytes)]),
+  );
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename || 'download.bin';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

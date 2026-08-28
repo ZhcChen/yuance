@@ -6,6 +6,7 @@ import {
   ApiError,
   apiErrorFromPayload,
   attachmentFromPayload,
+  attachmentSignedUrlFromPayload,
   createApiClient,
   projectApiPath,
   projectAttachmentApiPath,
@@ -169,7 +170,7 @@ test('project resource attachments use scoped fixed paths and access grants', as
   await client.getProjectResourceAttachments('YCE', 9, 'grant token');
   await client.createProjectResourceAttachment('YCE', 9, { originalFilename: 'notes.txt', contentType: 'text/plain', byteSize: 12, checksumSha256: 'a'.repeat(64) });
   await client.getProjectResourceAttachmentUploadUrl('YCE', 9, 11);
-  await client.markProjectResourceAttachmentUploaded('YCE', 9, 11);
+  await client.markProjectResourceAttachmentUploaded('YCE', 9, 11, 'cipher-hash');
   await client.getProjectResourceAttachmentDownloadUrl('YCE', 9, 11, 'grant token');
   await client.getProjectResourceAttachmentPreview('YCE', 9, 11, 'grant token');
   await client.deleteProjectResourceAttachment('YCE', 9, 11);
@@ -183,6 +184,54 @@ test('project resource attachments use scoped fixed paths and access grants', as
     ['/api/v1/projects/YCE/resources/9/attachments/11', 'DELETE'],
   ]);
   assert.deepEqual(writes, ['prepare', 'prepare', 'prepare']);
+  assert.deepEqual(
+    calls.find(({ url }) => url.endsWith('/uploaded')).options,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"encrypted_sha256":"cipher-hash"}',
+    },
+  );
+});
+
+test('attachment signed URLs preserve encryption metadata for transfer', () => {
+  const attachment = {
+    id: 11,
+    filename: 'notes.txt',
+    content_type: 'text/plain',
+    byte_size: 7,
+    status: 'pending',
+    created_by: 'Alice',
+    created_at: '2026-08-07T00:00:00Z',
+  };
+  const normalized = attachmentSignedUrlFromPayload({
+    attachment,
+    request: { method: 'PUT', url: '/storage/upload', headers: [] },
+    expires_in_seconds: 60,
+    encryption: {
+      algorithm: 'AES-256-GCM',
+      format: 'YUANCE-ENC-v1',
+      chunk_size: 1024 * 1024,
+      key: 'a2V5',
+      file_object_id: 42,
+      plaintext_byte_size: 7,
+      plaintext_sha256: 'a'.repeat(64),
+      encrypted_byte_size: 123,
+      encrypted_checksum_sha256: 'b'.repeat(64),
+    },
+  });
+
+  assert.deepEqual(normalized.encryption, {
+    algorithm: 'AES-256-GCM',
+    format: 'YUANCE-ENC-v1',
+    chunk_size: 1024 * 1024,
+    key: 'a2V5',
+    file_object_id: 42,
+    plaintext_byte_size: 7,
+    plaintext_sha256: 'a'.repeat(64),
+    encrypted_byte_size: 123,
+    encrypted_checksum_sha256: 'b'.repeat(64),
+  });
 });
 
 test('project resources accept the complete unpaginated server response', async () => {

@@ -60,9 +60,14 @@ export function createResourceClient({ request, prepareWrite }) {
     async getProjectResourceAttachmentUploadUrl(projectKey, resourceId, attachmentId) {
       return attachmentSignedUrlFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/upload-url`));
     },
-    async markProjectResourceAttachmentUploaded(projectKey, resourceId, attachmentId) {
+    async markProjectResourceAttachmentUploaded(projectKey, resourceId, attachmentId, encryptedSha256) {
       await prepareWrite();
-      return attachmentFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/uploaded`, { method: 'POST' }));
+      const options = { method: 'POST' };
+      if (encryptedSha256) {
+        options.headers = { 'content-type': 'application/json' };
+        options.body = JSON.stringify({ encrypted_sha256: encryptedSha256 });
+      }
+      return attachmentFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/uploaded`, options));
     },
     async getProjectResourceAttachmentDownloadUrl(projectKey, resourceId, attachmentId, accessToken = '') {
       return attachmentSignedUrlFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/download-url${resourceAccessSuffix(accessToken)}`));
