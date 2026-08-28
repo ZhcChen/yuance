@@ -3,7 +3,10 @@ use uuid::Uuid;
 
 use crate::{
     domains::storage::StorageConfig,
-    platform::error::{AppError, AppResult},
+    platform::{
+        error::{AppError, AppResult},
+        file_crypto,
+    },
 };
 
 pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 100 * 1024 * 1024;
@@ -100,6 +103,16 @@ pub struct FileAttachmentSummary {
     pub status: String,
     pub created_by_display_name: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileObjectEncryption {
+    pub file_object_id: i64,
+    pub encryption_status: String,
+    pub encryption_format: String,
+    pub encrypted_byte_size: i64,
+    pub encrypted_checksum_sha256: String,
+    pub data_key_envelope: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,6 +242,33 @@ pub async fn create_attachment_with_checksum(
     input: CreateAttachmentInput,
     checksum_sha256: &str,
 ) -> AppResult<FileAttachmentSummary> {
+    create_attachment_inner(pool, storage_config, input, checksum_sha256, None).await
+}
+
+pub async fn create_attachment_with_checksum_encrypted(
+    pool: &SqlitePool,
+    storage_config: &StorageConfig,
+    input: CreateAttachmentInput,
+    checksum_sha256: &str,
+    file_master_key: &str,
+) -> AppResult<FileAttachmentSummary> {
+    create_attachment_inner(
+        pool,
+        storage_config,
+        input,
+        checksum_sha256,
+        Some(file_master_key),
+    )
+    .await
+}
+
+async fn create_attachment_inner(
+    pool: &SqlitePool,
+    storage_config: &StorageConfig,
+    input: CreateAttachmentInput,
+    checksum_sha256: &str,
+    encryption_master_key: Option<&str>,
+) -> AppResult<FileAttachmentSummary> {
     let target_type = validate_target_type(&input.target_type)?;
     if input.target_id <= 0 {
         return Err(AppError::BadRequest("附件目标无效".to_string()));
@@ -261,6 +301,11 @@ pub async fn create_attachment_with_checksum(
     let object_key = generate_object_key(&original_filename);
 
     let mut tx = pool.begin().await?;
+    let (encryption_status, encryption_format) = if encryption_master_key.is_some() {
+        ("encrypted", file_crypto::FILE_ENCRYPTION_FORMAT)
+    } else {
+        ("plain", "")
+    };
     let file_object_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO file_objects (
@@ -273,10 +318,12 @@ pub async fn create_attachment_with_checksum(
             content_type,
             byte_size,
             checksum_sha256,
+            encryption_status,
+            encryption_format,
             status,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'pending', ?12)
         RETURNING id
         "#,
     )
@@ -289,9 +336,30 @@ pub async fn create_attachment_with_checksum(
     .bind(&content_type)
     .bind(input.byte_size)
     .bind(checksum_sha256)
+    .bind(encryption_status)
+    .bind(encryption_format)
     .bind(input.created_by_user_id)
     .fetch_one(&mut *tx)
     .await?;
+
+    if let Some(file_master_key) = encryption_master_key {
+        let data_key = file_crypto::generate_data_key();
+        let envelope =
+            file_crypto::seal_data_key(file_master_key, &data_key, object_key.as_bytes())?;
+        sqlx::query(
+            r#"
+            UPDATE file_objects
+            SET data_key_envelope = ?1,
+                updated_at = datetime('now')
+            WHERE id = ?2
+              AND encryption_status = 'encrypted'
+            "#,
+        )
+        .bind(envelope)
+        .bind(file_object_id)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     let attachment_id = sqlx::query_scalar::<_, i64>(
         r#"
@@ -595,6 +663,96 @@ pub async fn mark_attachment_uploaded(
     let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
     mark_file_uploaded(pool, attachment.file_object_id).await?;
     get_attachment(pool, attachment.id).await
+}
+
+pub async fn mark_attachment_uploaded_encrypted(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    target_type: &str,
+    target_id: i64,
+    encrypted_byte_size: i64,
+    encrypted_checksum_sha256: &str,
+) -> AppResult<FileAttachmentSummary> {
+    let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
+    let encryption = get_file_object_encryption(pool, attachment.file_object_id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("附件未启用加密，不能登记密文元数据".to_string()))?;
+    if encryption.encryption_status != "encrypted" {
+        return Err(AppError::BadRequest(
+            "附件未启用加密，不能登记密文元数据".to_string(),
+        ));
+    }
+    if encrypted_byte_size < 0 {
+        return Err(AppError::BadRequest("密文大小不能小于 0".to_string()));
+    }
+    let encrypted_checksum_sha256 = validate_checksum_sha256(encrypted_checksum_sha256)?;
+    if encrypted_checksum_sha256.is_empty() {
+        return Err(AppError::BadRequest(
+            "密文 SHA-256 校验值不能为空".to_string(),
+        ));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'uploaded',
+            encrypted_byte_size = ?1,
+            encrypted_checksum_sha256 = ?2,
+            updated_at = datetime('now')
+        WHERE id = ?3
+          AND status = 'pending'
+          AND encryption_status = 'encrypted'
+        "#,
+    )
+    .bind(encrypted_byte_size)
+    .bind(&encrypted_checksum_sha256)
+    .bind(attachment.file_object_id)
+    .execute(pool)
+    .await?;
+
+    get_attachment(pool, attachment.id).await
+}
+
+pub async fn get_file_object_encryption(
+    pool: &SqlitePool,
+    file_object_id: i64,
+) -> AppResult<Option<FileObjectEncryption>> {
+    if file_object_id <= 0 {
+        return Err(AppError::BadRequest("文件对象 ID 无效".to_string()));
+    }
+    let row = sqlx::query_as::<_, (String, String, i64, String, String)>(
+        r#"
+        SELECT
+            encryption_status,
+            encryption_format,
+            encrypted_byte_size,
+            encrypted_checksum_sha256,
+            data_key_envelope
+        FROM file_objects
+        WHERE id = ?1
+        "#,
+    )
+    .bind(file_object_id)
+    .fetch_one(pool)
+    .await?;
+    let (
+        encryption_status,
+        encryption_format,
+        encrypted_byte_size,
+        encrypted_checksum_sha256,
+        data_key_envelope,
+    ) = row;
+    if encryption_status != "encrypted" {
+        return Ok(None);
+    }
+    Ok(Some(FileObjectEncryption {
+        file_object_id,
+        encryption_status,
+        encryption_format,
+        encrypted_byte_size,
+        encrypted_checksum_sha256,
+        data_key_envelope,
+    }))
 }
 
 pub async fn archive_attachment(

@@ -4,7 +4,10 @@ use axum::{
     http::{Request, StatusCode, header},
     response::Response,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD},
+};
 use chrono::Utc;
 use http_body_util::BodyExt;
 use serde_json::Value;
@@ -14,7 +17,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
     domains::{bootstrap, device_sessions, projects, storage, users},
-    platform::{config::Settings, db, realtime},
+    platform::{config::Settings, db, file_crypto, realtime},
     web::router::{AppState, build_router},
 };
 
@@ -314,12 +317,51 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .fetch_one(&pool)
     .await
     .unwrap();
+    let signed_response = request(
+        &app,
+        "GET",
+        &format!("{attachment_member}/upload-url"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(signed_response.status(), StatusCode::OK);
+    let signed = json_body(signed_response).await;
+    let encryption = signed["data"]["encryption"].clone();
+    assert_eq!(encryption["format"], "YUANCE-ENC-v1");
+    let file_object_id = encryption["file_object_id"].as_i64().unwrap();
+    let stored_envelope =
+        sqlx::query_scalar::<_, String>("SELECT data_key_envelope FROM file_objects WHERE id = ?1")
+            .bind(file_object_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let server_key = file_crypto::open_data_key(
+        &test_settings().file_master_key,
+        &stored_envelope,
+        object_key.as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(
+        BASE64_STANDARD
+            .decode(encryption["key"].as_str().unwrap())
+            .unwrap(),
+        server_key
+    );
+    let data_key: [u8; 32] = BASE64_STANDARD
+        .decode(encryption["key"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let ciphertext =
+        file_crypto::encrypt_plaintext(&data_key, file_object_id, &attachment_content).unwrap();
+    let encrypted_sha256 = format!("{:x}", Sha256::digest(&ciphertext));
     storage::write_test_memory_object(
         &pool,
         &test_settings(),
         &object_key,
-        "text/plain",
-        attachment_content,
+        "application/octet-stream",
+        ciphertext,
     )
     .await
     .unwrap();
@@ -328,7 +370,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         "POST",
         &format!("{attachment_member}/uploaded"),
         &credentials.access_token,
-        None,
+        Some(serde_json::json!({ "encrypted_sha256": encrypted_sha256 })),
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -402,10 +444,18 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         &[(header::RANGE.as_str(), "bytes=10-17")],
     )
     .await;
-    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
-    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 10-17/29");
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(&body[..], b"resource");
+    let preview_status = response.status();
+    let preview_headers = response.headers().clone();
+    let preview_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    if preview_status != StatusCode::PARTIAL_CONTENT {
+        eprintln!(
+            "range preview failed: {:?}",
+            String::from_utf8_lossy(&preview_bytes)
+        );
+    }
+    assert_eq!(preview_status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(preview_headers[header::CONTENT_RANGE], "bytes 10-17/29");
+    assert_eq!(&preview_bytes[..], b"resource");
     let response = request(
         &app,
         "GET",
@@ -1852,6 +1902,7 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        file_master_key: "test-file-master-key-that-is-long-enough".to_string(),
         device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
     };

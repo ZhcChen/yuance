@@ -8,6 +8,7 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
     },
 };
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::{
@@ -22,7 +23,7 @@ use crate::{
     },
     platform::{
         error::{AppError, AppResult},
-        realtime,
+        file_crypto, realtime,
         security::csrf,
     },
     web::{
@@ -1203,6 +1204,20 @@ pub struct AttachmentSignedUrlPayload {
     pub expires_in_seconds: u64,
     pub expires_at: String,
     pub checksum_sha256: String,
+    pub encryption: Option<AttachmentEncryptionPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentEncryptionPayload {
+    pub algorithm: &'static str,
+    pub format: String,
+    pub chunk_size: i64,
+    pub key: String,
+    pub file_object_id: i64,
+    pub plaintext_byte_size: i64,
+    pub plaintext_sha256: String,
+    pub encrypted_byte_size: i64,
+    pub encrypted_checksum_sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -5284,6 +5299,7 @@ async fn attachment_preview_content_response(
         &attachment,
         state.settings.experimental_legacy_preview_enabled(),
     )?;
+    let encryption = files::get_file_object_encryption(pool, attachment.file_object_id).await?;
     let (stored_content_type, total_u64) =
         storage::stat_object(pool, &state.settings, &attachment.object_key).await?;
     let content_type = resolved_preview_content_type(
@@ -5291,8 +5307,13 @@ async fn attachment_preview_content_response(
         &attachment.content_type,
         &attachment.original_filename,
     );
-    let total = usize::try_from(total_u64)
-        .map_err(|_| AppError::BadRequest("附件大小超出当前预览能力".to_string()))?;
+    let total = if encryption.is_some() {
+        usize::try_from(attachment.byte_size)
+            .map_err(|_| AppError::BadRequest("附件大小超出当前预览能力".to_string()))?
+    } else {
+        usize::try_from(total_u64)
+            .map_err(|_| AppError::BadRequest("附件大小超出当前预览能力".to_string()))?
+    };
     let range = match headers.get(header::RANGE) {
         Some(value) => match parse_single_byte_range(value.to_str().unwrap_or_default(), total) {
             Some(range) => Some(range),
@@ -5305,7 +5326,23 @@ async fn attachment_preview_content_response(
         None => (StatusCode::OK, 0, total.saturating_sub(1)),
     };
     let selected_length = if total == 0 { 0 } else { end - start + 1 };
-    let body = if method == Method::HEAD || selected_length == 0 {
+    let body = if let Some(encryption) = encryption {
+        if method == Method::HEAD || selected_length == 0 {
+            Bytes::new()
+        } else {
+            Bytes::from(
+                read_decrypted_attachment_range(
+                    state,
+                    pool,
+                    &attachment,
+                    &encryption,
+                    start,
+                    end + 1,
+                )
+                .await?,
+            )
+        }
+    } else if method == Method::HEAD || selected_length == 0 {
         Bytes::new()
     } else if status == StatusCode::PARTIAL_CONTENT {
         Bytes::from(
@@ -5351,6 +5388,60 @@ async fn attachment_preview_content_response(
     )
     .await?;
     Ok(response)
+}
+
+async fn read_decrypted_attachment_range(
+    state: &AppState,
+    pool: &SqlitePool,
+    attachment: &files::FileAttachmentSummary,
+    encryption: &files::FileObjectEncryption,
+    start: usize,
+    end_exclusive: usize,
+) -> AppResult<Vec<u8>> {
+    let data_key = file_crypto::open_data_key(
+        &state.settings.file_master_key,
+        &encryption.data_key_envelope,
+        attachment.object_key.as_bytes(),
+    )?;
+    let header_len = file_crypto::header_len_for(attachment.byte_size as u64);
+    let header_bytes = storage::read_object_range(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        0,
+        header_len as u64,
+    )
+    .await?;
+    let header = file_crypto::parse_encryption_header(&header_bytes)?;
+    if start >= header.plaintext_byte_size as usize
+        || end_exclusive > header.plaintext_byte_size as usize
+        || start >= end_exclusive
+    {
+        return Ok(Vec::new());
+    }
+    let first_chunk = start / header.chunk_size;
+    let last_chunk = (end_exclusive - 1) / header.chunk_size;
+    let body_start = header_len + file_crypto::body_offset_for_chunk(&header, first_chunk as u32);
+    let body_end =
+        header_len + file_crypto::body_offset_for_chunk(&header, (last_chunk as u32) + 1);
+    let body = storage::read_object_range(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        body_start as u64,
+        body_end as u64,
+    )
+    .await?;
+    file_crypto::decrypt_body_range(
+        &data_key,
+        attachment.file_object_id,
+        &header,
+        &body,
+        first_chunk as u32,
+        (last_chunk as u32) + 1,
+        start,
+        end_exclusive,
+    )
 }
 
 pub async fn project_attachment_delete(
@@ -5713,7 +5804,7 @@ pub async fn create_project_resource_attachment(
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let checksum_sha256 = payload.checksum_sha256.clone();
-    let attachment = files::create_attachment_with_checksum(
+    let attachment = files::create_attachment_with_checksum_encrypted(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -5729,6 +5820,7 @@ pub async fn create_project_resource_attachment(
             activity_summary: None,
         },
         &checksum_sha256,
+        &state.settings.file_master_key,
     )
     .await?;
     audit::record(
@@ -5817,6 +5909,7 @@ pub async fn project_resource_attachment_mark_uploaded(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    body: Bytes,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
@@ -5833,17 +5926,48 @@ pub async fn project_resource_attachment_mark_uploaded(
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
             .await?;
-    storage::verify_uploaded_object(
-        pool,
-        &state.settings,
-        &attachment.object_key,
-        attachment.byte_size,
-        &attachment.content_type,
-    )
-    .await?;
-    let attachment =
+    let attachment = if files::get_file_object_encryption(pool, attachment.file_object_id)
+        .await?
+        .is_some()
+    {
+        let encrypted_checksum_sha256 = parse_mark_uploaded_request(&body)?
+            .and_then(|request| request.encrypted_sha256)
+            .ok_or_else(|| {
+                AppError::BadRequest("加密附件上传完成登记缺少密文 SHA-256".to_string())
+            })?;
+        let encrypted_byte_size = i64::try_from(file_crypto::encrypted_total_size(
+            attachment.byte_size as u64,
+        ))
+        .map_err(|_| AppError::BadRequest("加密文件大小超出系统支持范围".to_string()))?;
+        storage::verify_uploaded_object(
+            pool,
+            &state.settings,
+            &attachment.object_key,
+            encrypted_byte_size,
+            "application/octet-stream",
+        )
+        .await?;
+        files::mark_attachment_uploaded_encrypted(
+            pool,
+            attachment_id,
+            "project_resource",
+            resource.id,
+            encrypted_byte_size,
+            &encrypted_checksum_sha256,
+        )
+        .await?
+    } else {
+        storage::verify_uploaded_object(
+            pool,
+            &state.settings,
+            &attachment.object_key,
+            attachment.byte_size,
+            &attachment.content_type,
+        )
+        .await?;
         files::mark_attachment_uploaded(pool, attachment_id, "project_resource", resource.id)
-            .await?;
+            .await?
+    };
     audit::record(
         pool,
         Some(user.id),
@@ -5858,6 +5982,20 @@ pub async fn project_resource_attachment_mark_uploaded(
     .await?;
 
     Ok(json(attachment_payload(attachment)))
+}
+
+#[derive(Debug, Deserialize)]
+struct MarkUploadedRequest {
+    encrypted_sha256: Option<String>,
+}
+
+fn parse_mark_uploaded_request(body: &Bytes) -> AppResult<Option<MarkUploadedRequest>> {
+    if body.is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_slice(body)
+        .map(Some)
+        .map_err(|error| AppError::BadRequest(format!("上传完成登记参数无效：{error}")))
 }
 
 pub async fn project_resource_attachment_download_url(
@@ -7550,6 +7688,7 @@ pub async fn system_release_asset_upload_url(
         expires_in_seconds,
         expires_at,
         checksum_sha256: String::new(),
+        encryption: None,
     }))
 }
 
@@ -7601,6 +7740,7 @@ pub async fn system_release_asset_download_url(
         expires_in_seconds,
         expires_at,
         checksum_sha256: asset.checksum_sha256,
+        encryption: None,
     }))
 }
 
@@ -8732,13 +8872,19 @@ async fn signed_attachment_url_payload(
     let expires_in_seconds = normalize_signed_url_expiration(kind, query.expires_in_seconds)?;
     let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let encryption = files::get_file_object_encryption(pool, attachment.file_object_id).await?;
+    let transfer_content_type = if encryption.is_some() {
+        "application/octet-stream"
+    } else {
+        attachment.content_type.as_str()
+    };
     let mut request = match kind {
         SignedUrlKind::Upload => {
             storage::presign_upload_url(
                 pool,
                 &state.settings,
                 &attachment.object_key,
-                &attachment.content_type,
+                transfer_content_type,
                 expires_in_seconds,
             )
             .await?
@@ -8765,7 +8911,7 @@ async fn signed_attachment_url_payload(
         bind_test_storage_download_grant(
             state,
             &attachment.object_key,
-            &attachment.content_type,
+            transfer_content_type,
             actor_user_id,
             expires_in_seconds,
             &mut request,
@@ -8778,12 +8924,43 @@ async fn signed_attachment_url_payload(
             .fetch_one(pool)
             .await?;
 
+    let encryption_payload = if let Some(encryption) = encryption {
+        let data_key = file_crypto::open_data_key(
+            &state.settings.file_master_key,
+            &encryption.data_key_envelope,
+            attachment.object_key.as_bytes(),
+        )?;
+        let is_download = matches!(kind, SignedUrlKind::Download);
+        Some(AttachmentEncryptionPayload {
+            algorithm: "AES-256-GCM",
+            format: encryption.encryption_format,
+            chunk_size: file_crypto::FILE_CHUNK_SIZE as i64,
+            key: BASE64.encode(data_key),
+            file_object_id: attachment.file_object_id,
+            plaintext_byte_size: attachment.byte_size,
+            plaintext_sha256: checksum_sha256.clone(),
+            encrypted_byte_size: if is_download {
+                encryption.encrypted_byte_size
+            } else {
+                0
+            },
+            encrypted_checksum_sha256: if is_download {
+                encryption.encrypted_checksum_sha256
+            } else {
+                String::new()
+            },
+        })
+    } else {
+        None
+    };
+
     Ok(AttachmentSignedUrlPayload {
         attachment: attachment_payload(attachment),
         request,
         expires_in_seconds,
         expires_at,
         checksum_sha256,
+        encryption: encryption_payload,
     })
 }
 
