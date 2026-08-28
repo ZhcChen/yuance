@@ -127,7 +127,7 @@ test("encrypts resource uploads before signing and reports the ciphertext checks
     assert.equal(bytes.length, value.ciphertext.length);
     assert.deepEqual(decryptFile(value.encryption.key, value.encryption.fileObjectId, bytes), value.snapshot.content);
     return uploadResponse(204, url);
-  }, { encrypted: true });
+  }, { encrypted: true, content: Buffer.alloc(70 * 1024, 0x61) });
   const result = await value.executor.execute({ fileCapability: "file", transferGrant: "grant", binding });
   assert.deepEqual(result, {
     status: "completed",

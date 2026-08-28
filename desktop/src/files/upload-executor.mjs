@@ -147,6 +147,7 @@ function streamHandle(handle, expectedBytes, state, signal, encryption) {
   const noncesOffset = header ? header.length - chunkCount * 12 : 0;
   let chunkIndex = 0;
   let headerSent = false;
+  let pending = Buffer.alloc(0);
   return new ReadableStream({
     async pull(controller) {
       if (signal.aborted) return controller.error(uploadError("file_transfer_aborted"));
@@ -159,12 +160,34 @@ function streamHandle(handle, expectedBytes, state, signal, encryption) {
         return;
       }
       if (state.offset === expectedBytes) return controller.close();
-      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, sourceSize - state.sourceOffset));
+      if (!encryption) {
+        const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, sourceSize - state.sourceOffset));
+        try {
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, state.sourceOffset);
+          if (bytesRead === 0) return controller.error(uploadError("file_transfer_source_changed"));
+          const chunk = buffer.subarray(0, bytesRead);
+          state.offset += bytesRead;
+          state.sourceOffset += bytesRead;
+          state.hash.update(chunk);
+          controller.enqueue(chunk);
+        } catch {
+          controller.error(uploadError(signal.aborted ? "file_transfer_aborted" : "file_transfer_source_changed"));
+        }
+        return;
+      }
       try {
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, state.sourceOffset);
-        if (bytesRead === 0) return controller.error(uploadError("file_transfer_source_changed"));
-        const chunk = buffer.subarray(0, bytesRead);
-        if (encryption) {
+        while (pending.length < encryption.chunkSize && state.sourceOffset < sourceSize) {
+          const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, sourceSize - state.sourceOffset));
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, state.sourceOffset);
+          if (bytesRead === 0) throw uploadError("file_transfer_source_changed");
+          const chunk = buffer.subarray(0, bytesRead);
+          pending = Buffer.concat([pending, chunk]);
+          state.sourceOffset += bytesRead;
+          state.plaintextHash.update(chunk);
+        }
+        if (pending.length >= encryption.chunkSize || (state.sourceOffset >= sourceSize && pending.length > 0)) {
+          const chunk = pending.subarray(0, Math.min(encryption.chunkSize, pending.length));
+          pending = pending.subarray(chunk.length);
           const nonce = header.subarray(
             noncesOffset + chunkIndex * 12,
             noncesOffset + (chunkIndex + 1) * 12,
@@ -177,16 +200,14 @@ function streamHandle(handle, expectedBytes, state, signal, encryption) {
             chunk,
           );
           state.offset += encrypted.length;
-          state.sourceOffset += bytesRead;
           state.hash.update(encrypted);
-          state.plaintextHash.update(chunk);
           chunkIndex += 1;
           controller.enqueue(encrypted);
-        } else {
-          state.offset += bytesRead;
-          state.sourceOffset += bytesRead;
-          state.hash.update(chunk);
-          controller.enqueue(chunk);
+          return;
+        }
+        if (state.sourceOffset >= sourceSize && pending.length === 0) {
+          if (state.offset === expectedBytes) return controller.close();
+          throw uploadError("file_transfer_source_changed");
         }
       } catch {
         controller.error(uploadError(signal.aborted ? "file_transfer_aborted" : "file_transfer_source_changed"));
