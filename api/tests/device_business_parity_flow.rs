@@ -1134,6 +1134,49 @@ async fn device_project_attachment_preview_supports_metadata_navigation_and_byte
 }
 
 #[tokio::test]
+async fn device_project_attachment_preview_supports_svg_image() {
+    let pool = test_pool().await;
+    let admin_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    seed_memory_storage(&pool, admin_id).await;
+    let credentials = issue_device_credentials(&pool, admin_id, "project-svg-preview").await;
+    let app = test_app(pool.clone());
+    let collection_path = "/api/v1/projects/YCE/attachments";
+    let svg_content =
+        b"<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"10\" height=\"10\"/></svg>";
+    let attachment_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        collection_path,
+        "diagram.svg",
+        "image/svg+xml",
+        svg_content,
+    )
+    .await;
+
+    let preview_path = format!("{collection_path}/{attachment_id}/preview");
+    let response = request(&app, "GET", &preview_path, &credentials.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let metadata = json_body(response).await;
+    assert_eq!(metadata["data"]["attachment"]["id"], attachment_id);
+    assert_eq!(metadata["data"]["preview"]["kind"], "image");
+    assert_eq!(metadata["data"]["preview"]["content_enabled"], true);
+    assert_eq!(metadata["data"]["navigation"]["total"], 1);
+
+    let content_path = format!("{preview_path}/content");
+    let response = request(&app, "GET", &content_path, &credentials.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/svg+xml");
+    assert_eq!(
+        response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+        "nosniff"
+    );
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&body[..], svg_content);
+}
+
+#[tokio::test]
 async fn device_work_item_attachment_preview_enforces_contract_and_ownership() {
     let pool = test_pool().await;
     let admin_id = bootstrap_admin(&pool).await;

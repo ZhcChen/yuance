@@ -78,7 +78,13 @@ pub fn kind(
 pub fn is_previewable_image(content_type: &str) -> bool {
     matches!(
         normalized_content_type(content_type).as_str(),
-        "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/bmp" | "image/avif"
+        "image/jpeg"
+            | "image/png"
+            | "image/gif"
+            | "image/webp"
+            | "image/bmp"
+            | "image/avif"
+            | "image/svg+xml"
     )
 }
 
@@ -100,6 +106,7 @@ pub fn image_content_type_for_filename(filename: &str) -> Option<&'static str> {
         Some("gif") => Some("image/gif"),
         Some("jpeg" | "jpg") => Some("image/jpeg"),
         Some("png") => Some("image/png"),
+        Some("svg") => Some("image/svg+xml"),
         Some("webp") => Some("image/webp"),
         _ => None,
     }
@@ -185,8 +192,13 @@ mod tests {
             image_content_type_for_filename("photo.jpeg"),
             Some("image/jpeg")
         );
+        assert_eq!(
+            image_content_type_for_filename("photo.svg"),
+            Some("image/svg+xml")
+        );
         assert_eq!(image_content_type_for_filename("photo.txt"), None);
         assert_eq!(kind("photo.png", "image/png", false), Some("image"));
+        assert_eq!(kind("payload.svg", "image/svg+xml", false), Some("image"));
         assert_eq!(
             kind("photo.png", "application/octet-stream", false),
             Some("image")
@@ -205,6 +217,9 @@ mod tests {
             kind("legacy.doc", "application/msword", true),
             Some("document")
         );
-        assert_eq!(kind("payload.svg", "image/svg+xml", false), None);
+        assert_eq!(
+            kind("payload.svg", "application/octet-stream", false),
+            Some("image")
+        );
     }
 }
