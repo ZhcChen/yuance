@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { decryptFile } from "./file-crypto.mjs";
 import { isTrustedTransferFetch } from "../network/network-session.mjs";
 import { createOperationRegistry } from "../network/operation-registry.mjs";
 
@@ -36,10 +37,10 @@ export function createDownloadExecutor({ grantVault, targetManager, fetchImpl, r
         throw downloadError(controller.signal.aborted ? "file_transfer_aborted" : "file_transfer_network_error");
       }
       validateResponse(response, contract);
-      await writeResponse(response, target.handle, contract, controller.signal);
-      const locator = await target.commit(contract.expectedBytes);
+      const byteSize = await writeResponse(response, target.handle, contract, controller.signal);
+      const locator = await target.commit(byteSize);
       if (onCommittedTarget) await onCommittedTarget(locator);
-      return Object.freeze({ status: "completed", byteSize: contract.expectedBytes, filename: target.publicFilename });
+      return Object.freeze({ status: "completed", byteSize, filename: target.publicFilename });
     } catch (error) {
       if (error?.code?.startsWith("file_")) throw error;
       throw downloadError(controller.signal.aborted ? "file_transfer_aborted" : "file_transfer_failed");
@@ -56,6 +57,18 @@ export function createDownloadExecutor({ grantVault, targetManager, fetchImpl, r
 }
 
 async function writeResponse(response, handle, contract, signal) {
+  if (contract.encryption) {
+    const ciphertext = await collectCiphertext(response, contract, signal);
+    const plaintext = decryptFile(
+      contract.encryption.key,
+      contract.encryption.fileObjectId,
+      ciphertext,
+    );
+    const plaintextSha256 = createHash("sha256").update(plaintext).digest("hex");
+    if (plaintext.byteLength !== contract.encryption.plaintextByteSize || plaintextSha256 !== contract.sha256 || plaintextSha256 !== contract.encryption.plaintextSha256) throw downloadError("file_transfer_size_mismatch");
+    await writeAll(handle, plaintext);
+    return plaintext.byteLength;
+  }
   const reader = response.body?.getReader();
   if (!reader) throw downloadError("file_transfer_response_invalid");
   const hash = createHash("sha256");
@@ -71,6 +84,30 @@ async function writeResponse(response, handle, contract, signal) {
     await writeAll(handle, result.value);
   }
   if (bytes !== contract.expectedBytes || hash.digest("hex") !== contract.sha256) throw downloadError("file_transfer_size_mismatch");
+  return bytes;
+}
+
+async function collectCiphertext(response, contract, signal) {
+  const reader = response.body?.getReader();
+  if (!reader) throw downloadError("file_transfer_response_invalid");
+  const hash = createHash("sha256");
+  const parts = [];
+  let bytes = 0;
+  while (true) {
+    if (signal.aborted) throw downloadError("file_transfer_aborted");
+    let result;
+    try { result = await reader.read(); } catch { throw downloadError(signal.aborted ? "file_transfer_aborted" : "file_transfer_network_error"); }
+    if (result.done) break;
+    bytes += result.value.byteLength;
+    if (bytes > contract.expectedBytes) throw downloadError("file_transfer_size_mismatch");
+    hash.update(result.value);
+    parts.push(Buffer.from(result.value));
+  }
+  if (
+    bytes !== contract.expectedBytes ||
+    hash.digest("hex") !== contract.encryption.encryptedChecksumSha256
+  ) throw downloadError("file_transfer_size_mismatch");
+  return Buffer.concat(parts);
 }
 
 async function writeAll(handle, bytes) {

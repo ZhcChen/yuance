@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { decryptFile, encryptFile } from "../src/files/file-crypto.mjs";
 import { createUploadExecutor } from "../src/files/upload-executor.mjs";
 import { createTrustedNetworkSession } from "../src/network/network-session.mjs";
 import { createOperationRegistry } from "../src/network/operation-registry.mjs";
 
 const binding = Object.freeze({ profileEpoch: 1, authorizationVersion: 2, webContentsId: 3, frameRoutingId: 4 });
 
-async function fixture(t, delegate, { content = Buffer.from("upload canary"), timeoutMs = 1_000, expectedBytesDelta = 0 } = {}) {
+async function fixture(t, delegate, { content = Buffer.from("upload canary"), timeoutMs = 1_000, expectedBytesDelta = 0, encrypted = false } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-upload-executor-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const privatePath = path.join(root, "snapshot.bin");
@@ -22,22 +23,38 @@ async function fixture(t, delegate, { content = Buffer.from("upload canary"), ti
   const snapshot = Object.freeze({
     privatePath,
     filename: "snapshot.bin",
+    content,
     contentType: "application/octet-stream",
     byteSize: content.length,
     sha256: createHash("sha256").update(content).digest("hex"),
     remove: async () => { removed += 1; await fs.unlink(privatePath).catch(() => {}); },
   });
+  const encryption = encrypted
+    ? Object.freeze({
+      format: "YUANCE-ENC-v1",
+      algorithm: "AES-256-GCM",
+      chunkSize: 1024 * 1024,
+      key: randomBytes(32),
+      fileObjectId: 11,
+      plaintextByteSize: content.length,
+      plaintextSha256: snapshot.sha256,
+      encryptedByteSize: 0,
+      encryptedChecksumSha256: "",
+    })
+    : null;
+  const ciphertext = encryption ? encryptFile(encryption.key, encryption.fileObjectId, content) : content;
   const contract = Object.freeze({
     version: 1,
     purpose: "upload",
     method: "PUT",
     url: "https://objects.example/file?signature=opaque",
     origin: "https://objects.example",
-    headers: Object.freeze([Object.freeze(["content-type", "application/octet-stream"])]),
-    expectedBytes: content.length + expectedBytesDelta,
+    headers: Object.freeze([Object.freeze(["content-type", encryption ? "application/octet-stream" : "application/octet-stream"])]),
+    expectedBytes: ciphertext.length + expectedBytesDelta,
     contentType: "application/octet-stream",
     sha256: snapshot.sha256,
     expiresAt: Date.now() + 60_000,
+    ...(encryption ? { encryption } : {}),
   });
   const network = await createTrustedNetworkSession({
     electronSession: { fromPartition: () => ({ async clearStorageData() {}, async clearCache() {}, async clearAuthCache() {}, fetch: delegate }) },
@@ -54,7 +71,7 @@ async function fixture(t, delegate, { content = Buffer.from("upload canary"), ti
     platform: "linux",
     registry,
   });
-  return { executor, privatePath, snapshot, contract, registry, removed: () => removed };
+  return { executor, privatePath, snapshot, contract, registry, removed: () => removed, ciphertext, encryption };
 }
 
 test("streams a verified snapshot with fixed no-ambient request fields", async (t) => {
@@ -92,6 +109,40 @@ test("detects spool mutation during transfer and never permits replay", async (t
   await assert.rejects(value.executor.execute({ fileCapability: "file", transferGrant: "grant", binding }), (error) => error.code === "file_transfer_source_changed");
   assert.equal(value.removed(), 1);
   await assert.rejects(value.executor.execute({ fileCapability: "file", transferGrant: "grant", binding }));
+});
+
+test("encrypts resource uploads before signing and reports the ciphertext checksum", async (t) => {
+  const calls = [];
+  const value = await fixture(t, async (url, options) => {
+    const reader = options.body.getReader();
+    const parts = [];
+    while (true) {
+      const { done, value: part } = await reader.read();
+      if (done) break;
+      parts.push(Buffer.from(part));
+    }
+    const bytes = Buffer.concat(parts);
+    calls.push({ url, options, bytes });
+    assert.equal(bytes.subarray(0, 13).toString("ascii"), "YUANCE-ENC-v1");
+    assert.equal(bytes.length, value.ciphertext.length);
+    assert.deepEqual(decryptFile(value.encryption.key, value.encryption.fileObjectId, bytes), value.snapshot.content);
+    return uploadResponse(204, url);
+  }, { encrypted: true });
+  const result = await value.executor.execute({ fileCapability: "file", transferGrant: "grant", binding });
+  assert.deepEqual(result, {
+    status: "completed",
+    byteSize: value.snapshot.byteSize,
+    encryptedChecksumSha256: createHash("sha256").update(calls[0].bytes).digest("hex"),
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.headers.find(([name]) => name === "content-type")[1], "application/octet-stream");
+  assert.equal(value.removed(), 1);
+});
+
+test("rejects encrypted metadata drift before any network request", async (t) => {
+  const value = await fixture(t, async () => uploadResponse(204), { encrypted: true, expectedBytesDelta: 1 });
+  await assert.rejects(value.executor.execute({ fileCapability: "file", transferGrant: "grant", binding }), (error) => error.code === "file_transfer_contract_mismatch");
+  assert.equal(value.removed(), 1);
 });
 
 test("rejects redirects, auth challenges, URL drift, and network failures with stable errors", async (t) => {

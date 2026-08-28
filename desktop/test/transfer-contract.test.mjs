@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import test from "node:test";
 
+import { encryptedTotalSize } from "../src/files/file-crypto.mjs";
 import { parseTransferContract } from "../src/files/transfer-contract.mjs";
 
 const NOW = Date.UTC(2026, 7, 2, 10, 0, 0);
@@ -120,7 +122,7 @@ test("rejects unknown fields, invalid metadata, and TTL boundaries", () => {
   for (const value of [
     { ...contract(), redirect: true },
     contract({ request: { redirect: "manual" } }),
-    contract({ expected_bytes: 100 * 1024 * 1024 + 1 }),
+    contract({ expected_bytes: 128 * 1024 * 1024 + 1 }),
     contract({ content_type: "text/plain\r\nx: y" }),
     contract({ sha256: "A".repeat(64) }),
     contract({ expires_in_seconds: 61 }),
@@ -145,6 +147,85 @@ test("binds signed upload headers to expected metadata", () => {
   assert.throws(() => parse(contract({ request: { headers: [["content-type", "text/plain; charset=utf-8"], ["content-length", "35"]] } })), invalidContract);
   const parsed = parse(contract({ request: { headers: [["content-type", "text/plain; charset=utf-8"], ["content-length", "34"]] } }));
   assert.equal(new Map(parsed.headers).get("content-length"), "34");
+});
+
+test("parses encrypted resource upload and download contracts", () => {
+  const plaintextSha256 = "a".repeat(64);
+  const ciphertextSha256 = "b".repeat(64);
+  const upload = parse(contract({
+    content_type: "application/octet-stream",
+    request: { method: "PUT", url: "https://objects.example/upload?signature=opaque", headers: [["content-type", "application/octet-stream"]] },
+    expected_bytes: encryptedTotalSize(12),
+    sha256: plaintextSha256,
+    encryption: {
+      algorithm: "AES-256-GCM",
+      chunk_size: 1024 * 1024,
+      encrypted_byte_size: 0,
+      encrypted_checksum_sha256: "",
+      file_object_id: 11,
+      format: "YUANCE-ENC-v1",
+      key: randomBytes(32).toString("base64"),
+      plaintext_byte_size: 12,
+      plaintext_sha256: plaintextSha256,
+    },
+  }));
+  assert.equal(upload.expectedBytes, encryptedTotalSize(12));
+  assert.equal(upload.contentType, "application/octet-stream");
+  assert.equal(upload.sha256, plaintextSha256);
+  assert.equal(upload.encryption.key.length, 32);
+  assert.equal(upload.encryption.plaintextSha256, plaintextSha256);
+
+  const download = parse(contract({
+    purpose: "download",
+    request: { method: "GET", url: "https://cdn.example/file?signature=opaque", headers: [] },
+    content_type: "application/octet-stream",
+    expected_bytes: 99,
+    sha256: plaintextSha256,
+    encryption: {
+      algorithm: "AES-256-GCM",
+      chunk_size: 1024 * 1024,
+      encrypted_byte_size: 99,
+      encrypted_checksum_sha256: ciphertextSha256,
+      file_object_id: 11,
+      format: "YUANCE-ENC-v1",
+      key: randomBytes(32).toString("base64"),
+      plaintext_byte_size: 12,
+      plaintext_sha256: plaintextSha256,
+    },
+  }));
+  assert.equal(download.expectedBytes, 99);
+  assert.equal(download.encryption.encryptedChecksumSha256, ciphertextSha256);
+  assert.equal(download.encryption.encryptedByteSize, 99);
+});
+
+test("rejects malformed encrypted contract metadata", () => {
+  const baseEncryption = {
+    algorithm: "AES-256-GCM",
+    chunk_size: 1024 * 1024,
+    encrypted_byte_size: 0,
+    encrypted_checksum_sha256: "",
+    file_object_id: 11,
+    format: "YUANCE-ENC-v1",
+    key: randomBytes(32).toString("base64"),
+    plaintext_byte_size: 12,
+    plaintext_sha256: "a".repeat(64),
+  };
+  const encryptedBase = {
+    content_type: "application/octet-stream",
+    request: { method: "PUT", url: "https://objects.example/upload?signature=opaque", headers: [["content-type", "application/octet-stream"]] },
+    expected_bytes: encryptedTotalSize(12),
+    encryption: baseEncryption,
+  };
+  for (const encryption of [
+    { ...baseEncryption, algorithm: "AES-128-GCM" },
+    { ...baseEncryption, format: "YUANCE-ENC-v2" },
+    { ...baseEncryption, chunk_size: 1024 },
+    { ...baseEncryption, file_object_id: 0 },
+    { ...baseEncryption, key: Buffer.alloc(16).toString("base64") },
+    { ...baseEncryption, plaintext_byte_size: 128 * 1024 * 1024 + 1 },
+    { ...baseEncryption, plaintext_sha256: "A".repeat(64) },
+    { ...baseEncryption, encrypted_checksum_sha256: 1 },
+  ]) assert.throws(() => parse(contract({ ...encryptedBase, encryption })), invalidContract);
 });
 
 function invalidContract(error) { return error.code === "file_transfer_contract_invalid" && !error.message.includes("objects.example"); }

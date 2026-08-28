@@ -1,7 +1,14 @@
+import {
+  FILE_CHUNK_SIZE,
+  FILE_ENCRYPTION_FORMAT,
+  encryptedTotalSize,
+} from "../files/file-crypto.mjs";
+
 const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
 const PROJECT_KEY = /^[A-Z][A-Z0-9-]{1,31}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const MAX_TRANSFER_BYTES = 128 * 1024 * 1024;
 const RELEASE_PLATFORMS = new Set(["windows", "macos", "linux", "android", "ios"]);
 const RELEASE_ARCHITECTURES = new Set(["universal", "x64", "arm64"]);
 const RELEASE_ARTIFACT_KINDS = new Set(["installer", "signature", "sbom", "manifest", "checksums"]);
@@ -64,9 +71,12 @@ function signOperation(target, purpose) {
 
 function confirmOperation(target) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : target === "resource" ? ["attachmentId", "projectKey", "resourceId"] : target === "release" ? ["attachmentId", "releaseId"] : ["attachmentId", "itemKey"]);
+    const required = target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : target === "resource" ? ["attachmentId", "projectKey", "resourceId"] : target === "release" ? ["attachmentId", "releaseId"] : ["attachmentId", "itemKey"];
+    const optional = target === "resource" ? ["encryptedSha256"] : [];
+    hasKeys(input, required, optional);
     const reference = parseReference(input, target, true);
-    return descriptor("POST", `${memberPath(reference, target)}/uploaded`, target === "release" ? parsePublicReleaseAsset : parsePublicAttachment, false);
+    const body = input.encryptedSha256 === undefined ? undefined : JSON.stringify({ encrypted_sha256: input.encryptedSha256 });
+    return descriptor("POST", `${memberPath(reference, target)}/uploaded`, target === "release" ? parsePublicReleaseAsset : parsePublicAttachment, false, body);
   };
 }
 
@@ -110,24 +120,50 @@ function parseMetadata(value) {
 }
 
 function parseSignedAttachment(value, purpose) {
-  if (!isPlainObject(value) || !sameKeys(value, ["attachment", "checksum_sha256", "expires_at", "expires_in_seconds", "request"])) throw new TypeError("signed attachment is invalid");
+  if (!isPlainObject(value) || !hasKeys(value, ["attachment", "checksum_sha256", "expires_at", "expires_in_seconds", "request"], ["encryption"])) throw new TypeError("signed attachment is invalid");
   const attachment = parsePrivateAttachment(value.attachment);
   if (typeof value.checksum_sha256 !== "string" || !SHA256.test(value.checksum_sha256)) throw new TypeError("signed attachment checksum is invalid");
   if (!Number.isSafeInteger(value.expires_in_seconds) || value.expires_in_seconds < 1 || value.expires_in_seconds > 60) throw new TypeError("signed attachment expiry is invalid");
   if (typeof value.expires_at !== "string" || !Number.isFinite(Date.parse(value.expires_at))) throw new TypeError("signed attachment expiry is invalid");
   if (!isPlainObject(value.request) || !sameKeys(value.request, ["headers", "method", "url"])) throw new TypeError("signed attachment request is invalid");
+  const encryption = value.encryption === undefined ? null : parseSignedEncryption(value.encryption, purpose);
   return Object.freeze({
     attachment: attachment.publicValue,
     transfer: Object.freeze({
       schema_version: 1,
       purpose,
       request: value.request,
-      expected_bytes: attachment.publicValue.byte_size,
-      content_type: attachment.publicValue.content_type,
+      expected_bytes: encryption === null ? attachment.publicValue.byte_size : purpose === "download" ? encryption.encryptedByteSize : encryptedTotalSize(encryption.plaintextByteSize),
+      content_type: encryption === null ? attachment.publicValue.content_type : "application/octet-stream",
       sha256: value.checksum_sha256,
       expires_in_seconds: value.expires_in_seconds,
       expires_at: value.expires_at,
+      ...(encryption === null ? {} : { encryption }),
     }),
+  });
+}
+
+function parseSignedEncryption(value, purpose) {
+  if (!isPlainObject(value) || !sameKeys(value, ["algorithm", "chunk_size", "encrypted_byte_size", "encrypted_checksum_sha256", "file_object_id", "format", "key", "plaintext_byte_size", "plaintext_sha256"])) throw new TypeError("signed attachment encryption is invalid");
+  if (value.algorithm !== "AES-256-GCM" || value.format !== FILE_ENCRYPTION_FORMAT || !Number.isSafeInteger(value.chunk_size) || value.chunk_size !== FILE_CHUNK_SIZE) throw new TypeError("signed attachment encryption is invalid");
+  const fileObjectId = positiveInteger(value.file_object_id, "fileObjectId");
+  const plaintextByteSize = boundedInteger(value.plaintext_byte_size, 0, MAX_ATTACHMENT_BYTES, "plaintextByteSize");
+  if (typeof value.plaintext_sha256 !== "string" || !SHA256.test(value.plaintext_sha256) || typeof value.key !== "string") throw new TypeError("signed attachment encryption is invalid");
+  const key = Buffer.from(value.key, "base64");
+  if (key.length !== 32) throw new TypeError("signed attachment encryption key is invalid");
+  const encryptedByteSize = boundedInteger(value.encrypted_byte_size, 0, MAX_TRANSFER_BYTES, "encryptedByteSize");
+  if (purpose === "download" && encryptedByteSize <= 0) throw new TypeError("signed attachment encryption is invalid");
+  if (typeof value.encrypted_checksum_sha256 !== "string" || (purpose === "download" && !SHA256.test(value.encrypted_checksum_sha256))) throw new TypeError("signed attachment encryption is invalid");
+  return Object.freeze({
+    algorithm: value.algorithm,
+    format: value.format,
+    chunkSize: value.chunk_size,
+    key,
+    fileObjectId,
+    plaintextByteSize,
+    plaintextSha256: value.plaintext_sha256,
+    encryptedByteSize: purpose === "upload" ? encryptedTotalSize(plaintextByteSize) : encryptedByteSize,
+    encryptedChecksumSha256: value.encrypted_checksum_sha256,
   });
 }
 
@@ -169,5 +205,10 @@ function boundedInteger(value, minimum, maximum, name = "integer") { if (!Number
 function boundedString(value, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError("string field is invalid"); return value; }
 function requiredEnum(value, allowed, name) { if (typeof value !== "string" || !allowed.has(value)) throw new TypeError(`${name} is invalid`); return value; }
 function exactKeys(value, allowed) { if (Object.keys(value).some((key) => !allowed.includes(key))) throw new TypeError("attachment operation contains unknown fields"); }
+function hasKeys(value, required, optional) {
+  const allowed = new Set([...required, ...optional]);
+  if (Object.keys(value).some((key) => !allowed.has(key)) || required.some((key) => !Object.hasOwn(value, key))) throw new TypeError("attachment operation contains unknown or missing fields");
+  return true;
+}
 function sameKeys(value, expected) { const keys = Object.keys(value).sort(); return keys.length === expected.length && keys.every((key, index) => key === expected[index]); }
 function isPlainObject(value) { return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype; }

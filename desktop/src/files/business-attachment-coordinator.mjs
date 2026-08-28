@@ -66,11 +66,15 @@ export function createBusinessAttachmentCoordinator({
       const contract = parseBusinessContract(signed.transfer, "upload");
       const transferGrant = grantVault.issue(contract, uploadBinding).grant;
       onStage("uploading");
-      await uploadExecutor.execute({ fileCapability, transferGrant, binding: uploadBinding, signal });
+      const uploadResult = await uploadExecutor.execute({ fileCapability, transferGrant, binding: uploadBinding, signal });
       onStage("confirming");
       let uploaded;
       try {
-        uploaded = await restTransport.execute(`attachment.${target}confirm`, { ...memberReference, attachmentId: created.id });
+        uploaded = await restTransport.execute(`attachment.${target}confirm`, {
+          ...memberReference,
+          attachmentId: created.id,
+          ...(uploadResult?.encryptedChecksumSha256 ? { encryptedSha256: uploadResult.encryptedChecksumSha256 } : {}),
+        });
       } catch (error) {
         if (error?.code === "mutation_result_uncertain") throw publicError("attachment_confirm_uncertain", created);
         throw error;

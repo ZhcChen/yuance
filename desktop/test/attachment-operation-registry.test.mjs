@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import test from "node:test";
 
 import { createAttachmentOperationRegistry } from "../src/network/attachment-operation-registry.mjs";
+import { encryptedTotalSize } from "../src/files/file-crypto.mjs";
 import { createOperationRegistry } from "../src/network/operation-registry.mjs";
 
 const metadata = Object.freeze({ filename: "report.txt", contentType: "text/plain", byteSize: 12, sha256: "a".repeat(64) });
@@ -53,6 +55,29 @@ test("signed responses become private transfer inputs and public attachment DTOs
   assert.equal(JSON.stringify(parsed.attachment).includes("private"), false);
 });
 
+test("resource signed responses carry encryption metadata and confirm reports ciphertext hash", () => {
+  const registry = createAttachmentOperationRegistry();
+  const upload = registry.resolve("attachment.resourceuploadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9 });
+  const parsedUpload = upload.parse(rawSignedAttachment("upload"));
+  assert.equal(parsedUpload.transfer.content_type, "application/octet-stream");
+  assert.equal(parsedUpload.transfer.expected_bytes, encryptedTotalSize(12));
+  assert.equal(parsedUpload.transfer.sha256, "a".repeat(64));
+  assert.equal(parsedUpload.transfer.encryption.plaintextSha256, "a".repeat(64));
+  assert.equal(parsedUpload.transfer.encryption.key.length, 32);
+  assert.equal(parsedUpload.transfer.encryption.fileObjectId, 11);
+
+  const download = registry.resolve("attachment.resourcedownloadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant-token" });
+  const parsedDownload = download.parse(rawSignedAttachment("download", { encryptedByteSize: 99, encryptedChecksumSha256: "b".repeat(64) }));
+  assert.equal(parsedDownload.transfer.expected_bytes, 99);
+  assert.equal(parsedDownload.transfer.sha256, "a".repeat(64));
+  assert.equal(parsedDownload.transfer.encryption.encryptedChecksumSha256, "b".repeat(64));
+
+  const confirm = registry.resolve("attachment.resourceconfirm", { projectKey: "YCE", resourceId: 8, attachmentId: 9, encryptedSha256: "c".repeat(64) });
+  assert.deepEqual(JSON.parse(confirm.body), { encrypted_sha256: "c".repeat(64) });
+  const plainConfirm = registry.resolve("attachment.resourceconfirm", { projectKey: "YCE", resourceId: 8, attachmentId: 9 });
+  assert.equal(plainConfirm.body, undefined);
+});
+
 test("rejects request primitive injection and keeps attachment operations out of renderer registry", () => {
   const registry = createAttachmentOperationRegistry();
   for (const input of [
@@ -91,5 +116,30 @@ function rawAttachment() {
     status: "pending",
     created_by: "Alice",
     created_at: "2026-08-03T00:00:00Z",
+  };
+}
+
+function rawSignedAttachment(purpose, overrides = {}) {
+  return {
+    attachment: rawAttachment(),
+    request: {
+      method: purpose === "upload" ? "PUT" : "GET",
+      url: `/api/v1/test-storage/${purpose}?object_key=private`,
+      headers: purpose === "upload" ? [["content-type", "application/octet-stream"]] : [],
+    },
+    expires_in_seconds: 60,
+    expires_at: new Date(Date.now() + 60_000).toISOString(),
+    checksum_sha256: "a".repeat(64),
+    encryption: {
+      algorithm: "AES-256-GCM",
+      chunk_size: 1024 * 1024,
+      encrypted_byte_size: overrides.encryptedByteSize ?? 0,
+      encrypted_checksum_sha256: overrides.encryptedChecksumSha256 ?? "",
+      file_object_id: 11,
+      format: "YUANCE-ENC-v1",
+      key: randomBytes(32).toString("base64"),
+      plaintext_byte_size: 12,
+      plaintext_sha256: "a".repeat(64),
+    },
   };
 }

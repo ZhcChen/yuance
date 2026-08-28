@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 
 import { openRegularFile, sameFileIdentity } from "./file-identity.mjs";
+import {
+  createEncryptionHeader,
+  encryptBodyChunk,
+  encryptedTotalSize,
+} from "./file-crypto.mjs";
 import { isTrustedTransferFetch } from "../network/network-session.mjs";
 import { createOperationRegistry } from "../network/operation-registry.mjs";
 
@@ -49,8 +54,20 @@ export function createUploadExecutor({
       if (controller.signal.aborted) throw uploadError("file_transfer_aborted");
       opened = await openSnapshotHandle({ filePath: snapshot.privatePath });
       await verifySnapshot(opened, snapshot, contract, controller.signal);
-      const uploadState = { offset: 0, hash: createHash("sha256") };
-      const body = streamHandle(opened.handle, contract.expectedBytes, uploadState, controller.signal);
+      const encryption = contract.encryption || null;
+      const uploadState = {
+        offset: 0,
+        sourceOffset: 0,
+        hash: createHash("sha256"),
+        plaintextHash: createHash("sha256"),
+      };
+      const body = streamHandle(
+        opened.handle,
+        contract.expectedBytes,
+        uploadState,
+        controller.signal,
+        encryption,
+      );
       try {
         response = await fetchImpl(contract.url, {
           method: "PUT",
@@ -66,12 +83,22 @@ export function createUploadExecutor({
         if (error?.code?.startsWith("file_transfer_")) throw error;
         throw uploadError(controller.signal.aborted ? "file_transfer_aborted" : "file_transfer_network_error");
       }
-      if (uploadState.offset !== contract.expectedBytes || uploadState.hash.digest("hex") !== contract.sha256) throw uploadError("file_transfer_source_changed");
+      if (uploadState.offset !== contract.expectedBytes) throw uploadError("file_transfer_source_changed");
+      const ciphertextSha256 = uploadState.hash.digest("hex");
+      if (encryption) {
+        if (uploadState.plaintextHash.digest("hex") !== contract.sha256) throw uploadError("file_transfer_source_changed");
+      } else if (ciphertextSha256 !== contract.sha256) {
+        throw uploadError("file_transfer_source_changed");
+      }
       const finalIdentity = await opened.currentIdentity();
       if (!sameFileIdentity(opened.identity, finalIdentity)) throw uploadError("file_transfer_source_changed");
       validateResponse(response, contract);
       await response.body?.cancel().catch(() => {});
-      return Object.freeze({ status: "completed", byteSize: contract.expectedBytes });
+      return Object.freeze({
+        status: "completed",
+        byteSize: encryption ? encryption.plaintextByteSize : contract.expectedBytes,
+        ...(encryption ? { encryptedChecksumSha256: ciphertextSha256 } : {}),
+      });
     } catch (error) {
       if (error?.code?.startsWith("file_transfer_")) throw error;
       throw uploadError(controller.signal.aborted ? "file_transfer_aborted" : "file_transfer_failed");
@@ -95,31 +122,72 @@ async function verifySnapshot(opened, snapshot, contract, signal) {
   const hash = createHash("sha256");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   let offset = 0;
-  while (offset < contract.expectedBytes) {
+  const snapshotSize = contract.encryption ? contract.encryption.plaintextByteSize : contract.expectedBytes;
+  while (offset < snapshotSize) {
     if (signal.aborted) throw uploadError("file_transfer_aborted");
-    const length = Math.min(buffer.length, contract.expectedBytes - offset);
+    const length = Math.min(buffer.length, snapshotSize - offset);
     const { bytesRead } = await opened.handle.read(buffer, 0, length, offset);
     if (bytesRead === 0) throw uploadError("file_transfer_source_changed");
     hash.update(buffer.subarray(0, bytesRead));
     offset += bytesRead;
   }
   const extra = await opened.handle.read(buffer, 0, 1, offset);
-  if (extra.bytesRead !== 0 || hash.digest("hex") !== contract.sha256 || !sameFileIdentity(opened.identity, await opened.currentIdentity())) throw uploadError("file_transfer_source_changed");
+  const expectedSha256 = contract.encryption ? contract.encryption.plaintextSha256 : contract.sha256;
+  if (extra.bytesRead !== 0 || hash.digest("hex") !== expectedSha256 || !sameFileIdentity(opened.identity, await opened.currentIdentity())) throw uploadError("file_transfer_source_changed");
 }
 
-function streamHandle(handle, expectedBytes, state, signal) {
+function streamHandle(handle, expectedBytes, state, signal, encryption) {
+  const sourceSize = encryption ? encryption.plaintextByteSize : expectedBytes;
+  const header = encryption
+    ? createEncryptionHeader(encryption.plaintextByteSize, encryption.plaintextSha256)
+    : null;
+  const chunkCount = encryption
+    ? Math.ceil(encryption.plaintextByteSize / encryption.chunkSize)
+    : 0;
+  const noncesOffset = header ? header.length - chunkCount * 12 : 0;
+  let chunkIndex = 0;
+  let headerSent = false;
   return new ReadableStream({
     async pull(controller) {
       if (signal.aborted) return controller.error(uploadError("file_transfer_aborted"));
+      if (encryption && !headerSent) {
+        state.hash.update(header);
+        state.offset += header.length;
+        headerSent = true;
+        controller.enqueue(header);
+        if (chunkCount === 0) return controller.close();
+        return;
+      }
       if (state.offset === expectedBytes) return controller.close();
-      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, expectedBytes - state.offset));
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, sourceSize - state.sourceOffset));
       try {
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, state.offset);
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, state.sourceOffset);
         if (bytesRead === 0) return controller.error(uploadError("file_transfer_source_changed"));
         const chunk = buffer.subarray(0, bytesRead);
-        state.offset += bytesRead;
-        state.hash.update(chunk);
-        controller.enqueue(chunk);
+        if (encryption) {
+          const nonce = header.subarray(
+            noncesOffset + chunkIndex * 12,
+            noncesOffset + (chunkIndex + 1) * 12,
+          );
+          const encrypted = encryptBodyChunk(
+            encryption.key,
+            encryption.fileObjectId,
+            chunkIndex,
+            nonce,
+            chunk,
+          );
+          state.offset += encrypted.length;
+          state.sourceOffset += bytesRead;
+          state.hash.update(encrypted);
+          state.plaintextHash.update(chunk);
+          chunkIndex += 1;
+          controller.enqueue(encrypted);
+        } else {
+          state.offset += bytesRead;
+          state.sourceOffset += bytesRead;
+          state.hash.update(chunk);
+          controller.enqueue(chunk);
+        }
       } catch {
         controller.error(uploadError(signal.aborted ? "file_transfer_aborted" : "file_transfer_source_changed"));
       }
@@ -128,7 +196,19 @@ function streamHandle(handle, expectedBytes, state, signal) {
 }
 
 function validatePair(snapshot, contract) {
-  if (!snapshot || contract?.purpose !== "upload" || contract.method !== "PUT" || snapshot.byteSize !== contract.expectedBytes || snapshot.sha256 !== contract.sha256 || snapshot.contentType !== contract.contentType) throw uploadError("file_transfer_contract_mismatch");
+  if (!snapshot || contract?.purpose !== "upload" || contract.method !== "PUT") throw uploadError("file_transfer_contract_mismatch");
+  if (contract.encryption) {
+    const expectedBytes = encryptedTotalSize(contract.encryption.plaintextByteSize);
+    if (
+      snapshot.byteSize !== contract.encryption.plaintextByteSize ||
+      snapshot.sha256 !== contract.encryption.plaintextSha256 ||
+      snapshot.sha256 !== contract.sha256 ||
+      contract.expectedBytes !== expectedBytes ||
+      contract.contentType !== "application/octet-stream"
+    ) throw uploadError("file_transfer_contract_mismatch");
+    return;
+  }
+  if (snapshot.byteSize !== contract.expectedBytes || snapshot.sha256 !== contract.sha256 || snapshot.contentType !== contract.contentType) throw uploadError("file_transfer_contract_mismatch");
 }
 
 function validateResponse(response, contract) {

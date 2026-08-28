@@ -50,6 +50,13 @@ test("coordinates resource attachments with scoped resource references", async (
   assert.deepEqual(calls[0], ["attachment.resourcedownloadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant-token" }]);
 });
 
+test("forwards the encrypted ciphertext checksum on resource upload confirmation", async () => {
+  const calls = [];
+  const coordinator = fixture({ calls, encryptedUpload: true });
+  await coordinator.uploadProjectResourceAttachment({ projectKey: "YCE", resourceId: 8, fileCapability: capability, binding, onStage: () => {}, signal: undefined });
+  assert.deepEqual(calls[5], ["attachment.resourceconfirm", { projectKey: "YCE", resourceId: 8, attachmentId: 9, encryptedSha256: "c".repeat(64) }]);
+});
+
 test("coordinates release asset upload and download entirely in the main process", async () => {
   const calls = [];
   const stages = [];
@@ -143,7 +150,7 @@ test("rejects download grants for attachments that are not uploaded", async () =
   assert.equal(calls.some(([name]) => name === "download"), false);
 });
 
-function fixture({ calls = [], signedAttachment = attachment("pending"), executeError, revealError = false, release = false } = {}) {
+function fixture({ calls = [], signedAttachment = attachment("pending"), executeError, revealError = false, release = false, encryptedUpload = false } = {}) {
   const transfer = signedTransfer("upload");
   const restTransport = {
     async execute(name, input) {
@@ -161,7 +168,7 @@ function fixture({ calls = [], signedAttachment = attachment("pending"), execute
     fileVault: { describe(value, valueBinding) { calls.push(["describe", { value, valueBinding }]); return metadata; } },
     grantVault: { issue(contract, valueBinding) { calls.push(["issue", { contract, valueBinding }]); return { grant: `ytg_${"c".repeat(32)}` }; } },
     revealVault: { issue(locator, valueBinding) { calls.push(["reveal", { locator, valueBinding }]); if (revealError) throw new Error("unavailable"); return { capability: `yrd_${"d".repeat(32)}` }; } },
-    uploadExecutor: { async execute(input) { calls.push(["upload", input]); return { status: "completed", byteSize: 12 }; } },
+    uploadExecutor: { async execute(input) { calls.push(["upload", input]); return encryptedUpload ? { status: "completed", byteSize: 12, encryptedChecksumSha256: "c".repeat(64) } : { status: "completed", byteSize: 12 }; } },
     downloadExecutor: { async execute(input) { calls.push(["download", input]); await input.onCommittedTarget(Object.freeze({ privatePath: "/private/report.txt", identity: Object.freeze({ dev: "1", ino: "2", size: "12", mtimeNs: "3", ctimeNs: "4" }) })); return { status: "completed", filename: input.suggestedFilename, byteSize: 12 }; } },
     apiOrigin: "http://127.0.0.1:3000",
     allowLoopbackHttp: true,

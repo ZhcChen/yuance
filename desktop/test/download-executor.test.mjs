@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 
+import { encryptFile } from "../src/files/file-crypto.mjs";
 import { createDownloadExecutor } from "../src/files/download-executor.mjs";
 import { createTrustedNetworkSession } from "../src/network/network-session.mjs";
 import { createOperationRegistry } from "../src/network/operation-registry.mjs";
@@ -9,7 +10,7 @@ import { createOperationRegistry } from "../src/network/operation-registry.mjs";
 const content = Buffer.from("download canary");
 const binding = Object.freeze({ profileEpoch: 1, authorizationVersion: 2, webContentsId: 3, frameRoutingId: 4 });
 
-async function fixture(delegate, { cancelled = false, timeoutMs = 1_000, writeFailure = false } = {}) {
+async function fixture(delegate, { cancelled = false, timeoutMs = 1_000, writeFailure = false, encryption = null } = {}) {
   const written = [];
   let cleaned = 0;
   let committed = 0;
@@ -20,7 +21,20 @@ async function fixture(delegate, { cancelled = false, timeoutMs = 1_000, writeFa
     async commit(bytes) { assert.equal(bytes, content.length); committed += 1; return Object.freeze({ privatePath: "/private/canary.bin", identity: Object.freeze({ dev: "1", ino: "2", size: "15", mtimeNs: "3", ctimeNs: "4" }) }); },
     async cleanup() { cleaned += 1; },
   });
-  const contract = Object.freeze({ version: 1, purpose: "download", method: "GET", url: "https://objects.example/file?signature=opaque", origin: "https://objects.example", headers: Object.freeze([]), expectedBytes: content.length, contentType: "application/octet-stream", sha256: createHash("sha256").update(content).digest("hex"), expiresAt: Date.now() + 60_000 });
+  const ciphertext = encryption ? encryptFile(encryption.key, encryption.fileObjectId, content) : content;
+  const contract = Object.freeze({
+    version: 1,
+    purpose: "download",
+    method: "GET",
+    url: "https://objects.example/file?signature=opaque",
+    origin: "https://objects.example",
+    headers: Object.freeze([]),
+    expectedBytes: ciphertext.length,
+    contentType: "application/octet-stream",
+    sha256: createHash("sha256").update(content).digest("hex"),
+    expiresAt: Date.now() + 60_000,
+    ...(encryption ? { encryption: { ...encryption, encryptedByteSize: ciphertext.length, encryptedChecksumSha256: createHash("sha256").update(ciphertext).digest("hex") } } : {}),
+  });
   const network = await createTrustedNetworkSession({ electronSession: { fromPartition: () => ({ async clearStorageData() {}, async clearCache() {}, async clearAuthCache() {}, fetch: delegate }) }, mode: "production", allowedOrigin: "https://api.example" });
   const registry = createOperationRegistry();
   const executor = createDownloadExecutor({
@@ -30,7 +44,7 @@ async function fixture(delegate, { cancelled = false, timeoutMs = 1_000, writeFa
     registry,
     timeoutMs,
   });
-  return { executor, registry, written, cleaned: () => cleaned, committed: () => committed, consumed: () => consumed };
+  return { executor, registry, written, cleaned: () => cleaned, committed: () => committed, consumed: () => consumed, ciphertext };
 }
 
 test("streams and verifies a download before committing the target", async () => {
@@ -93,6 +107,53 @@ test("maps write failure, timeout, external abort, and registry abort to stable 
     assert.equal(value.cleaned(), 1);
     assert.deepEqual(value.registry.snapshot(), { active: 0 });
   }
+});
+
+test("decrypts an encrypted resource download before writing plaintext", async () => {
+  const encryption = Object.freeze({
+    format: "YUANCE-ENC-v1",
+    algorithm: "AES-256-GCM",
+    chunkSize: 1024 * 1024,
+    key: randomBytes(32),
+    fileObjectId: 11,
+    plaintextByteSize: content.length,
+    plaintextSha256: createHash("sha256").update(content).digest("hex"),
+    encryptedByteSize: 0,
+    encryptedChecksumSha256: "",
+  });
+  const value = await fixture(async (url, options) => {
+    assert.deepEqual(options.headers, []);
+    return response(value.ciphertext, { url });
+  }, { encryption });
+  assert.deepEqual(await value.executor.execute({ suggestedFilename: "canary.bin", transferGrant: "grant", binding }), { status: "completed", byteSize: 15, filename: "canary.bin" });
+  assert.equal(Buffer.concat(value.written).toString(), "download canary");
+  assert.equal(value.committed(), 1);
+  assert.equal(value.cleaned(), 1);
+});
+
+test("rejects ciphertext or plaintext checksum drift for encrypted downloads", async () => {
+  const encryption = Object.freeze({
+    format: "YUANCE-ENC-v1",
+    algorithm: "AES-256-GCM",
+    chunkSize: 1024 * 1024,
+    key: randomBytes(32),
+    fileObjectId: 11,
+    plaintextByteSize: content.length,
+    plaintextSha256: createHash("sha256").update(content).digest("hex"),
+    encryptedByteSize: 0,
+    encryptedChecksumSha256: "",
+  });
+  let tamperedBody;
+  const tamperedFixture = await fixture(async () => response(tamperedBody), { encryption });
+  tamperedBody = Buffer.from(tamperedFixture.ciphertext);
+  tamperedBody[tamperedBody.length - 1] ^= 0x01;
+  await assert.rejects(tamperedFixture.executor.execute({ suggestedFilename: "canary.bin", transferGrant: "grant", binding }), (error) => error.code.startsWith("file_transfer_"));
+  assert.equal(tamperedFixture.committed(), 0);
+  assert.equal(tamperedFixture.cleaned(), 1);
+
+  const wrongPlaintext = await fixture(async (url) => response(tamperedFixture.ciphertext, { url }), { encryption: { ...encryption, plaintextSha256: "a".repeat(64) } });
+  await assert.rejects(wrongPlaintext.executor.execute({ suggestedFilename: "canary.bin", transferGrant: "grant", binding }), (error) => error.code === "file_transfer_size_mismatch");
+  assert.equal(wrongPlaintext.committed(), 0);
 });
 
 function response(body, { status = 200, contentType = "application/octet-stream", url = "" } = {}) {
