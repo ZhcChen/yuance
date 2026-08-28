@@ -664,6 +664,16 @@ html[data-theme="dark"] {
   pointer-events: none;
 }
 
+.attachment-preview-downloading {
+  width: 19px;
+  height: 19px;
+  display: block;
+  border: 2px solid rgb(255 255 255 / 35%);
+  border-right-color: #fff;
+  border-radius: 50%;
+  animation: yc-spin 0.7s linear infinite;
+}
+
 .attachment-preview-mode-toggle {
   width: auto;
   min-width: 58px;
@@ -2104,6 +2114,44 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   --attachment-file-icon-border: rgb(217 185 138 / 32%);
   --attachment-file-icon-bg: rgb(73 59 31 / 92%);
   --attachment-file-icon-text: #d9b98a;
+}
+
+.yc-rich-text-input a[data-yuance-attachment-kind="file"].yc-rich-downloading,
+.yc-rich-text-content a[data-yuance-attachment-kind="file"].yc-rich-downloading {
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+
+.yc-rich-text-input .yc-rich-downloading-overlay,
+.yc-rich-text-content .yc-rich-downloading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--yc-panel) 86%, transparent);
+  color: var(--yc-brand-strong);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.yc-rich-text-input .yc-rich-downloading-spinner,
+.yc-rich-text-content .yc-rich-downloading-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  display: block;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: yc-spin 0.7s linear infinite;
 }
 
 .yc-rich-text-input img,

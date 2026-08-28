@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { RichAttachmentMenu } from '@yuance/frontend-ui';
 
-test('rich attachment menu renders copy, preview and download actions', () => {
+test('rich attachment menu renders preview and download actions without copy link', () => {
   const html = renderToStaticMarkup(React.createElement(RichAttachmentMenu, {
     open: true,
     title: 'demo.pdf',
@@ -19,7 +19,7 @@ test('rich attachment menu renders copy, preview and download actions', () => {
   }));
   assert.match(html, /role="menu"/);
   assert.match(html, /demo\.pdf/);
-  assert.match(html, /复制链接/);
+  assert.doesNotMatch(html, /复制链接/);
   assert.match(html, /预览/);
   assert.match(html, /下载/);
   assert.match(html, /查看文档/);
@@ -38,7 +38,7 @@ test('rich attachment menu hides preview action for non-document files', () => {
     onStatus() {},
   }));
   assert.doesNotMatch(html, /查看文档/);
-  assert.match(html, /复制链接/);
+  assert.doesNotMatch(html, /复制链接/);
   assert.match(html, /下载/);
 });
 

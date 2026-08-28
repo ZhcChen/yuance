@@ -63,7 +63,16 @@ test('rich text file cards share editor and rendered-content styles', async () =
   for (const kind of ['word', 'sheet', 'slide', 'pdf', 'text', 'code', 'archive']) {
     assert.match(styles, new RegExp(`\\.yc-rich-text-input a\\[data-yuance-attachment-kind="file"\\]\\[data-yuance-file-kind="${kind}"\\],\\n\\.yc-rich-text-content a\\[data-yuance-attachment-kind="file"\\]\\[data-yuance-file-kind="${kind}"\\]`, 'u'));
   }
+  assert.match(styles, /\.yc-rich-downloading-overlay \{/u);
+  assert.match(styles, /\.yc-rich-downloading-spinner \{/u);
   assert.doesNotMatch(appShellStyles, /\.resource-rich-body\.discussion-rich-body a\[data-yuance-attachment-kind="file"\]/u);
+});
+
+test('rich text content exposes an attachment downloading state on file cards', async () => {
+  const source = await readFile(new URL('../src/rich-text.jsx', import.meta.url), 'utf8');
+  assert.match(source, /downloadingAttachmentId = null/u);
+  assert.match(source, /yc-rich-downloading-overlay/u);
+  assert.match(source, /正在下载中/u);
 });
 
 test('rich text file helpers derive document previewability and file card visuals', () => {

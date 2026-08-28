@@ -123,12 +123,13 @@ function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = nul
  *   onAttachmentActivate?: (attachmentId: number) => void,
  *   onFileAttachmentActivate?: (attachmentId: number, file: { href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }) => void,
  *   resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource>,
+ *   downloadingAttachmentId?: number | null,
  * }} props
  *
  * 附件交互约定：左键附件统一走 onAttachmentActivate（文件附件直接预览）；
  * onFileAttachmentActivate 仅在右键文件附件时触发，用于打开操作菜单。
  */
-export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource }) {
+export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource, downloadingAttachmentId = null }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const activateRef = useRef(onAttachmentActivate);
   const fileActivateRef = useRef(onFileAttachmentActivate);
@@ -238,6 +239,28 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       for (const release of releases) releaseResolvedSource({ source: '', release });
     };
   }, [format, html, Boolean(resolveAttachmentSource)]);
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || format !== 'html') return;
+    for (const file of content.querySelectorAll('a[data-yuance-attachment-kind="file"]')) {
+      const attachmentId = Number(file.getAttribute('data-yuance-attachment-id'));
+      const downloading = Number.isSafeInteger(attachmentId) && downloadingAttachmentId === attachmentId;
+      file.classList.toggle('yc-rich-downloading', downloading);
+      let overlay = file.querySelector(':scope > .yc-rich-downloading-overlay');
+      if (downloading && !overlay) {
+        const ownerDocument = file.ownerDocument;
+        overlay = ownerDocument.createElement('span');
+        overlay.className = 'yc-rich-downloading-overlay';
+        overlay.setAttribute('role', 'status');
+        const spinner = ownerDocument.createElement('span');
+        spinner.className = 'yc-rich-downloading-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        overlay.append(spinner, ownerDocument.createTextNode('正在下载中'));
+        file.append(overlay);
+      }
+      if (!downloading && overlay) overlay.remove();
+    }
+  }, [format, html, downloadingAttachmentId]);
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <div className="yc-rich-text-content yc-rich-text-plain">{html}</div>;
   return <div ref={contentRef} className="yc-rich-text-content" />;

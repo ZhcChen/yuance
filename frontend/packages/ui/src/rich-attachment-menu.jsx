@@ -2,7 +2,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 
-import { copyTextToClipboard, documentPreviewUrlFromSource, downloadUrlViaAnchor, openDocumentPreviewWindow } from './rich-attachment-actions.js';
+import { documentPreviewUrlFromSource, downloadUrlViaAnchor, openDocumentPreviewWindow } from './rich-attachment-actions.js';
 
 /**
  * @param {{
@@ -61,14 +61,6 @@ export function RichAttachmentMenu({ open, title, x, y, downloadUrl, canPreview 
     };
   }, [open, onClose]);
 
-  function handleCopy() {
-    const view = menuRef.current?.ownerDocument.defaultView;
-    if (!view) return;
-    copyTextToClipboard(view, downloadUrl)
-      .then(() => onStatus?.({ tone: 'success', text: '附件链接已复制。' }))
-      .catch(() => onStatus?.({ tone: 'error', text: '复制失败，请重试。' }));
-  }
-
   function handlePreview() {
     const view = menuRef.current?.ownerDocument.defaultView;
     if (!view) return;
@@ -102,7 +94,6 @@ export function RichAttachmentMenu({ open, title, x, y, downloadUrl, canPreview 
       style={{ left: x, top: y }}
     >
       <div className="rich-attachment-menu-title">{title}</div>
-      <button type="button" role="menuitem" onClick={() => { handleCopy(); onClose(); }}><span>复制链接</span><em>复制附件访问地址</em></button>
       {canPreview ? <button type="button" role="menuitem" onClick={() => { handlePreview(); onClose(); }}><span>预览</span><em>查看文档</em></button> : null}
       <button type="button" role="menuitem" onClick={() => { handleDownload(); onClose(); }}><span>下载</span><em>保存到本地</em></button>
     </div>

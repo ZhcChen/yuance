@@ -42,3 +42,11 @@ test('attachment preview renders text documents inline and keeps unsupported doc
   assert.match(errorHtml, /role="alert"/);
   assert.match(errorHtml, /预览加载失败/);
 });
+
+test('attachment preview download control shows busy loading state while downloading', () => {
+  const html = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'plan.pdf', source: '', kind: null, fileType: null, downloading: true, onDownload() {}, onClose() {} }));
+  assert.match(html, /aria-label="正在下载附件"/);
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /class="attachment-preview-downloading"/);
+  assert.doesNotMatch(html, /aria-label="下载附件"/);
+});

@@ -142,9 +142,9 @@ function viewerStatusText(state, total, position, loading, error) {
 }
 
 /**
- * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, loading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void }} props
+ * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, loading?: boolean, downloading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void }} props
  */
-export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, loading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose }) {
+export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, loading = false, downloading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose }) {
   const dialogRef = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const stageRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const panRef = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -719,11 +719,13 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
         <button
           className="attachment-preview-control"
           type="button"
-          aria-label="下载附件"
-          title="下载"
+          aria-label={downloading ? '正在下载附件' : '下载附件'}
+          aria-busy={downloading || undefined}
+          title={downloading ? '正在下载中' : '下载'}
+          disabled={downloading}
           onClick={onDownload}
         >
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16" /></svg>
+          {downloading ? <span className="attachment-preview-downloading" aria-hidden="true" /> : <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16" /></svg>}
         </button>
         <button
           className="attachment-preview-control attachment-preview-close"
