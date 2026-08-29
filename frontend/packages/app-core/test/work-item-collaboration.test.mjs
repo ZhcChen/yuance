@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createWorkItemComment,
   downloadWorkItemAttachment,
+  downloadProjectResourceAttachment,
   handoffWorkItem,
   saveWorkItem,
   updateWorkItemComment,
@@ -640,6 +641,50 @@ test('stale attachment download does not invoke the platform', async () => {
 
   assert.deepEqual(opened, { completed: false, revealCapability: null });
   assert.deepEqual(events, []);
+});
+
+test('encrypted project resource download forwards encryption metadata', async () => {
+  const events = [];
+  const encryption = {
+    algorithm: 'AES-256-GCM',
+    format: 'YUANCE-ENC-v1',
+    key: 'data-key',
+  };
+
+  const result = await downloadProjectResourceAttachment({
+    api: {
+      getProjectResourceAttachmentDownloadUrl: async () => ({
+        request: { method: 'GET', url: '/storage', headers: [] },
+        expires_in_seconds: 300,
+        encryption,
+      }),
+    },
+    platform: {
+      transfers: {
+        authorizeSignedRequest: (authorization) => {
+          events.push(['authorize', authorization.encryption]);
+          return /** @type {SignedTransferCapability} */ (authorization);
+        },
+      },
+      downloads: {
+        downloadSignedRequest: async (transfer, filename) => {
+          events.push(['download', transfer, filename]);
+        },
+      },
+    },
+    projectKey: 'YCE',
+    resourceId: 8,
+    attachmentId: 9,
+    accessToken: '',
+    suggestedFilename: 'notes.xlsx',
+    isCurrent: () => true,
+  });
+
+  assert.equal(result.completed, true);
+  assert.deepEqual(events, [
+    ['authorize', encryption],
+    ['download', { request: { method: 'GET', url: '/storage', headers: [] }, purpose: 'download', expiresInSeconds: 300, encryption }, 'notes.xlsx'],
+  ]);
 });
 
 test('project resource encrypted upload forwards encryption and ciphertext checksum', async () => {

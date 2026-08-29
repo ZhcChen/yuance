@@ -307,7 +307,7 @@ export function uploadWorkItemCommentAttachment({ api, platform, itemKey, commen
 
 /**
  * @param {{
- *   getSignedRequest: () => Promise<{ request: unknown, expires_in_seconds: number }>,
+ *   getSignedRequest: () => Promise<{ request: unknown, expires_in_seconds: number, encryption?: unknown }>,
  *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
  *   suggestedFilename: string,
  *   isCurrent: () => boolean,
@@ -322,6 +322,7 @@ async function downloadAttachment({ getSignedRequest, platform, suggestedFilenam
     request: signed.request,
     purpose: 'download',
     expiresInSeconds: signed.expires_in_seconds,
+    encryption: signed.encryption,
   });
   await platform.downloads.downloadSignedRequest(transfer, suggestedFilename);
   return { completed: isCurrent(), revealCapability: null };
