@@ -14,7 +14,10 @@ use crate::{
         bootstrap::{self, BootstrapInitInput},
         files, project_resources, projects, rbac, storage, system_releases,
     },
-    platform::error::{AppError, AppResult},
+    platform::{
+        error::{AppError, AppResult},
+        file_crypto,
+    },
     platform::security::csrf,
     web::{
         attachment_preview::{
@@ -1667,7 +1670,7 @@ async fn attachment_download_redirect(
     }
 
     enum DownloadTarget {
-        TestMemory {
+        Plaintext {
             content_type: String,
             content: Vec<u8>,
         },
@@ -1676,10 +1679,16 @@ async fn attachment_download_redirect(
         },
     }
 
-    let test_memory_object =
-        storage::read_test_memory_object(pool, &state.settings, &attachment.object_key).await?;
-    let download_target = if let Some((content_type, content)) = test_memory_object {
-        DownloadTarget::TestMemory {
+    let encryption = files::get_file_object_encryption(pool, attachment.file_object_id).await?;
+    let download_target = if let Some(encryption) = encryption {
+        DownloadTarget::Plaintext {
+            content_type: attachment.content_type.clone(),
+            content: read_attachment_plaintext(state, pool, &attachment, &encryption).await?,
+        }
+    } else if let Some((content_type, content)) =
+        storage::read_test_memory_object(pool, &state.settings, &attachment.object_key).await?
+    {
+        DownloadTarget::Plaintext {
             content_type,
             content,
         }
@@ -1704,30 +1713,48 @@ async fn attachment_download_redirect(
     .await?;
 
     match download_target {
-        DownloadTarget::TestMemory {
+        DownloadTarget::Plaintext {
             content_type,
             content,
-        } => {
-            let is_inline_media = is_previewable_image_content_type(&content_type)
-                || is_previewable_video_content_type(&content_type);
-            let mut response = content.into_response();
-            let headers = response.headers_mut();
-            headers.insert(
-                header::CONTENT_TYPE,
-                if is_inline_media {
-                    content_type.parse()?
-                } else {
-                    "application/octet-stream".parse()?
-                },
-            );
-            headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
-            if !is_inline_media {
-                headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
-            }
-            Ok(response)
-        }
+        } => attachment_content_response(content_type, content),
         DownloadTarget::SignedRedirect { url } => Ok(Redirect::temporary(&url).into_response()),
     }
+}
+
+fn attachment_content_response(content_type: String, content: Vec<u8>) -> AppResult<Response> {
+    let is_inline_media = is_previewable_image_content_type(&content_type)
+        || is_previewable_video_content_type(&content_type);
+    let mut response = content.into_response();
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        if is_inline_media {
+            content_type.parse()?
+        } else {
+            "application/octet-stream".parse()?
+        },
+    );
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    if !is_inline_media {
+        headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
+    }
+    Ok(response)
+}
+
+async fn read_attachment_plaintext(
+    state: &AppState,
+    pool: &SqlitePool,
+    attachment: &files::FileAttachmentSummary,
+    encryption: &files::FileObjectEncryption,
+) -> AppResult<Vec<u8>> {
+    let (_, ciphertext) =
+        storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+    let data_key = file_crypto::open_data_key(
+        &state.settings.file_master_key,
+        &encryption.data_key_envelope,
+        attachment.object_key.as_bytes(),
+    )?;
+    file_crypto::decrypt_ciphertext_full(&data_key, attachment.file_object_id, &ciphertext)
 }
 
 async fn attachment_document_preview_response(
@@ -1787,8 +1814,14 @@ async fn resolve_attachment_preview_content_url(
     pool: &SqlitePool,
     actor_user_id: i64,
     attachment: &files::FileAttachmentSummary,
-    _fallback_preview_content_url: &str,
+    fallback_preview_content_url: &str,
 ) -> AppResult<String> {
+    if files::get_file_object_encryption(pool, attachment.file_object_id)
+        .await?
+        .is_some()
+    {
+        return Ok(fallback_preview_content_url.to_string());
+    }
     let mut signed = storage::presign_download_url(
         pool,
         &state.settings,
@@ -2045,6 +2078,28 @@ async fn attachment_document_preview_content_response(
         return Err(AppError::BadRequest(
             "旧格式实验性预览当前未开启，请下载原文件查看".to_string(),
         ));
+    }
+
+    if let Some(encryption) =
+        files::get_file_object_encryption(pool, attachment.file_object_id).await?
+    {
+        let plaintext = read_attachment_plaintext(state, pool, &attachment, &encryption).await?;
+        let plaintext_len = plaintext.len();
+        let mut response = plaintext.into_response();
+        let headers = response.headers_mut();
+        headers.insert(header::CONTENT_TYPE, attachment.content_type.parse()?);
+        headers.insert(
+            header::CONTENT_LENGTH,
+            plaintext_len.to_string().parse()?,
+        );
+        headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
+        headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+        headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; sandbox".parse()?,
+        );
+        return Ok(response);
     }
 
     let mut signed = storage::presign_download_url(
@@ -2328,5 +2383,42 @@ mod tests {
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             false
         ));
+    }
+
+    #[test]
+    fn encrypted_document_download_uses_attachment_disposition() {
+        let response = attachment_content_response(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
+            vec![1, 2, 3],
+        )
+        .expect("response should be built");
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .and_then(|value| value.to_str().ok()),
+            Some("attachment")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/octet-stream")
+        );
+    }
+
+    #[test]
+    fn encrypted_media_download_stays_inline() {
+        let response = attachment_content_response("image/png".to_string(), vec![1])
+            .expect("response should be built");
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("image/png")
+        );
+        assert!(response.headers().get(header::CONTENT_DISPOSITION).is_none());
     }
 }
