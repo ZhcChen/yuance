@@ -453,7 +453,7 @@ async function legacyEncryptWithZeroSeparator(dataKey, fileObjectId, plaintext) 
   const header = parseEncryptionHeader(canonical);
   const key = await globalThis.crypto.subtle.importKey(
     'raw',
-    dataKey,
+    bufferSource(dataKey),
     { name: 'AES-GCM' },
     false,
     ['encrypt'],
@@ -472,11 +472,11 @@ async function legacyEncryptWithZeroSeparator(dataKey, fileObjectId, plaintext) 
       await globalThis.crypto.subtle.encrypt(
         {
           name: 'AES-GCM',
-          iv: nonce,
-          additionalData: zeroSeparatorAad(fileObjectId, chunkIndex),
+          iv: bufferSource(nonce),
+          additionalData: bufferSource(zeroSeparatorAad(fileObjectId, chunkIndex)),
         },
         key,
-        chunk,
+        bufferSource(chunk),
       ),
     );
     legacy.set(encrypted, offset);
@@ -495,6 +495,11 @@ function zeroSeparatorAad(fileObjectId, chunkIndex) {
   view.setBigUint64(prefix.byteLength, BigInt(fileObjectId), false);
   view.setUint32(prefix.byteLength + 9, chunkIndex, false);
   return aad;
+}
+
+/** @param {Uint8Array} bytes @returns {BufferSource} */
+function bufferSource(bytes) {
+  return /** @type {BufferSource} */ (bytes);
 }
 
 /** @param {Uint8Array} dataKey @param {number} fileObjectId @param {Uint8Array} plaintext */
