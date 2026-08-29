@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import test from "node:test";
 
 import {
@@ -47,6 +47,40 @@ test("binds every chunk to the file object and rejects wrong key or tampering", 
   tampered[tampered.length - 1] ^= 0x01;
   assert.throws(() => decryptFile(dataKey, 42, tampered), /解密失败|篡改/);
 });
+
+test("decrypts legacy browser files encrypted with a zero AAD separator", () => {
+  const dataKey = randomBytes(32);
+  const fileObjectId = 99;
+  const plaintext = Buffer.from("legacy browser upload content");
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", dataKey, nonce, {
+    authTagLength: 16,
+  });
+  cipher.setAAD(legacyChunkAadForTest(fileObjectId, 0));
+  const body = Buffer.concat([
+    cipher.update(plaintext),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ]);
+  const header = createEncryptionHeader(
+    plaintext.length,
+    createHash("sha256").update(plaintext).digest("hex"),
+  );
+  nonce.copy(header, header.length - 12);
+  const ciphertext = Buffer.concat([header, body]);
+
+  assert.deepEqual(decryptFile(dataKey, fileObjectId, ciphertext), plaintext);
+});
+
+/** @param {number} fileObjectId @param {number} chunkIndex @returns {Buffer} */
+function legacyChunkAadForTest(fileObjectId, chunkIndex) {
+  const prefix = Buffer.from("yuance-file-enc:v1:", "ascii");
+  const aad = Buffer.alloc(prefix.length + 8 + 1 + 4);
+  prefix.copy(aad, 0);
+  aad.writeBigUInt64BE(BigInt(fileObjectId), prefix.length);
+  aad.writeUInt32BE(chunkIndex, prefix.length + 9);
+  return aad;
+}
 
 test("creates an independent nonce per chunk and validates the header layout", () => {
   const dataKey = randomBytes(32);

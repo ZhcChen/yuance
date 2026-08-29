@@ -92,18 +92,60 @@ export function parseEncryptionHeader(ciphertext) {
 
 export function decryptBodyChunk(dataKey, fileObjectId, chunkIndex, nonce, ciphertextWithTag) {
   try {
-    if (ciphertextWithTag.length <= TAG_LENGTH) throw encryptionError("加密文件分块数据不完整");
-    const tag = ciphertextWithTag.subarray(ciphertextWithTag.length - TAG_LENGTH);
-    const payload = ciphertextWithTag.subarray(0, ciphertextWithTag.length - TAG_LENGTH);
-    const decipher = createDecipheriv("aes-256-gcm", dataKey, nonce, {
-      authTagLength: TAG_LENGTH,
-    });
-    decipher.setAAD(chunkAad(fileObjectId, chunkIndex));
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(payload), decipher.final()]);
+    return decryptBodyChunkWithAad(
+      dataKey,
+      fileObjectId,
+      chunkIndex,
+      nonce,
+      ciphertextWithTag,
+      chunkAad(fileObjectId, chunkIndex),
+    );
   } catch {
-    throw encryptionError("加密文件分块解密失败或数据被篡改");
+    // 兼容早期 Web 上传漏写冒号分隔符的文件。
+    try {
+      return decryptBodyChunkWithAad(
+        dataKey,
+        fileObjectId,
+        chunkIndex,
+        nonce,
+        ciphertextWithTag,
+        legacyChunkAad(fileObjectId, chunkIndex),
+      );
+    } catch {
+      throw encryptionError("加密文件分块解密失败或数据被篡改");
+    }
   }
+}
+
+function decryptBodyChunkWithAad(dataKey, fileObjectId, chunkIndex, nonce, ciphertextWithTag, aad) {
+  if (ciphertextWithTag.length <= TAG_LENGTH) throw encryptionError("加密文件分块数据不完整");
+  const tag = ciphertextWithTag.subarray(ciphertextWithTag.length - TAG_LENGTH);
+  const payload = ciphertextWithTag.subarray(0, ciphertextWithTag.length - TAG_LENGTH);
+  const decipher = createDecipheriv("aes-256-gcm", dataKey, nonce, {
+    authTagLength: TAG_LENGTH,
+  });
+  decipher.setAAD(aad);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(payload), decipher.final()]);
+}
+
+function chunkAad(fileObjectId, chunkIndex) {
+  return chunkAadWithSeparator(fileObjectId, chunkIndex, 0x3a);
+}
+
+function legacyChunkAad(fileObjectId, chunkIndex) {
+  return chunkAadWithSeparator(fileObjectId, chunkIndex, 0);
+}
+
+function chunkAadWithSeparator(fileObjectId, chunkIndex, separator) {
+  if (!Number.isSafeInteger(fileObjectId) || fileObjectId < 1) throw encryptionError("文件对象 ID 无效");
+  const prefix = Buffer.from("yuance-file-enc:v1:", "ascii");
+  const aad = Buffer.alloc(prefix.length + 8 + 1 + 4);
+  prefix.copy(aad, 0);
+  aad.writeBigUInt64BE(BigInt(fileObjectId), prefix.length);
+  aad.writeUInt8(separator, prefix.length + 8);
+  aad.writeUInt32BE(chunkIndex, prefix.length + 9);
+  return aad;
 }
 
 export function encryptFile(dataKey, fileObjectId, plaintext) {
@@ -154,17 +196,6 @@ function chunkCountFor(plaintextByteSize) {
     throw encryptionError("加密文件明文大小无效");
   }
   return plaintextByteSize === 0 ? 0 : Math.ceil(plaintextByteSize / FILE_CHUNK_SIZE);
-}
-
-function chunkAad(fileObjectId, chunkIndex) {
-  if (!Number.isSafeInteger(fileObjectId) || fileObjectId < 1) throw encryptionError("文件对象 ID 无效");
-  const prefix = Buffer.from("yuance-file-enc:v1:", "ascii");
-  const aad = Buffer.alloc(prefix.length + 8 + 1 + 4);
-  prefix.copy(aad, 0);
-  aad.writeBigUInt64BE(BigInt(fileObjectId), prefix.length);
-  aad.writeUInt8(0x3a, prefix.length + 8);
-  aad.writeUInt32BE(chunkIndex, prefix.length + 9);
-  return aad;
 }
 
 function encryptionError(message) {

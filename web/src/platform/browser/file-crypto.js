@@ -89,7 +89,20 @@ export async function decryptFile(dataKey, fileObjectId, ciphertext) {
         ),
       );
     } catch {
-      throw new Error('加密文件分块解密失败或数据被篡改');
+      try {
+        chunks.push(
+          new Uint8Array(
+            await decryptChunk(
+              key,
+              nonce,
+              legacyChunkAad(fileObjectId, chunkIndex),
+              chunk,
+            ),
+          ),
+        );
+      } catch {
+        throw new Error('加密文件分块解密失败或数据被篡改');
+      }
     }
     bodyOffset += chunk.byteLength;
   }
@@ -272,11 +285,22 @@ function bufferSource(bytes) {
 
 /** @param {number} fileObjectId @param {number} chunkIndex @returns {Uint8Array} */
 function chunkAad(fileObjectId, chunkIndex) {
+  return chunkAadWithSeparator(fileObjectId, chunkIndex, 0x3a);
+}
+
+/** @param {number} fileObjectId @param {number} chunkIndex @returns {Uint8Array} */
+function legacyChunkAad(fileObjectId, chunkIndex) {
+  return chunkAadWithSeparator(fileObjectId, chunkIndex, 0);
+}
+
+/** @param {number} fileObjectId @param {number} chunkIndex @param {number} separator @returns {Uint8Array} */
+function chunkAadWithSeparator(fileObjectId, chunkIndex, separator) {
   const prefix = new TextEncoder().encode('yuance-file-enc:v1:');
   const aad = new Uint8Array(prefix.byteLength + 8 + 1 + 4);
   aad.set(prefix, 0);
   const view = new DataView(aad.buffer);
   view.setBigUint64(prefix.byteLength, BigInt(fileObjectId), false);
+  view.setUint8(prefix.byteLength + 8, separator);
   view.setUint32(prefix.byteLength + 9, chunkIndex, false);
   return aad;
 }

@@ -345,6 +345,24 @@ fn encrypt_chunk(
     nonce: &[u8; NONCE_LEN],
     plaintext: &[u8],
 ) -> AppResult<Vec<u8>> {
+    encrypt_chunk_with_aad(
+        data_key,
+        file_object_id,
+        chunk_index,
+        nonce,
+        plaintext,
+        &chunk_aad(file_object_id, chunk_index),
+    )
+}
+
+fn encrypt_chunk_with_aad(
+    data_key: &[u8; DATA_KEY_LEN],
+    _file_object_id: i64,
+    _chunk_index: u32,
+    nonce: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+    aad: &[u8],
+) -> AppResult<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(data_key)
         .map_err(|_| AppError::Crypto("文件加密器初始化失败".to_string()))?;
     cipher
@@ -352,7 +370,7 @@ fn encrypt_chunk(
             &Nonce::from(*nonce),
             Payload {
                 msg: plaintext,
-                aad: &chunk_aad(file_object_id, chunk_index),
+                aad,
             },
         )
         .map_err(|_| AppError::Crypto("文件分块加密失败".to_string()))
@@ -367,22 +385,40 @@ pub fn decrypt_chunk(
 ) -> AppResult<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(data_key)
         .map_err(|_| AppError::Crypto("文件解密器初始化失败".to_string()))?;
-    cipher
-        .decrypt(
-            &Nonce::from(*nonce),
-            Payload {
-                msg: ciphertext_with_tag,
-                aad: &chunk_aad(file_object_id, chunk_index),
-            },
-        )
-        .map_err(|_| AppError::Crypto("文件分块解密失败或数据被篡改".to_string()))
+    match cipher.decrypt(
+        &Nonce::from(*nonce),
+        Payload {
+            msg: ciphertext_with_tag,
+            aad: &chunk_aad(file_object_id, chunk_index),
+        },
+    ) {
+        Ok(plaintext) => Ok(plaintext),
+        // 兼容早期 Web 上传漏写冒号分隔符的文件。
+        Err(_) => cipher
+            .decrypt(
+                &Nonce::from(*nonce),
+                Payload {
+                    msg: ciphertext_with_tag,
+                    aad: &legacy_chunk_aad(file_object_id, chunk_index),
+                },
+            )
+            .map_err(|_| AppError::Crypto("文件分块解密失败或数据被篡改".to_string())),
+    }
 }
 
 fn chunk_aad(file_object_id: i64, chunk_index: u32) -> Vec<u8> {
+    chunk_aad_with_separator(file_object_id, chunk_index, b':')
+}
+
+fn legacy_chunk_aad(file_object_id: i64, chunk_index: u32) -> Vec<u8> {
+    chunk_aad_with_separator(file_object_id, chunk_index, 0)
+}
+
+fn chunk_aad_with_separator(file_object_id: i64, chunk_index: u32, separator: u8) -> Vec<u8> {
     let mut aad = Vec::with_capacity(40);
     aad.extend_from_slice(b"yuance-file-enc:v1:");
     aad.extend_from_slice(&file_object_id.to_be_bytes());
-    aad.push(b':');
+    aad.push(separator);
     aad.extend_from_slice(&chunk_index.to_be_bytes());
     aad
 }
@@ -556,6 +592,39 @@ mod tests {
         assert!(
             decrypt_plaintext_range(&other_key, 11, &ciphertext, 0, 64).is_err(),
             "wrong data key must fail"
+        );
+    }
+
+    #[test]
+    fn legacy_zero_separator_files_decrypt_with_fallback() {
+        let data_key = generate_data_key();
+        let file_object_id = 4242_i64;
+        let plaintext = (0..(FILE_CHUNK_SIZE + 77))
+            .map(|value| (value % 233) as u8)
+            .collect::<Vec<_>>();
+        let chunk_count = chunk_count_for(plaintext.len(), FILE_CHUNK_SIZE);
+        let nonces = random_nonces(chunk_count);
+        let header = build_header(&plaintext, &nonces);
+        let mut ciphertext =
+            Vec::with_capacity(header.len() + encrypted_body_len(plaintext.len()));
+        ciphertext.extend_from_slice(&header);
+        for (chunk_index, chunk) in plaintext.chunks(FILE_CHUNK_SIZE).enumerate() {
+            ciphertext.extend_from_slice(
+                &encrypt_chunk_with_aad(
+                    &data_key,
+                    file_object_id,
+                    chunk_index as u32,
+                    &nonces[chunk_index],
+                    chunk,
+                    &chunk_aad_with_separator(file_object_id, chunk_index as u32, 0),
+                )
+                .expect("legacy encrypt"),
+            );
+        }
+        assert_eq!(
+            decrypt_ciphertext_full(&data_key, file_object_id, &ciphertext)
+                .expect("legacy decrypt"),
+            plaintext
         );
     }
 

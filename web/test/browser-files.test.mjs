@@ -5,6 +5,7 @@ import { createBrowserFilePlatform } from '../src/platform/browser/files.js';
 import {
   decryptFile,
   encryptFile,
+  parseEncryptionHeader,
   sha256Hex,
 } from '../src/platform/browser/file-crypto.js';
 
@@ -435,6 +436,66 @@ test('browser file platform fetches and decrypts encrypted downloads', async () 
   assert.deepEqual(saved[0]?.bytes, plaintext);
   assert.equal(saved[0]?.filename, 'notes.txt');
 });
+
+test('browser decrypts legacy files encrypted with a zero AAD separator', async () => {
+  const dataKey = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(dataKey);
+  const fileObjectId = 77;
+  const plaintext = new TextEncoder().encode('legacy browser encrypted attachment');
+  const legacy = await legacyEncryptWithZeroSeparator(dataKey, fileObjectId, plaintext);
+
+  assert.deepEqual(await decryptFile(dataKey, fileObjectId, legacy), plaintext);
+});
+
+/** @param {Uint8Array} dataKey @param {number} fileObjectId @param {Uint8Array} plaintext */
+async function legacyEncryptWithZeroSeparator(dataKey, fileObjectId, plaintext) {
+  const canonical = await encryptFile(dataKey, fileObjectId, plaintext);
+  const header = parseEncryptionHeader(canonical);
+  const key = await globalThis.crypto.subtle.importKey(
+    'raw',
+    dataKey,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt'],
+  );
+  const legacy = new Uint8Array(canonical.byteLength);
+  legacy.set(canonical.subarray(0, header.headerLength), 0);
+  let offset = header.headerLength;
+  for (let chunkIndex = 0; chunkIndex < header.chunkCount; chunkIndex += 1) {
+    const start = chunkIndex * header.chunkSize;
+    const chunk = plaintext.subarray(start, start + header.chunkSize);
+    const nonce = header.nonces.subarray(
+      chunkIndex * 12,
+      (chunkIndex + 1) * 12,
+    );
+    const encrypted = new Uint8Array(
+      await globalThis.crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: nonce,
+          additionalData: zeroSeparatorAad(fileObjectId, chunkIndex),
+        },
+        key,
+        chunk,
+      ),
+    );
+    legacy.set(encrypted, offset);
+    offset += encrypted.byteLength;
+  }
+  assert.equal(offset, legacy.length);
+  return legacy;
+}
+
+/** @param {number} fileObjectId @param {number} chunkIndex @returns {Uint8Array} */
+function zeroSeparatorAad(fileObjectId, chunkIndex) {
+  const prefix = new TextEncoder().encode('yuance-file-enc:v1:');
+  const aad = new Uint8Array(prefix.byteLength + 8 + 1 + 4);
+  aad.set(prefix, 0);
+  const view = new DataView(aad.buffer);
+  view.setBigUint64(prefix.byteLength, BigInt(fileObjectId), false);
+  view.setUint32(prefix.byteLength + 9, chunkIndex, false);
+  return aad;
+}
 
 /** @param {Uint8Array} dataKey @param {number} fileObjectId @param {Uint8Array} plaintext */
 async function encryptionPayload(dataKey, fileObjectId, plaintext) {
