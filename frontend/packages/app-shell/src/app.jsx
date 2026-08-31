@@ -3685,11 +3685,27 @@ export function SharedApp({ services }) {
           sort: currentRoute.sort,
           perPage: currentRoute.perPage,
         }), `已切换当前项目到 ${project.key}。`);
-      } else if (['project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis'].includes(currentRoute.id)) {
+      } else if (currentRoute.id === 'project-resource-library' || currentRoute.id === 'project-resource-detail') {
+        navigate(buildProjectResourceLibraryPath({
+          owner: currentRoute.owner,
+          projectKey: project.key,
+        }), `已切换当前项目到 ${project.key}。`);
+      } else if (currentRoute.id === 'project-personal-analysis') {
+        navigate(buildProjectPersonalAnalysisPath({
+          owner: currentRoute.owner,
+          projectKey: project.key,
+        }), `已切换当前项目到 ${project.key}。`);
+      } else if (currentRoute.id === 'project-cycle-detail') {
         navigate(buildProjectDetailPath({
           owner: currentRoute.owner,
           projectKey: project.key,
-          tab: currentRoute.id === 'project-detail' ? currentRoute.tab : 'info',
+          tab: 'cycles',
+        }), `已切换当前项目到 ${project.key}。`);
+      } else if (currentRoute.id === 'project-detail') {
+        navigate(buildProjectDetailPath({
+          owner: currentRoute.owner,
+          projectKey: project.key,
+          tab: currentRoute.tab,
         }), `已切换当前项目到 ${project.key}。`);
       } else {
         await loadRouteState(routeRef.current, 'refresh');
@@ -5429,7 +5445,7 @@ export function SharedApp({ services }) {
         productName="元策"
         links={[
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
-          { id: 'projects', label: '项目', href: currentProject ? buildProjectDetailPath({ owner: route.owner, projectKey: currentProject.key }) : projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
+          { id: 'projects', label: '项目', href: currentProject ? buildProjectDetailPath({ owner: route.owner, projectKey: currentProject.key }) : projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-personal-analysis' },
           { id: 'requirements', label: '需求', href: requirementsPath, active: route.id === 'requirements', badge: topbar?.requirements_count || 0 },
           { id: 'tasks', label: '任务', href: tasksPath, active: route.id === 'tasks', badge: topbar?.tasks_count || 0 },
           { id: 'bugs', label: 'Bug', href: bugsPath, active: route.id === 'bugs', badge: topbar?.bugs_count || 0 },
