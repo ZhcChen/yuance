@@ -244,7 +244,7 @@ async function loadFileViewer() {
   return viewer;
 }
 
-async function fetchPreviewBytes(sourceUrl) {
+export async function fetchPreviewBytes(sourceUrl) {
   const controller = typeof AbortController === "function" ? new AbortController() : null;
   let timeoutId = 0;
   try {

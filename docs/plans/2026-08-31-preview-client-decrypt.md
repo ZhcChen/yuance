@@ -40,4 +40,5 @@ file-viewer 渲染，保持“上传、存储、预览、下载”全程只在�
 - web 弹窗 document-viewer 与独立预览页已接入端侧解密；图片/视频/文本经
   Blob URL 渲染，文档交给 file-viewer。
 - 新增 `/static/document-preview-crypto.mjs` 供独立预览页复用。
-- Rust 与前端检查、相关回归测试已通过；待部署正式环境后做线上复核。
+- Rust 与前端检查、相关回归测试已通过；新增前端协议层解密单元测试。
+  待部署正式环境后做线上复核。

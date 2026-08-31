@@ -27,6 +27,7 @@
 - `npm --prefix web run check`
 - `npm --prefix web run build`
 - `node --check` 校验两个静态 mjs
+- 新增前端协议层测试：未加密二进制原样返回、加密 JSON payload 端侧解密
 - 关键证据：加密资源附件请求 `preview/content?access=...&client_decrypt=1`
   返回 `application/json`，含 `url` 与 `encryption.file_object_id`；不带参数
   的 Range 预览仍返回明文片段；现有 OpenAPI/会话契约测试通过。
