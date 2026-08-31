@@ -2361,6 +2361,13 @@ test('work item attachments share preview navigation fallback download and stale
   const documentPreview = page.getByRole('dialog', { name: 'work-item-plan.pdf' });
   await expect(documentPreview.locator('.attachment-preview-document-host')).toBeVisible();
   await expect(documentPreview).not.toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
+  await expect.poll(() => page.evaluate(() => {
+    const host = document.querySelector('.attachment-preview-document-host');
+    if (!host) {
+      return false;
+    }
+    return host.getBoundingClientRect().height < window.innerHeight;
+  })).toBe(true);
   await documentPreview.getByRole('button', { name: '下载' }).click();
   await expect.poll(() => downloadRequests).toEqual([822]);
   await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/work-item-preview-822');

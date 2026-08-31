@@ -573,14 +573,21 @@ html[data-theme="dark"] {
 }
 
 .attachment-preview-pan.is-document {
-  width: 100%;
-  height: 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .attachment-preview-document-host {
-  width: 100%;
-  height: 100%;
+  align-self: stretch;
+  justify-self: stretch;
+  width: auto;
+  height: auto;
   min-height: 0;
+  display: flex;
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 6px;
