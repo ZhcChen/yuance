@@ -1099,9 +1099,12 @@ async fn device_project_attachment_preview_supports_metadata_navigation_and_byte
     assert_eq!(metadata["data"]["preview"]["file_type"], "pdf");
     assert_eq!(metadata["data"]["preview"]["legacy_preview_enabled"], false);
     assert_eq!(metadata["data"]["preview"]["content_enabled"], true);
-    assert_eq!(metadata["data"]["navigation"]["position"], 1);
-    assert_eq!(metadata["data"]["navigation"]["total"], 2);
-    assert!(metadata["data"]["navigation"]["previous"].is_null());
+    assert_eq!(metadata["data"]["navigation"]["position"], 2);
+    assert_eq!(metadata["data"]["navigation"]["total"], 3);
+    assert_eq!(
+        metadata["data"]["navigation"]["previous"]["id"],
+        attachment_ids[2]
+    );
     assert_eq!(
         metadata["data"]["navigation"]["next"]["id"],
         attachment_ids[0]
@@ -1118,7 +1121,7 @@ async fn device_project_attachment_preview_supports_metadata_navigation_and_byte
     assert_eq!(legacy_response.status(), StatusCode::OK);
     let legacy = json_body(legacy_response).await;
     assert_eq!(legacy["data"]["preview"]["strategy"], "legacy-doc");
-    assert_eq!(legacy["data"]["preview"]["content_enabled"], false);
+    assert_eq!(legacy["data"]["preview"]["content_enabled"], true);
 
     let content_path = format!("{preview_path}/content");
     let response = request_with_headers(

@@ -33,11 +33,11 @@ impl AttachmentPreviewStrategy {
     }
 
     pub fn is_experimental(self) -> bool {
-        matches!(self, Self::LegacyDoc | Self::LegacyPpt)
+        false
     }
 
-    pub fn is_enabled(self, legacy_preview_enabled: bool) -> bool {
-        !self.is_experimental() || legacy_preview_enabled
+    pub fn is_enabled(self, _legacy_preview_enabled: bool) -> bool {
+        true
     }
 }
 
@@ -183,7 +183,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preview_kind_covers_media_documents_and_disabled_legacy_files() {
+    fn preview_kind_covers_media_documents_and_legacy_files() {
         assert_eq!(
             image_content_type_for_filename("photo.png"),
             Some("image/png")
@@ -212,9 +212,16 @@ mod tests {
             kind("guide.pdf", "application/pdf", false),
             Some("document")
         );
-        assert_eq!(kind("legacy.doc", "application/msword", false), None);
+        assert_eq!(
+            kind("legacy.doc", "application/msword", false),
+            Some("document")
+        );
         assert_eq!(
             kind("legacy.doc", "application/msword", true),
+            Some("document")
+        );
+        assert_eq!(
+            kind("legacy.ppt", "application/vnd.ms-powerpoint", false),
             Some("document")
         );
         assert_eq!(

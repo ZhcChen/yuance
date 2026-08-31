@@ -2,3 +2,6 @@ skills/yuance-agent/SKILL.md text eol=lf
 skills/yuance-agent/agents/*.yaml text eol=lf
 skills/yuance-agent/references/*.md text eol=lf
 *.sh text eol=lf
+
+# Flyfish File Viewer 为第三方打包产物，按二进制对待，避免空白检查与 EOL 归一化误报
+api/static/vendor/file-viewer/** binary

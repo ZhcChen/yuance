@@ -593,31 +593,6 @@ async fn static_htmx_is_bundled() {
 }
 
 #[tokio::test]
-async fn static_pdfjs_module_is_served_for_document_preview() {
-    let app = build_router(AppState::for_tests());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/pdfjs/build/pdf.min.mjs")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/javascript; charset=utf-8"
-    );
-
-    let body = response_body(response).await;
-    assert!(body.contains("GlobalWorkerOptions"));
-    assert!(body.contains("getDocument"));
-}
-
-#[tokio::test]
 async fn static_document_preview_module_is_served() {
     let app = build_router(AppState::for_tests());
 
@@ -639,18 +614,18 @@ async fn static_document_preview_module_is_served() {
 
     let body = response_body(response).await;
     assert!(body.contains("initDocumentPreview"));
-    assert!(body.contains("initPdfPreview"));
-    assert!(body.contains("renderSpreadsheetPreview"));
+    assert!(body.contains("mountFileViewer"));
+    assert!(body.contains("FlyfishFileViewerWebFull"));
 }
 
 #[tokio::test]
-async fn static_legacy_document_preview_module_is_served() {
+async fn static_file_viewer_iife_is_served_for_document_preview() {
     let app = build_router(AppState::for_tests());
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/static/document-preview-legacy.mjs")
+                .uri("/static/vendor/file-viewer/flyfish-file-viewer-web-full.iife.js")
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -662,166 +637,129 @@ async fn static_legacy_document_preview_module_is_served() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "application/javascript; charset=utf-8"
     );
-
     let body = response_body(response).await;
-    assert!(body.contains("renderLegacyDocumentPreview"));
-    assert!(body.contains("renderLegacyDocPreview"));
-    assert!(body.contains("renderLegacyPptPreview"));
+    assert!(body.contains("FlyfishFileViewerWebFull"));
+    assert!(body.contains("mountViewer"));
 }
 
 #[tokio::test]
-async fn static_sheetjs_bundle_is_served_for_document_preview() {
+async fn static_file_viewer_renderer_bundles_are_served() {
     let app = build_router(AppState::for_tests());
+    for uri in [
+        "/static/vendor/file-viewer/renderers/pdf.iife.js",
+        "/static/vendor/file-viewer/renderers/word.iife.js",
+        "/static/vendor/file-viewer/renderers/presentation.iife.js",
+        "/static/vendor/file-viewer/renderers/spreadsheet.iife.js",
+        "/static/vendor/file-viewer/renderers/text.iife.js",
+        "/static/vendor/file-viewer/renderers/image.iife.js",
+        "/static/vendor/file-viewer/renderers/media.iife.js",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/sheetjs/xlsx.full.min.js")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/javascript; charset=utf-8"
-    );
-
-    let body = response_body(response).await;
-    assert!(body.contains("XLSX"));
-    assert!(body.contains("sheet_to_json"));
+        assert_eq!(response.status(), StatusCode::OK, "uri {uri}");
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/javascript; charset=utf-8"
+        );
+        let body = response_body(response).await;
+        assert!(!body.is_empty(), "uri {uri}");
+    }
 }
 
 #[tokio::test]
-async fn static_ooxml_module_is_served_for_document_preview() {
+async fn static_file_viewer_runtime_assets_are_served() {
     let app = build_router(AppState::for_tests());
+    let cases = [
+        (
+            "/static/vendor/file-viewer/vendor/pdf/pdf.worker.mjs",
+            "application/javascript; charset=utf-8",
+        ),
+        (
+            "/static/vendor/file-viewer/vendor/pdf/cmaps/78-EUC-H.bcmap",
+            "application/octet-stream",
+        ),
+        (
+            "/static/vendor/file-viewer/vendor/pdf/wasm/openjpeg.wasm",
+            "application/wasm",
+        ),
+        (
+            "/static/vendor/file-viewer/vendor/pdf/fonts/files/noto-sans-sc-100-wght-normal.woff2",
+            "font/woff2",
+        ),
+        (
+            "/static/vendor/file-viewer/vendor/ppt/manifest.json",
+            "application/json; charset=utf-8",
+        ),
+        (
+            "/static/vendor/file-viewer/vendor/ppt/ppt-font-cjk.otf",
+            "font/otf",
+        ),
+        (
+            "/static/vendor/file-viewer/vendor/xlsx/sheet.worker.js",
+            "application/javascript; charset=utf-8",
+        ),
+    ];
+    for (uri, expected_content_type) in cases {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/ooxml/docx.mjs")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/javascript; charset=utf-8"
-    );
-
-    let body = response_body(response).await;
-    assert!(body.contains("DocxScrollViewer"));
-    assert!(body.contains("DocxViewer"));
+        assert_eq!(response.status(), StatusCode::OK, "uri {uri}");
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            expected_content_type,
+            "uri {uri}"
+        );
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body should collect")
+            .to_bytes();
+        assert!(!body.is_empty(), "uri {uri}");
+    }
 }
 
 #[tokio::test]
-async fn static_legacy_doc_bundle_is_served_for_document_preview() {
+async fn retired_document_preview_vendor_routes_return_not_found() {
     let app = build_router(AppState::for_tests());
+    for uri in [
+        "/static/vendor/pdfjs/build/pdf.min.mjs",
+        "/static/vendor/ooxml/docx.mjs",
+        "/static/vendor/sheetjs/xlsx.full.min.js",
+        "/static/vendor/legacy-doc/index.js",
+        "/static/vendor/legacy-ppt/manifest.json",
+        "/static/document-preview-legacy.mjs",
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/legacy-doc/index.js")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/javascript; charset=utf-8"
-    );
-
-    let body = response_body(response).await;
-    assert!(body.contains("parseMsDoc"));
-    assert!(body.contains("renderMsDoc"));
-}
-
-#[tokio::test]
-async fn static_legacy_ppt_manifest_and_font_assets_are_served() {
-    let app = build_router(AppState::for_tests());
-
-    let manifest_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/legacy-ppt/manifest.json")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(manifest_response.status(), StatusCode::OK);
-    assert_eq!(
-        manifest_response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .unwrap(),
-        "application/json; charset=utf-8"
-    );
-    let manifest_body = response_body(manifest_response).await;
-    assert!(manifest_body.contains("\"feature\": \"ppt\""));
-    assert!(manifest_body.contains("\"watermarkRequired\": true"));
-
-    let font_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/legacy-ppt/ppt-font-cjk.otf")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(font_response.status(), StatusCode::OK);
-    assert_eq!(
-        font_response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "font/otf"
-    );
-    let font_body = font_response
-        .into_body()
-        .collect()
-        .await
-        .expect("body should collect")
-        .to_bytes();
-    assert!(!font_body.is_empty());
-}
-
-#[tokio::test]
-async fn static_pdfjs_cmap_asset_is_served() {
-    let app = build_router(AppState::for_tests());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/vendor/pdfjs/cmaps/78-EUC-H.bcmap")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/octet-stream"
-    );
-
-    let body = response
-        .into_body()
-        .collect()
-        .await
-        .expect("body should collect")
-        .to_bytes();
-    assert!(!body.is_empty());
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "uri {uri}");
+    }
 }
 
 #[tokio::test]

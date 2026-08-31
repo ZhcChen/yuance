@@ -16,9 +16,6 @@
             <strong>{{ title }}</strong>
             <div class="preview-meta">
               <span class="preview-badge">{{ file_type_badge }}</span>
-              {% if is_experimental_preview %}
-              <span class="preview-badge preview-badge-experimental">实验性预览</span>
-              {% endif %}
               <span>{{ kind_label }}</span>
               <span>{{ meta_text }}</span>
               {% if !position_text.is_empty() %}
@@ -50,33 +47,11 @@
           <div class="preview-rail-block">
             <span class="preview-rail-label">查看</span>
             <span class="preview-rail-hint">{{ preview_hint }}</span>
-            <div class="preview-panel-tools">
-              {% if has_pdf_preview %}
-              <span class="preview-tool" id="pdf-page-count">载入中</span>
-              <label class="pdf-toolbar-group" for="pdf-page-input">
-                <button class="pdf-toolbar-step" type="button" id="pdf-page-prev" aria-label="上一页" disabled>‹</button>
-                <span>跳转</span>
-                <input id="pdf-page-input" type="number" min="1" value="1" disabled>
-                <button class="pdf-toolbar-action" type="button" id="pdf-page-go">前往</button>
-                <button class="pdf-toolbar-step" type="button" id="pdf-page-next" aria-label="下一页" disabled>›</button>
-              </label>
-              <button class="preview-tool" type="button" id="pdf-zoom-out">－</button>
-              <button class="preview-tool is-active" type="button" id="pdf-zoom-fit-width" aria-pressed="true">适宽</button>
-              <button class="preview-tool" type="button" id="pdf-zoom-actual" aria-pressed="false">100%</button>
-              <button class="preview-tool" type="button" id="pdf-zoom-fit-page" aria-pressed="false">适页</button>
-              <button class="preview-tool" type="button" id="pdf-zoom-in">＋</button>
-              {% endif %}
-              {% if !has_pdf_preview %}
-              <span class="preview-tool" data-preview-metric="primary" hidden></span>
-              <span class="preview-tool" data-preview-metric="secondary" hidden></span>
-              <span class="preview-tool" data-preview-metric="tertiary" hidden></span>
-              {% endif %}
-            </div>
           </div>
           {% endif %}
         </aside>
 
-        <div class="preview-panel-body{% if has_pdf_preview %} preview-panel-body-pdf{% endif %}{% if has_error %} preview-panel-body-error{% endif %}">
+        <div class="preview-panel-body{% if has_error %} preview-panel-body-error{% endif %}">
           {% if has_error %}
           <section class="preview-error">
             <div>
@@ -85,65 +60,6 @@
               <p>{{ error_message }}</p>
             </div>
           </section>
-          {% else %}
-          {% if has_pdf_preview %}
-          <div class="preview-panel-body-scroll" id="pdf-preview-scroll">
-            <div class="pdf-stage" data-pdf-preview data-pdf-url="{{ preview_content_url }}">
-              <div class="pdf-status" id="pdf-preview-status">
-                <span class="pdf-spinner" aria-hidden="true"></span>
-                <span id="pdf-preview-status-copy">正在加载 PDF 预览，请稍候...</span>
-              </div>
-              <div class="pdf-pages" id="pdf-preview-pages"></div>
-            </div>
-          </div>
-          <aside class="pdf-sidebar" aria-label="PDF 快速定位">
-            <div class="pdf-sidebar-head">
-              <div class="pdf-sidebar-copy">
-                <strong>快速定位</strong>
-                <span>支持页缩略图预览，若 PDF 自带目录会自动识别。</span>
-              </div>
-              <div class="pdf-sidebar-scrubber" id="pdf-page-range-shell">
-                <div class="pdf-sidebar-scrubber-head">
-                  <strong id="pdf-page-range-label">拖动快速定位</strong>
-                  <span>拖动即跳转</span>
-                </div>
-                <span class="pdf-page-range-bubble" id="pdf-page-range-bubble" hidden>P1</span>
-                <input class="pdf-page-range" id="pdf-page-range" type="range" min="1" max="1" value="1" disabled>
-              </div>
-              <div class="pdf-sidebar-tabs" role="tablist" aria-label="PDF 导航模式">
-                <button class="pdf-sidebar-tab is-active" type="button" role="tab" aria-selected="true" data-pdf-sidebar-tab="pages">页面</button>
-                <button class="pdf-sidebar-tab" type="button" role="tab" aria-selected="false" data-pdf-sidebar-tab="outline">目录</button>
-              </div>
-            </div>
-            <div class="pdf-sidebar-content">
-              <section class="pdf-sidebar-panel" role="tabpanel" data-pdf-sidebar-panel="pages">
-                <div class="pdf-sidebar-scroll">
-                  <div class="pdf-thumbnails" id="pdf-thumbnail-list"></div>
-                  <div class="pdf-sidebar-empty" id="pdf-thumbnail-empty" hidden>PDF 页面缩略图加载中...</div>
-                </div>
-              </section>
-              <section class="pdf-sidebar-panel" role="tabpanel" data-pdf-sidebar-panel="outline" hidden>
-                <div class="pdf-sidebar-scroll">
-                  <div class="pdf-outline-search-wrap" id="pdf-outline-search-wrap" hidden>
-                    <label class="pdf-outline-search-shell" for="pdf-outline-search">
-                      <input
-                        class="pdf-outline-search"
-                        id="pdf-outline-search"
-                        type="search"
-                        placeholder="搜索目录章节"
-                        autocomplete="off"
-                        spellcheck="false"
-                        disabled
-                      >
-                      <button class="pdf-outline-search-clear" id="pdf-outline-search-clear" type="button" hidden>清空</button>
-                    </label>
-                  </div>
-                  <div class="pdf-outline-list" id="pdf-outline-list"></div>
-                  <div class="pdf-sidebar-empty" id="pdf-outline-empty">当前 PDF 未检测到可用目录。</div>
-                </div>
-              </section>
-            </div>
-          </aside>
           {% else %}
           <div class="preview-panel-body-scroll">
             <div
@@ -154,7 +70,6 @@
               data-preview-title="{{ title }}"
               data-preview-kind-label="{{ kind_label }}"
               data-preview-file-type="{{ file_type_badge }}"
-              data-preview-experimental="{% if is_experimental_preview %}true{% else %}false{% endif %}"
             >
               <div class="document-preview-status" data-preview-status>
                 <span class="pdf-spinner" aria-hidden="true"></span>
@@ -163,7 +78,6 @@
               <div class="document-preview-host" data-preview-host></div>
             </div>
           </div>
-          {% endif %}
           {% endif %}
         </div>
       </section>

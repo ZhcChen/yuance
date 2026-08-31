@@ -134,9 +134,8 @@ docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api migrate 
 运行说明：
 
 - 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
-- PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 统一走站内前端离线预览。
-- DOC、PPT 只有在 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true` 时才展示实验性预览入口；复杂版式兼容性有限，PPT 当前运行时会带可见水印。
-- 文档预览页只负责生成临时可访问地址，实际解析与渲染全部由浏览器完成。
+- PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX、DOC、PPT 统一走 Flyfish File Viewer 站内前端离线预览。
+- 文档预览页只负责生成受控内容地址，实际解析与渲染全部由浏览器内的 file-viewer 完成。
 - 如果当前仍使用测试内存存储，文档预览页会自动回退到同源读取，不依赖外部文档服务。
 
 正式环境 `.env` 必须保持：
@@ -160,7 +159,6 @@ YUANCE_DEVICE_REFRESH_SLIDING_TTL=30d
 YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL=90d
 YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
 YUANCE_DEVICE_POLL_INTERVAL=5s
-YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=false
 ```
 
 Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。

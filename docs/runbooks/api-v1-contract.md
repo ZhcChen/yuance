@@ -150,6 +150,7 @@ GET   /api/v1/work-items
 GET   /api/v1/work-items/{item_key}
 PATCH /api/v1/work-items/{item_key}
 POST  /api/v1/work-items/{item_key}/handoff
+POST  /api/v1/work-items/{item_key}/close
 GET   /api/v1/work-items/{item_key}/events
 GET   /api/v1/work-items/{item_key}/comments
 POST  /api/v1/work-items/{item_key}/comments
@@ -543,6 +544,7 @@ GET    /api/v1/work-items/{item_key}/events
 GET    /api/v1/work-items/{item_key}/typing
 POST   /api/v1/work-items/{item_key}/restore
 POST   /api/v1/work-items/{item_key}/handoff
+POST   /api/v1/work-items/{item_key}/close
 ```
 
 列表参数：

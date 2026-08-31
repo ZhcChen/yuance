@@ -14,11 +14,11 @@ use crate::{
         bootstrap::{self, BootstrapInitInput},
         files, project_resources, projects, rbac, storage, system_releases,
     },
+    platform::security::csrf,
     platform::{
         error::{AppError, AppResult},
         file_crypto,
     },
-    platform::security::csrf,
     web::{
         attachment_preview::{
             AttachmentPreviewStrategy, file_type as attachment_preview_file_type,
@@ -52,8 +52,6 @@ struct DocumentPreviewTemplate {
     error_message: String,
     preview_hint: String,
     preview_content_url: String,
-    has_pdf_preview: bool,
-    is_experimental_preview: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -778,13 +776,8 @@ pub async fn work_item_comment_attachment_download(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, _project, comment) = load_comment_attachment_context(
-            pool,
-            &item_key,
-            comment_id,
-            context.user_id,
-        )
-        .await?;
+        let (item, _project, comment) =
+            load_comment_attachment_context(pool, &item_key, comment_id, context.user_id).await?;
         ensure_project_key_access(
             pool,
             context.user_id,
@@ -824,13 +817,8 @@ pub async fn work_item_comment_attachment_preview(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, _project, comment) = load_comment_attachment_context(
-            pool,
-            &item_key,
-            comment_id,
-            context.user_id,
-        )
-        .await?;
+        let (item, _project, comment) =
+            load_comment_attachment_context(pool, &item_key, comment_id, context.user_id).await?;
         ensure_project_key_access(
             pool,
             context.user_id,
@@ -890,13 +878,8 @@ pub async fn work_item_comment_attachment_preview_content(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, _project, comment) = load_comment_attachment_context(
-            pool,
-            &item_key,
-            comment_id,
-            context.user_id,
-        )
-        .await?;
+        let (item, _project, comment) =
+            load_comment_attachment_context(pool, &item_key, comment_id, context.user_id).await?;
         ensure_project_key_access(
             pool,
             context.user_id,
@@ -1803,7 +1786,6 @@ async fn attachment_document_preview_response(
         navigation,
         resolved_preview_content_url,
         download_url.to_string(),
-        legacy_preview_enabled,
     )
     .await?;
     Ok(response::html(template)?.into_response())
@@ -1847,7 +1829,6 @@ async fn build_document_preview_template(
     navigation: DocumentPreviewNavigation,
     preview_content_url: String,
     download_url: String,
-    legacy_preview_enabled: bool,
 ) -> AppResult<DocumentPreviewTemplate> {
     let title = attachment.original_filename.clone();
     if attachment.status == "deleted" {
@@ -1883,16 +1864,6 @@ async fn build_document_preview_template(
             "当前文件类型暂不支持文档预览。".to_string(),
         ));
     };
-    if !is_document_preview_entry_enabled(strategy, legacy_preview_enabled) {
-        return Ok(document_preview_error_template(
-            title,
-            source_url,
-            source_label,
-            navigation,
-            download_url,
-            "旧格式实验性预览当前未开启，请下载原文件查看。".to_string(),
-        ));
-    }
     let Some(file_type) =
         attachment_preview_file_type(&attachment.original_filename, &attachment.content_type)
     else {
@@ -1908,17 +1879,10 @@ async fn build_document_preview_template(
     let kind_label = document_preview_kind_label(strategy).to_string();
     let preview_type = document_preview_type_code(strategy).to_string();
     let file_type_badge = file_type.to_ascii_uppercase();
-    let meta_text = if is_experimental_preview_strategy(strategy) {
-        format!(
-            "{kind_label} · {} · 实验性站内预览",
-            format_byte_size(attachment.byte_size)
-        )
-    } else {
-        format!(
-            "{kind_label} · {} · 站内离线预览",
-            format_byte_size(attachment.byte_size)
-        )
-    };
+    let meta_text = format!(
+        "{kind_label} · {} · 站内离线预览",
+        format_byte_size(attachment.byte_size)
+    );
     Ok(DocumentPreviewTemplate {
         title,
         source_url,
@@ -1953,10 +1917,8 @@ async fn build_document_preview_template(
         download_url,
         has_error: false,
         error_message: String::new(),
-        preview_hint: preview_hint_for_strategy(strategy),
+        preview_hint: preview_hint_for_strategy(),
         preview_content_url,
-        has_pdf_preview: matches!(strategy, AttachmentPreviewStrategy::Pdf),
-        is_experimental_preview: is_experimental_preview_strategy(strategy),
     })
 }
 
@@ -1975,7 +1937,6 @@ fn document_preview_error_template(
         .map(document_preview_kind_label)
         .unwrap_or("文档预览")
         .to_string();
-    let fallback_strategy = attachment_preview_strategy(&title, "");
     DocumentPreviewTemplate {
         title,
         source_url,
@@ -2012,34 +1973,11 @@ fn document_preview_error_template(
         error_message,
         preview_hint: "当前无法直接加载预览，可以刷新后重试或下载原文件。".to_string(),
         preview_content_url: String::new(),
-        has_pdf_preview: false,
-        is_experimental_preview: fallback_strategy.is_some_and(is_experimental_preview_strategy),
     }
 }
 
-fn is_experimental_preview_strategy(strategy: AttachmentPreviewStrategy) -> bool {
-    strategy.is_experimental()
-}
-
-fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy) -> String {
-    match strategy {
-        AttachmentPreviewStrategy::Pdf => {
-            "原始 PDF 将直接在站内预览，无需外部文档服务。".to_string()
-        }
-        AttachmentPreviewStrategy::Text => "文本内容将由站内前端模块直接解析并渲染。".to_string(),
-        AttachmentPreviewStrategy::Spreadsheet => {
-            "表格内容将由站内前端模块直接解析并渲染。".to_string()
-        }
-        AttachmentPreviewStrategy::Docx => "Word 文档将由站内前端模块直接解析并渲染。".to_string(),
-        AttachmentPreviewStrategy::Pptx => "演示文稿将由站内前端模块直接解析并渲染。".to_string(),
-        AttachmentPreviewStrategy::LegacyDoc => {
-            "旧版 Word 文档将走实验性前端解析链路，复杂版式与图片兼容性可能有限。".to_string()
-        }
-        AttachmentPreviewStrategy::LegacyPpt => {
-            "旧版演示文稿将走实验性前端解析链路，复杂版式兼容性有限，且当前运行时会带可见水印。"
-                .to_string()
-        }
-    }
+fn preview_hint_for_strategy() -> String {
+    "文件将由站内统一预览器离线渲染，支持 PDF、Word、演示文稿、表格与文本等常见格式。".to_string()
 }
 
 fn document_preview_type_code(strategy: AttachmentPreviewStrategy) -> &'static str {
@@ -2064,19 +2002,11 @@ async fn attachment_document_preview_content_response(
             "附件尚未上传完成，请稍后再试".to_string(),
         ));
     }
-    let Some(strategy) =
-        attachment_preview_strategy(&attachment.original_filename, &attachment.content_type)
-    else {
+    if attachment_preview_strategy(&attachment.original_filename, &attachment.content_type)
+        .is_none()
+    {
         return Err(AppError::BadRequest(
             "当前文件类型暂不支持文档预览".to_string(),
-        ));
-    };
-    if !is_document_preview_entry_enabled(
-        strategy,
-        state.settings.experimental_legacy_preview_enabled(),
-    ) {
-        return Err(AppError::BadRequest(
-            "旧格式实验性预览当前未开启，请下载原文件查看".to_string(),
         ));
     }
 
@@ -2088,10 +2018,7 @@ async fn attachment_document_preview_content_response(
         let mut response = plaintext.into_response();
         let headers = response.headers_mut();
         headers.insert(header::CONTENT_TYPE, attachment.content_type.parse()?);
-        headers.insert(
-            header::CONTENT_LENGTH,
-            plaintext_len.to_string().parse()?,
-        );
+        headers.insert(header::CONTENT_LENGTH, plaintext_len.to_string().parse()?);
         headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
         headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
         headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
@@ -2419,6 +2346,11 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("image/png")
         );
-        assert!(response.headers().get(header::CONTENT_DISPOSITION).is_none());
+        assert!(
+            response
+                .headers()
+                .get(header::CONTENT_DISPOSITION)
+                .is_none()
+        );
     }
 }

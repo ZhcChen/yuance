@@ -1,101 +1,32 @@
-# 文档预览前端化验证清单
+# 文档预览 file-viewer 验证清单
 
 ## 目标
 
-确认文档预览已经完全切到“后端生成临时访问地址 + 前端浏览器解析渲染”模式，不再依赖服务端 Office 转换。
+确认 `/preview` 页面已整体切换为 Flyfish File Viewer：
+
+- PDF / DOCX / PPTX / XLSX / XLS / CSV / ODS / DOC / PPT / 文本均由同一预览器按需加载 renderer。
+- 后端只负责权限、预览元信息和受控内容字节流，不再依赖旧 PDF.js、SheetJS、@silurus/ooxml 或 legacy 前端链路。
+- 旧版 `doc/ppt` 默认可直接预览，不再依赖 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED`。
 
 ## 验证前提
 
-- 已完成对象存储初始化，Bucket 具备浏览器读取所需 CORS。
-- 至少准备以下测试样本各 1 份：
-  - PDF
-  - TXT / MD / JSON 任一文本文件
-  - CSV / XLSX / ODS 任一表格文件
-  - DOCX
-  - PPTX
-  - 旧格式 `doc` / `ppt` 各 1 份（用于 legacy 实验链路）
-  - 不支持格式（如 `rtf` / `odt` / `odp`）任一份
-- legacy `doc/ppt` 实验链路默认关闭；只有在验证该实验能力时才设置：
-
-```text
-YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true
-```
+- 本地或测试环境已启动最新 `yuance-api`。
+- 至少准备 PDF、TXT/MD、XLSX、DOCX、PPTX、DOC、PPT 样本各 1 份，以及 `rtf` 等不支持格式 1 份。
 
 ## 验证步骤
 
-### 1. PDF
-
-- 从工作项详情、评论正文或资料库正文点击“预览文档”。
-- 确认打开站内 `/preview` 页面。
-- 确认可正常看到：
-  - 首屏页面内容
-  - 页码跳转
-  - 适宽 / 适页 / 100%
-  - 缩略图侧栏
-  - 目录侧栏（若 PDF 自带目录）
-
-### 2. 文本文件
-
-- 打开 `txt` / `md` / `json` 任一文件预览。
-- 确认正文区域直接显示文本内容，而不是下载或跳转到 JSON。
-- 确认超大文本时会显示“仅展示前 2 MB 内容”的提示。
-
-### 3. 表格文件
-
-- 打开 `csv` / `xlsx` / `ods` 任一文件预览。
-- 确认能看到：
-  - 工作表 tabs
-  - 表格网格内容
-  - 横向 / 纵向滚动
-- 若文件超大，确认显示“当前仅展示部分行列”的提示。
-
-### 4. DOCX
-
-- 打开 `docx` 文件预览。
-- 确认正文页内容直接在站内渲染。
-- 确认浏览器网络面板里没有服务端 Office 转 PDF 的请求。
-
-### 5. PPTX
-
-- 打开 `pptx` 文件预览。
-- 确认能看到幻灯片滚动预览。
-- 确认页面不依赖外部在线文档服务。
-
-### 6. legacy `doc/ppt` 默认关闭验证
-
-- 确认未设置 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true`。
-- 打开 `doc` / `ppt` 文件所在的工作项详情、评论附件、资料正文或项目文件管理器。
-- 确认不会出现“预览文档”或“实验性预览”入口。
-- 直接访问对应 `/preview` 地址。
-- 确认站内页面展示“旧格式实验性预览当前未开启”或等价友好提示。
-- 确认仍可点击“下载原文件”或“下载后查看”。
-- 确认页面不会加载 legacy renderer 静态资源。
-
-### 7. legacy `doc/ppt` 实验开启验证
-
-- 在开发环境或指定测试环境设置 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true` 并重启服务。
-- 分别验证以下样本：
-  - 纯文本 `doc`
-  - 带图片 `doc`
-  - 简单两页 `ppt`
-  - 含图形与复杂背景的 `ppt`
-- 从正文文件卡、附件列表、项目文件管理器和右键菜单点击“实验性预览”。
-- 确认打开站内 `/preview` 页面，并展示“实验性预览 / 兼容性有限”语义。
-- 确认 `doc` / `ppt` 的渲染失败、超时或初始化失败会回到站内错误态，并保留下载入口。
-- 对 `ppt` 样本确认当前运行时可能带可见水印；若水印不符合发布要求，应关闭开关。
-
-### 8. 不支持格式
-
-- 打开 `rtf` / `odt` / `odp` 任一文件。
-- 确认页面显示“当前无法预览”或等价友好提示。
-- 确认仍可点击“下载原文件”。
+1. 分别从工作项、评论附件、资料库正文点击各类文档“预览文档”。
+2. 确认打开站内 `/preview` 页面，左侧保留文件操作和上一份/下一份/刷新/下载入口。
+3. 确认正文区域出现 file-viewer 工具栏与渲染内容，加载完成后状态提示自动消失。
+4. 对 PDF 验证缩放、搜索、页码导航可用；对 XLSX 验证工作表与网格滚动；对 DOCX/PPTX/DOC/PPT 验证正文或幻灯片可渲染。
+5. 确认 `doc/ppt` 不再显示“实验性预览”标识或水印提示，也不要求环境开关。
+6. 打开浏览器 Network 面板，确认只加载 `/static/vendor/file-viewer/*` 资源，旧 `/static/vendor/pdfjs/*`、`/static/vendor/sheetjs/*`、`/static/vendor/ooxml/*`、`/static/vendor/legacy-*/*` 不应出现。
+7. 打开不支持格式，确认显示“当前无法预览”友好错误态，且“下载原文件”仍可用。
+8. 关闭或保持 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=false`，重复 `doc/ppt` 预览，确认入口与渲染不受影响。
 
 ## 结果判定
 
-满足以下条件即可视为通过：
-
-- 预览页不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE。
-- PDF、文本、表格、DOCX、PPTX 都能在浏览器内直接完成可视化。
-- legacy `doc/ppt` 默认关闭时只展示下载降级；开启时所有入口都标注为实验性。
-- 不支持的旧格式不会跳到 JSON 或浏览器错误页，而是友好降级。
-- 所有入口（工作项、评论、资料库）进入的是同一套 `/preview` 体验。
+- 所有支持格式均通过 file-viewer 渲染，页面无 404、无白屏。
+- `doc/ppt` 无实验语义、无开关门槛。
+- 错误态保留下载兜底。
+- 旧静态栈路由不再被浏览器请求。

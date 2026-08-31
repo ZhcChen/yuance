@@ -5765,7 +5765,7 @@ async fn web_work_item_docx_preview_page_uses_frontend_preview_contract() {
 }
 
 #[tokio::test]
-async fn web_work_item_legacy_doc_preview_page_degrades_when_flag_disabled() {
+async fn web_work_item_legacy_doc_preview_page_uses_unified_contract_without_flag() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5823,60 +5823,31 @@ async fn web_work_item_legacy_doc_preview_page_degrades_when_flag_disabled() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
-    assert!(body.contains("旧格式实验性预览当前未开启，请下载原文件查看。"));
-    assert!(body.contains("实验性预览"));
-    assert!(body.contains("下载后查看"));
-    assert!(!body.contains("data-document-preview-root"));
-    assert!(!body.contains(r#"data-preview-type="legacy-doc""#));
-    assert!(!body.contains("data-preview-url=\""));
+    assert!(body.contains("data-document-preview-root"));
+    assert!(body.contains(r#"data-preview-type="legacy-doc""#));
+    assert!(!body.contains(r#"data-preview-experimental="true""#));
+    assert!(!body.contains("实验性预览"));
+    assert!(body.contains("data-preview-url=\""));
 }
 
 #[tokio::test]
-async fn web_work_item_legacy_doc_preview_page_uses_frontend_preview_contract_when_flag_enabled() {
+async fn web_work_item_legacy_ppt_preview_page_uses_unified_contract_without_flag() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
     seed_active_storage_config(&pool, initialized.user_id).await;
-    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
-        .await
-        .expect("work item should load")
-        .expect("work item should exist");
-    let project = projects::get_project_detail(&pool, "YCE")
-        .await
-        .expect("project should load")
-        .expect("project should exist");
-    let config = storage::active_config(&pool)
-        .await
-        .expect("storage config should load")
-        .expect("storage config should exist");
-    let attachment = files::create_attachment(
+    let attachment = create_uploaded_work_item_attachment(
         &pool,
-        &config,
-        files::CreateAttachmentInput {
-            folder_id: None,
-            target_type: "work_item".to_string(),
-            target_id: item.id,
-            project_id: Some(project.id),
-            original_filename: "legacy-preview.doc".to_string(),
-            content_type: "application/msword".to_string(),
-            byte_size: 1024,
-            created_by_user_id: initialized.user_id,
-            created_by_display_name_snapshot: String::new(),
-            activity_summary: Some("登记工作项附件 legacy-preview.doc".to_string()),
-        },
+        &initialized,
+        "legacy-preview.ppt",
+        "application/vnd.ms-powerpoint",
+        1536,
     )
-    .await
-    .expect("attachment should create");
-    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
-        .await
-        .expect("attachment should upload");
+    .await;
 
-    let app = build_router(AppState::new(
-        test_settings_with_legacy_preview_enabled(),
-        Some(pool),
-    ));
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
     let response = app
         .oneshot(
             Request::builder()
@@ -5894,78 +5865,11 @@ async fn web_work_item_legacy_doc_preview_page_uses_frontend_preview_contract_wh
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
     assert!(body.contains("data-document-preview-root"));
-    assert!(body.contains(r#"data-preview-type="legacy-doc""#));
-    assert!(body.contains(r#"data-preview-experimental="true""#));
-    assert!(body.contains("实验性预览"));
+    assert!(body.contains(r#"data-preview-type="legacy-ppt""#));
+    assert!(!body.contains(r#"data-preview-experimental="true""#));
+    assert!(!body.contains("实验性预览"));
+    assert!(!body.contains("当前运行时会带可见水印"));
     assert!(body.contains("data-preview-url=\""));
-}
-
-#[tokio::test]
-async fn web_work_item_legacy_ppt_preview_page_requires_feature_flag() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    projects::seed_demo_data(&pool, initialized.user_id)
-        .await
-        .expect("demo seed should apply");
-    seed_active_storage_config(&pool, initialized.user_id).await;
-    let attachment = create_uploaded_work_item_attachment(
-        &pool,
-        &initialized,
-        "legacy-preview.ppt",
-        "application/vnd.ms-powerpoint",
-        1536,
-    )
-    .await;
-
-    let disabled_app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let disabled_response = disabled_app
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "/web/work-items/YCE-TASK-2/attachments/{}/preview",
-                    attachment.id
-                ))
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(disabled_response.status(), StatusCode::OK);
-    let disabled_body = response_body(disabled_response).await;
-    assert!(disabled_body.contains("旧格式实验性预览当前未开启，请下载原文件查看。"));
-    assert!(disabled_body.contains("实验性预览"));
-    assert!(!disabled_body.contains("data-document-preview-root"));
-    assert!(!disabled_body.contains(r#"data-preview-type="legacy-ppt""#));
-    assert!(!disabled_body.contains("data-preview-url=\""));
-
-    let enabled_app = build_router(AppState::new(
-        test_settings_with_legacy_preview_enabled(),
-        Some(pool),
-    ));
-    let enabled_response = enabled_app
-        .oneshot(
-            Request::builder()
-                .uri(format!(
-                    "/web/work-items/YCE-TASK-2/attachments/{}/preview",
-                    attachment.id
-                ))
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(enabled_response.status(), StatusCode::OK);
-    let enabled_body = response_body(enabled_response).await;
-    assert!(enabled_body.contains("data-document-preview-root"));
-    assert!(enabled_body.contains(r#"data-preview-type="legacy-ppt""#));
-    assert!(enabled_body.contains(r#"data-preview-experimental="true""#));
-    assert!(enabled_body.contains("实验性预览"));
-    assert!(enabled_body.contains("当前运行时会带可见水印"));
-    assert!(enabled_body.contains("data-preview-url=\""));
 }
 
 #[tokio::test]
@@ -8023,10 +7927,4 @@ fn test_settings() -> Settings {
         device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
     }
-}
-
-fn test_settings_with_legacy_preview_enabled() -> Settings {
-    let mut settings = test_settings();
-    settings.experimental_legacy_preview_enabled = true;
-    settings
 }

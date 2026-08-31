@@ -9914,13 +9914,6 @@ fn ensure_attachment_preview_content_enabled(
             "附件尚未上传完成，请稍后再试".to_string(),
         ));
     }
-    let strategy =
-        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
-    if strategy.is_some_and(|value| !value.is_enabled(legacy_preview_enabled)) {
-        return Err(AppError::BadRequest(
-            "旧格式实验性预览当前未开启，请下载原文件查看".to_string(),
-        ));
-    }
     if attachment_preview::kind(
         &attachment.original_filename,
         &attachment.content_type,

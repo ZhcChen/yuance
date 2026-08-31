@@ -25,13 +25,8 @@ use crate::{
     web,
 };
 
-static PDFJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/pdfjs");
-static OOXML_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/ooxml");
-static SHEETJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/sheetjs");
-static LEGACY_DOC_VENDOR_DIR: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/static/vendor/legacy-doc");
-static LEGACY_PPT_VENDOR_DIR: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/static/vendor/legacy-ppt");
+static FILE_VIEWER_VENDOR_DIR: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/static/vendor/file-viewer");
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -936,24 +931,13 @@ pub fn build_router(state: AppState) -> Router {
             get(static_document_preview_css),
         )
         .route("/static/document-preview.mjs", get(static_document_preview))
-        .route(
-            "/static/document-preview-legacy.mjs",
-            get(static_document_preview_legacy),
-        )
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
         .route("/static/vendor/marked/marked.umd.js", get(static_marked))
         .route("/static/vendor/dompurify/purify.min.js", get(static_dompurify))
-        .route("/static/vendor/pdfjs/{*path}", get(static_pdfjs_asset))
-        .route("/static/vendor/ooxml/{*path}", get(static_ooxml_asset))
-        .route("/static/vendor/sheetjs/{*path}", get(static_sheetjs_asset))
         .route(
-            "/static/vendor/legacy-doc/{*path}",
-            get(static_legacy_doc_asset),
-        )
-        .route(
-            "/static/vendor/legacy-ppt/{*path}",
-            get(static_legacy_ppt_asset),
+            "/static/vendor/file-viewer/{*path}",
+            get(static_file_viewer_asset),
         )
         .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
@@ -1707,22 +1691,6 @@ async fn static_document_preview() -> impl IntoResponse {
     )
 }
 
-async fn static_document_preview_legacy() -> impl IntoResponse {
-    (
-        [
-            (
-                header::CONTENT_TYPE,
-                "application/javascript; charset=utf-8",
-            ),
-            (
-                header::CACHE_CONTROL,
-                "no-store, max-age=0, must-revalidate",
-            ),
-        ],
-        include_str!("../../static/document-preview-legacy.mjs"),
-    )
-}
-
 async fn version_manifest() -> impl IntoResponse {
     let body = serde_json::json!({
         "version": app_release_version(),
@@ -1792,24 +1760,8 @@ async fn static_dompurify() -> impl IntoResponse {
     )
 }
 
-async fn static_pdfjs_asset(Path(path): Path<String>) -> Response {
-    static_dir_asset_response(&PDFJS_VENDOR_DIR, &path)
-}
-
-async fn static_ooxml_asset(Path(path): Path<String>) -> Response {
-    static_dir_asset_response(&OOXML_VENDOR_DIR, &path)
-}
-
-async fn static_sheetjs_asset(Path(path): Path<String>) -> Response {
-    static_dir_asset_response(&SHEETJS_VENDOR_DIR, &path)
-}
-
-async fn static_legacy_doc_asset(Path(path): Path<String>) -> Response {
-    static_dir_asset_response(&LEGACY_DOC_VENDOR_DIR, &path)
-}
-
-async fn static_legacy_ppt_asset(Path(path): Path<String>) -> Response {
-    static_dir_asset_response(&LEGACY_PPT_VENDOR_DIR, &path)
+async fn static_file_viewer_asset(Path(path): Path<String>) -> Response {
+    static_dir_asset_response(&FILE_VIEWER_VENDOR_DIR, &path)
 }
 
 fn static_dir_asset_response(dir: &Dir<'_>, path: &str) -> Response {
@@ -1831,6 +1783,8 @@ fn static_dir_asset_response(dir: &Dir<'_>, path: &str) -> Response {
         "wasm" => "application/wasm",
         "otf" => "font/otf",
         "ttf" => "font/ttf",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
         "css" => "text/css; charset=utf-8",
         "json" => "application/json; charset=utf-8",
         "svg" => "image/svg+xml",
