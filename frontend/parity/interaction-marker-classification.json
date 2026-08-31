@@ -9,41 +9,6 @@
       ]
     },
     {
-      "marker": "data-pdf-preview",
-      "category": "action",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-pdf-sidebar-panel",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-pdf-sidebar-tab",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-pdf-url",
-      "category": "transport",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-preview-experimental",
-      "category": "action",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-preview-file-type",
       "category": "action",
       "sources": [
@@ -59,13 +24,6 @@
     },
     {
       "marker": "data-preview-kind-label",
-      "category": "action",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-preview-metric",
       "category": "action",
       "sources": [
         "template"
