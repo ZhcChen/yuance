@@ -931,6 +931,10 @@ pub fn build_router(state: AppState) -> Router {
             get(static_document_preview_css),
         )
         .route("/static/document-preview.mjs", get(static_document_preview))
+        .route(
+            "/static/document-preview-crypto.mjs",
+            get(static_document_preview_crypto),
+        )
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
         .route("/static/vendor/marked/marked.umd.js", get(static_marked))
@@ -1688,6 +1692,22 @@ async fn static_document_preview() -> impl IntoResponse {
             ),
         ],
         include_str!("../../static/document-preview.mjs"),
+    )
+}
+
+async fn static_document_preview_crypto() -> impl IntoResponse {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
+        ],
+        include_str!("../../static/document-preview-crypto.mjs"),
     )
 }
 

@@ -5,7 +5,10 @@ import App from './app.jsx';
 import { webApi } from './lib/api.js';
 import { createBrowserEvents } from './platform/browser/events.js';
 import { createBrowserFilePlatform } from './platform/browser/files.js';
-import { mountBrowserDocumentViewer } from './platform/browser/document-viewer.js';
+import {
+  mountBrowserDocumentViewer,
+  resolveBrowserPreviewSource,
+} from './platform/browser/document-viewer.js';
 import { createBrowserRouter } from './platform/browser/router.js';
 import './app.css';
 
@@ -21,6 +24,7 @@ const services = {
   events: createBrowserEvents(),
   files: createBrowserFilePlatform({ refreshCsrfToken: webApi.refreshCsrfToken }),
   documentViewer: mountBrowserDocumentViewer,
+  previewSourceResolver: resolveBrowserPreviewSource,
   router: createBrowserRouter(),
   runtime: {
     scheduleFrame: (callback) => window.requestAnimationFrame(callback),

@@ -1,75 +1,7 @@
+import { fetchPreviewBytes } from "./document-preview-crypto.mjs";
+
 const FILE_VIEWER_IIFE_URL = "/static/vendor/file-viewer/flyfish-file-viewer-web-full.iife.js";
-const PREVIEW_FETCH_TIMEOUT_MS = 30000;
 const previewScriptLoaders = new Map();
-
-function clearWindowTimer(timerId) {
-  if (!timerId) {
-    return;
-  }
-  if (typeof window !== "undefined" && typeof window.clearTimeout === "function") {
-    window.clearTimeout(timerId);
-    return;
-  }
-  clearTimeout(timerId);
-}
-
-function normalizePreviewErrorMessage(value) {
-  const normalized = String(value || "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return normalized ? normalized.slice(0, 160) : "";
-}
-
-function buildPreviewFetchErrorMessage(statusCode, detail) {
-  const normalizedDetail = normalizePreviewErrorMessage(detail);
-  if (!normalizedDetail) {
-    return "附件读取失败（HTTP " + statusCode + "），请刷新后重试。";
-  }
-  return "附件读取失败（HTTP " + statusCode + "）： " + normalizedDetail;
-}
-
-export async function fetchPreviewBytes(sourceUrl) {
-  const controller = typeof AbortController === "function" ? new AbortController() : null;
-  let timeoutId = 0;
-  try {
-    if (controller && typeof window !== "undefined" && typeof window.setTimeout === "function") {
-      timeoutId = window.setTimeout(() => {
-        controller.abort();
-      }, PREVIEW_FETCH_TIMEOUT_MS);
-    }
-    const response = await fetch(sourceUrl, {
-      credentials: "same-origin",
-      cache: "no-store",
-      redirect: "follow",
-      signal: controller ? controller.signal : undefined,
-      headers: {
-        Accept: "application/octet-stream,*/*;q=0.1",
-      },
-    });
-    if (!response.ok) {
-      let detail = "";
-      try {
-        detail = await response.text();
-      } catch (_error) {
-        detail = "";
-      }
-      throw new Error(buildPreviewFetchErrorMessage(response.status, detail));
-    }
-    const buffer = await response.arrayBuffer();
-    if (!buffer || buffer.byteLength === 0) {
-      throw new Error("附件内容为空，当前无法预览。");
-    }
-    return buffer;
-  } catch (error) {
-    if (error && error.name === "AbortError") {
-      throw new Error("附件读取超时，请刷新后重试。");
-    }
-    throw error;
-  } finally {
-    clearWindowTimer(timeoutId);
-  }
-}
 
 function previewStatusNodes(root) {
   return {

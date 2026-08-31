@@ -146,6 +146,12 @@ pub struct LogoutForm {
 pub struct ResourceAccessQuery {
     #[serde(default)]
     access: String,
+    #[serde(default)]
+    client_decrypt: String,
+}
+
+fn client_decrypt_requested(value: &str) -> bool {
+    matches!(value, "1" | "true" | "True" | "TRUE")
 }
 
 pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
@@ -346,6 +352,7 @@ pub async fn project_attachment_preview_content(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
 ) -> AppResult<Response> {
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
@@ -359,6 +366,19 @@ pub async fn project_attachment_preview_content(
         ensure_project_access(pool, &context, project.id).await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+        if client_decrypt_requested(&query.client_decrypt)
+            && files::get_file_object_encryption(pool, attachment.file_object_id)
+                .await?
+                .is_some()
+        {
+            return super::api::encrypted_preview_content_response(
+                &state,
+                pool,
+                context.user_id,
+                attachment,
+            )
+            .await;
+        }
         return attachment_document_preview_content_response(
             &state,
             pool,
@@ -564,6 +584,19 @@ pub async fn project_resource_attachment_preview_content(
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
                 .await?;
+        if client_decrypt_requested(&query.client_decrypt)
+            && files::get_file_object_encryption(pool, attachment.file_object_id)
+                .await?
+                .is_some()
+        {
+            return super::api::encrypted_preview_content_response(
+                &state,
+                pool,
+                context.user_id,
+                attachment,
+            )
+            .await;
+        }
         return attachment_document_preview_content_response(
             &state,
             pool,
@@ -734,6 +767,7 @@ pub async fn work_item_attachment_preview_content(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((item_key, attachment_id)): Path<(String, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
 ) -> AppResult<Response> {
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
@@ -753,6 +787,19 @@ pub async fn work_item_attachment_preview_content(
         .await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+        if client_decrypt_requested(&query.client_decrypt)
+            && files::get_file_object_encryption(pool, attachment.file_object_id)
+                .await?
+                .is_some()
+        {
+            return super::api::encrypted_preview_content_response(
+                &state,
+                pool,
+                context.user_id,
+                attachment,
+            )
+            .await;
+        }
         return attachment_document_preview_content_response(
             &state,
             pool,
@@ -871,6 +918,7 @@ pub async fn work_item_comment_attachment_preview_content(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
 ) -> AppResult<Response> {
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
@@ -889,6 +937,19 @@ pub async fn work_item_comment_attachment_preview_content(
         .await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+        if client_decrypt_requested(&query.client_decrypt)
+            && files::get_file_object_encryption(pool, attachment.file_object_id)
+                .await?
+                .is_some()
+        {
+            return super::api::encrypted_preview_content_response(
+                &state,
+                pool,
+                context.user_id,
+                attachment,
+            )
+            .await;
+        }
         return attachment_document_preview_content_response(
             &state,
             pool,

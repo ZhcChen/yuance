@@ -456,6 +456,49 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     assert_eq!(preview_status, StatusCode::PARTIAL_CONTENT);
     assert_eq!(preview_headers[header::CONTENT_RANGE], "bytes 10-17/29");
     assert_eq!(&preview_bytes[..], b"resource");
+    let client_decrypt_response = request(
+        &app,
+        "GET",
+        &format!("{attachment_member}/preview/content?{access_query}&client_decrypt=1"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    let client_decrypt_status = client_decrypt_response.status();
+    let client_decrypt_headers = client_decrypt_response.headers().clone();
+    let client_decrypt_bytes = client_decrypt_response
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    if client_decrypt_status != StatusCode::OK {
+        eprintln!(
+            "client decrypt preview failed: {:?}",
+            String::from_utf8_lossy(&client_decrypt_bytes)
+        );
+    }
+    assert_eq!(client_decrypt_status, StatusCode::OK);
+    assert_eq!(
+        client_decrypt_headers[header::CONTENT_TYPE],
+        "application/json"
+    );
+    let client_decrypt_payload: serde_json::Value =
+        serde_json::from_slice(&client_decrypt_bytes).unwrap();
+    assert_eq!(
+        client_decrypt_payload["encryption"]["file_object_id"],
+        file_object_id
+    );
+    assert_eq!(
+        client_decrypt_payload["encryption"]["plaintext_sha256"],
+        attachment_checksum
+    );
+    assert!(
+        client_decrypt_payload["url"]
+            .as_str()
+            .unwrap()
+            .contains("object_key=")
+    );
     let response = request(
         &app,
         "GET",

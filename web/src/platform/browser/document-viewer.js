@@ -1,8 +1,30 @@
 // @ts-check
 
+import { decryptFile, sha256Hex } from './file-crypto.js';
+
 const FILE_VIEWER_IIFE_URL = "/static/vendor/file-viewer/flyfish-file-viewer-web-full.iife.js";
 const PREVIEW_FETCH_TIMEOUT_MS = 30000;
 const scriptLoaders = new Map();
+
+const CONTENT_TYPES_BY_EXTENSION = new Map([
+  ['bmp', 'image/bmp'],
+  ['gif', 'image/gif'],
+  ['ico', 'image/x-icon'],
+  ['jpeg', 'image/jpeg'],
+  ['jpg', 'image/jpeg'],
+  ['png', 'image/png'],
+  ['svg', 'image/svg+xml'],
+  ['webp', 'image/webp'],
+  ['mp4', 'video/mp4'],
+  ['webm', 'video/webm'],
+  ['txt', 'text/plain;charset=utf-8'],
+  ['md', 'text/plain;charset=utf-8'],
+  ['log', 'text/plain;charset=utf-8'],
+  ['json', 'application/json;charset=utf-8'],
+  ['xml', 'text/xml;charset=utf-8'],
+  ['html', 'text/html;charset=utf-8'],
+  ['csv', 'text/csv;charset=utf-8'],
+]);
 
 function clearWindowTimer(timerId) {
   if (!timerId) {
@@ -29,6 +51,112 @@ function buildPreviewFetchErrorMessage(statusCode, detail) {
     return "附件读取失败（HTTP " + statusCode + "），请刷新后重试。";
   }
   return "附件读取失败（HTTP " + statusCode + "）： " + normalizedDetail;
+}
+
+function decodeBase64(value) {
+  let binary;
+  try {
+    binary = globalThis.atob(value);
+  } catch {
+    throw new Error("附件加密密钥格式无效。");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function ensureClientDecryptQuery(url) {
+  const baseUrl = typeof globalThis.location !== "undefined" && globalThis.location?.href
+    ? globalThis.location.href
+    : "http://localhost/";
+  const parsed = new URL(String(url || ""), baseUrl);
+  if (parsed.searchParams.get("client_decrypt") !== "1") {
+    parsed.searchParams.set("client_decrypt", "1");
+  }
+  return parsed.toString();
+}
+
+function contentTypeForPreview(filename, contentType) {
+  const knownType = String(contentType || "").trim();
+  if (knownType && knownType !== "application/octet-stream") {
+    return knownType;
+  }
+  const extension = String(filename || "").trim().toLowerCase().match(/\.([^.]+)$/u)?.[1] || "";
+  return CONTENT_TYPES_BY_EXTENSION.get(extension) || "application/octet-stream";
+}
+
+async function fetchCiphertext(url, baseUrl) {
+  const target = new URL(String(url || ""), baseUrl);
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timeoutId = 0;
+  try {
+    if (controller && typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, PREVIEW_FETCH_TIMEOUT_MS);
+    }
+    const response = await fetch(target.toString(), {
+      credentials: target.origin === new URL(baseUrl).origin ? "same-origin" : "omit",
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller ? controller.signal : undefined,
+      headers: { Accept: "application/octet-stream,*/*;q=0.1" },
+    });
+    if (!response.ok) {
+      throw new Error(`加密附件读取失败（HTTP ${response.status}）。`);
+    }
+    const ciphertext = new Uint8Array(await response.arrayBuffer());
+    if (!ciphertext || ciphertext.byteLength === 0) {
+      throw new Error("加密附件内容为空，当前无法预览。");
+    }
+    return ciphertext;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("加密附件读取超时，请刷新后重试。");
+    }
+    throw error;
+  } finally {
+    clearWindowTimer(timeoutId);
+  }
+}
+
+function normalizeSha256(value) {
+  if (!/^[0-9a-f]{64}$/u.test(String(value || ""))) {
+    throw new Error("附件加密 SHA-256 校验值无效。");
+  }
+  return String(value).toLowerCase();
+}
+
+async function decryptEncryptedPreviewPayload(payload) {
+  const encryption = payload && typeof payload === "object" ? payload.encryption : null;
+  const url = payload && typeof payload.url === "string" ? payload.url : "";
+  if (!url || !encryption || typeof encryption.key !== "string" || !encryption.file_object_id) {
+    throw new Error("附件加密预览信息不完整。");
+  }
+  const baseUrl = typeof globalThis.location !== "undefined" && globalThis.location?.href
+    ? globalThis.location.href
+    : "http://localhost/";
+  const ciphertext = await fetchCiphertext(url, baseUrl);
+  if (Number(encryption.encrypted_byte_size) > 0 && ciphertext.byteLength !== Number(encryption.encrypted_byte_size)) {
+    throw new Error("加密文件大小与登记不一致。");
+  }
+  if (encryption.encrypted_checksum_sha256 && (await sha256Hex(ciphertext)) !== normalizeSha256(encryption.encrypted_checksum_sha256)) {
+    throw new Error("加密文件校验值不匹配。");
+  }
+  return decryptFile(
+    decodeBase64(encryption.key),
+    Number(encryption.file_object_id),
+    ciphertext,
+  );
+}
+
+function toArrayBuffer(bytes) {
+  if (bytes instanceof ArrayBuffer) {
+    return bytes;
+  }
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 function extensionFromFilename(filename) {
@@ -125,13 +253,13 @@ async function fetchPreviewBytes(sourceUrl) {
         controller.abort();
       }, PREVIEW_FETCH_TIMEOUT_MS);
     }
-    const response = await fetch(sourceUrl, {
+    const response = await fetch(ensureClientDecryptQuery(sourceUrl), {
       credentials: "same-origin",
       cache: "no-store",
       redirect: "follow",
       signal: controller ? controller.signal : undefined,
       headers: {
-        Accept: "application/octet-stream,*/*;q=0.1",
+        Accept: "application/json,application/octet-stream,*/*;q=0.1",
       },
     });
     if (!response.ok) {
@@ -143,11 +271,21 @@ async function fetchPreviewBytes(sourceUrl) {
       }
       throw new Error(buildPreviewFetchErrorMessage(response.status, detail));
     }
-    const buffer = await response.arrayBuffer();
-    if (!buffer || buffer.byteLength === 0) {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error("附件加密预览信息格式无效。");
+      }
+      return decryptEncryptedPreviewPayload(payload);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes || bytes.byteLength === 0) {
       throw new Error("附件内容为空，当前无法预览。");
     }
-    return buffer;
+    return bytes;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error("附件读取超时，请刷新后重试。");
@@ -164,11 +302,11 @@ async function fetchPreviewBytes(sourceUrl) {
  * @returns {Promise<{ destroy: () => unknown }>}
  */
 export async function mountBrowserDocumentViewer(host, { source, filename, previewType }) {
-  const buffer = await fetchPreviewBytes(source);
+  const bytes = await fetchPreviewBytes(source);
   const viewer = await loadFileViewer();
   const type = viewerTypeFor(previewType, filename);
   return viewer.mountViewer(host, {
-    buffer,
+    buffer: toArrayBuffer(bytes),
     filename,
     type,
     options: {
@@ -184,4 +322,18 @@ export async function mountBrowserDocumentViewer(host, { source, filename, previ
       },
     },
   });
+}
+
+/**
+ * 解析协议 URL 为可直接渲染的 Blob URL（未加密内容同样转 Blob）。
+ * @param {string} source
+ * @param {{ filename?: string, contentType?: string }} [options]
+ * @returns {Promise<string>}
+ */
+export async function resolveBrowserPreviewSource(source, options = {}) {
+  const bytes = await fetchPreviewBytes(source);
+  const blob = new Blob([toArrayBuffer(bytes)], {
+    type: contentTypeForPreview(options.filename, options.contentType),
+  });
+  return URL.createObjectURL(blob);
 }

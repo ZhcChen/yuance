@@ -1,4 +1,4 @@
-/* global requestAnimationFrame */
+/* global requestAnimationFrame URL */
 // @ts-check
 
 import React, { useEffect, useReducer, useRef, useState } from 'react';
@@ -163,9 +163,9 @@ function attachmentViewerErrorMessage(error) {
 }
 
 /**
- * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, loading?: boolean, downloading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void, documentViewer?: (host: HTMLDivElement, input: { source: string, filename: string, previewType: string }) => Promise<{ destroy: () => unknown }> }} props
+ * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, contentType?: string, loading?: boolean, downloading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void, documentViewer?: (host: HTMLDivElement, input: { source: string, filename: string, previewType: string }) => Promise<{ destroy: () => unknown }>, resolveSource?: (source: string, input: { filename: string, kind: string | null, strategy: string | null, contentType: string }) => Promise<string> }} props
  */
-export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, loading = false, downloading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose, documentViewer }) {
+export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, contentType = '', loading = false, downloading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose, documentViewer, resolveSource }) {
   const dialogRef = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const stageRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const panRef = useRef(/** @type {HTMLDivElement | null} */ (null));
@@ -175,6 +175,10 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
   const documentControllerRef = useRef(/** @type {{ destroy: () => unknown } | null} */ (null));
   const documentPreviewRequestRef = useRef(0);
   const [documentPreview, setDocumentPreview] = useState({ loading: false, error: '' });
+  const [resolvedSource, setResolvedSource] = useState('');
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState('');
+  const resolvedSourceUrlRef = useRef('');
   const [, renderViewer] = useReducer((value) => value + 1, 0);
 
   function stageViewport(stage) {
@@ -552,6 +556,53 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
   }, [source, kind]);
 
   useEffect(() => {
+    let cancelled = false;
+    const previousUrl = resolvedSourceUrlRef.current;
+    resolvedSourceUrlRef.current = '';
+    if (previousUrl && previousUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(previousUrl);
+    }
+    setResolvedSource('');
+    setSourceLoading(false);
+    setSourceError('');
+    const needsResolve = Boolean(open) && Boolean(source) && typeof resolveSource === 'function'
+      && (kind !== 'document' || strategy === 'text');
+    if (!needsResolve) {
+      setResolvedSource(source || '');
+      return undefined;
+    }
+    setSourceLoading(true);
+    resolveSource(source, {
+      filename: title,
+      kind,
+      strategy,
+      contentType,
+    })
+      .then((url) => {
+        if (cancelled) {
+          if (url && url.startsWith('blob:')) URL.revokeObjectURL(url);
+          return;
+        }
+        resolvedSourceUrlRef.current = url || '';
+        setResolvedSource(url);
+        setSourceLoading(false);
+      })
+      .catch((resolveError) => {
+        if (cancelled) return;
+        setSourceError(attachmentViewerErrorMessage(resolveError));
+        setSourceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      const currentUrl = resolvedSourceUrlRef.current;
+      if (currentUrl && currentUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(currentUrl);
+        resolvedSourceUrlRef.current = '';
+      }
+    };
+  }, [open, source, kind, strategy, title, contentType, resolveSource]);
+
+  useEffect(() => {
     const host = documentHostRef.current;
     destroyDocumentController(documentControllerRef.current);
     documentControllerRef.current = null;
@@ -623,11 +674,13 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
 
   const state = viewerRef.current;
   const showNavigation = total > 1;
-  const imageControls = kind === 'image' && !loading && !error && Boolean(source) && state.imageState !== 'error';
+  const displaySource = resolvedSource || source;
+  const mediaReady = !sourceLoading && !sourceError && Boolean(displaySource);
+  const imageControls = kind === 'image' && !loading && !error && mediaReady && state.imageState !== 'error';
   const fitToggleTarget = state.viewMode === 'fit-screen' ? 'fit-width' : 'fit-screen';
   const fitToggleLabel = state.viewMode === 'fit-screen' ? '适宽' : '适屏';
   const statusText = viewerStatusText(state, total, position, loading, error);
-  const showTextPreview = kind === 'document' && strategy === 'text' && Boolean(source);
+  const showTextPreview = kind === 'document' && strategy === 'text' && mediaReady;
   const showDocumentViewer = Boolean(documentViewer) && kind === 'document' && Boolean(source) && strategy !== 'text' && !loading && !error;
 
   return (
@@ -654,23 +707,23 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
         onDoubleClick={handleImageViewerDoubleClick}
       >
         <div className={`attachment-preview-pan${showTextPreview ? ' is-text' : ''}${showDocumentViewer ? ' is-document' : ''}`} ref={panRef} key={source}>
-          {!loading && !error && kind === 'image' && source ? (
+          {!loading && !error && kind === 'image' && mediaReady ? (
             <img
               ref={imageRef}
-              key={source}
+              key={displaySource}
               className="attachment-preview-image"
-              src={source}
+              src={displaySource}
               alt={title}
               draggable={false}
               onLoad={handleImageViewerLoad}
               onError={handleImageViewerError}
             />
           ) : null}
-          {!loading && !error && kind === 'video' && source ? (
+          {!loading && !error && kind === 'video' && mediaReady ? (
             <video
-              key={source}
+              key={displaySource}
               className="attachment-preview-video"
-              src={source}
+              src={displaySource}
               controls
               playsInline
               preload="metadata"
@@ -680,7 +733,7 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
           {!loading && !error && showTextPreview ? (
             <iframe
               className="attachment-preview-text-frame"
-              src={source}
+              src={displaySource}
               title={`${title || '附件'} 文本预览`}
               sandbox=""
             />
@@ -696,6 +749,8 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
         <div className="attachment-preview-overlay">
           {loading ? <p className="attachment-preview-message">正在加载预览…</p> : null}
           {!loading && error ? <p className="attachment-preview-error" role="alert">{error}</p> : null}
+          {!loading && !error && sourceLoading ? <p className="attachment-preview-message">正在准备附件…</p> : null}
+          {!loading && !error && sourceError ? <p className="attachment-preview-error" role="alert">{sourceError}</p> : null}
           {!loading && !error && showDocumentViewer && documentPreview.loading ? (
             <p className="attachment-preview-message">正在加载预览…</p>
           ) : null}

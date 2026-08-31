@@ -1221,6 +1221,12 @@ pub struct AttachmentEncryptionPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct EncryptedPreviewContentPayload {
+    pub url: String,
+    pub encryption: AttachmentEncryptionPayload,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ProjectAttachmentPreviewPayload {
     pub attachment: AttachmentPayload,
     pub preview: AttachmentPreviewPayload,
@@ -2115,6 +2121,18 @@ pub struct SignedUrlQuery {
     expires_in_seconds: Option<u64>,
     #[serde(default)]
     access: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PreviewContentQuery {
+    #[serde(default)]
+    access: String,
+    #[serde(default)]
+    client_decrypt: String,
+}
+
+fn client_decrypt_requested(value: &str) -> bool {
+    matches!(value, "1" | "true" | "True" | "TRUE")
 }
 
 #[derive(Debug, Deserialize)]
@@ -4898,12 +4916,20 @@ pub async fn work_item_comment_attachment_preview_content(
     method: Method,
     headers: HeaderMap,
     Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<PreviewContentQuery>,
 ) -> AppResult<Response> {
     let (user, _item, _project, comment) =
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     let pool = state.pool()?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+    if client_decrypt_requested(&query.client_decrypt)
+        && files::get_file_object_encryption(pool, attachment.file_object_id)
+            .await?
+            .is_some()
+    {
+        return encrypted_preview_content_response(&state, pool, user.id, attachment).await;
+    }
     attachment_preview_content_response(
         &state,
         pool,
@@ -5259,6 +5285,7 @@ pub async fn project_attachment_preview_content(
     method: Method,
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
+    Query(query): Query<PreviewContentQuery>,
 ) -> AppResult<Response> {
     let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
@@ -5270,6 +5297,13 @@ pub async fn project_attachment_preview_content(
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+    if client_decrypt_requested(&query.client_decrypt)
+        && files::get_file_object_encryption(pool, attachment.file_object_id)
+            .await?
+            .is_some()
+    {
+        return encrypted_preview_content_response(&state, pool, user.id, attachment).await;
+    }
     attachment_preview_content_response(
         &state,
         pool,
@@ -5387,6 +5421,67 @@ async fn attachment_preview_content_response(
         audit_detail,
     )
     .await?;
+    Ok(response)
+}
+
+pub(crate) async fn encrypted_preview_content_response(
+    state: &AppState,
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    attachment: files::FileAttachmentSummary,
+) -> AppResult<Response> {
+    ensure_attachment_preview_content_enabled(
+        &attachment,
+        state.settings.experimental_legacy_preview_enabled(),
+    )?;
+    let encryption = files::get_file_object_encryption(pool, attachment.file_object_id)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("附件未启用加密".to_string()))?;
+    let expires_in_seconds = storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64;
+    let mut signed = storage::presign_download_url(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        expires_in_seconds,
+    )
+    .await?;
+    bind_test_storage_download_grant(
+        state,
+        &attachment.object_key,
+        "application/octet-stream",
+        actor_user_id,
+        expires_in_seconds,
+        &mut signed,
+    )?;
+    let data_key = file_crypto::open_data_key(
+        &state.settings.file_master_key,
+        &encryption.data_key_envelope,
+        attachment.object_key.as_bytes(),
+    )?;
+    let checksum_sha256 =
+        sqlx::query_scalar::<_, String>("SELECT checksum_sha256 FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(pool)
+            .await?;
+    let payload = EncryptedPreviewContentPayload {
+        url: signed.url,
+        encryption: AttachmentEncryptionPayload {
+            algorithm: "AES-256-GCM",
+            format: encryption.encryption_format,
+            chunk_size: file_crypto::FILE_CHUNK_SIZE as i64,
+            key: BASE64.encode(data_key),
+            file_object_id: attachment.file_object_id,
+            plaintext_byte_size: attachment.byte_size,
+            plaintext_sha256: checksum_sha256,
+            encrypted_byte_size: encryption.encrypted_byte_size,
+            encrypted_checksum_sha256: encryption.encrypted_checksum_sha256,
+        },
+    };
+    let mut response = Json(payload).into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, "application/json".parse()?);
+    headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
     Ok(response)
 }
 
@@ -6124,7 +6219,7 @@ pub async fn project_resource_attachment_preview_content(
     method: Method,
     headers: HeaderMap,
     Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
-    Query(query): Query<SignedUrlQuery>,
+    Query(query): Query<PreviewContentQuery>,
 ) -> AppResult<Response> {
     let (user, _project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
@@ -6134,6 +6229,13 @@ pub async fn project_resource_attachment_preview_content(
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
             .await?;
+    if client_decrypt_requested(&query.client_decrypt)
+        && files::get_file_object_encryption(pool, attachment.file_object_id)
+            .await?
+            .is_some()
+    {
+        return encrypted_preview_content_response(&state, pool, user.id, attachment).await;
+    }
     attachment_preview_content_response(
         &state,
         pool,
@@ -6432,11 +6534,19 @@ pub async fn work_item_attachment_preview_content(
     method: Method,
     headers: HeaderMap,
     Path((item_key, attachment_id)): Path<(String, i64)>,
+    Query(query): Query<PreviewContentQuery>,
 ) -> AppResult<Response> {
     let (user, item, _project) = require_api_work_item_context(&state, &headers, &item_key).await?;
     let pool = state.pool()?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+    if client_decrypt_requested(&query.client_decrypt)
+        && files::get_file_object_encryption(pool, attachment.file_object_id)
+            .await?
+            .is_some()
+    {
+        return encrypted_preview_content_response(&state, pool, user.id, attachment).await;
+    }
     attachment_preview_content_response(
         &state,
         pool,
