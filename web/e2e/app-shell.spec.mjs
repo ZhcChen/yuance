@@ -2333,7 +2333,8 @@ test('work item attachments share preview navigation fallback download and stale
     const payload = index === 0 ? previewPayload(index, 'image', 'png') : index === 1 ? previewPayload(index, 'document', 'pdf') : previewPayload(index, null, null);
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: payload }) });
   });
-  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: '' }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/822/preview/content', (route) => route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF') }));
   await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/download-url', async (route) => {
     const attachmentId = Number(new URL(route.request().url()).pathname.split('/').at(-2));
     downloadRequests.push(attachmentId);
@@ -2358,16 +2359,17 @@ test('work item attachments share preview navigation fallback download and stale
   await expect(imagePreview).toContainText('1 / 2');
   await imagePreview.getByRole('button', { name: '下一个' }).click();
   const documentPreview = page.getByRole('dialog', { name: 'work-item-plan.pdf' });
-  await expect(documentPreview).toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
+  await expect(documentPreview.locator('.attachment-preview-document-host')).toBeVisible();
+  await expect(documentPreview).not.toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
   await documentPreview.getByRole('button', { name: '下载' }).click();
   await expect.poll(() => downloadRequests).toEqual([822]);
   await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/work-item-preview-822');
-  await documentPreview.getByRole('button', { name: '关闭附件预览' }).click();
+  await documentPreview.getByRole('button', { name: '关闭媒体预览' }).click();
 
   await attachmentPanel.getByRole('button', { name: '预览附件 work-item-archive.bin' }).click();
   const unsupportedPreview = page.getByRole('dialog', { name: 'work-item-archive.bin' });
   await expect(unsupportedPreview).toContainText('此文件类型不支持预览。');
-  await unsupportedPreview.getByRole('button', { name: '关闭附件预览' }).click();
+  await unsupportedPreview.getByRole('button', { name: '关闭媒体预览' }).click();
 
   delayNextPreview = true;
   await attachmentPanel.getByRole('button', { name: '预览附件 work-item-overview.png' }).click();

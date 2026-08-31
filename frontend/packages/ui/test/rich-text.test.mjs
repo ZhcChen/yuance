@@ -79,7 +79,9 @@ test('rich text file helpers derive document previewability and file card visual
   assert.equal(previewableDocumentFileType('guide.pdf', ''), 'pdf');
   assert.equal(previewableDocumentFileType('plan.txt', 'text/plain'), 'txt');
   assert.equal(previewableDocumentFileType('notes.md', 'application/octet-stream'), 'md');
-  assert.equal(previewableDocumentFileType('archive.zip', ''), '');
+  assert.equal(previewableDocumentFileType('archive.zip', ''), 'zip');
+  assert.equal(previewableDocumentFileType('说明.rtf', ''), 'rtf');
+  assert.equal(previewableDocumentFileType('安装包.apk', ''), 'apk');
   assert.equal(richFileVisualKind('设计说明.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), 'word');
   assert.equal(richFileVisualKind('数据.xlsx', ''), 'sheet');
   assert.equal(richFileVisualKind('演示.pptx', ''), 'slide');
@@ -88,5 +90,7 @@ test('rich text file helpers derive document previewability and file card visual
   assert.equal(richFileVisualBadge('archive.zip', ''), 'ZIP');
   assert.equal(richFileVisualBadge('unknown', ''), 'FILE');
   assert.equal(isPreviewableDocumentFile('guide.pdf', ''), true);
-  assert.equal(isPreviewableDocumentFile('archive.zip', ''), false);
+  assert.equal(isPreviewableDocumentFile('archive.zip', ''), true);
+  assert.equal(isPreviewableDocumentFile('说明.rtf', ''), true);
+  assert.equal(isPreviewableDocumentFile('photo.png', ''), false);
 });

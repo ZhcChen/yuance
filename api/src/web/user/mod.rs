@@ -1877,7 +1877,10 @@ async fn build_document_preview_template(
         ));
     };
     let kind_label = document_preview_kind_label(strategy).to_string();
-    let preview_type = document_preview_type_code(strategy).to_string();
+    let preview_type = match strategy {
+        AttachmentPreviewStrategy::Document => file_type.to_string(),
+        _ => document_preview_type_code(strategy).to_string(),
+    };
     let file_type_badge = file_type.to_ascii_uppercase();
     let meta_text = format!(
         "{kind_label} · {} · 站内离线预览",
@@ -2284,13 +2287,13 @@ mod tests {
     }
 
     #[test]
-    fn legacy_document_preview_entries_require_feature_flag() {
-        assert!(!is_previewable_document_attachment(
+    fn legacy_document_preview_entries_are_available_without_feature_flag() {
+        assert!(is_previewable_document_attachment(
             "旧版文档.doc",
             "application/msword",
             false
         ));
-        assert!(!is_previewable_document_attachment(
+        assert!(is_previewable_document_attachment(
             "旧版课件.ppt",
             "application/vnd.ms-powerpoint",
             false

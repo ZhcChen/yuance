@@ -60,7 +60,37 @@ const RICH_TEXT_SIZE_OPTIONS = [
   { value: 'large', label: '大' },
   { value: 'x-large', label: '特大' },
 ];
-const DOCUMENT_FILE_TYPES = ['doc', 'txt', 'log', 'md', 'json', 'xml', 'yaml', 'yml', 'csv', 'xls', 'xlsx', 'ods', 'ppt', 'docx', 'pptx', 'pdf'];
+const DOCUMENT_FILE_TYPES = [
+  '3dm', '3ds', '3mf', '7z', 'aac', 'ai', 'amf', 'apk',
+  'ar', 'asc', 'asice', 'asics', 'avro', 'bash', 'bdl', 'brep',
+  'bundle', 'bz2', 'bzip2', 'c', 'cab', 'cbr', 'cbz', 'cc',
+  'cjs', 'cms', 'cmsc', 'cpio', 'cpp', 'cs', 'css', 'csv',
+  'dae', 'dbf', 'dcm', 'dicom', 'diff', 'dio', 'doc', 'docm',
+  'docx', 'dot', 'dotm', 'dotx', 'dra', 'drawio', 'dwf', 'dwfx',
+  'dwg', 'dxf', 'ear', 'eml', 'eps', 'epub', 'ers', 'excalidraw',
+  'fb2', 'fbx', 'flac', 'fods', 'gds', 'geojson', 'glb', 'gltf',
+  'go', 'gpg', 'gpx', 'gv', 'gz', 'gzip', 'h', 'hcl',
+  'hpp', 'htm', 'html', 'http', 'hwp', 'hwpx', 'ifc', 'iges',
+  'igs', 'ini', 'ipynb', 'iso', 'jar', 'java', 'js', 'json',
+  'json5', 'jsonc', 'jsx', 'jws', 'key', 'kml', 'kmz', 'kt',
+  'lha', 'log', 'lzh', 'lzma', 'm4a', 'markdown', 'mbox', 'md',
+  'mermaid', 'mid', 'midi', 'mjs', 'mmd', 'mp3', 'mpeg', 'msg',
+  'numbers', 'oas', 'oasis', 'obj', 'odp', 'ods', 'odt', 'ofd',
+  'oga', 'ogg', 'olb', 'opus', 'otf', 'p7b', 'p7c', 'p7m',
+  'p7s', 'pages', 'parquet', 'patch', 'pcd', 'pdf', 'pgp', 'php',
+  'pkcs7', 'plantuml', 'ply', 'pot', 'potm', 'potx', 'ppsm', 'ppsx',
+  'ppt', 'pptm', 'pptx', 'proto', 'psd', 'puml', 'py', 'rar',
+  'rb', 'react', 'rs', 'rtf', 'sce', 'scs', 'sh', 'shp',
+  'sig', 'sql', 'sqlite', 'step', 'stl', 'stp', 'swift', 'tar',
+  'tbz', 'tbz2', 'tex', 'tgz', 'toml', 'ts', 'tsd', 'tsq',
+  'tsr', 'tst', 'tsv', 'tsx', 'ttf', 'txt', 'txz', 'typ',
+  'typst', 'tzst', 'umd', 'usd', 'usda', 'usdc', 'usdz', 'vrml',
+  'vtk', 'vtp', 'vue', 'war', 'wasm', 'wav', 'weba', 'webarchive',
+  'woff', 'woff2', 'wp', 'wp5', 'wp6', 'wpd', 'wrl', 'xar',
+  'xla', 'xlam', 'xls', 'xlsb', 'xlsm', 'xlsx', 'xlt', 'xltm',
+  'xltx', 'xmind', 'xml', 'xps', 'xyz', 'xz', 'yaml', 'yml',
+  'zip', 'zipx', 'zst',
+];
 
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
 

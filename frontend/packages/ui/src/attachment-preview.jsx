@@ -1,7 +1,7 @@
 /* global requestAnimationFrame */
 // @ts-check
 
-import React, { useEffect, useReducer, useRef } from 'react';
+import React, { useEffect, useReducer, useRef, useState } from 'react';
 
 import { useAnimatedDialog } from './use-animated-dialog.js';
 
@@ -141,15 +141,40 @@ function viewerStatusText(state, total, position, loading, error) {
   return prefix ? `${prefix} · 附件预览` : '附件预览';
 }
 
+function destroyDocumentController(controller) {
+  if (!controller || typeof controller.destroy !== 'function') {
+    return;
+  }
+  try {
+    Promise.resolve(controller.destroy()).catch(() => {});
+  } catch (_error) {
+    // Destroy is best-effort when the viewer is already gone.
+  }
+}
+
+function attachmentViewerErrorMessage(error) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return '当前文件无法预览，请刷新后重试或下载原文件查看。';
+}
+
 /**
- * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, loading?: boolean, downloading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void }} props
+ * @param {{ open: boolean, title: string, source: string, kind: 'image' | 'video' | 'document' | null, strategy?: string | null, fileType: string | null, loading?: boolean, downloading?: boolean, error?: string, position?: number, total?: number, hasPrevious?: boolean, hasNext?: boolean, onPrevious?: () => void, onNext?: () => void, onDownload: () => void, onClose: () => void, documentViewer?: (host: HTMLDivElement, input: { source: string, filename: string, previewType: string }) => Promise<{ destroy: () => unknown }> }} props
  */
-export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, loading = false, downloading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose }) {
+export function AttachmentPreview({ open, title, source, kind, strategy = null, fileType, loading = false, downloading = false, error = '', position = 0, total = 0, hasPrevious = false, hasNext = false, onPrevious, onNext, onDownload, onClose, documentViewer }) {
   const dialogRef = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const stageRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const panRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const imageRef = useRef(/** @type {HTMLImageElement | null} */ (null));
   const viewerRef = useRef(/** @type {AttachmentPreviewState} */ (createAttachmentPreviewState()));
+  const documentHostRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const documentControllerRef = useRef(/** @type {{ destroy: () => unknown } | null} */ (null));
+  const documentPreviewRequestRef = useRef(0);
+  const [documentPreview, setDocumentPreview] = useState({ loading: false, error: '' });
   const [, renderViewer] = useReducer((value) => value + 1, 0);
 
   function stageViewport(stage) {
@@ -527,6 +552,47 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
   }, [source, kind]);
 
   useEffect(() => {
+    const host = documentHostRef.current;
+    destroyDocumentController(documentControllerRef.current);
+    documentControllerRef.current = null;
+    setDocumentPreview({ loading: false, error: '' });
+    if (!open || kind !== 'document' || !source || !host || !documentViewer || strategy === 'text' || loading || error) {
+      return undefined;
+    }
+    const requestId = ++documentPreviewRequestRef.current;
+    setDocumentPreview({ loading: true, error: '' });
+    documentViewer(host, {
+      source,
+      filename: title,
+      previewType: fileType || strategy || '',
+    })
+      .then((controller) => {
+        if (requestId !== documentPreviewRequestRef.current) {
+          destroyDocumentController(controller);
+          return;
+        }
+        documentControllerRef.current = controller;
+        setDocumentPreview({ loading: false, error: '' });
+      })
+      .catch((mountError) => {
+        if (requestId !== documentPreviewRequestRef.current) {
+          return;
+        }
+        if (host) {
+          host.replaceChildren();
+        }
+        setDocumentPreview({ loading: false, error: attachmentViewerErrorMessage(mountError) });
+      });
+    return () => {
+      if (documentPreviewRequestRef.current === requestId) {
+        documentPreviewRequestRef.current += 1;
+      }
+      destroyDocumentController(documentControllerRef.current);
+      documentControllerRef.current = null;
+    };
+  }, [open, source, kind, strategy, fileType, title, loading, error, documentViewer]);
+
+  useEffect(() => {
     const stage = stageRef.current;
     if (!stage) {
       return undefined;
@@ -562,6 +628,7 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
   const fitToggleLabel = state.viewMode === 'fit-screen' ? '适宽' : '适屏';
   const statusText = viewerStatusText(state, total, position, loading, error);
   const showTextPreview = kind === 'document' && strategy === 'text' && Boolean(source);
+  const showDocumentViewer = Boolean(documentViewer) && kind === 'document' && Boolean(source) && strategy !== 'text' && !loading && !error;
 
   return (
     <dialog
@@ -586,7 +653,7 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
         onLostPointerCapture={endImageViewerDrag}
         onDoubleClick={handleImageViewerDoubleClick}
       >
-        <div className={`attachment-preview-pan${showTextPreview ? ' is-text' : ''}`} ref={panRef} key={source}>
+        <div className={`attachment-preview-pan${showTextPreview ? ' is-text' : ''}${showDocumentViewer ? ' is-document' : ''}`} ref={panRef} key={source}>
           {!loading && !error && kind === 'image' && source ? (
             <img
               ref={imageRef}
@@ -618,14 +685,27 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
               sandbox=""
             />
           ) : null}
+          {showDocumentViewer ? (
+            <div
+              ref={documentHostRef}
+              className="attachment-preview-document-host"
+              aria-label={`${title || '附件'} 文档预览`}
+            />
+          ) : null}
         </div>
         <div className="attachment-preview-overlay">
           {loading ? <p className="attachment-preview-message">正在加载预览…</p> : null}
           {!loading && error ? <p className="attachment-preview-error" role="alert">{error}</p> : null}
+          {!loading && !error && showDocumentViewer && documentPreview.loading ? (
+            <p className="attachment-preview-message">正在加载预览…</p>
+          ) : null}
+          {!loading && !error && showDocumentViewer && documentPreview.error ? (
+            <p className="attachment-preview-error" role="alert">{documentPreview.error}</p>
+          ) : null}
           {!loading && !error && kind === 'image' && state.imageState === 'error' ? (
             <p className="attachment-preview-error" role="alert">图片加载失败，可关闭后重新打开。</p>
           ) : null}
-          {!loading && !error && kind === 'document' && !showTextPreview ? (
+          {!loading && !error && kind === 'document' && !showTextPreview && !showDocumentViewer ? (
             <div className="attachment-preview-document">
               <strong>{fileType?.toUpperCase() || 'DOCUMENT'}</strong>
               <p>此文档暂不支持内嵌渲染，可下载后查看。</p>

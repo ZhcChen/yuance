@@ -36,8 +36,9 @@ test('attachment preview renders text documents inline and keeps unsupported doc
   assert.match(textHtml, /src="\/preview\/content"/);
   assert.match(textHtml, /title="notes\.md 文本预览"/);
 
-  const documentHtml = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'plan.pdf', source: '/preview/content', kind: 'document', fileType: 'pdf', onDownload() {}, onClose() {} }));
-  assert.match(documentHtml, /暂不支持内嵌渲染/);
+  const documentHtml = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'plan.pdf', source: '/preview/content', kind: 'document', fileType: 'pdf', documentViewer: async () => ({ destroy() {} }), onDownload() {}, onClose() {} }));
+  assert.match(documentHtml, /class="attachment-preview-document-host"/);
+  assert.doesNotMatch(documentHtml, /暂不支持内嵌渲染/);
   const errorHtml = renderToStaticMarkup(React.createElement(AttachmentPreview, { open: true, title: 'plan.pdf', source: '', kind: null, fileType: null, error: '预览加载失败', onDownload() {}, onClose() {} }));
   assert.match(errorHtml, /role="alert"/);
   assert.match(errorHtml, /预览加载失败/);

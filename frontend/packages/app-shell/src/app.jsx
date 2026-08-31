@@ -1,7 +1,7 @@
 // @ts-check
 /* global FormData, URL, clearInterval, clearTimeout, setInterval, setTimeout */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createNotificationActionCoordinator,
   createNotificationEventCoordinator,
@@ -45,7 +45,7 @@ import {
   uploadSystemReleaseAsset,
 } from '@yuance/frontend-app-core';
 import {
-  AttachmentPreview,
+  AttachmentPreview as BaseAttachmentPreview,
   Badge,
   Button,
   ContentTab,
@@ -952,6 +952,7 @@ function normalizeSystemApiDocs(payload) {
  *   api: AppApiService,
  *   events: { supportsTopbarPolling?: boolean, supportsWorkItemTyping?: boolean, openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
  *   files: AppFileService,
+ *   documentViewer?: (host: HTMLDivElement, input: { source: string, filename: string, previewType: string }) => Promise<{ destroy: () => unknown }>,
  *   router: AppRouterService,
  *   runtime: {
  *     scheduleFrame(callback: () => void): void,
@@ -972,7 +973,15 @@ function normalizeSystemApiDocs(payload) {
  * @returns {React.ReactElement}
  */
 export function SharedApp({ services }) {
-  const { api: baseApi, events, files, router, runtime } = services;
+  const { api: baseApi, events, files, documentViewer, router, runtime } = services;
+  const AttachmentPreview = useMemo(
+    () => {
+      const WrappedAttachmentPreview = (props) => createElement(BaseAttachmentPreview, { ...props, documentViewer });
+      WrappedAttachmentPreview.displayName = 'AttachmentPreviewWithDocumentViewer';
+      return WrappedAttachmentPreview;
+    },
+    [documentViewer],
+  );
   const [route, setRoute] = useState(() => router.currentRoute());
   const [apiErrorToast, setApiErrorToast] = useState(/** @type {{ id: number, message: string } | null} */ (null));
   const api = useMemo(
@@ -6472,7 +6481,7 @@ export function SharedApp({ services }) {
                     onOpenBack={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}
                   >
 
-                  <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.previousId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); } }} onNext={() => { if (projectAttachmentPreview?.nextId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.nextId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); } }} onDownload={() => { if (projectAttachmentPreview?.attachment) { if (projectAttachmentPreview.commentId) void downloadWorkItemCommentAttachment(projectAttachmentPreview.commentId, projectAttachmentPreview.attachment); else void downloadWorkItemAttachment(projectAttachmentPreview.attachment); } }} onClose={() => void releaseProjectAttachmentPreview()} />
+                  <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.previousId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); } }} onNext={() => { if (projectAttachmentPreview?.nextId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.nextId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); } }} onDownload={() => { if (projectAttachmentPreview?.attachment) { if (projectAttachmentPreview.commentId) void downloadWorkItemCommentAttachment(projectAttachmentPreview.commentId, projectAttachmentPreview.attachment); else void downloadWorkItemAttachment(projectAttachmentPreview.attachment); } }} onClose={() => void releaseProjectAttachmentPreview()} documentViewer={documentViewer} />
 
                   <WorkItemComments
                     comments={workItemComments}
