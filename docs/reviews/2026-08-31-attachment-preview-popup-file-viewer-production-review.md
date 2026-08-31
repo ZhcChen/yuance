@@ -75,3 +75,53 @@ date: 2026-08-31
 2. 分别打开工作项附件、评论附件、资料库附件弹窗，确认 docx/pdf/xlsx/rtf/zip/apk
    由 file-viewer 渲染，不再出现“不支持内嵌渲染”。
 3. 图片与视频预览仍走原有媒体预览，不受影响。
+
+## 补充修复（2026-08-31）：弹窗内 docx 无法滚动
+
+### 问题表现
+
+首版部署后，docx 等长文档能在弹窗内渲染，但滚动无效，只能看到文档第一屏。
+
+### 根因
+
+弹窗的 `.attachment-preview-pan.is-document` 是 grid 项目，原样式 `width: 100%;
+height: 100%` 在 grid `place-items: center` 下被解析为内容尺寸，file-viewer 宿主
+高度被 8000+ 像素的文档内容撑开，父级 `overflow: hidden` 只是裁剪，内部滚动容器
+没有可滚动高度。
+
+### 修复内容
+
+- `.attachment-preview-pan.is-document` 改为 grid stretch：`align-self: stretch;
+  justify-self: stretch; width: auto; height: auto; min-height: 0; overflow: hidden`。
+- `.attachment-preview-document-host` 同步改为 stretch 并 `display: flex`，与独立
+  `/preview` 页 file-viewer 宿主布局一致。
+- E2E 增加断言：文档预览宿主高度必须小于视口高度，防止再次被内容撑开。
+
+### 验证
+
+- Playwright 复现：修复前宿主高度 8470px、无可滚动容器；修复后宿主高度 655px，
+  `.file-render` scrollHeight 8403px / clientHeight 590px，滚轮后 scrollTop=600。
+- `npm --prefix frontend run check` 全量通过。
+- `web/e2e` “work item attachments share preview” 用例通过。
+
+### 补充发布结果
+
+- 发布版本：`20260831135113`。
+- 发布源：`/srv/yuance/release-source`，HEAD = `e3cb42299412ade32cd01906cf19ae6401e26c38`。
+- bundle：`/tmp/yuance-production-e3cb422.bundle`
+  - SHA256：`939d9e79521a7d4aade7cc8209caf791fe317b013c3e28d9da14b9be69adabdd`
+- 镜像 tar SHA256：`683cc2617e335333913597f4f1db4d68e82c083f0ba970135cf381f317faa327`
+- 镜像 ID：`sha256:e9202be7c3c32430ec27885f3f6c94f28f6ba02818898c27bdc838e2401c2873`
+- 迁移：33/33，无新增迁移，core seed 已应用。
+- 文件审计：total=117 attached=117 orphan=0。
+- 主密钥：未变更。
+- 回滚保护：
+  - `/srv/yuance/releases/yuance-api-linux-amd64.before-20260831135309.tar`
+  - `/srv/yuance/backend/backups/20260831055309`
+
+### 正式环境验证
+
+- `/version.json`：`{"version":"20260831135113"}`。
+- `GET /web/app/assets/index-IlS3BMFv.css` 已包含
+  `.attachment-preview-pan.is-document` 的 stretch 布局。
+- 容器 `yuance-api`：running / healthy，运行镜像与最新镜像一致。
