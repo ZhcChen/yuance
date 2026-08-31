@@ -605,8 +605,7 @@ mod tests {
         let chunk_count = chunk_count_for(plaintext.len(), FILE_CHUNK_SIZE);
         let nonces = random_nonces(chunk_count);
         let header = build_header(&plaintext, &nonces);
-        let mut ciphertext =
-            Vec::with_capacity(header.len() + encrypted_body_len(plaintext.len()));
+        let mut ciphertext = Vec::with_capacity(header.len() + encrypted_body_len(plaintext.len()));
         ciphertext.extend_from_slice(&header);
         for (chunk_index, chunk) in plaintext.chunks(FILE_CHUNK_SIZE).enumerate() {
             ciphertext.extend_from_slice(
