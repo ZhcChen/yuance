@@ -5451,12 +5451,6 @@ export function SharedApp({ services }) {
       </FilterBar>
       {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
       {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
-      <div className="resource-library-summary" aria-label="资料统计">
-        <span className="resource-library-summary-item"><span>当前筛选</span><strong>{projectResources.length}</strong></span>
-        <span className="resource-library-summary-item"><span>生效中</span><strong>{projectResources.filter((resource) => resource.status === 'active').length}</strong></span>
-        <span className="resource-library-summary-item"><span>已归档</span><strong>{projectResources.filter((resource) => resource.status === 'archived').length}</strong></span>
-        <span className="resource-library-summary-item"><span>保险箱</span><strong>{projectResources.filter((resource) => resource.is_protected).length}</strong></span>
-      </div>
       <PaginatedList
         items={projectResources}
         itemKey={(resource) => resource.id}
