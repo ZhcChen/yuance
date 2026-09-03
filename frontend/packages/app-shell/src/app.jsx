@@ -5427,7 +5427,8 @@ export function SharedApp({ services }) {
   }
 
   const projectResourcesPanel = activeProjectDetail && route.id === 'project-resource-library' ? (
-    <section className="shell-card project-resource-library-panel" aria-label="项目资料库">
+    <>
+      <section className="shell-card project-resource-library-filter-card" aria-label="项目资料筛选">
       <FilterBar className="resource-library-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<>
         <Button type="submit" variant="secondary">筛选</Button>
         <Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button>
@@ -5449,8 +5450,10 @@ export function SharedApp({ services }) {
         </FilterField>
         <FilterField id="project-resource-filter-tag" label="标签"><TextInput value={projectResourceFilters.tag} placeholder="精确匹配标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></FilterField>
       </FilterBar>
-      {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
-      {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
+      </section>
+      <section className="shell-card project-resource-library-list-card" aria-label="项目资料列表">
+        {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
+        {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
       <PaginatedList
         items={projectResources}
         itemKey={(resource) => resource.id}
@@ -5482,7 +5485,8 @@ export function SharedApp({ services }) {
           );
         }}
       />
-    </section>
+      </section>
+    </>
   ) : null;
 
   if (loading && !shellReady) {
