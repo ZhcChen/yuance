@@ -5429,9 +5429,9 @@ export function SharedApp({ services }) {
   const projectResourcesPanel = activeProjectDetail && route.id === 'project-resource-library' ? (
     <section className="shell-card project-resource-library-panel" aria-label="项目资料库">
       <FilterBar className="resource-library-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<>
-        {canManageProjectContent ? <Button disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}
         <Button type="submit" variant="secondary">筛选</Button>
         <Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button>
+        {canManageProjectContent ? <><span className="resource-library-action-divider" aria-hidden="true" /><Button disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button></> : null}
       </>}>
         <FilterField id="project-resource-filter-q" label="关键词"><TextInput value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></FilterField>
         <FilterField id="project-resource-filter-category" label="分类">
