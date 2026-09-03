@@ -146,6 +146,65 @@ test('time allocation gantt renders rows only for members with allocations', () 
   assert.match(html, />无排期<\/option>/);
 });
 
+test('time allocation gantt splits overlapping member allocations into separate in-row lanes', () => {
+  const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
+    viewStart: '2026-07-01',
+    viewEnd: '2026-09-30',
+    allocations: [
+      {
+        id: 1,
+        project_key: 'YCE',
+        project_name: '元策',
+        username: 'scheduled',
+        display_name: '有排期',
+        start_date: '2026-08-01',
+        end_date: '2026-08-10',
+        daily_hours: 8,
+        phase_task_name: '需求分析',
+        note: '',
+      },
+      {
+        id: 2,
+        project_key: 'OPS',
+        project_name: '运维平台',
+        username: 'scheduled',
+        display_name: '有排期',
+        start_date: '2026-08-05',
+        end_date: '2026-08-20',
+        daily_hours: 8,
+        phase_task_name: '开发',
+        note: '',
+      },
+      {
+        id: 3,
+        project_key: 'SRE',
+        project_name: '可靠性平台',
+        username: 'scheduled',
+        display_name: '有排期',
+        start_date: '2026-08-15',
+        end_date: '2026-08-25',
+        daily_hours: 8,
+        phase_task_name: '联调',
+        note: '',
+      },
+    ],
+    projects: [
+      { key: 'YCE', name: '元策' },
+      { key: 'OPS', name: '运维平台' },
+      { key: 'SRE', name: '可靠性平台' },
+    ],
+    members: [{ username: 'scheduled', display_name: '有排期' }],
+    currentUsername: 'scheduled',
+  }));
+
+  assert.equal((html.match(/class="time-gantt-track" data-username="scheduled"/g) || []).length, 2);
+  assert.match(html, /class="time-gantt-row-label">有排期<\/div>/);
+  assert.match(html, /time-gantt-allocation-name">需求分析<\/span>/);
+  assert.match(html, /time-gantt-allocation-name">开发<\/span>/);
+  assert.match(html, /time-gantt-allocation-name">联调<\/span>/);
+  assert.doesNotMatch(html, /time-gantt-stack/);
+});
+
 test('time allocation gantt shows undo/redo/save controls and save confirmation when onSave is provided', () => {
   const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
     allocations: [],
