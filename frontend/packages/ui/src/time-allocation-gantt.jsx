@@ -77,10 +77,13 @@ export function TimeAllocationGantt({
   onOpenRecords,
 }) {
   const today = startOfToday();
-  const computedViewStart = viewStart || dateFromMs(today - 30 * DAY_MS);
   const [spanInput, setSpanInput] = useState(String(DEFAULT_SPAN_MONTHS));
   const spanMonths = normalizeSpanMonths(spanInput);
-  const computedViewEnd = viewEnd || dateFromMs(addUtcMonths(today, spanMonths - 1));
+  // 时间跨度以今天为中心对半展开：默认 4 个月 = 过去 2 个月 + 未来 2 个月。
+  const pastMonths = Math.floor(spanMonths / 2);
+  const futureMonths = spanMonths - pastMonths;
+  const computedViewStart = viewStart || dateFromMs(addUtcMonths(today, -pastMonths));
+  const computedViewEnd = viewEnd || dateFromMs(addUtcMonths(today, futureMonths));
   const viewEndIndex = dayIndex(computedViewEnd, computedViewStart);
   const totalDays = viewEndIndex + 1;
 
