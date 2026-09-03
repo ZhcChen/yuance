@@ -11,6 +11,6 @@ export { RichAttachmentMenu } from './rich-attachment-menu.jsx';
 export { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, isPreviewableDocumentFile, plainTextToRichHtml, previewableDocumentFileType, richFileVisualBadge, richFileVisualKind, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from './rich-text.jsx';
 export { WorkItemComments, workItemTypingText } from './work-item-comments.jsx';
 export { WorkItemDetail } from './work-item-detail.jsx';
-export { TimeAllocationGantt } from './time-allocation-gantt.jsx';
+export { TimeAllocationGantt, buildTimeAllocationSvg } from './time-allocation-gantt.jsx';
 export { UserAvatar, userAvatarColor, userAvatarInitial, userAvatarStyle } from './user-avatar.jsx';
 export { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';

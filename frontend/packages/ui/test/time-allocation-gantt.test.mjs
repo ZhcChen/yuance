@@ -3,7 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TimeAllocationGantt } from '@yuance/frontend-ui';
+import { TimeAllocationGantt, buildTimeAllocationSvg } from '@yuance/frontend-ui';
 
 test('time allocation gantt renders day/week/month scale switch with week default', () => {
   const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
@@ -28,6 +28,7 @@ test('time allocation gantt renders day/week/month scale switch with week defaul
   assert.match(html, /搜索项目/);
   assert.match(html, /阶段任务名称/);
   assert.match(html, /搜索成员/);
+  assert.match(html, />导出 SVG<\/button>/);
   assert.match(html, />查看全部人<\/button>/);
   assert.match(html, />查看自己<\/button>/);
   assert.match(html, /class="active" aria-pressed="true">查看全部人/);
@@ -205,6 +206,62 @@ test('time allocation gantt splits overlapping member allocations into separate 
   assert.doesNotMatch(html, /time-gantt-stack/);
 });
 
+test('time allocation gantt svg export renders rows, lanes, legend and today marker', () => {
+  const svg = buildTimeAllocationSvg({
+    title: '人员排期',
+    subtitle: '查看全部人 · 周粒度 · 2026-07-01 ~ 2026-08-31 · 生成 2026-07-15',
+    columnLabel: '成员 / 时间',
+    viewStart: '2026-07-01',
+    viewEnd: '2026-08-31',
+    viewScale: 'week',
+    rows: [{
+      label: '张三',
+      lanes: [[{
+        id: 1,
+        project_key: 'YCE',
+        project_name: '元策',
+        username: 'zhangsan',
+        display_name: '张三',
+        phase_task_name: '需求分析',
+        start_date: '2026-07-10',
+        end_date: '2026-07-20',
+        daily_hours: 8,
+        note: '',
+        color: '#1f5fbf',
+        conflict: true,
+      }], [{
+        id: 2,
+        project_key: 'OPS',
+        project_name: '运维平台',
+        username: 'zhangsan',
+        display_name: '张三',
+        phase_task_name: '联调',
+        start_date: '2026-07-15',
+        end_date: '2026-08-05',
+        daily_hours: 6,
+        note: '',
+        color: '#2d8a68',
+        conflict: false,
+      }]],
+    }],
+    legend: [
+      { key: 'YCE', label: '元策', color: '#1f5fbf' },
+      { key: 'OPS', label: '运维平台', color: '#2d8a68' },
+    ],
+    today: '2026-07-15',
+  });
+
+  assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+  assert.match(svg, /aria-label="时间管理排期表"/);
+  assert.match(svg, />人员排期<\/text>/);
+  assert.match(svg, />张三<\/text>/);
+  assert.match(svg, />需求分析<\/text>/);
+  assert.match(svg, />联调<\/text>/);
+  assert.match(svg, /fill="#1f5fbf"/);
+  assert.match(svg, /fill="#2d8a68"/);
+  assert.match(svg, /stroke="#d64541" stroke-width="2"/);
+});
+
 test('time allocation gantt shows undo/redo/save controls and save confirmation when onSave is provided', () => {
   const html = renderToStaticMarkup(React.createElement(TimeAllocationGantt, {
     allocations: [],
@@ -216,6 +273,7 @@ test('time allocation gantt shows undo/redo/save controls and save confirmation 
   }));
 
   assert.match(html, /aria-label="排期编辑操作"/);
+  assert.match(html, />导出 SVG<\/button>/);
   assert.match(html, />回退<\/button>/);
   assert.match(html, />前进<\/button>/);
   assert.match(html, />保存<\/button>/);

@@ -1,4 +1,5 @@
 // @ts-check
+/* global Blob, URL */
 /* global Element, ResizeObserver */
 
 import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -27,6 +28,18 @@ const DEFAULT_PROJECT_COLORS = [
   '#5b7c99',
   '#9a6b3f',
 ];
+const SVG_EXPORT_PIXELS_PER_DAY = {
+  day: 24,
+  week: 8,
+  month: 6,
+};
+const SVG_EXPORT_ROW_HEIGHT = 66;
+const SVG_EXPORT_AXIS_HEIGHT = 48;
+const TIME_SCALE_LABELS = {
+  day: '日',
+  week: '周',
+  month: '月',
+};
 
 /**
  * @typedef TimeAllocation
@@ -574,6 +587,80 @@ export function TimeAllocationGantt({
     dispatchTimeline({ type: 'redo' });
   }
 
+  function collectTimeAllocationExportData() {
+    const decorate = (allocation) => ({
+      ...allocation,
+      color: projectColor(allocation.project_key),
+      conflict: conflictKeys.has(String(allocation.id)),
+    });
+    let rows = [];
+    let columnLabel = '成员 / 时间';
+    if (viewMode === 'projects') {
+      columnLabel = '项目 / 时间';
+      rows = projectViewGroups.map((group) => ({
+        label: group.project_name,
+        lanes: [group.allocations.map(decorate)],
+      }));
+    } else {
+      rows = visibleMembers.map((member) => ({
+        label: member.display_name || member.username,
+        lanes: (visibleMemberLanes.get(member.username) || []).map((lane) => lane.map(decorate)),
+      }));
+    }
+    const projectNames = new Map();
+    for (const row of rows) {
+      for (const lane of row.lanes) {
+        for (const allocation of lane) {
+          if (!projectNames.has(allocation.project_key)) {
+            projectNames.set(allocation.project_key, allocation.project_name || allocation.project_key);
+          }
+        }
+      }
+    }
+    const legend = [...projectNames.entries()]
+      .map(([key, name]) => ({ key, label: name, color: projectColor(key) }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN') || a.key.localeCompare(b.key));
+    return { rows, legend, columnLabel };
+  }
+
+  function handleExportSvg(event) {
+    const data = collectTimeAllocationExportData();
+    if (!data.rows.length) {
+      setError('暂无可导出的排期。');
+      return;
+    }
+    setError('');
+    const ownerDocument = event.currentTarget.ownerDocument;
+    const view = ownerDocument.defaultView;
+    if (!view || typeof Blob !== 'function' || typeof URL?.createObjectURL !== 'function') {
+      setError('当前浏览器不支持导出 SVG，请更换浏览器后重试。');
+      return;
+    }
+    const exportToday = dateFromMs(today);
+    const viewLabel = viewMode === 'projects'
+      ? `成员：${memberName(effectiveProjectViewUsername)} · 项目视角`
+      : viewScope === 'self'
+        ? `仅自己：${memberName(currentUsername)}`
+        : '查看全部人';
+    const subtitle = `${viewLabel} · ${TIME_SCALE_LABELS[viewScale]}粒度 · ${computedViewStart} ~ ${computedViewEnd} · 生成 ${exportToday}`;
+    const svg = buildTimeAllocationSvg({
+      title: viewMode === 'projects' ? '项目排期' : '人员排期',
+      subtitle,
+      columnLabel: data.columnLabel,
+      viewStart: computedViewStart,
+      viewEnd: computedViewEnd,
+      viewScale,
+      rows: data.rows,
+      legend: data.legend,
+      today: exportToday,
+    });
+    try {
+      downloadSvgFile(view, ownerDocument, `yuance-time-allocation-${exportToday}-${viewMode}.svg`, svg);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '导出 SVG 失败。');
+    }
+  }
+
   function buildSaveOperations() {
     const original = allocations.map(normalizeAllocation);
     const created = items.filter((item) => item.id < 0);
@@ -668,6 +755,7 @@ export function TimeAllocationGantt({
 
   const todayLeft = dayIndex(dateFromMs(today), computedViewStart) * pxPerDay;
   const pendingSaveOperations = saveConfirmOpen ? buildSaveOperations() : null;
+  const exportDisabled = viewMode === 'projects' ? !projectViewGroups.length : !visibleMembers.length;
 
   return (
     <div className="time-management">
@@ -748,13 +836,16 @@ export function TimeAllocationGantt({
             </>
           ) : null}
         </div>
-        {manualSave && !viewReadOnly ? (
-          <div className="time-management-controls-right" role="group" aria-label="排期编辑操作">
-            <Button variant="secondary" size="sm" disabled={!timeline.undoStack.length || busy} onClick={undo}>回退</Button>
-            <Button variant="secondary" size="sm" disabled={!timeline.redoStack.length || busy} onClick={redo}>前进</Button>
-            <Button disabled={!timeline.undoStack.length || busy} onClick={() => setSaveConfirmOpen(true)}>保存</Button>
-          </div>
-        ) : null}
+        <div className="time-management-controls-right" role="group" aria-label={manualSave && !viewReadOnly ? '排期编辑操作' : '排期导出'}>
+          <Button variant="secondary" size="sm" disabled={exportDisabled} onClick={handleExportSvg}>导出 SVG</Button>
+          {manualSave && !viewReadOnly ? (
+            <>
+              <Button variant="secondary" size="sm" disabled={!timeline.undoStack.length || busy} onClick={undo}>回退</Button>
+              <Button variant="secondary" size="sm" disabled={!timeline.redoStack.length || busy} onClick={redo}>前进</Button>
+              <Button disabled={!timeline.undoStack.length || busy} onClick={() => setSaveConfirmOpen(true)}>保存</Button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {projects.length ? (
@@ -943,6 +1034,134 @@ function timeAllocationHistoryReducer(state, action) {
 }
 
 /**
+ * @param {{
+ *   title: string,
+ *   subtitle: string,
+ *   columnLabel: string,
+ *   viewStart: string,
+ *   viewEnd: string,
+ *   viewScale: 'day' | 'week' | 'month',
+ *   rows: Array<{ label: string, lanes: Array<Array<TimeAllocation & { color: string, conflict: boolean }>> }>,
+ *   legend: Array<{ key: string, label: string, color: string }>,
+ *   today: string,
+ * }} options
+ * @returns {string}
+ */
+export function buildTimeAllocationSvg({
+  title,
+  subtitle,
+  columnLabel,
+  viewStart,
+  viewEnd,
+  viewScale,
+  rows,
+  legend,
+  today,
+}) {
+  const pxPerDay = SVG_EXPORT_PIXELS_PER_DAY[viewScale];
+  const timelineDays = Math.max(1, dayIndex(viewEnd, viewStart) + 1);
+  const timelineWidth = timelineDays * pxPerDay;
+  const totalWidth = TIME_GANTT_LABEL_WIDTH + timelineWidth;
+  const totalRowsHeight = rows.reduce((sum, row) => sum + Math.max(1, row.lanes.length) * SVG_EXPORT_ROW_HEIGHT, 0);
+
+  // 图例按行折行放置，避免项目很多时横向溢出。
+  const legendItems = [];
+  let legendX = 20;
+  let legendY = 80;
+  for (const item of legend) {
+    const textWidth = approximateSvgTextWidth(item.label, 12);
+    const itemWidth = 12 + 8 + textWidth + 18;
+    if (legendX > 20 && legendX + itemWidth > totalWidth - 20) {
+      legendX = 20;
+      legendY += 24;
+    }
+    legendItems.push({ x: legendX, y: legendY, item });
+    legendX += itemWidth;
+  }
+
+  const axisY = legend.length ? legendY + 24 : 100;
+  const tableTop = axisY + SVG_EXPORT_AXIS_HEIGHT;
+  const totalHeight = tableTop + totalRowsHeight;
+  const lines = [];
+  lines.push('<svg xmlns="http://www.w3.org/2000/svg" '
+    + `width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" `
+    + 'role="img" aria-label="时间管理排期表">');
+  lines.push(`<rect width="${totalWidth}" height="${totalHeight}" fill="#ffffff"/>`);
+  lines.push(`<text x="20" y="34" font-size="18" font-weight="700" fill="#17212b" font-family="system-ui, sans-serif">${escapeSvgText(title)}</text>`);
+  lines.push(`<text x="20" y="58" font-size="12" fill="#6b7785" font-family="system-ui, sans-serif">${escapeSvgText(subtitle)}</text>`);
+
+  for (const { x, y, item } of legendItems) {
+    lines.push(`<rect x="${x}" y="${y - 9}" width="12" height="12" rx="3" fill="${escapeSvgText(item.color)}"/>`);
+    lines.push(`<text x="${x + 20}" y="${y}" font-size="12" fill="#435060" font-family="system-ui, sans-serif">${escapeSvgText(item.label)}</text>`);
+  }
+
+  lines.push(`<rect x="0" y="${axisY}" width="${TIME_GANTT_LABEL_WIDTH}" height="${SVG_EXPORT_AXIS_HEIGHT}" fill="#f8fafc" stroke="#dfe6ed"/>`);
+  lines.push(`<text x="${TIME_GANTT_LABEL_WIDTH / 2}" y="${axisY + 30}" text-anchor="middle" font-size="12" font-weight="700" fill="#435060" font-family="system-ui, sans-serif">${escapeSvgText(columnLabel)}</text>`);
+  lines.push(`<rect x="${TIME_GANTT_LABEL_WIDTH}" y="${axisY}" width="${timelineWidth}" height="${SVG_EXPORT_AXIS_HEIGHT}" fill="#f8fafc" stroke="#dfe6ed"/>`);
+  for (const label of buildExportAxisLabels(viewStart, viewEnd, viewScale, pxPerDay)) {
+    const labelX = TIME_GANTT_LABEL_WIDTH + label.left;
+    const labelY = axisY + (label.tier === 'month' ? 18 : 38);
+    lines.push(`<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="${label.tier === 'month' ? 11 : 10}" ${label.tier === 'month' ? 'font-weight="700"' : ''} fill="#435060" font-family="system-ui, sans-serif">${escapeSvgText(label.label)}</text>`);
+  }
+
+  let rowTop = tableTop;
+  for (const row of rows) {
+    const rowHeight = Math.max(1, row.lanes.length) * SVG_EXPORT_ROW_HEIGHT;
+    lines.push(`<rect x="0" y="${rowTop}" width="${TIME_GANTT_LABEL_WIDTH}" height="${rowHeight}" fill="#f8fafc" stroke="#dfe6ed"/>`);
+    lines.push(`<text x="${TIME_GANTT_LABEL_WIDTH / 2}" y="${Math.round(rowTop + rowHeight / 2 + 5)}" text-anchor="middle" font-size="13" font-weight="700" fill="#17212b" font-family="system-ui, sans-serif">${escapeSvgText(fitSvgText(row.label, TIME_GANTT_LABEL_WIDTH - 28, 13))}</text>`);
+    for (let laneIndex = 0; laneIndex < row.lanes.length; laneIndex += 1) {
+      const trackY = rowTop + laneIndex * SVG_EXPORT_ROW_HEIGHT;
+      if (laneIndex > 0) {
+        lines.push(`<line x1="${TIME_GANTT_LABEL_WIDTH}" x2="${totalWidth}" y1="${trackY}" y2="${trackY}" stroke="#dfe6ed" stroke-width="1" stroke-dasharray="5 4"/>`);
+      }
+      for (const allocation of row.lanes[laneIndex]) {
+        appendExportAllocation(lines, allocation, TIME_GANTT_LABEL_WIDTH, trackY, pxPerDay, viewStart, timelineDays);
+      }
+    }
+    rowTop += rowHeight;
+  }
+
+  const todayIndex = dayIndex(today, viewStart);
+  if (todayIndex >= 0 && todayIndex < timelineDays) {
+    const lineX = TIME_GANTT_LABEL_WIDTH + todayIndex * pxPerDay + pxPerDay / 2;
+    lines.push(`<line x1="${lineX}" x2="${lineX}" y1="${axisY}" y2="${rowTop}" stroke="#d64541" stroke-width="2" stroke-dasharray="5 4"/>`);
+  }
+  lines.push('</svg>');
+  return lines.join('\n');
+}
+
+/**
+ * @param {string[]} lines
+ * @param {TimeAllocation & { color: string, conflict: boolean }} allocation
+ * @param {number} labelWidth
+ * @param {number} trackY
+ * @param {number} pxPerDay
+ * @param {string} viewStart
+ * @param {number} timelineDays
+ */
+function appendExportAllocation(lines, allocation, labelWidth, trackY, pxPerDay, viewStart, timelineDays) {
+  const start = Math.max(0, dayIndex(allocation.start_date, viewStart));
+  const end = Math.min(timelineDays - 1, dayIndex(allocation.end_date, viewStart));
+  const barX = labelWidth + start * pxPerDay;
+  const barY = trackY + 10;
+  const barWidth = Math.max(2, (end - start + 1) * pxPerDay);
+  lines.push(`<rect x="${barX}" y="${barY}" width="${barWidth}" height="46" rx="7" fill="${escapeSvgText(allocation.color)}"/>`);
+  if (allocation.conflict) {
+    lines.push(`<rect x="${barX + 1.5}" y="${barY + 1.5}" width="${Math.max(0, barWidth - 3)}" height="43" rx="6" fill="none" stroke="#d64541" stroke-width="2" stroke-dasharray="6 4"/>`);
+  }
+  if (barWidth < 30) return;
+
+  const name = fitSvgText(allocation.phase_task_name || allocation.project_name, barWidth - 16, 12);
+  if (name) {
+    lines.push(`<text x="${barX + 8}" y="${barY + 28}" font-size="12" font-weight="700" fill="#ffffff" font-family="system-ui, sans-serif">${escapeSvgText(name)}</text>`);
+  }
+  if (barWidth >= 92) {
+    const meta = `${allocation.start_date.slice(5)}~${allocation.end_date.slice(5)} ${allocation.daily_hours}h/天`;
+    lines.push(`<text x="${barX + 8}" y="${barY + 42}" font-size="10" fill="#ffffff" font-family="system-ui, sans-serif">${escapeSvgText(fitSvgText(meta, barWidth - 16, 10))}</text>`);
+  }
+}
+
+/**
  * 将同一成员的排期分配到互不遮挡的轨道行：按开始时间贪心放入第一条空出的轨道。
  * @param {TimeAllocation[]} allocations
  * @returns {TimeAllocation[][]}
@@ -969,6 +1188,133 @@ function assignAllocationLanes(allocations) {
     }
   }
   return lanes;
+}
+
+/**
+ * @param {Window} view
+ * @param {Document} ownerDocument
+ * @param {string} filename
+ * @param {string} content
+ */
+function downloadSvgFile(view, ownerDocument, filename, content) {
+  const blob = new Blob([content], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = ownerDocument.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    if (ownerDocument.body) ownerDocument.body.appendChild(link);
+    link.click();
+    if (ownerDocument.body) link.remove();
+  } finally {
+    view.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
+/**
+ * @param {string} viewStart
+ * @param {string} viewEnd
+ * @param {'day' | 'week' | 'month'} viewScale
+ * @param {number} pxPerDay
+ * @returns {Array<{ key: string, label: string, left: number, tier: 'month' | 'date' | 'day' }>}
+ */
+function buildExportAxisLabels(viewStart, viewEnd, viewScale, pxPerDay) {
+  const startMs = parseDate(viewStart);
+  const endMs = parseDate(viewEnd);
+  const labels = [];
+  if (viewScale === 'month') {
+    let monthMs = startMs;
+    let cursor = new Date(monthMs);
+    cursor.setUTCDate(1);
+    monthMs = cursor.getTime();
+    while (monthMs <= endMs) {
+      const labelDate = dateFromMs(monthMs);
+      const cursorDate = new Date(monthMs);
+      labels.push({
+        key: labelDate,
+        label: `${cursorDate.getUTCMonth() + 1}月`,
+        left: dayIndex(labelDate, viewStart) * pxPerDay,
+        tier: /** @type {'month'} */ ('month'),
+      });
+      monthMs = addUtcMonths(monthMs, 1);
+    }
+    return labels;
+  }
+
+  let monthMs = startMs;
+  let monthCursor = new Date(monthMs);
+  monthCursor.setUTCDate(1);
+  monthMs = monthCursor.getTime();
+  while (monthMs <= endMs) {
+    const labelDate = dateFromMs(monthMs);
+    const cursorDate = new Date(monthMs);
+    labels.push({
+      key: `month:${labelDate}`,
+      label: `${cursorDate.getUTCMonth() + 1}月`,
+      left: Math.max(0, dayIndex(labelDate, viewStart) * pxPerDay),
+      tier: /** @type {'month'} */ ('month'),
+    });
+    monthMs = addUtcMonths(monthMs, 1);
+  }
+
+  for (let ms = startMs; ms <= endMs; ms += viewScale === 'week' ? 7 * DAY_MS : DAY_MS) {
+    const labelDate = dateFromMs(ms);
+    const cursorDate = new Date(ms);
+    labels.push({
+      key: labelDate,
+      label: viewScale === 'week'
+        ? `${cursorDate.getUTCMonth() + 1}/${cursorDate.getUTCDate()}`
+        : String(cursorDate.getUTCDate()),
+      left: dayIndex(labelDate, viewStart) * pxPerDay,
+      tier: viewScale === 'week' ? /** @type {'date' | 'day'} */ ('date') : /** @type {'date' | 'day'} */ ('day'),
+    });
+  }
+  return labels;
+}
+
+/** @param {string} value @returns {string} */
+function escapeSvgText(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * @param {string} value
+ * @param {number} fontSize
+ * @returns {number}
+ */
+function approximateSvgTextWidth(value, fontSize) {
+  let width = 0;
+  for (const character of String(value)) {
+    width += /[\u2E80-\u9FFF\uF900-\uFAFF]/.test(character) ? fontSize : fontSize * 0.58;
+  }
+  return width;
+}
+
+/**
+ * @param {string} value
+ * @param {number} maxWidth
+ * @param {number} fontSize
+ * @returns {string}
+ */
+function fitSvgText(value, maxWidth, fontSize) {
+  let result = '';
+  let width = 0;
+  for (const character of String(value)) {
+    const characterWidth = /[\u2E80-\u9FFF\uF900-\uFAFF]/.test(character) ? fontSize : fontSize * 0.58;
+    if (width + characterWidth > Math.max(0, maxWidth - 4)) {
+      if (result) result += '…';
+      break;
+    }
+    result += character;
+    width += characterWidth;
+  }
+  return result;
 }
 
 function normalizeSpanMonths(value) {
