@@ -59,6 +59,7 @@ import {
   FilterField,
   GlobalNavigation,
   Modal,
+  PaginatedList,
   Pagination,
   PriorityBadge,
   RichAttachmentMenu,
@@ -523,6 +524,19 @@ function projectStatusLabel(status) {
     default:
       return '全部状态';
   }
+}
+
+const PROJECT_RESOURCE_CATEGORY_OPTIONS = [
+  { value: 'integration', label: '集成' },
+  { value: 'customer', label: '客户' },
+  { value: 'meeting', label: '会议' },
+  { value: 'implementation', label: '实施' },
+  { value: 'other', label: '其他' },
+];
+
+/** @param {string} category */
+function projectResourceCategoryLabel(category) {
+  return PROJECT_RESOURCE_CATEGORY_OPTIONS.find((option) => option.value === category)?.label || category || '未分类';
 }
 
 function dashboardProjectStatus(status) {
@@ -5414,19 +5428,70 @@ export function SharedApp({ services }) {
 
   const projectResourcesPanel = activeProjectDetail && route.id === 'project-resource-library' ? (
     <section className="shell-card project-resource-library-panel" aria-labelledby="project-resources-title">
-      <div className="project-tab-section-head"><div><h3 id="project-resources-title">项目资料库</h3><p>当前筛选共 {projectResources.length} 条资料</p></div>{canManageProjectContent ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
-      <FilterBar className="work-item-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></>}>
+      <header className="resource-library-head">
+        <div>
+          <p className="shell-eyebrow">资料库 / {projectScopeKey || currentProject?.key}</p>
+          <h3 id="project-resources-title">{activeProjectDetail?.name || '项目资料库'}</h3>
+          <p>当前项目资料统一在这里维护，可按关键词、分类、状态和标签快速定位。</p>
+        </div>
+        {canManageProjectContent ? <Button disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}
+      </header>
+      <FilterBar className="resource-library-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></>}>
         <FilterField id="project-resource-filter-q" label="关键词"><TextInput value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></FilterField>
-        <FilterField id="project-resource-filter-category" label="分类"><TextInput value={projectResourceFilters.category} placeholder="例如 integration" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))} /></FilterField>
-        <FilterField id="project-resource-filter-status" label="状态"><Select value={projectResourceFilters.status} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, status: event.target.value }))}><option value="">全部状态</option><option value="active">生效中</option><option value="archived">已归档</option></Select></FilterField>
-        <FilterField id="project-resource-filter-tag" label="标签"><TextInput value={projectResourceFilters.tag} placeholder="标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></FilterField>
+        <FilterField id="project-resource-filter-category" label="分类">
+          <Select value={projectResourceFilters.category} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))}>
+            <option value="">全部分类</option>
+            {PROJECT_RESOURCE_CATEGORY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </Select>
+        </FilterField>
+        <FilterField id="project-resource-filter-status" label="状态">
+          <Select value={projectResourceFilters.status} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, status: event.target.value }))}>
+            <option value="">全部状态</option>
+            <option value="active">生效中</option>
+            <option value="archived">已归档</option>
+          </Select>
+        </FilterField>
+        <FilterField id="project-resource-filter-tag" label="标签"><TextInput value={projectResourceFilters.tag} placeholder="精确匹配标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></FilterField>
       </FilterBar>
       {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
-      {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
-      {projectResources.length ? <ul className="resource-list" aria-label="项目资料列表">{projectResources.map((resource) => {
-        const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
-        return <li key={resource.id}><a className={`resource-card${resource.is_protected ? ' resource-card-protected' : ''}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}><div className="resource-card-main"><div className="resource-card-title-row"><span className="resource-category">{resource.category || '未分类'}</span><Badge tone={resource.status === 'archived' ? undefined : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>{resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}</div><h4>{resource.title}</h4><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}{resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">{resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}{resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}</div> : null}<div className="resource-card-meta"><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div></div></a></li>;
-      })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
+      {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
+      <div className="resource-library-summary" aria-label="资料统计">
+        <span className="resource-library-summary-item"><span>当前筛选</span><strong>{projectResources.length}</strong></span>
+        <span className="resource-library-summary-item"><span>生效中</span><strong>{projectResources.filter((resource) => resource.status === 'active').length}</strong></span>
+        <span className="resource-library-summary-item"><span>已归档</span><strong>{projectResources.filter((resource) => resource.status === 'archived').length}</strong></span>
+        <span className="resource-library-summary-item"><span>保险箱</span><strong>{projectResources.filter((resource) => resource.is_protected).length}</strong></span>
+      </div>
+      <PaginatedList
+        items={projectResources}
+        itemKey={(resource) => resource.id}
+        ariaLabel="项目资料列表"
+        emptyText="当前筛选下没有项目资料，可以清除筛选后重新查看。"
+        listClassName="resource-list resource-library-list"
+        itemClassName="resource-library-row"
+        renderItem={(resource) => {
+          const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
+          const category = resource.category || 'other';
+          return (
+            <a className={`resource-card resource-library-card${resource.is_protected ? ' resource-card-protected' : ''} resource-kind-${category}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>
+              <div className="resource-card-main">
+                <div className="resource-card-title-row">
+                  <span className="resource-category resource-category-kind">{projectResourceCategoryLabel(resource.category)}</span>
+                  <Badge tone={resource.status === 'archived' ? 'neutral' : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>
+                  {resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}
+                </div>
+                <h4>{resource.title}</h4>
+                <p>{resource.summary || '暂无摘要。'}</p>
+                {resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}
+                {resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">
+                  {resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}
+                  {resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}
+                </div> : null}
+                <div className="resource-card-meta"><span>创建：{resource.created_by} · {formatTimestamp(resource.created_at)}</span><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div>
+              </div>
+            </a>
+          );
+        }}
+      />
     </section>
   ) : null;
 

@@ -287,6 +287,77 @@ export function Pagination({ page, totalPages, totalItems, onPageChange, ariaLab
   return <nav className="yc-pagination" aria-label={ariaLabel}><span className="yc-pagination-meta"><span>共 <strong>{totalItems}</strong> {itemLabel}</span>{rangeLabel ? <small>{rangeLabel}</small> : null}</span><div className="yc-pagination-pages"><button type="button" aria-label="上一页" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>‹</button><span aria-current="page">{page} / {boundedTotal}</span><button type="button" aria-label="下一页" disabled={page >= boundedTotal} onClick={() => onPageChange(page + 1)}>›</button></div>{pageSize && onPageSizeChange ? <div className="yc-pagination-controls"><label><span>每页</span><select value={String(pageSize)} onChange={onPageSizeChange}>{pageSizes.map((value) => <option key={value} value={String(value)}>{value}</option>)}</select></label></div> : null}</nav>;
 }
 
+/**
+ * 把列表渲染、空状态和分页封装在一起。数据变化时自动回到第 1 页，
+ * 分页/每页数量变化只在内存中切页，父级无需维护额外状态。
+ *
+ * @template T
+ * @param {{
+ *   items: readonly T[],
+ *   renderItem(item: T): React.ReactNode,
+ *   itemKey(item: T): string | number,
+ *   ariaLabel?: string,
+ *   emptyText?: React.ReactNode,
+ *   listClassName?: string,
+ *   itemClassName?: string,
+ *   pageSizes?: number[],
+ *   defaultPageSize?: number,
+ * }} props
+ */
+export function PaginatedList({
+  items,
+  renderItem,
+  itemKey,
+  ariaLabel = '分页列表',
+  emptyText = '暂无数据',
+  listClassName = 'yc-pagination-list',
+  itemClassName = '',
+  pageSizes = [10, 20, 50],
+  defaultPageSize = 10,
+}) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const rangeStart = items.length ? (currentPage - 1) * pageSize + 1 : 0;
+  const rangeEnd = items.length ? Math.min(currentPage * pageSize, items.length) : 0;
+  const visibleItems = items.slice(rangeStart - 1, rangeEnd);
+
+  useEffect(() => {
+    setPage(1);
+  }, [items]);
+
+  if (!items.length) {
+    return <div className="yc-pagination-empty">{emptyText}</div>;
+  }
+
+  function changePageSize(event) {
+    setPageSize(Math.max(1, Number.parseInt(event.target.value, 10) || defaultPageSize));
+    setPage(1);
+  }
+
+  return (
+    <>
+      <ul className={listClassName} aria-label={ariaLabel}>
+        {visibleItems.map((item) => (
+          <li key={itemKey(item)} className={itemClassName}>{renderItem(item)}</li>
+        ))}
+      </ul>
+      <Pagination
+        ariaLabel={ariaLabel}
+        page={currentPage}
+        totalPages={totalPages}
+        totalItems={items.length}
+        rangeLabel={`当前显示 ${rangeStart}-${rangeEnd}`}
+        pageSize={pageSize}
+        pageSizes={pageSizes}
+        onPageSizeChange={changePageSize}
+        onPageChange={setPage}
+      />
+    </>
+  );
+}
+
 /** @param {{ lines?: number, label?: string }} props */
 export function Skeleton({ lines = 3, label = '正在加载' }) {
   const count = Math.min(12, Math.max(1, Math.floor(lines)));

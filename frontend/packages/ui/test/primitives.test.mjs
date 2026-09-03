@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, Pagination, PriorityBadge, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
+import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, PaginatedList, Pagination, PriorityBadge, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
@@ -157,4 +157,35 @@ test('table, pagination and skeleton cover empty and boundary states', () => {
   const skeleton = renderToStaticMarkup(createElement(Skeleton, { lines: 20 }));
   assert.equal((skeleton.match(/<span/gu) || []).length, 12);
   assert.match(skeleton, /role="status"/u);
+});
+
+test('paginated list renders a bounded page with pagination metadata', () => {
+  const items = Array.from({ length: 25 }, (_, index) => `item-${index + 1}`);
+  const html = renderToStaticMarkup(createElement(PaginatedList, {
+    items,
+    itemKey: (item) => /** @type {string} */ (item),
+    renderItem: (item) => /** @type {string} */ (item),
+    ariaLabel: '资料列表',
+    defaultPageSize: 10,
+  }));
+
+  assert.match(html, /aria-label="资料列表"/u);
+  assert.equal((html.match(/<li\b/gu) || []).length, 10);
+  assert.match(html, /item-1/u);
+  assert.doesNotMatch(html, /item-11/u);
+  assert.match(html, /共 <strong>25<\/strong> 条/u);
+  assert.match(html, /当前显示 1-10/u);
+  assert.match(html, /1 \/ 3/u);
+});
+
+test('paginated list renders empty state without pagination controls', () => {
+  const html = renderToStaticMarkup(createElement(PaginatedList, {
+    items: [],
+    itemKey: (item) => /** @type {string} */ (item),
+    renderItem: (item) => /** @type {string} */ (item),
+    emptyText: '当前筛选下没有资料。',
+  }));
+
+  assert.match(html, /当前筛选下没有资料。/u);
+  assert.doesNotMatch(html, /aria-label="分页"/u);
 });

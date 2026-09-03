@@ -881,6 +881,8 @@ html[data-theme="dark"] {
 .yc-table th { background: var(--yc-panel-soft); color: var(--yc-muted-strong); font-size: 12px; }
 .yc-table tbody tr:last-child td { border-bottom: 0; }
 .yc-table-empty { height: 120px; color: var(--yc-muted); text-align: center !important; }
+.yc-pagination-list { display: grid; gap: 10px; margin: 0; padding: 14px 16px; list-style: none; }
+.yc-pagination-empty { padding: 24px 16px; color: var(--yc-muted); font-size: 13px; text-align: center; }
 .yc-pagination { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-top: 1px solid var(--yc-line); color: var(--yc-muted); font-size: 13px; }
 .yc-pagination-meta { display: grid; gap: 2px; }
 .yc-pagination-meta > span { white-space: nowrap; }
