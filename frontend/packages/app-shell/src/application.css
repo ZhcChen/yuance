@@ -1325,9 +1325,6 @@ html[data-theme="dark"] .project-stats div {
 .resource-card:hover h4 { color: var(--yc-brand-strong); }
 .resource-card p { margin: 6px 0 0; color: var(--yc-muted-strong); font-size: 13px; line-height: 20px; }
 .resource-card-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; color: var(--yc-muted); font-size: 12px; line-height: 18px; }
-.resource-library-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--yc-line); background: var(--yc-panel-soft); }
-.resource-library-head h3 { margin: 3px 0 4px; font-size: 18px; line-height: 26px; }
-.resource-library-head p { margin: 0; color: var(--yc-muted); font-size: 13px; line-height: 20px; }
 .resource-library-filter-bar { grid-template-columns: minmax(260px, 1.6fr) repeat(3, minmax(150px, 1fr)) auto; }
 .resource-library-status { margin: 10px 16px 0; color: var(--yc-success); font-size: 12px; }
 .resource-library-summary { display: flex; flex-wrap: wrap; gap: 10px 24px; padding: 10px 16px; border-top: 1px solid var(--yc-line); border-bottom: 1px solid var(--yc-line); background: var(--yc-panel-soft); }
@@ -1466,7 +1463,6 @@ html[data-theme="dark"] .project-stats div {
   .project-tabs-head .yc-content-tabs { width: 100%; }
   .project-detail-dl { grid-template-columns: 1fr; }
   .project-tab-section-head { flex-direction: column; }
-  .resource-library-head { align-items: stretch; flex-direction: column; }
   .resource-library-filter-bar { grid-template-columns: 1fr; }
   .project-resource-form-fields { grid-template-columns: 1fr; }
   .project-member-candidate { grid-template-columns: auto minmax(0, 1fr); }

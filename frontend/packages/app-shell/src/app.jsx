@@ -5427,16 +5427,12 @@ export function SharedApp({ services }) {
   }
 
   const projectResourcesPanel = activeProjectDetail && route.id === 'project-resource-library' ? (
-    <section className="shell-card project-resource-library-panel" aria-labelledby="project-resources-title">
-      <header className="resource-library-head">
-        <div>
-          <p className="shell-eyebrow">资料库 / {projectScopeKey || currentProject?.key}</p>
-          <h3 id="project-resources-title">{activeProjectDetail?.name || '项目资料库'}</h3>
-          <p>当前项目资料统一在这里维护，可按关键词、分类、状态和标签快速定位。</p>
-        </div>
+    <section className="shell-card project-resource-library-panel" aria-label="项目资料库">
+      <FilterBar className="resource-library-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<>
         {canManageProjectContent ? <Button disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}
-      </header>
-      <FilterBar className="resource-library-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></>}>
+        <Button type="submit" variant="secondary">筛选</Button>
+        <Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button>
+      </>}>
         <FilterField id="project-resource-filter-q" label="关键词"><TextInput value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></FilterField>
         <FilterField id="project-resource-filter-category" label="分类">
           <Select value={projectResourceFilters.category} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))}>
