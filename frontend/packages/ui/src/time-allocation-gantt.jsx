@@ -1,4 +1,5 @@
 // @ts-check
+/* global setTimeout, clearTimeout */
 /* global Element, ResizeObserver */
 
 import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -109,9 +110,19 @@ export function TimeAllocationGantt({
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
   const [editDraft, setEditDraft] = useState(/** @type {TimeAllocation | null} */ (null));
   const [editPopover, setEditPopover] = useState(/** @type {{ left: number, top: number } | null} */ (null));
+  const [stackMenu, setStackMenu] = useState(/** @type {{
+    items: TimeAllocation[],
+    date: string,
+    left: number,
+    top: number,
+  } | null} */ (null));
+  const [stackMenuClosing, setStackMenuClosing] = useState(false);
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const [legendExpanded, setLegendExpanded] = useState(false);
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const stackMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const stackCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
+  const pointerStartRef = useRef({ x: 0, y: 0, moved: false });
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
   const pxPerDay = viewScale === 'day'
@@ -232,6 +243,77 @@ export function TimeAllocationGantt({
     }
     return keys;
   }, [items]);
+
+  useEffect(() => () => {
+    if (stackCloseTimerRef.current) clearTimeout(stackCloseTimerRef.current);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!stackMenu || stackMenuClosing) return;
+    const menu = stackMenuRef.current;
+    const view = menu?.ownerDocument.defaultView;
+    if (!menu || !view) return;
+    const margin = 8;
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(Math.max(margin, stackMenu.left), Math.max(margin, view.innerWidth - rect.width - margin));
+    const top = Math.min(Math.max(margin, stackMenu.top), Math.max(margin, view.innerHeight - rect.height - margin));
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }, [stackMenu, stackMenuClosing]);
+
+  useEffect(() => {
+    if (!stackMenu) return undefined;
+    const menu = stackMenuRef.current;
+    const ownerDocument = menu?.ownerDocument;
+    const view = ownerDocument?.defaultView;
+    if (!menu || !ownerDocument || !view) return undefined;
+    const beginClose = () => {
+      if (stackMenuClosing || stackCloseTimerRef.current) return;
+      if (stackCloseTimerRef.current) clearTimeout(stackCloseTimerRef.current);
+      setStackMenuClosing(true);
+      stackCloseTimerRef.current = setTimeout(() => {
+        stackCloseTimerRef.current = null;
+        setStackMenuClosing(false);
+        setStackMenu(null);
+      }, 150);
+    };
+    const closeFromOutside = (/** @type {PointerEvent} */ event) => {
+      if (!menu.contains(/** @type {Node} */ (event.target))) beginClose();
+    };
+    const closeOnEscape = (/** @type {KeyboardEvent} */ event) => {
+      if (event.key !== 'Escape' || stackMenuClosing) return;
+      event.preventDefault();
+      beginClose();
+    };
+    const closeOnViewportChange = () => beginClose();
+    ownerDocument.addEventListener('pointerdown', closeFromOutside);
+    ownerDocument.addEventListener('keydown', closeOnEscape);
+    view.addEventListener('resize', closeOnViewportChange);
+    view.addEventListener('scroll', closeOnViewportChange, true);
+    return () => {
+      ownerDocument.removeEventListener('pointerdown', closeFromOutside);
+      ownerDocument.removeEventListener('keydown', closeOnEscape);
+      view.removeEventListener('resize', closeOnViewportChange);
+      view.removeEventListener('scroll', closeOnViewportChange, true);
+    };
+  }, [stackMenu, stackMenuClosing]);
+
+  function closeStackMenu() {
+    if (!stackMenu || stackMenuClosing) return;
+    if (stackCloseTimerRef.current) clearTimeout(stackCloseTimerRef.current);
+    setStackMenuClosing(true);
+    stackCloseTimerRef.current = setTimeout(() => {
+      stackCloseTimerRef.current = null;
+      setStackMenuClosing(false);
+      setStackMenu(null);
+    }, 150);
+  }
+
+  function openStackMenu(items, date, left, top) {
+    if (stackCloseTimerRef.current) clearTimeout(stackCloseTimerRef.current);
+    setStackMenuClosing(false);
+    setStackMenu({ items, date, left, top });
+  }
 
   function projectName(projectKey) {
     return projects.find((project) => project.key === projectKey)?.name || projectKey;
@@ -388,6 +470,7 @@ export function TimeAllocationGantt({
 
   function handleGanttPointerDown(event) {
     if (event.button !== 0) return;
+    pointerStartRef.current = { x: event.clientX, y: event.clientY, moved: false };
     const target = event.target;
     if (!(target instanceof Element)) return;
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
@@ -404,6 +487,10 @@ export function TimeAllocationGantt({
   }
 
   function handleGanttPointerMove(event) {
+    const pointerStart = pointerStartRef.current;
+    if (!pointerStart.moved && Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) > 4) {
+      pointerStartRef.current = { ...pointerStart, moved: true };
+    }
     updateSelection(event);
     updateBlockDrag(event);
   }
@@ -411,6 +498,37 @@ export function TimeAllocationGantt({
   function handleGanttPointerUp(event) {
     commitSelection(event);
     commitBlockDrag();
+  }
+
+  function handleGanttClick(event) {
+    if (event.button !== 0 || pointerStartRef.current.moved || viewMode !== 'members') return;
+    pointerStartRef.current = { ...pointerStartRef.current, moved: false };
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('.time-gantt-resize-l, .time-gantt-resize-r')) return;
+    const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
+    const track = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-track'));
+    if (!block || !track) return;
+    const rect = track.getBoundingClientRect();
+    const clickedDay = Math.floor((event.clientX - rect.left) / pxPerDay);
+    if (clickedDay < 0 || clickedDay >= totalDays) return;
+    const date = dateFromDay(clickedDay, computedViewStart);
+    const username = String(track.dataset.username || '');
+    const concurrent = items
+      .filter((item) => item.username === username && item.start_date <= date && item.end_date >= date)
+      .sort((a, b) => a.start_date.localeCompare(b.start_date)
+        || a.project_key.localeCompare(b.project_key)
+        || String(a.id).localeCompare(String(b.id)));
+    if (concurrent.length < 2) return;
+    const view = event.currentTarget.ownerDocument.defaultView;
+    const menuWidth = 380;
+    const menuHeight = Math.min(430, 74 + concurrent.length * 56);
+    const left = Math.min(Math.max(8, event.clientX - 12), Math.max(8, (view?.innerWidth || 0) - menuWidth - 8));
+    let top = event.clientY + 16;
+    if (top + menuHeight > (view?.innerHeight || 0) - 8) {
+      top = Math.max(8, event.clientY - menuHeight - 12);
+    }
+    openStackMenu(concurrent, date, left, top);
   }
 
   function handleGanttDoubleClick(event) {
@@ -654,6 +772,7 @@ export function TimeAllocationGantt({
 
   const todayLeft = dayIndex(dateFromMs(today), computedViewStart) * pxPerDay;
   const pendingSaveOperations = saveConfirmOpen ? buildSaveOperations() : null;
+  const stackProjectCount = stackMenu ? new Set(stackMenu.items.map((item) => item.project_key)).size : 0;
 
   return (
     <div className="time-management">
@@ -768,6 +887,7 @@ export function TimeAllocationGantt({
           onPointerMove={handleGanttPointerMove}
           onPointerUp={handleGanttPointerUp}
           onPointerCancel={handleGanttPointerUp}
+          onClick={handleGanttClick}
           onDoubleClick={handleGanttDoubleClick}
           onContextMenu={handleGanttContextMenu}>
           <div className="time-gantt-axis-row">
@@ -820,11 +940,52 @@ export function TimeAllocationGantt({
         {viewMode === 'projects'
           ? '项目视角为只读：按项目查看成员排期，时间轴上的空白部分即为空窗期；如需调整排期，请切回“人员排期”视图。'
           : readOnly
-            ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；可切换日/周/月粒度并调整时间跨度。'
-            : manualSave
-              ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
-              : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
+            ? '当前为只读视图：色块表示成员在项目上的时间投入，重叠部分会高亮冲突；左键点击并发区域可展开查看叠加项目；可切换日/周/月粒度并调整时间跨度。'
+          : manualSave
+              ? '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；左键点击并发区域可展开查看叠加项目，点击任意一项收起；同一成员重叠会标红警告；修改后点击右上角“保存”生效，保存前可回退/前进。'
+              : '操作方式：在成员行按住拖动画出一段排期；拖动色块可移动，拖动左右边缘可调整起止；右键色块可编辑阶段任务、日期与备注；双击色块删除；左键点击并发区域可展开查看叠加项目，点击任意一项收起；同一成员重叠会标红警告；可切换日/周/月粒度并调整时间跨度。'}
       </p>
+
+      {stackMenu ? (
+        <>
+          <div className={`time-gantt-stack-backdrop${stackMenuClosing ? ' is-closing' : ''}`} aria-hidden="true" />
+          <div
+            ref={stackMenuRef}
+            className={`time-gantt-stack-menu${stackMenuClosing ? ' is-closing' : ''}`}
+            role="dialog"
+            aria-label="并发项目排期"
+            style={{ left: stackMenu.left, top: stackMenu.top }}
+          >
+            <div className="time-gantt-stack-menu-head">
+              <strong>{stackMenu.date} 时间节点</strong>
+              <span>{stackProjectCount} 个项目 · {stackMenu.items.length} 条排期并发</span>
+            </div>
+            <div className="time-gantt-stack-list">
+              {stackMenu.items.map((allocation) => (
+                <button
+                  type="button"
+                  className="time-gantt-stack-item"
+                  key={allocation.id}
+                  onClick={closeStackMenu}
+                  style={{ background: projectColor(allocation.project_key) }}
+                >
+                  <span className="time-gantt-stack-item-copy">
+                    <span className="time-gantt-stack-item-title">
+                      <strong>{allocation.project_name}</strong>
+                      {allocation.phase_task_name ? <em>{allocation.phase_task_name}</em> : null}
+                    </span>
+                    <span className="time-gantt-stack-item-meta">
+                      {allocation.start_date} ~ {allocation.end_date} · 每天 {allocation.daily_hours} 小时
+                    </span>
+                  </span>
+                  <span className="time-gantt-stack-item-action" aria-hidden="true">收起</span>
+                </button>
+              ))}
+            </div>
+            <p className="time-gantt-stack-menu-hint">点击任意一项可收起展开列表</p>
+          </div>
+        </>
+      ) : null}
 
       {manualSave && !viewReadOnly ? (
         <Modal open={saveConfirmOpen} title="确认保存排期" onClose={() => setSaveConfirmOpen(false)}
