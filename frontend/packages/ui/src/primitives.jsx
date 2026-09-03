@@ -358,6 +358,87 @@ export function PaginatedList({
   );
 }
 
+/**
+ * 把表格渲染、空状态和分页封装在一起，用于需要在有限高度内滚动查看的列表页。
+ *
+ * @template T
+ * @param {{
+ *   columns: Array<{ key: string, label: string, className?: string, headerClassName?: string, render(row: T): React.ReactNode }>,
+ *   rows: readonly T[],
+ *   rowKey(row: T): string | number,
+ *   caption: string,
+ *   emptyText?: React.ReactNode,
+ *   tableClassName?: string,
+ *   tableWrapClassName?: string,
+ *   pageSizes?: number[],
+ *   defaultPageSize?: number,
+ * }} props
+ */
+export function PaginatedTable({
+  columns,
+  rows,
+  rowKey,
+  caption,
+  emptyText = '暂无数据',
+  tableClassName = '',
+  tableWrapClassName = '',
+  pageSizes = [10, 20, 50],
+  defaultPageSize = 10,
+}) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const rangeStart = rows.length ? (currentPage - 1) * pageSize + 1 : 0;
+  const rangeEnd = rows.length ? Math.min(currentPage * pageSize, rows.length) : 0;
+  const visibleRows = rows.slice(rangeStart - 1, rangeEnd);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows]);
+
+  if (!rows.length) {
+    return <div className="yc-pagination-empty">{emptyText}</div>;
+  }
+
+  function changePageSize(event) {
+    setPageSize(Math.max(1, Number.parseInt(event.target.value, 10) || defaultPageSize));
+    setPage(1);
+  }
+
+  return (
+    <>
+      <div className={['yc-table-wrap', tableWrapClassName].filter(Boolean).join(' ')}>
+        <table className={['yc-table', tableClassName].filter(Boolean).join(' ')} aria-label={caption}>
+          <thead>
+            <tr>
+              {columns.map((column) => <th key={column.key} scope="col" className={column.headerClassName || column.className || ''}>{column.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row) => (
+              <tr key={rowKey(row)}>
+                {columns.map((column) => <td key={column.key} className={column.className || ''}>{column.render(row)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pagination
+        ariaLabel={caption}
+        page={currentPage}
+        totalPages={totalPages}
+        totalItems={rows.length}
+        rangeLabel={`当前显示 ${rangeStart}-${rangeEnd}`}
+        pageSize={pageSize}
+        pageSizes={pageSizes}
+        onPageSizeChange={changePageSize}
+        onPageChange={setPage}
+      />
+    </>
+  );
+}
+
 /** @param {{ lines?: number, label?: string }} props */
 export function Skeleton({ lines = 3, label = '正在加载' }) {
   const count = Math.min(12, Math.max(1, Math.floor(lines)));

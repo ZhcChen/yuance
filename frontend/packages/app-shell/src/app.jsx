@@ -59,7 +59,7 @@ import {
   FilterField,
   GlobalNavigation,
   Modal,
-  PaginatedList,
+  PaginatedTable,
   Pagination,
   PriorityBadge,
   RichAttachmentMenu,
@@ -5454,37 +5454,84 @@ export function SharedApp({ services }) {
       <section className="shell-card project-resource-library-list-card" aria-label="项目资料列表">
         {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
         {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
-      <PaginatedList
-        items={projectResources}
-        itemKey={(resource) => resource.id}
-        ariaLabel="项目资料列表"
-        emptyText="当前筛选下没有项目资料，可以清除筛选后重新查看。"
-        listClassName="resource-list resource-library-list"
-        itemClassName="resource-library-row"
-        renderItem={(resource) => {
-          const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
-          const category = resource.category || 'other';
-          return (
-            <a className={`resource-card resource-library-card${resource.is_protected ? ' resource-card-protected' : ''} resource-kind-${category}`} href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>
-              <div className="resource-card-main">
-                <div className="resource-card-title-row">
-                  <span className="resource-category resource-category-kind">{projectResourceCategoryLabel(resource.category)}</span>
+        <PaginatedTable
+          columns={[
+            {
+              key: 'title',
+              label: '标题',
+              className: 'resource-table-title-cell',
+              render: (resource) => {
+                const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
+                return (
+                  <div className="resource-table-title-main">
+                    <a className="resource-table-title-link" href={resourcePath} title={resource.title} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a>
+                    {resource.summary ? <span className="resource-table-summary" title={resource.summary}>{resource.summary}</span> : null}
+                  </div>
+                );
+              },
+            },
+            {
+              key: 'category',
+              label: '分类',
+              className: 'resource-table-category-cell',
+              render: (resource) => <span className={`resource-category resource-category-kind resource-kind-${resource.category || 'other'}`} title={resource.category || ''}>{projectResourceCategoryLabel(resource.category)}</span>,
+            },
+            {
+              key: 'status',
+              label: '状态',
+              className: 'resource-table-status-cell',
+              render: (resource) => (
+                <div className="resource-table-statuses">
                   <Badge tone={resource.status === 'archived' ? 'neutral' : 'success'}>{resource.status === 'archived' ? '已归档' : '生效中'}</Badge>
                   {resource.is_protected ? <span className="resource-lock-badge">保险箱</span> : null}
                 </div>
-                <h4>{resource.title}</h4>
-                <p>{resource.summary || '暂无摘要。'}</p>
-                {resource.tags.length ? <div className="resource-chip-row">{resource.tags.map((tag) => <span className="resource-chip" key={tag}>#{tag}</span>)}</div> : null}
-                {resource.related_work_item || resource.related_cycle ? <div className="resource-link-row">
-                  {resource.related_work_item ? <span className="resource-link-chip">关联工作项 · {resource.related_work_item.key}</span> : null}
-                  {resource.related_cycle ? <span className="resource-link-chip">关联周期 · {resource.related_cycle.name}</span> : null}
-                </div> : null}
-                <div className="resource-card-meta"><span>创建：{resource.created_by} · {formatTimestamp(resource.created_at)}</span><span>更新：{resource.updated_by} · {formatTimestamp(resource.updated_at)}</span></div>
-              </div>
-            </a>
-          );
-        }}
-      />
+              ),
+            },
+            {
+              key: 'tags',
+              label: '标签',
+              className: 'resource-table-tags-cell',
+              render: (resource) => resource.tags.length
+                ? <span className="resource-table-cell-text" title={resource.tags.join('、')}>{resource.tags.join('、')}</span>
+                : <span className="shell-muted">—</span>,
+            },
+            {
+              key: 'related',
+              label: '关联',
+              className: 'resource-table-related-cell',
+              render: (resource) => {
+                if (!resource.related_work_item && !resource.related_cycle) return <span className="shell-muted">—</span>;
+                const parts = [];
+                if (resource.related_work_item) parts.push(`工作项 ${resource.related_work_item.key}`);
+                if (resource.related_cycle) parts.push(`周期 ${resource.related_cycle.name}`);
+                const text = parts.join(' · ');
+                const detail = resource.related_work_item?.title || resource.related_cycle?.name || '';
+                return <span className="resource-table-cell-text" title={`${text}${detail ? ` · ${detail}` : ''}`}>{text}</span>;
+              },
+            },
+            {
+              key: 'updated',
+              label: '最近更新',
+              className: 'resource-table-updated-cell',
+              render: (resource) => <div className="resource-table-updated" title={`${resource.updated_by} · ${resource.updated_at}`}><span>{resource.updated_by}</span><small>{formatTimestamp(resource.updated_at)}</small></div>,
+            },
+            {
+              key: 'actions',
+              label: '操作',
+              className: 'resource-table-actions-cell',
+              render: (resource) => {
+                const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
+                return <a className="yc-button yc-button-secondary yc-button-sm" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>打开</a>;
+              },
+            },
+          ]}
+          rows={projectResources}
+          rowKey={(resource) => resource.id}
+          caption="项目资料列表"
+          emptyText="当前筛选下没有项目资料，可以清除筛选后重新查看。"
+          tableClassName="resource-library-table"
+          tableWrapClassName="project-resource-library-table-wrap"
+        />
       </section>
     </>
   ) : null;

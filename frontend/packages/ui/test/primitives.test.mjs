@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, PaginatedList, Pagination, PriorityBadge, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
+import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, FilterBar, FilterField, Modal, PaginatedList, PaginatedTable, Pagination, PriorityBadge, Select, Skeleton, TextArea, TextInput } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
@@ -188,4 +188,35 @@ test('paginated list renders empty state without pagination controls', () => {
 
   assert.match(html, /当前筛选下没有资料。/u);
   assert.doesNotMatch(html, /aria-label="分页"/u);
+});
+
+test('paginated table renders a bounded page with pagination metadata', () => {
+  const rows = Array.from({ length: 25 }, (_, index) => ({ id: index + 1, name: `资料-${index + 1}` }));
+  const html = renderToStaticMarkup(createElement(PaginatedTable, {
+    caption: '项目资料表格',
+    columns: [{ key: 'name', label: '标题', render: (row) => /** @type {{ name: string }} */ (row).name }],
+    rows,
+    rowKey: (row) => /** @type {{ id: number }} */ (row).id,
+    defaultPageSize: 10,
+  }));
+
+  assert.match(html, /scope="col"/u);
+  assert.match(html, /资料-1/u);
+  assert.doesNotMatch(html, /资料-11/u);
+  assert.equal((html.match(/<tr>/gu) || []).length, 11);
+  assert.match(html, /共 <strong>25<\/strong> 条/u);
+  assert.match(html, /当前显示 1-10/u);
+});
+
+test('paginated table renders empty state without pagination controls', () => {
+  const html = renderToStaticMarkup(createElement(PaginatedTable, {
+    caption: '项目资料表格',
+    columns: [{ key: 'name', label: '标题', render: (row) => /** @type {{ name: string }} */ (row).name }],
+    rows: [],
+    rowKey: (row) => /** @type {{ id: number }} */ (row).id,
+    emptyText: '当前筛选下没有资料。',
+  }));
+
+  assert.match(html, /当前筛选下没有资料。/u);
+  assert.doesNotMatch(html, /aria-label="项目资料表格"/u);
 });
