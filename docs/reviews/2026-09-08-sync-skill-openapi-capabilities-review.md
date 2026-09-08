@@ -61,8 +61,30 @@ OpenAPI 只声明认证方式；项目范围、RBAC 权限、资料保护前置�
 - G3：尚未执行。U2 在实现文件代传前必须单独确认 HTTPS、精确来源、重定向和凭证隔离规则。
 - G4：尚未具备。当前只完成脱敏动作映射，不能宣称已经替代 `qfy-voucher-hub` 的现有封装。
 
+## U2-U4 验证与交付结论
+
+### 已实现
+
+- OpenAPI 已登记当前用户、资源查询/解锁/更新、资源附件登记/列表/上传 URL/完成登记/下载 URL/预览/条件删除和通知列表路径，并为 CLI 目标操作提供 `operationId`、请求体、响应 envelope 和敏感字段说明。
+- Rust CLI 已提供 `whoami`、`resources list/get/unlock/update`、附件 `list/create/upload-url/complete/download-url/delete` 和 `notifications list`；资料列表没有伪造分页参数。
+- 服务端附件删除已使用 `If-Match: resource.updated_at`，SQLite 事务内重读资料正文、版本和附件归属；正文仍引用附件或版本变化返回 `409`，数据库提交后才删除对象。
+- Skill、命令参考、工作流、错误说明、OpenAI 元数据和安装迁移文档已同步；外部内容被标记为不可信数据。
+
+### 验证结果
+
+- `cargo test -p yuance-api --test routing_smoke --test resource_contract`：通过，29 个路由 smoke + 4 个资源契约测试。
+- `cargo test -p yuance-agent --test api_client --test cli_contract --test command_flow --test openapi_contract --test skill_package`：通过，6 + 5 + 8 + 3 + 5 个测试。
+- `bash scripts/test-install-codex-skill.sh`：通过。
+- `bash scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.1`：通过版本与安装器一致性校验。
+- `python3 -m json.tool docs/openapi/yuance.openapi.json`、`git diff --check`：通过。
+- `cargo clippy -p yuance-api -p yuance-agent --all-targets -- -D warnings`：未通过。失败项主要来自仓库既有 lint（`device_sessions.rs`、`projects.rs`、`platform/config.rs`、既有 API helper 和测试模块布局），本轮未进行无关清理；CLI 新增命令本身已通过测试和编译。
+
 ## 残余差异
 
 1. 对象存储字节代传仍未进入 CLI；签名 URL 查询和完成登记已覆盖，文件上传/下载需等待 G3 的来源、重定向和 header 安全证据。
-2. OpenAPI 中 `encryption.key`、签名请求 headers 和短时 `access` 已标为敏感；CLI 和 Skill 仍需实现输入、清理和日志脱敏。
-3. 真实 Token、测试项目和可控明文/加密附件未提供，U4 只能完成 fixture/mock 验证，并将结束状态写成“具备迁移能力，未完成真实试点”。
+2. OpenAPI 中 `encryption.key`、签名请求 headers 和短时 `access` 已标为敏感；CLI 查询路径遵守 stdin/当前进程边界，但对象存储字节代传仍延期，未宣称完成加密文件互通。
+3. 真实 Token、测试项目和可控明文/加密附件未提供，G4 未具备；本轮完成状态为“具备迁移能力，未完成真实试点”，不能宣称已经替代 `qfy-voucher-hub` 的现有封装。
+
+## 最终状态
+
+本计划范围内的契约、CLI、Skill 和安装包同步已完成；对象存储文件字节上传/下载和真实外部试点保留为后续工作。外部 `qfy-voucher-hub` 未被修改。
