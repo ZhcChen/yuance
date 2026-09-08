@@ -2203,6 +2203,7 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   display: block;
   width: fit-content;
   max-width: 100%;
+  min-height: 96px;
   overflow: hidden;
   border-radius: 12px;
   box-shadow: 0 8px 20px rgb(22 34 50 / 8%);
@@ -2309,9 +2310,15 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
   position: absolute;
   inset: 0;
   z-index: 1;
+  box-sizing: border-box;
+  min-width: 0;
   display: grid;
-  place-items: center;
-  padding: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px;
+  overflow: hidden;
   border-radius: inherit;
   background: rgb(15 23 42 / 58%);
   color: #fff;
@@ -2328,11 +2335,11 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 }
 
 .yc-rich-pending-progress {
-  width: 42px;
-  height: 42px;
+  width: 20px;
+  height: 20px;
   display: block;
-  margin: 0 auto 8px;
-  border: 3px solid rgb(255 255 255 / 25%);
+  margin: 0 auto;
+  border: 2px solid rgb(255 255 255 / 25%);
   border-top-color: #fff;
   border-radius: 50%;
   animation: yc-rich-pending-spin 0.9s linear infinite;
@@ -2345,11 +2352,14 @@ html[data-theme="dark"] .yc-rich-text-content a[data-yuance-attachment-kind="fil
 }
 
 .yc-rich-pending-overlay-status {
-  max-width: min(260px, 72vw);
+  width: 100%;
+  max-width: 100%;
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 750;
-  line-height: 18px;
+  line-height: 16px;
+  overflow: visible;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 
