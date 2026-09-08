@@ -258,6 +258,7 @@
         "tags": [
           "auth"
         ],
+        "operationId": "whoami",
         "summary": "获取当前用户",
         "responses": {
           "200": {
@@ -1106,6 +1107,7 @@
         "tags": [
           "resources"
         ],
+        "operationId": "listProjectResources",
         "summary": "列出项目资料",
         "description": "受保护资料在列表中只返回元信息与受保护摘要，不返回正文。",
         "parameters": [
@@ -1144,6 +1146,28 @@
                 "all"
               ]
             }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "related_work_item_key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "related_cycle_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         ],
         "responses": {
@@ -1179,6 +1203,7 @@
         "tags": [
           "resources"
         ],
+        "operationId": "getProjectResource",
         "summary": "获取项目资料详情",
         "description": "受保护资料默认不会返回正文。需要用户明确授权并调用 unlock 接口。",
         "parameters": [
@@ -1191,7 +1216,14 @@
         ],
         "responses": {
           "200": {
-            "description": "未受保护资料详情"
+            "description": "未受保护资料详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResourceEnvelope"
+                }
+              }
+            }
           },
           "403": {
             "$ref": "#/components/responses/Error"
@@ -1202,6 +1234,7 @@
         "tags": [
           "resources"
         ],
+        "operationId": "updateProjectResource",
         "summary": "更新项目资料",
         "parameters": [
           {
@@ -1216,7 +1249,14 @@
         },
         "responses": {
           "200": {
-            "description": "更新成功"
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResourceEnvelope"
+                }
+              }
+            }
           }
         }
       },
@@ -1224,6 +1264,7 @@
         "tags": [
           "resources"
         ],
+        "operationId": "archiveProjectResource",
         "summary": "归档项目资料",
         "parameters": [
           {
@@ -1235,7 +1276,14 @@
         ],
         "responses": {
           "200": {
-            "description": "归档成功"
+            "description": "归档成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResourceEnvelope"
+                }
+              }
+            }
           }
         }
       }
@@ -1245,6 +1293,7 @@
         "tags": [
           "resources"
         ],
+        "operationId": "unlockProjectResource",
         "summary": "验证访问密码并读取受保护资料",
         "description": "仅当用户明确提供该条资料访问密码时调用。调用方不应缓存或记录 access_password。",
         "parameters": [
@@ -1277,11 +1326,129 @@
         },
         "responses": {
           "200": {
-            "description": "验证成功，返回资料详情"
+            "description": "验证成功，返回资料详情和短时 access_token。access_token 仅用于当前进程内的受保护资料附件请求，不得记录或持久化。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResourceEnvelope"
+                }
+              }
+            }
           },
           "403": {
             "$ref": "#/components/responses/Error"
           }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments": {
+      "get": {
+        "tags": ["resources"],
+        "operationId": "listProjectResourceAttachments",
+        "summary": "列出资料附件",
+        "description": "受保护资料必须通过 unlock 返回的短时 access_token 查询。access_token 只作为当前请求的 access 查询参数使用，不得记录或持久化。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/ResourceAccess"}
+        ],
+        "responses": {
+          "200": {"description": "资料附件列表", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentListEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "post": {
+        "tags": ["resources"],
+        "operationId": "createProjectResourceAttachment",
+        "summary": "登记资料附件",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"}
+        ],
+        "requestBody": {"$ref": "#/components/requestBodies/CreateAttachment"},
+        "responses": {
+          "201": {"description": "附件登记成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url": {
+      "get": {
+        "tags": ["resources"],
+        "operationId": "getProjectResourceAttachmentUploadUrl",
+        "summary": "获取资料附件上传请求",
+        "description": "返回短时对象存储请求。request、签名 headers、encryption.key 和 access_token 均属于敏感数据，只能按机器可读结果在当前进程内使用。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/AttachmentId"},
+          {"$ref": "#/components/parameters/ResourceAccess"},
+          {"$ref": "#/components/parameters/ExpiresInSeconds"}
+        ],
+        "responses": {
+          "200": {"description": "短时上传请求", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded": {
+      "post": {
+        "tags": ["resources"],
+        "operationId": "completeProjectResourceAttachmentUpload",
+        "summary": "确认资料附件上传完成",
+        "description": "明文附件可使用空请求体；加密附件必须提交 encrypted_sha256。服务端会重新校验对象大小和 checksum。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/AttachmentId"}
+        ],
+        "requestBody": {"$ref": "#/components/requestBodies/CompleteAttachmentUpload"},
+        "responses": {
+          "200": {"description": "上传完成", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url": {
+      "get": {
+        "tags": ["resources"],
+        "operationId": "getProjectResourceAttachmentDownloadUrl",
+        "summary": "获取资料附件下载请求",
+        "description": "受保护资料必须提供短时 access_token。返回的对象存储请求不使用元策 Bearer Token。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/AttachmentId"},
+          {"$ref": "#/components/parameters/ResourceAccess"},
+          {"$ref": "#/components/parameters/ExpiresInSeconds"}
+        ],
+        "responses": {
+          "200": {"description": "短时下载请求", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}": {
+      "delete": {
+        "tags": ["resources"],
+        "operationId": "deleteProjectResourceAttachment",
+        "summary": "归档资料附件",
+        "description": "当前服务端动作会归档附件；CLI 删除能力须等待服务端 If-Match 并发引用保护完成。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/AttachmentId"}
+        ],
+        "responses": {
+          "200": {"description": "附件已归档", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -1664,6 +1831,7 @@
         "tags": [
           "notifications"
         ],
+        "operationId": "listNotifications",
         "summary": "获取消息通知",
         "description": "返回浏览器应用壳和消息中心共用的通知列表、筛选计数与分页信息。`filter` 支持 `all`、`unread`、`pending` 和 `read`，其中 `pending` 表示未读的讨论提及/回复。",
         "parameters": [
@@ -2003,6 +2171,7 @@
     "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview": {
       "get": {
         "tags": ["resources"],
+        "operationId": "previewProjectResourceAttachment",
         "summary": "获取资料附件预览元数据",
         "description": "复用资料访问权限与短时 access grant，返回预览分类、受控内容地址和同资料附件前后项。",
         "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
@@ -2029,6 +2198,7 @@
       ],
       "get": {
         "tags": ["resources"],
+        "operationId": "getProjectResourceAttachmentPreviewContent",
         "summary": "读取资料附件预览内容",
         "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
@@ -2162,6 +2332,20 @@
         "in": "path",
         "required": true,
         "schema": {"type": "integer", "format": "int64", "minimum": 1}
+      },
+      "ResourceAccess": {
+        "name": "access",
+        "in": "query",
+        "required": false,
+        "description": "受保护资料 unlock 返回的短时访问凭证。仅在当前进程内使用，不得记录或持久化。",
+        "schema": {"type": "string", "maxLength": 4096}
+      },
+      "ExpiresInSeconds": {
+        "name": "expires_in_seconds",
+        "in": "query",
+        "required": false,
+        "description": "短时签名请求有效期，服务端会限制最大值。",
+        "schema": {"type": "integer", "minimum": 1, "maximum": 86400}
       },
       "Range": {
         "name": "Range",
@@ -2348,6 +2532,23 @@
             "schema": {
               "$ref": "#/components/schemas/CreateProjectResourceRequest"
             }
+          }
+        }
+      },
+      "CreateAttachment": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {"$ref": "#/components/schemas/CreateAttachmentRequest"}
+          }
+        }
+      },
+      "CompleteAttachmentUpload": {
+        "required": false,
+        "description": "明文附件允许空请求体；加密附件提交 encrypted_sha256。",
+        "content": {
+          "application/json": {
+            "schema": {"$ref": "#/components/schemas/CompleteAttachmentUploadRequest"}
           }
         }
       },
@@ -3332,9 +3533,11 @@
       "Attachment": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "filename", "content_type", "byte_size", "status", "created_by", "created_at"],
+        "required": ["id", "file_object_id", "object_key", "filename", "content_type", "byte_size", "status", "created_by", "created_at"],
         "properties": {
           "id": {"type": "integer", "format": "int64"},
+          "file_object_id": {"type": "integer", "format": "int64"},
+          "object_key": {"type": "string", "description": "内部对象键，仅用于服务端返回的受控契约，不得作为任意对象存储输入。"},
           "filename": {"type": "string"},
           "content_type": {"type": "string"},
           "byte_size": {"type": "integer", "format": "int64", "minimum": 0},
@@ -3342,6 +3545,64 @@
           "created_by": {"type": "string"},
           "created_at": {"type": "string"}
         }
+      },
+      "AttachmentListEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {"type": "array", "items": {"$ref": "#/components/schemas/Attachment"}}
+        }
+      },
+      "AttachmentEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {"$ref": "#/components/schemas/Attachment"}
+        }
+      },
+      "AttachmentSignedUrlRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "url", "headers"],
+        "properties": {
+          "method": {"type": "string", "enum": ["GET", "PUT"]},
+          "url": {"type": "string", "format": "uri", "description": "服务端签发的短时 HTTPS URL；客户端不得替换 host、跟随跨主机重定向或加入 API Bearer Token。"},
+          "headers": {"type": "object", "additionalProperties": {"type": "string"}}
+        }
+      },
+      "AttachmentEncryption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["algorithm", "format", "chunk_size", "key", "file_object_id", "plaintext_byte_size", "plaintext_sha256", "encrypted_byte_size", "encrypted_checksum_sha256"],
+        "properties": {
+          "algorithm": {"type": "string", "const": "AES-256-GCM"},
+          "format": {"type": "string", "const": "YUANCE-ENC-v1"},
+          "chunk_size": {"type": "integer", "const": 1048576},
+          "key": {"type": "string", "format": "byte", "description": "短时解密材料，敏感字段，不得记录或持久化。"},
+          "file_object_id": {"type": "integer", "format": "int64"},
+          "plaintext_byte_size": {"type": "integer", "format": "int64", "minimum": 0},
+          "plaintext_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "encrypted_byte_size": {"type": "integer", "format": "int64", "minimum": 0},
+          "encrypted_checksum_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+        }
+      },
+      "AttachmentSignedUrl": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["attachment", "request", "expires_in_seconds", "expires_at", "checksum_sha256", "encryption"],
+        "properties": {
+          "attachment": {"$ref": "#/components/schemas/Attachment"},
+          "request": {"$ref": "#/components/schemas/AttachmentSignedUrlRequest"},
+          "expires_in_seconds": {"type": "integer", "minimum": 1},
+          "expires_at": {"type": "string"},
+          "checksum_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "encryption": {"oneOf": [{"$ref": "#/components/schemas/AttachmentEncryption"}, {"type": "null"}]}
+        }
+      },
+      "AttachmentSignedUrlEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {"data": {"$ref": "#/components/schemas/AttachmentSignedUrl"}}
       },
       "AttachmentPreviewCapability": {
         "type": "object",
@@ -3508,6 +3769,13 @@
           }
         }
       },
+      "ProjectResourceEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {
+          "data": {"$ref": "#/components/schemas/ProjectResource"}
+        }
+      },
       "CreateProjectResourceRequest": {
         "type": "object",
         "required": [
@@ -3546,6 +3814,47 @@
           },
           "body_format": {
             "type": "string"
+          },
+          "access_password_action": {
+            "type": "string",
+            "enum": ["", "set", "clear"]
+          },
+          "access_password": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "related_work_item_key": {
+            "type": "string"
+          },
+          "related_cycle_id": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          }
+        }
+      },
+      "CreateAttachmentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["original_filename", "content_type", "byte_size"],
+        "properties": {
+          "original_filename": {"type": "string", "minLength": 1},
+          "content_type": {"type": "string", "minLength": 1},
+          "byte_size": {"type": "integer", "format": "int64", "minimum": 0},
+          "checksum_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+        }
+      },
+      "CompleteAttachmentUploadRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "encrypted_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "description": "加密附件对象的密文 SHA-256；明文附件不得伪造该字段。"
           }
         }
       },

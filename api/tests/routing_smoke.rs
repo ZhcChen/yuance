@@ -132,6 +132,10 @@ async fn openapi_json_is_served_for_api_reference() {
     assert!(body.contains(r#""/api/v1/projects""#));
     assert!(body.contains(r#""bearerAuth""#));
     assert!(body.contains(r#""/api/v1/projects/{project_key}/resources/{resource_id}/unlock""#));
+    assert!(body.contains(r#""/api/v1/projects/{project_key}/resources/{resource_id}/attachments""#));
+    assert!(body.contains(r#""/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded""#));
+    assert!(body.contains(r#""/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url""#));
+    assert!(body.contains(r#""operationId": "listProjectResources""#));
     assert!(body.contains(r#""active_work_item_count""#));
     assert!(!body.contains(r#""open_work_item_count""#));
 }
