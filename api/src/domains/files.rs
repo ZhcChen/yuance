@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 100 * 1024 * 1024;
+pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 1024 * 1024 * 1024;
 const ALLOWED_CONTENT_TYPE_PREFIXES: &[&str] = &["image/", "text/", "video/"];
 const ALLOWED_CONTENT_TYPES: &[&str] = &[
     "application/gzip",
@@ -1071,8 +1071,8 @@ fn validate_byte_size(byte_size: i64) -> AppResult<()> {
     }
     if byte_size > MAX_ATTACHMENT_BYTE_SIZE {
         return Err(AppError::BadRequest(format!(
-            "文件大小不能超过 {} MB",
-            MAX_ATTACHMENT_BYTE_SIZE / 1024 / 1024
+            "文件大小不能超过 {} GB",
+            MAX_ATTACHMENT_BYTE_SIZE / 1024 / 1024 / 1024
         )));
     }
     Ok(())
