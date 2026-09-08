@@ -117,7 +117,8 @@ pub struct ResourcesUpdateArgs {
     #[arg(long)]
     pub access_password_action: Option<String>,
     #[arg(long)]
-    pub access_password: Option<String>,
+    #[arg(long, conflicts_with = "body_file")]
+    pub access_password_stdin: bool,
     #[arg(long)]
     pub tags: Option<Vec<String>>,
     #[arg(long)]

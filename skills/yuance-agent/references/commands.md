@@ -37,7 +37,7 @@ YUANCE_BASE_URL=https://...            # 可选，默认正式环境
 <cli> resources list --project-key <KEY> [--q <KEYWORD>] [--category <CATEGORY>] [--status active|archived|all] [--tag <TAG>] [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
 <cli> resources get --project-key <KEY> --resource-id <ID>
 printf '%s\n' '<RESOURCE_PASSWORD>' | <cli> resources unlock --project-key <KEY> --resource-id <ID>
-<cli> resources update --project-key <KEY> --resource-id <ID> [--title <TITLE>] [--category <CATEGORY>] [--body-file <PATH|->] [--body-format html|plain] [--access-password-action keep|set|clear] [--access-password <PASSWORD>] [--tags <TAG>...] [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
+<cli> resources update --project-key <KEY> --resource-id <ID> [--title <TITLE>] [--category <CATEGORY>] [--body-file <PATH|->] [--body-format html|plain] [--access-password-action keep|set|clear] [--access-password-stdin] [--tags <TAG>...] [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
 ```
 
 资料列表不接受 `--page`/`--per-page`。资料 ID、关联对象和项目 key 不明确时先查询或询问，不猜测。密码只从 stdin 读取，解锁返回的短时 `access_token` 不得记录或持久化。

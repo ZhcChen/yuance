@@ -135,4 +135,19 @@ fn resource_and_notification_commands_have_explicit_boundaries() {
         ])
         .is_err()
     );
+    assert!(
+        Cli::try_parse_from([
+            "yuance-agent",
+            "resources",
+            "update",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--body-file",
+            "-",
+            "--access-password-stdin",
+        ])
+        .is_err()
+    );
 }

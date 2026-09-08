@@ -93,16 +93,18 @@ async fn update(client: &ApiClient, args: ResourcesUpdateArgs) -> Result<Value, 
     if let Some(value) = &args.access_password_action {
         require_non_empty(value, "访问密码动作")?;
     }
-    if let Some(value) = &args.access_password {
-        require_non_empty(value, "访问密码")?;
-    }
+    let access_password = if args.access_password_stdin {
+        Some(read_secret_stdin("访问密码")?)
+    } else {
+        None
+    };
     let request = UpdateProjectResourceRequest {
         title: args.title,
         category: args.category,
         body,
         body_format: args.body_format,
         access_password_action: args.access_password_action,
-        access_password: args.access_password,
+        access_password,
         tags: args.tags,
         related_work_item_key: args.related_work_item_key,
         related_cycle_id: args.related_cycle_id,
