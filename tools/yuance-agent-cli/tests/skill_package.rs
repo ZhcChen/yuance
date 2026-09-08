@@ -4,11 +4,11 @@ use std::{fs, path::PathBuf};
 fn skill_has_valid_trigger_metadata_and_core_boundaries() {
     let skill = read("SKILL.md");
     assert!(skill.starts_with("---\nname: yuance-agent\ndescription:"));
-    assert!(skill.contains("项目、需求、任务、Bug 与工作项评论"));
+    assert!(skill.contains("项目、需求、任务、Bug、工作项评论、项目资料、资料附件和通知"));
     assert!(skill.contains("普通本地代码任务"));
     assert!(skill.contains("写操作前读取目标工作项"));
     assert!(skill.contains("状态变化或处理人变化只使用 `work-items handoff`"));
-    assert!(skill.contains("首版只支持项目、工作项和工作项评论命令"));
+    assert!(skill.contains("资料、资料附件登记/签名请求/完成登记/条件删除和通知查询"));
 }
 
 #[test]
@@ -50,6 +50,18 @@ fn command_reference_covers_supported_surface_and_update_boundary() {
         "work-items handoff",
         "comments list",
         "comments create",
+        "whoami",
+        "resources list",
+        "resources get",
+        "resources unlock",
+        "resources update",
+        "resources attachments list",
+        "resources attachments create",
+        "resources attachments upload-url",
+        "resources attachments complete",
+        "resources attachments download-url",
+        "resources attachments delete",
+        "notifications list",
     ] {
         assert!(commands.contains(command), "missing command: {command}");
     }
@@ -64,6 +76,8 @@ fn command_reference_covers_supported_surface_and_update_boundary() {
     assert!(!update.contains("--assignee-username"));
     assert!(commands.contains("--description-file <PATH|->"));
     assert!(commands.contains("--body-file <PATH|->"));
+    assert!(commands.contains("--access-token-stdin"));
+    assert!(commands.contains("--if-match <RESOURCE_UPDATED_AT>"));
 }
 
 #[test]
@@ -74,6 +88,9 @@ fn workflows_enforce_read_before_write_and_reject_unsupported_actions() {
     assert!(workflows.contains("YCE-BUG-12"));
     assert!(workflows.contains("先读取详情与评论"));
     assert!(workflows.contains("不尝试猜测命令"));
+    assert!(workflows.contains("分析资料与附件"));
+    assert!(workflows.contains("分析通知"));
+    assert!(workflows.contains("不提供对象存储文件字节代传"));
 }
 
 #[test]
