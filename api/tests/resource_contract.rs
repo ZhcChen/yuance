@@ -80,21 +80,42 @@ fn openapi_covers_runtime_resource_actions_without_fake_pagination() {
         ("/api/v1/projects/{project_key}/resources", "get"),
         (RESOURCE_PATH, "get"),
         (RESOURCE_PATH, "patch"),
-        ("/api/v1/projects/{project_key}/resources/{resource_id}/unlock", "post"),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/unlock",
+            "post",
+        ),
         (RESOURCE_ATTACHMENTS_PATH, "get"),
         (RESOURCE_ATTACHMENTS_PATH, "post"),
-        ("/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url", "get"),
-        ("/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded", "post"),
-        ("/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url", "get"),
-        ("/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview", "get"),
-        ("/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}", "delete"),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url",
+            "get",
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded",
+            "post",
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url",
+            "get",
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+            "get",
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}",
+            "delete",
+        ),
         ("/api/v1/notifications", "get"),
     ];
 
     for (path, method) in required {
         let operation = &paths[path][method];
         assert!(operation.is_object(), "missing {method} {path}");
-        assert!(operation["operationId"].is_string(), "missing operationId for {method} {path}");
+        assert!(
+            operation["operationId"].is_string(),
+            "missing operationId for {method} {path}"
+        );
     }
 
     let list_parameters = paths["/api/v1/projects/{project_key}/resources"]["get"]["parameters"]
@@ -116,13 +137,20 @@ fn sensitive_attachment_fields_are_explicitly_marked() {
     let spec: Value = serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
         .expect("OpenAPI document should be valid JSON");
     let schemas = &spec["components"]["schemas"];
-    assert_eq!(schemas["AttachmentEncryption"]["properties"]["format"]["const"], "YUANCE-ENC-v1");
-    assert!(schemas["AttachmentEncryption"]["properties"]["key"]["description"]
-        .as_str()
-        .unwrap()
-        .contains("不得记录或持久化"));
-    assert!(spec["components"]["parameters"]["ResourceAccess"]["description"]
-        .as_str()
-        .unwrap()
-        .contains("不得记录或持久化"));
+    assert_eq!(
+        schemas["AttachmentEncryption"]["properties"]["format"]["const"],
+        "YUANCE-ENC-v1"
+    );
+    assert!(
+        schemas["AttachmentEncryption"]["properties"]["key"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("不得记录或持久化")
+    );
+    assert!(
+        spec["components"]["parameters"]["ResourceAccess"]["description"]
+            .as_str()
+            .unwrap()
+            .contains("不得记录或持久化")
+    );
 }
