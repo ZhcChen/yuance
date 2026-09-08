@@ -103,6 +103,48 @@ pub struct CreateCommentRequest {
     pub parent_comment_id: Option<i64>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct UnlockProjectResourceRequest {
+    pub access_password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UpdateProjectResourceRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_password_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related_work_item_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related_cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateAttachmentRequest {
+    pub original_filename: String,
+    pub content_type: String,
+    pub byte_size: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum_sha256: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CompleteAttachmentUploadRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_sha256: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ApiErrorEnvelope {
     pub error: ApiErrorBody,

@@ -69,3 +69,70 @@ fn missing_token_outputs_structured_error_without_network_request() {
     assert_eq!(payload["error"]["code"], "missing_api_token");
     assert!(!String::from_utf8_lossy(&output.stderr).contains("yuance_pat_"));
 }
+
+#[test]
+fn resource_and_notification_commands_have_explicit_boundaries() {
+    for args in [
+        ["yuance-agent", "whoami"].as_slice(),
+        ["yuance-agent", "resources", "list", "--project-key", "YCE"].as_slice(),
+        [
+            "yuance-agent",
+            "resources",
+            "get",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+        ]
+        .as_slice(),
+        [
+            "yuance-agent",
+            "resources",
+            "unlock",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+        ]
+        .as_slice(),
+        [
+            "yuance-agent",
+            "notifications",
+            "list",
+            "--page",
+            "2",
+            "--per-page",
+            "20",
+        ]
+        .as_slice(),
+    ] {
+        assert!(
+            Cli::try_parse_from(args).is_ok(),
+            "command should parse: {args:?}"
+        );
+    }
+
+    assert!(
+        Cli::try_parse_from([
+            "yuance-agent",
+            "resources",
+            "list",
+            "--project-key",
+            "YCE",
+            "--page",
+            "1"
+        ])
+        .is_err()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "yuance-agent",
+            "resources",
+            "attachments",
+            "upload",
+            "--project-key",
+            "YCE"
+        ])
+        .is_err()
+    );
+}

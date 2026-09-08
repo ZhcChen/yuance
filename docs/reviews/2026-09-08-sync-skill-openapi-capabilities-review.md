@@ -48,7 +48,7 @@ OpenAPI 只声明认证方式；项目范围、RBAC 权限、资料保护前置�
 | 附件 list/create | CLI 覆盖 | `resources attachments list/create` | 是 |
 | 附件 upload-url/complete | CLI 覆盖 | `resources attachments upload-url/complete` | 是，按 G3 限制 |
 | 对象存储 upload/download | 延期至 G3 | 仅保留签名请求查询，是否代传待来源/重定向校验 | 条件进入 |
-| 附件 delete | 延期至 KTD10 | 当前 OpenAPI 契约覆盖；等待 `If-Match` + SQLite 事务保护 | 否，先做服务端保护 |
+| 附件 delete | CLI 覆盖 | `resources attachments delete` 携带 `If-Match: resource.updated_at`；服务端事务内重读正文/版本，提交后删除对象 | 是 |
 | 资源附件 preview | 仅 OpenAPI 覆盖 | 预览路径和 schema 已登记 | 否 |
 | 通知 list | CLI 覆盖 | `notifications list` | 是 |
 
@@ -57,12 +57,12 @@ OpenAPI 只声明认证方式；项目范围、RBAC 权限、资料保护前置�
 ## G1-G2 结论
 
 - G1：通过。OpenAPI 已补齐当前 U1 范围的资料、附件、通知和当前用户路径；资源列表明确不声明服务端不存在的分页参数。
-- G2：通过但带条件。资料查询、解锁、正文更新、附件登记/列表、签名请求查询、完成登记和通知进入 U2；对象存储字节代传等待 G3；附件删除等待 U2 落地 KTD10。
+- G2：通过但带条件。资料查询、解锁、正文更新、附件登记/列表、签名请求查询、完成登记、条件删除和通知进入 U2；对象存储字节代传等待 G3。
 - G3：尚未执行。U2 在实现文件代传前必须单独确认 HTTPS、精确来源、重定向和凭证隔离规则。
 - G4：尚未具备。当前只完成脱敏动作映射，不能宣称已经替代 `qfy-voucher-hub` 的现有封装。
 
 ## 残余差异
 
-1. 当前服务端附件删除先删除对象再归档数据库记录，尚未满足并发引用保护；U2 必须先修服务端，再决定 CLI 删除是否发布。
+1. 对象存储字节代传仍未进入 CLI；签名 URL 查询和完成登记已覆盖，文件上传/下载需等待 G3 的来源、重定向和 header 安全证据。
 2. OpenAPI 中 `encryption.key`、签名请求 headers 和短时 `access` 已标为敏感；CLI 和 Skill 仍需实现输入、清理和日志脱敏。
 3. 真实 Token、测试项目和可控明文/加密附件未提供，U4 只能完成 fixture/mock 验证，并将结束状态写成“具备迁移能力，未完成真实试点”。

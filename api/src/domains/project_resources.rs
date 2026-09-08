@@ -845,6 +845,15 @@ pub fn resource_inline_attachment_ids(resource_id: i64, body: &str, body_format:
         .collect()
 }
 
+pub fn resource_body_references_attachment(
+    resource_id: i64,
+    body: &str,
+    body_format: &str,
+    attachment_id: i64,
+) -> bool {
+    resource_inline_attachment_ids(resource_id, body, body_format).contains(&attachment_id)
+}
+
 pub fn category_label(category: &str) -> &'static str {
     match category {
         "integration" => "开发资料",
@@ -1620,7 +1629,15 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::resource_body_html_for_display;
+    use super::{resource_body_html_for_display, resource_body_references_attachment};
+
+    #[test]
+    fn resource_attachment_reference_check_matches_only_same_resource_id() {
+        let html = r#"<a data-yuance-attachment-id="5" href="/web/projects/YCE/resources/7/attachments/5/download">file</a>"#;
+        assert!(resource_body_references_attachment(7, html, "html", 5));
+        assert!(!resource_body_references_attachment(7, html, "html", 6));
+        assert!(!resource_body_references_attachment(8, html, "html", 5));
+    }
 
     #[test]
     fn resource_body_preserves_file_card_dataset_attributes() {

@@ -6268,21 +6268,24 @@ pub async fn project_resource_attachment_delete(
             "已归档资料不能继续删除附件".to_string(),
         ));
     }
-    let existing =
-        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
-            .await?;
-    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
-    let attachment = files::archive_attachment(
+    let expected_updated_at = headers
+        .get("if-match")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::BadRequest("删除附件必须提供 If-Match: resource.updated_at".to_string())
+        })?;
+    let (attachment, object_key) = files::archive_resource_attachment_if_match(
         pool,
         attachment_id,
-        "project_resource",
         resource.id,
+        expected_updated_at,
         user.id,
         &principal.actor_display_name_snapshot(),
-        None,
-        None,
     )
     .await?;
+    storage::delete_object_if_exists(pool, &state.settings, &object_key).await?;
     audit::record(
         pool,
         Some(user.id),

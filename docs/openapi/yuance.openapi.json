@@ -1403,7 +1403,8 @@
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
-          {"$ref": "#/components/parameters/AttachmentId"}
+          {"$ref": "#/components/parameters/AttachmentId"},
+          {"$ref": "#/components/parameters/ResourceIfMatch"}
         ],
         "requestBody": {"$ref": "#/components/requestBodies/CompleteAttachmentUpload"},
         "responses": {
@@ -1442,7 +1443,8 @@
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
-          {"$ref": "#/components/parameters/AttachmentId"}
+          {"$ref": "#/components/parameters/AttachmentId"},
+          {"$ref": "#/components/parameters/ResourceIfMatch"}
         ],
         "responses": {
           "200": {"description": "附件已归档", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
@@ -2339,6 +2341,13 @@
         "required": false,
         "description": "受保护资料 unlock 返回的短时访问凭证。仅在当前进程内使用，不得记录或持久化。",
         "schema": {"type": "string", "maxLength": 4096}
+      },
+      "ResourceIfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "description": "资料最近一次读取到的 updated_at。服务端在事务内重新校验版本和正文引用，冲突返回 409。",
+        "schema": {"type": "string", "minLength": 1}
       },
       "ExpiresInSeconds": {
         "name": "expires_in_seconds",
