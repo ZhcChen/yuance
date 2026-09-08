@@ -79,6 +79,7 @@ OpenAPI 只声明认证方式；项目范围、RBAC 权限、资料保护前置�
 
 - `cargo test -p yuance-api --test routing_smoke --test resource_contract`：通过，29 个路由 smoke + 4 个资源契约测试。
 - `cargo test -p yuance-agent --test api_client --test cli_contract --test command_flow --test openapi_contract --test skill_package`：通过，6 + 5 + 8 + 3 + 5 个测试。
+- `bash scripts/test-yuance-agent-real-api.sh`：通过，本地临时 SQLite + 真实 API/CLI 二进制覆盖项目范围、查询、创建、详情、评论、回复、更新、handoff、401 和 403；该脚本未覆盖本轮资料/附件/通知流程，不计为 G4 真实试点。
 - `bash scripts/test-install-codex-skill.sh`：通过。
 - `bash scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.1`：通过版本与安装器一致性校验。
 - `python3 -m json.tool docs/openapi/yuance.openapi.json`、`git diff --check`：通过。
