@@ -3818,6 +3818,8 @@ test('shared project resources filter read and unlock protected details', async 
   const resourceContentCard = page.locator('.resource-content-card');
   await expect(resourceContentCard).toBeVisible();
   await expect(page.locator('.resource-summary-card')).toHaveCount(0);
+  await expect(page.locator('.resource-hero')).toHaveCount(0);
+  await expect(resourceContentCard.getByRole('link', { name: '返回资料库' })).toHaveCount(1);
   await expect(resourceContentCard.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
   await expect(resourceContentCard.getByRole('button', { name: '重置保险箱密码' })).toHaveCount(1);
   await expect(resourceContentCard.getByRole('button', { name: '归档' })).toHaveCount(1);
@@ -3830,14 +3832,13 @@ test('shared project resources filter read and unlock protected details', async 
   await expect.poll(() => page.evaluate(() => decodeURIComponent(window.location.hash))).toBe('#resource-heading-5-本地验证');
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, heroDirection: getComputedStyle(element.querySelector('.resource-hero')).flexDirection, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainHeight);
     expect(geometry.cardHeight).toBeGreaterThan(0);
     expect(geometry.cardBottom).toBeLessThanOrEqual(geometry.mainBottom + 1);
     expect(geometry.tocOverflowY).toBe('auto');
     expect(geometry.contentOverflowY).toBe('auto');
-    expect(geometry.heroDirection).toBe(viewport.width <= 720 ? 'column' : 'row');
     expect(geometry.tocDisplay).toBe(viewport.width <= 960 ? 'flex' : 'block');
     expect(geometry.contentColumns).toBe(viewport.width <= 960 ? 1 : 2);
   }
