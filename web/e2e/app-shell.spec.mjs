@@ -3815,7 +3815,12 @@ test('shared project resources filter read and unlock protected details', async 
 
   await list.getByRole('link', { name: '客户端联调参数' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources\/901$/);
-  await expect(page.locator('.resource-content-card')).toBeVisible();
+  const resourceContentCard = page.locator('.resource-content-card');
+  await expect(resourceContentCard).toBeVisible();
+  await expect(page.locator('.resource-summary-card')).toHaveCount(0);
+  await expect(resourceContentCard.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
+  await expect(resourceContentCard.getByRole('button', { name: '重置保险箱密码' })).toHaveCount(1);
+  await expect(resourceContentCard.getByRole('button', { name: '归档' })).toHaveCount(1);
   await expect(page.getByText('正文概览')).toBeVisible();
   const tableOfContents = page.getByRole('navigation', { name: '正文目录' });
   await expect(tableOfContents).toBeVisible();
@@ -3825,9 +3830,13 @@ test('shared project resources filter read and unlock protected details', async 
   await expect.poll(() => page.evaluate(() => decodeURIComponent(window.location.hash))).toBe('#resource-heading-5-本地验证');
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const toc = element.querySelector('.yc-rich-text-toc'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, summaryColumns: getComputedStyle(element.querySelector('.resource-summary-grid')).gridTemplateColumns.split(' ').length, heroDirection: getComputedStyle(element.querySelector('.resource-hero')).flexDirection, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, heroDirection: getComputedStyle(element.querySelector('.resource-hero')).flexDirection, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-    expect(geometry.summaryColumns).toBe(viewport.width <= 720 ? 1 : 2);
+    expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainHeight);
+    expect(geometry.cardHeight).toBeGreaterThan(0);
+    expect(geometry.cardBottom).toBeLessThanOrEqual(geometry.mainBottom + 1);
+    expect(geometry.tocOverflowY).toBe('auto');
+    expect(geometry.contentOverflowY).toBe('auto');
     expect(geometry.heroDirection).toBe(viewport.width <= 720 ? 'column' : 'row');
     expect(geometry.tocDisplay).toBe(viewport.width <= 960 ? 'flex' : 'block');
     expect(geometry.contentColumns).toBe(viewport.width <= 960 ? 1 : 2);
@@ -3932,7 +3941,7 @@ test('shared project resources create edit password actions and archive', async 
   });
   await createDialog.getByLabel('初始访问密码').fill('safe-pass');
   await createDialog.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('部署手册');
+  await expect(page.getByRole('region', { name: '项目资料列表' })).toContainText('部署手册');
   expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: '<h2>发布方案</h2><pre><code>release=v1</code></pre>', body_format: 'html', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: '', related_cycle_id: null }]);
 
   await page.getByRole('link', { name: '部署手册' }).click();
@@ -3948,7 +3957,8 @@ test('shared project resources create edit password actions and archive', async 
   resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.locator('#project-resource-password-reset-action-native').selectOption('clear');
   await resetDialog.getByRole('button', { name: '确认重置' }).click();
-  await expect(page.locator('.resource-content-card')).toBeVisible();
+  await expect(resetDialog).not.toBeVisible();
+  await expect(page.getByText('资料访问密码已清除。')).toBeVisible();
   expect(mutations[2]).toEqual(['reset', { access_password_action: 'clear', access_password: '' }]);
   await expect(page.getByRole('heading', { level: 2, name: '发布方案' })).toBeVisible();
   await expect(page.locator('.yc-rich-text-content code')).toHaveText('release=v1');
@@ -3979,7 +3989,7 @@ test('shared project resources create edit password actions and archive', async 
   await page.getByRole('button', { name: '归档' }).click();
   await page.getByRole('dialog', { name: '归档项目资料' }).getByRole('button', { name: '确认归档' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources$/);
-  await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('已归档');
+  await expect(page.getByRole('region', { name: '项目资料列表' })).toContainText('已归档');
   expect(mutations[5]).toEqual(['archive', null]);
 });
 
@@ -4166,7 +4176,7 @@ test('shared project resources expose content mutations to member role', async (
     input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
   });
   await createDialog.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('成员新建资料');
+  await expect(page.getByRole('region', { name: '项目资料列表' })).toContainText('成员新建资料');
   expect(mutations[0]).toEqual(['create', { title: '成员新建资料', category: 'other', body: '<p>member body</p>', body_format: 'html', access_password: '', tags: [], related_work_item_key: '', related_cycle_id: null }]);
   await page.getByRole('link', { name: '成员新建资料' }).click();
   await expect(page.getByRole('button', { name: '编辑资料' })).toBeVisible();
