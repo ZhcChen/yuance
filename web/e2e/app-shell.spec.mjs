@@ -3771,10 +3771,11 @@ test('shared project resources filter read and unlock protected details', async 
   await routeEmptyProjectResourceAttachments(page);
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
-  const publicResource = projectResourceFixture({ body: '<h1>客户端联调参数</h1><p>正文概览</p><h2>接入准备</h2><h3>凭证配置</h3><h4>环境变量</h4><h5>本地验证</h5>', body_format: 'html' });
+  const publicResource = projectResourceFixture({ body: `<h1>客户端联调参数</h1><p>正文概览</p><p>${'滚动内容 '.repeat(1200)}</p><h2>接入准备</h2><h3>凭证配置</h3><h4>环境变量</h4><h5>本地验证</h5>`, body_format: 'html' });
   const protectedSummary = projectResourceFixture({ id: 902, title: '正式环境密钥', body: '', summary: '仅授权成员可解锁', is_protected: true, tags: ['正式环境'], related_work_item: null, url: '/web/projects/YCE/resources/902' });
   const resourceQueries = [];
   const unlockPasswords = [];
+  let publicDetailRequests = 0;
   let releaseDelayedUnlock;
   const delayedUnlockStarted = new Promise((resolve) => {
     releaseDelayedUnlock = resolve;
@@ -3786,7 +3787,7 @@ test('shared project resources filter read and unlock protected details', async 
     const filtered = url.searchParams.get('q') === '客户端' ? [publicResource] : [publicResource, protectedSummary];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: filtered }) });
   });
-  await page.route('**/api/v1/projects/YCE/resources/901', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: publicResource }) }));
+  await page.route('**/api/v1/projects/YCE/resources/901', (route) => { publicDetailRequests += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: publicResource }) }); });
   await page.route('**/api/v1/projects/YCE/resources/902/unlock', async (route) => {
     const password = route.request().postDataJSON().access_password;
     unlockPasswords.push(password);
@@ -3828,8 +3829,12 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(tableOfContents).toBeVisible();
   await expect(tableOfContents.getByRole('link')).toHaveText(['客户端联调参数', '接入准备', '凭证配置', '环境变量', '本地验证']);
   await expect(tableOfContents.getByRole('link', { name: '本地验证' })).toHaveAttribute('href', '#resource-heading-5-本地验证');
+  const tocScrollState = await tableOfContents.evaluate((element) => { element.style.maxHeight = '96px'; element.style.overflowY = 'auto'; element.scrollTop = element.scrollHeight; return element.scrollTop; });
   await tableOfContents.getByRole('link', { name: '本地验证' }).click();
   await expect.poll(() => page.evaluate(() => decodeURIComponent(window.location.hash))).toBe('#resource-heading-5-本地验证');
+  await expect.poll(() => page.locator('.yc-rich-text-content').evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => tableOfContents.evaluate((element) => element.scrollTop)).toBe(tocScrollState);
+  expect(publicDetailRequests).toBe(1);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });

@@ -306,10 +306,27 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       if (!downloading && overlay) overlay.remove();
     }
   }, [format, html, downloadingAttachmentId]);
+  const handleTableOfContentsClick = (event, id) => {
+    event.preventDefault();
+    const content = contentRef.current;
+    const target = content ? [...content.querySelectorAll('h1, h2, h3, h4, h5')].find((heading) => heading.id === id) : null;
+    if (!content || !target) return;
+    const toc = event.currentTarget.closest('.yc-rich-text-toc');
+    const tocScrollTop = toc?.scrollTop || 0;
+    const tocScrollLeft = toc?.scrollLeft || 0;
+    const top = target.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop;
+    content.scrollTo({ top, behavior: 'auto' });
+    const view = content.ownerDocument.defaultView;
+    if (view) view.history.replaceState(view.history.state, '', `${view.location.pathname}${view.location.search}#${id}`);
+    if (toc) {
+      toc.scrollTop = tocScrollTop;
+      toc.scrollLeft = tocScrollLeft;
+    }
+  };
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <div className="yc-rich-text-content yc-rich-text-plain">{html}</div>;
   if (!showTableOfContents) return <div ref={contentRef} className="yc-rich-text-content" />;
-  return <div className="yc-rich-text-with-toc">{headings.length ? <nav className="yc-rich-text-toc" aria-label="正文目录"><strong>正文目录</strong><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`}>{heading.label}</a></li>)}</ol></nav> : null}<div ref={contentRef} className="yc-rich-text-content" /></div>;
+  return <div className="yc-rich-text-with-toc">{headings.length ? <nav className="yc-rich-text-toc" aria-label="正文目录"><strong>正文目录</strong><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}<div ref={contentRef} className="yc-rich-text-content" /></div>;
 }
 
 /** @param {RichTextResolvedSource} resolved */
