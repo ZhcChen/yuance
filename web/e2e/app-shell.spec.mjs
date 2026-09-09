@@ -3771,7 +3771,7 @@ test('shared project resources filter read and unlock protected details', async 
   await routeEmptyProjectResourceAttachments(page);
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
-  const publicResource = projectResourceFixture();
+  const publicResource = projectResourceFixture({ body: '<h1>客户端联调参数</h1><p>正文概览</p><h2>接入准备</h2><h3>凭证配置</h3><h4>环境变量</h4><h5>本地验证</h5>', body_format: 'html' });
   const protectedSummary = projectResourceFixture({ id: 902, title: '正式环境密钥', body: '', summary: '仅授权成员可解锁', is_protected: true, tags: ['正式环境'], related_work_item: null, url: '/web/projects/YCE/resources/902' });
   const resourceQueries = [];
   const unlockPasswords = [];
@@ -3804,7 +3804,7 @@ test('shared project resources filter read and unlock protected details', async 
   await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
 
   await login(page, '/web/app/projects/YCE/resources');
-  const list = page.getByRole('list', { name: '项目资料列表' });
+  const list = page.getByRole('region', { name: '项目资料列表' });
   await expect(list).toContainText('客户端联调参数');
   await expect(list).toContainText('正式环境密钥');
   await page.getByLabel('关键词').fill('客户端');
@@ -3816,16 +3816,24 @@ test('shared project resources filter read and unlock protected details', async 
   await list.getByRole('link', { name: '客户端联调参数' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources\/901$/);
   await expect(page.locator('.resource-content-card')).toBeVisible();
-  await expect(page.getByText('client_id=yuance-e2e')).toBeVisible();
+  await expect(page.getByText('正文概览')).toBeVisible();
+  const tableOfContents = page.getByRole('navigation', { name: '正文目录' });
+  await expect(tableOfContents).toBeVisible();
+  await expect(tableOfContents.getByRole('link')).toHaveText(['客户端联调参数', '接入准备', '凭证配置', '环境变量', '本地验证']);
+  await expect(tableOfContents.getByRole('link', { name: '本地验证' })).toHaveAttribute('href', '#resource-heading-5-本地验证');
+  await tableOfContents.getByRole('link', { name: '本地验证' }).click();
+  await expect.poll(() => page.evaluate(() => decodeURIComponent(window.location.hash))).toBe('#resource-heading-5-本地验证');
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, summaryColumns: getComputedStyle(element.querySelector('.resource-summary-grid')).gridTemplateColumns.split(' ').length, heroDirection: getComputedStyle(element.querySelector('.resource-hero')).flexDirection }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const toc = element.querySelector('.yc-rich-text-toc'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, summaryColumns: getComputedStyle(element.querySelector('.resource-summary-grid')).gridTemplateColumns.split(' ').length, heroDirection: getComputedStyle(element.querySelector('.resource-hero')).flexDirection, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.summaryColumns).toBe(viewport.width <= 720 ? 1 : 2);
     expect(geometry.heroDirection).toBe(viewport.width <= 720 ? 'column' : 'row');
+    expect(geometry.tocDisplay).toBe(viewport.width <= 960 ? 'flex' : 'block');
+    expect(geometry.contentColumns).toBe(viewport.width <= 960 ? 1 : 2);
   }
   await page.getByRole('link', { name: '返回资料库' }).click();
-  await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
+  await page.getByRole('region', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
 
   await expect(page.getByRole('heading', { level: 2, name: '这条资料已设置访问密码' })).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
@@ -3839,9 +3847,9 @@ test('shared project resources filter read and unlock protected details', async 
   await delayedUnlockStarted;
   await page.getByRole('link', { name: '返回资料库' }).click();
   releaseDelayedUnlock();
-  await expect(page.getByRole('list', { name: '项目资料列表' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '项目资料列表' })).toBeVisible();
   await expect(page.getByRole('alert').filter({ hasText: '资料' })).toHaveCount(0);
-  await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
+  await page.getByRole('region', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
   await page.locator('#project-resource-password').fill('wrong-pass');
   await page.getByRole('button', { name: '验证并查看' }).click();
   await expect(page.getByRole('alert').filter({ hasText: '资料操作失败' })).toContainText('访问密码不正确');

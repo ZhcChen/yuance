@@ -4,7 +4,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, isPreviewableDocumentFile, plainTextToRichHtml, previewableDocumentFileType, richFileVisualBadge, richFileVisualKind, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from '@yuance/frontend-ui';
+import { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, isPreviewableDocumentFile, plainTextToRichHtml, previewableDocumentFileType, richFileVisualBadge, richFileVisualKind, richTextAttachmentHtml, richTextAttachmentIds, richTextHeadingId, richTextHasContent } from '@yuance/frontend-ui';
 
 test('rich text editor exposes the deferred paste sentinel used by pre-upload flows', () => {
   assert.equal(DEFER_RICH_TEXT_PASTE, 'defer');
@@ -25,6 +25,12 @@ test('plain text conversion escapes markup and rich content detection rejects em
   assert.equal(richTextHasContent('<p>正文</p>'), true);
   assert.equal(richTextHasContent('<hr>'), true);
   assert.deepEqual(richTextAttachmentIds('<figure data-yuance-attachment-id="19"><img></figure><a data-yuance-attachment-id="7"></a><a data-yuance-attachment-id="19"></a>'), [19, 7]);
+});
+
+test('rich text heading ids remain stable and unique for table of contents anchors', () => {
+  assert.equal(richTextHeadingId('项目概览', 0), 'resource-heading-1-项目概览');
+  assert.equal(richTextHeadingId('项目概览', 1), 'resource-heading-2-项目概览');
+  assert.equal(richTextHeadingId('  ', 2), 'resource-heading-3-section');
 });
 
 test('rich text editor exposes the shared formatting toolbar and textbox', async () => {

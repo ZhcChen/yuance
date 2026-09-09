@@ -154,19 +154,24 @@ function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = nul
  *   onFileAttachmentActivate?: (attachmentId: number, file: { href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }) => void,
  *   resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource>,
  *   downloadingAttachmentId?: number | null,
+ *   onHeadingsChange?: (headings: Array<{ id: string, level: number, label: string }>) => void,
+ *   showTableOfContents?: boolean,
  * }} props
  *
  * 附件交互约定：左键附件统一走 onAttachmentActivate（文件附件直接预览）；
  * onFileAttachmentActivate 仅在右键文件附件时触发，用于打开操作菜单。
  */
-export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource, downloadingAttachmentId = null }) {
+export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource, downloadingAttachmentId = null, onHeadingsChange, showTableOfContents = false }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const activateRef = useRef(onAttachmentActivate);
   const fileActivateRef = useRef(onFileAttachmentActivate);
   const resolveRef = useRef(resolveAttachmentSource);
+  const headingsRef = useRef(onHeadingsChange);
+  const [headings, setHeadings] = useState(/** @type {Array<{ id: string, level: number, label: string }>} */ ([]));
   activateRef.current = onAttachmentActivate;
   fileActivateRef.current = onFileAttachmentActivate;
   resolveRef.current = resolveAttachmentSource;
+  headingsRef.current = onHeadingsChange;
   useEffect(() => {
     const content = contentRef.current;
     const view = content?.ownerDocument.defaultView;
@@ -174,9 +179,17 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     const sanitized = filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: CONTENT_TAGS, ALLOWED_ATTR: CONTENT_ATTRIBUTES }), view);
     const staging = content.ownerDocument.createElement('div');
     staging.innerHTML = sanitized;
+    const headings = [...staging.querySelectorAll('h1, h2, h3, h4, h5')].map((heading, index) => {
+      const label = heading.textContent?.trim() || `章节 ${index + 1}`;
+      const id = richTextHeadingId(label, index);
+      heading.id = id;
+      return { id, level: Number(heading.tagName.slice(1)), label };
+    });
     const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
     if (resolveRef.current) for (const media of mediaReferences) media.removeAttribute('src');
     content.replaceChildren(...staging.childNodes);
+    setHeadings(headings);
+    headingsRef.current?.(headings);
     normalizeRichTextAttachmentFigures(content);
     for (const file of content.querySelectorAll('a[data-yuance-attachment-kind="file"]')) {
       if (!file.hasAttribute('data-yuance-file-kind') || !file.hasAttribute('data-yuance-file-ext')) {
@@ -265,6 +278,8 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       active = false;
       content.removeEventListener('click', activate);
       content.removeEventListener('contextmenu', openFileMenu);
+      setHeadings([]);
+      headingsRef.current?.([]);
       for (const root of roots) root.unmount();
       for (const release of releases) releaseResolvedSource({ source: '', release });
     };
@@ -293,7 +308,8 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
   }, [format, html, downloadingAttachmentId]);
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <div className="yc-rich-text-content yc-rich-text-plain">{html}</div>;
-  return <div ref={contentRef} className="yc-rich-text-content" />;
+  if (!showTableOfContents) return <div ref={contentRef} className="yc-rich-text-content" />;
+  return <div className="yc-rich-text-with-toc">{headings.length ? <nav className="yc-rich-text-toc" aria-label="正文目录"><strong>正文目录</strong><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`}>{heading.label}</a></li>)}</ol></nav> : null}<div ref={contentRef} className="yc-rich-text-content" /></div>;
 }
 
 /** @param {RichTextResolvedSource} resolved */
@@ -312,6 +328,17 @@ export function plainTextToRichHtml(value) {
     .split(/\r?\n/u)
     .map((line) => `<p>${line || '<br>'}</p>`)
     .join('');
+}
+
+/** @param {string} label @param {number} index */
+export function richTextHeadingId(label, index) {
+  const slug = label
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+    .replace(/^-+|-+$/gu, '')
+    .slice(0, 64);
+  return `resource-heading-${index + 1}-${slug || 'section'}`;
 }
 
 /** @param {string} value */
