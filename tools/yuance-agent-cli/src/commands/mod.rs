@@ -3,13 +3,15 @@ use std::{io::Read, path::Path};
 use serde_json::{Value, json};
 
 use crate::{
-    cli::{Command, CommentsCommand, ProjectsCommand, WorkItemsCommand},
+    cli::{Command, CommentsCommand, NotificationsCommand, ProjectsCommand, WorkItemsCommand},
     client::{ApiClient, ClientConfig},
     error::AgentError,
 };
 
 mod comments;
+mod notifications;
 mod projects;
+mod resources;
 mod work_items;
 
 pub async fn run(command: Command) -> Result<Value, AgentError> {
@@ -22,6 +24,7 @@ pub async fn run(command: Command) -> Result<Value, AgentError> {
     let client = ApiClient::from_config(config)?;
 
     match command {
+        Command::Whoami => client.get("/api/v1/auth/me", &[]).await,
         Command::Doctor {
             installation: false,
         } => {
@@ -52,6 +55,10 @@ pub async fn run(command: Command) -> Result<Value, AgentError> {
         Command::Comments { command } => match command {
             CommentsCommand::List { item_key } => comments::list(&client, &item_key).await,
             CommentsCommand::Create(args) => comments::create(&client, args).await,
+        },
+        Command::Resources { command } => resources::run(&client, command).await,
+        Command::Notifications { command } => match command {
+            NotificationsCommand::List(args) => notifications::list(&client, args).await,
         },
     }
 }
@@ -88,6 +95,16 @@ pub(super) fn require_non_empty(value: &str, field_name: &'static str) -> Result
         });
     }
     Ok(())
+}
+
+pub(super) fn read_secret_stdin(field_name: &'static str) -> Result<String, AgentError> {
+    let mut value = String::new();
+    std::io::stdin()
+        .read_to_string(&mut value)
+        .map_err(|error| input_error(field_name, error))?;
+    let value = value.trim().to_string();
+    require_non_empty(&value, field_name)?;
+    Ok(value)
 }
 
 fn input_error(field_name: &'static str, error: std::io::Error) -> AgentError {

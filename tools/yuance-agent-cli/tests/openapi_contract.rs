@@ -8,6 +8,7 @@ use yuance_agent::cli::Cli;
 fn supported_operations_and_request_bodies_exist() {
     let document = openapi();
     let operations = [
+        ("/api/v1/auth/me", "get", None),
         ("/api/v1/projects", "get", None),
         ("/api/v1/projects/{project_key}", "get", None),
         ("/api/v1/work-items", "get", None),
@@ -33,6 +34,48 @@ fn supported_operations_and_request_bodies_exist() {
             "post",
             Some("#/components/requestBodies/CreateComment"),
         ),
+        ("/api/v1/projects/{project_key}/resources", "get", None),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}",
+            "get",
+            None,
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}",
+            "patch",
+            Some("#/components/requestBodies/UpdateProjectResource"),
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/unlock",
+            "post",
+            None,
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments",
+            "get",
+            None,
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments",
+            "post",
+            Some("#/components/requestBodies/CreateAttachment"),
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url",
+            "get",
+            None,
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded",
+            "post",
+            Some("#/components/requestBodies/CompleteAttachmentUpload"),
+        ),
+        (
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url",
+            "get",
+            None,
+        ),
+        ("/api/v1/notifications", "get", None),
     ];
 
     for (path, method, expected_body) in operations {

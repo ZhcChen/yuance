@@ -23,6 +23,38 @@ YUANCE_BASE_URL=https://...            # 可选，默认正式环境
 
 项目不明确时先使用 `projects list`。获得唯一候选后再读取详情；多个候选时让用户确认。
 
+## 当前用户
+
+```text
+<cli> whoami
+```
+
+只报告 `/api/v1/auth/me` 返回的当前 Token 用户，不根据用户身份自动扩大项目、资料或通知查询范围。
+
+## 项目资料
+
+```text
+<cli> resources list --project-key <KEY> [--q <KEYWORD>] [--category <CATEGORY>] [--status active|archived|all] [--tag <TAG>] [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
+<cli> resources get --project-key <KEY> --resource-id <ID>
+printf '%s\n' '<RESOURCE_PASSWORD>' | <cli> resources unlock --project-key <KEY> --resource-id <ID>
+<cli> resources update --project-key <KEY> --resource-id <ID> [--title <TITLE>] [--category <CATEGORY>] [--body-file <PATH|->] [--body-format html|plain] [--access-password-action keep|set|clear] [--access-password-stdin] [--tags <TAG>...] [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
+```
+
+资料列表不接受 `--page`/`--per-page`。资料 ID、关联对象和项目 key 不明确时先查询或询问，不猜测。密码只从 stdin 读取，解锁返回的短时 `access_token` 不得记录或持久化。
+
+## 资料附件
+
+```text
+<cli> resources attachments list --project-key <KEY> --resource-id <ID> [--access-token-stdin]
+<cli> resources attachments create --project-key <KEY> --resource-id <ID> --original-filename <NAME> --content-type <TYPE> --byte-size <BYTES> [--checksum-sha256 <SHA256>]
+<cli> resources attachments upload-url --project-key <KEY> --resource-id <ID> --attachment-id <ID> [--access-token-stdin] [--expires-in-seconds <N>]
+<cli> resources attachments complete --project-key <KEY> --resource-id <ID> --attachment-id <ID> [--encrypted-sha256 <SHA256>]
+<cli> resources attachments download-url --project-key <KEY> --resource-id <ID> --attachment-id <ID> [--access-token-stdin] [--expires-in-seconds <N>]
+<cli> resources attachments delete --project-key <KEY> --resource-id <ID> --attachment-id <ID> --if-match <RESOURCE_UPDATED_AT>
+```
+
+附件命令只接受固定资料附件路径。`access-token` 通过 `--access-token-stdin` 从 stdin 读取，不能放入 argv、环境变量、普通文件或日志。当前 CLI 不执行对象存储文件字节 `upload`/`download`，也不提供任意 URL、对象键或 raw HTTP 参数；签名请求中的完整 URL、headers 和 `encryption.key` 不进入普通日志。
+
 ## 工作项查询
 
 ```text
@@ -85,6 +117,14 @@ YUANCE_BASE_URL=https://...            # 可选，默认正式环境
 ```
 
 默认 `body_format` 为 `html`。顶层评论不传 `parent_comment_id`；回复前先通过 `comments list` 确认目标评论 ID。
+
+## 通知
+
+```text
+<cli> notifications list [--filter all|unread|pending|read] [--limit <N>] [--page <N>] [--per-page <1..100>]
+```
+
+只有用户明确要求查看通知或根据某条通知继续分析时才查询；不因为 `whoami` 返回的用户而默认查询通知。
 
 ## 全局选项
 

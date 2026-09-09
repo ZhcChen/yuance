@@ -22,6 +22,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// 查询当前 Token 对应的用户。
+    Whoami,
     /// 检查 CLI 安装、配置和元策连接。
     Doctor {
         /// 只检查本地安装，不读取 Token 或访问网络。
@@ -43,6 +45,167 @@ pub enum Command {
         #[command(subcommand)]
         command: CommentsCommand,
     },
+    /// 查询和维护项目资料及其附件登记。
+    Resources {
+        #[command(subcommand)]
+        command: ResourcesCommand,
+    },
+    /// 查询当前 Token 用户范围内的通知。
+    Notifications {
+        #[command(subcommand)]
+        command: NotificationsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ResourcesCommand {
+    List(ResourcesListArgs),
+    Get {
+        #[arg(long)]
+        project_key: String,
+        #[arg(long)]
+        resource_id: i64,
+    },
+    Unlock(ResourcesUnlockArgs),
+    Update(ResourcesUpdateArgs),
+    Attachments {
+        #[command(subcommand)]
+        command: ResourceAttachmentsCommand,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct ResourcesListArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub q: Option<String>,
+    #[arg(long)]
+    pub category: Option<String>,
+    #[arg(long)]
+    pub status: Option<String>,
+    #[arg(long)]
+    pub tag: Option<String>,
+    #[arg(long)]
+    pub related_work_item_key: Option<String>,
+    #[arg(long)]
+    pub related_cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourcesUnlockArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourcesUpdateArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub title: Option<String>,
+    #[arg(long)]
+    pub category: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    pub body_file: Option<PathBuf>,
+    #[arg(long)]
+    pub body_format: Option<String>,
+    #[arg(long)]
+    pub access_password_action: Option<String>,
+    #[arg(long)]
+    #[arg(long, conflicts_with = "body_file")]
+    pub access_password_stdin: bool,
+    #[arg(long)]
+    pub tags: Option<Vec<String>>,
+    #[arg(long)]
+    pub related_work_item_key: Option<String>,
+    #[arg(long)]
+    pub related_cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ResourceAttachmentsCommand {
+    List(ResourceAttachmentAccessArgs),
+    Create(ResourceAttachmentCreateArgs),
+    UploadUrl(ResourceAttachmentAccessArgs),
+    Complete(ResourceAttachmentCompleteArgs),
+    DownloadUrl(ResourceAttachmentAccessArgs),
+    Delete(ResourceAttachmentDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentAccessArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub attachment_id: Option<i64>,
+    #[arg(long)]
+    pub access_token_stdin: bool,
+    #[arg(long)]
+    pub expires_in_seconds: Option<u64>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentCreateArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub original_filename: String,
+    #[arg(long)]
+    pub content_type: String,
+    #[arg(long)]
+    pub byte_size: i64,
+    #[arg(long)]
+    pub checksum_sha256: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentCompleteArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub attachment_id: i64,
+    #[arg(long)]
+    pub encrypted_sha256: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentDeleteArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub attachment_id: i64,
+    #[arg(long)]
+    pub if_match: String,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum NotificationsCommand {
+    List(NotificationsListArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct NotificationsListArgs {
+    #[arg(long)]
+    pub filter: Option<String>,
+    #[arg(long)]
+    pub limit: Option<u32>,
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub page: Option<u32>,
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=100))]
+    pub per_page: Option<u32>,
 }
 
 #[derive(Debug, Subcommand)]

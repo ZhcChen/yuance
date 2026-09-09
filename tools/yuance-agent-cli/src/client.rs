@@ -126,6 +126,46 @@ impl ApiClient {
         self.request(Method::PATCH, url, &[], Some(body)).await
     }
 
+    pub async fn delete_segments_with_if_match(
+        &self,
+        segments: &[&str],
+        if_match: &str,
+    ) -> Result<Value, AgentError> {
+        let url = self.url_segments(segments)?;
+        let response = self
+            .client
+            .delete(url)
+            .header("If-Match", if_match)
+            .send()
+            .await
+            .map_err(AgentError::from_reqwest)?;
+        let status = response.status();
+        let body = read_response_body(response).await?;
+        if !status.is_success() {
+            let api_error = serde_json::from_slice::<ApiErrorEnvelope>(&body).ok();
+            return Err(AgentError::Http {
+                status: status.as_u16(),
+                code: api_error
+                    .as_ref()
+                    .map(|value| value.error.code.clone())
+                    .unwrap_or_else(|| "http_error".to_string()),
+                message: api_error
+                    .as_ref()
+                    .map(|value| value.error.message.clone())
+                    .unwrap_or_else(|| {
+                        status
+                            .canonical_reason()
+                            .unwrap_or("request failed")
+                            .to_string()
+                    }),
+            });
+        }
+        serde_json::from_slice(&body).map_err(|_| AgentError::Response {
+            code: "invalid_json",
+            message: "元策 API 响应无法解析为 JSON".to_string(),
+        })
+    }
+
     async fn request<T: Serialize + ?Sized>(
         &self,
         method: Method,

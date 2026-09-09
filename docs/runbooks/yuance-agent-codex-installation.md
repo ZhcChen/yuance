@@ -32,6 +32,8 @@ Invoke-RestMethod https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-
 ```text
 project:read
 work_item:read
+resource:read
+notification:read
 ```
 
 按需增加写权限：
@@ -40,6 +42,8 @@ work_item:read
 work_item:write
 comment:write
 ```
+
+资料写入按需增加 `resource:write`；受保护资料解锁需要 `resource:unlock`。附件文件字节上传/下载尚未由当前 CLI 代传，签名请求查询和完成登记仍遵守资料保护与最小权限边界。
 
 将 Token 放在启动 Codex 的环境中，不要写入 Skill、Codex 配置、仓库文件或命令历史：
 
@@ -69,6 +73,16 @@ CLI 默认连接 `https://yuance.quanxinfu.com`。只有私有部署或测试环
 ~/.codex/skills/yuance-agent/scripts/yuance-agent doctor
 ~/.codex/skills/yuance-agent/scripts/yuance-agent projects list --per-page 5
 ```
+
+新增能力可用以下命令验证：
+
+```bash
+~/.codex/skills/yuance-agent/scripts/yuance-agent whoami
+~/.codex/skills/yuance-agent/scripts/yuance-agent resources list --project-key <PROJECT_KEY> --q <KEYWORD>
+~/.codex/skills/yuance-agent/scripts/yuance-agent notifications list --filter unread --per-page 5
+```
+
+受保护资料密码只通过 stdin 交给 `resources unlock`；附件 `access_token` 只通过 `--access-token-stdin` 传入当前进程。不要把密码、Token、签名 URL、签名 headers 或 `encryption.key` 写入命令历史、普通文件或日志。
 
 使用 `CODEX_HOME` 或 Windows 时，替换为实际安装目录及 `yuance-agent.exe`。
 
@@ -108,5 +122,7 @@ $env:YUANCE_AGENT_VERSION = "0.1.1"
 - `404`：对象不存在或对当前 Token 不可见。
 - `dns` / `connect` / `tls`：检查网络、服务地址和证书，不关闭 TLS 校验。
 - 状态机错误：重新读取工作项详情和评论，确认目标状态后再操作，不盲目重试。
+- 资料 `409`：资料版本已变化或正文仍引用附件；重新读取资料与附件，确认后再继续。
+- 文件上传/下载：当前 CLI 仅提供签名 URL 查询和上传完成登记；对象存储来源、重定向和 header 安全边界未确认前，不使用手写 URL 代传。
 
 完整命令与行为边界随 Skill 一起安装在 `references/` 中。

@@ -826,6 +826,70 @@ pub async fn archive_attachment(
     get_attachment(pool, attachment.id).await
 }
 
+pub async fn archive_resource_attachment_if_match(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    resource_id: i64,
+    expected_updated_at: &str,
+    actor_user_id: i64,
+    actor_display_name_snapshot: &str,
+) -> AppResult<(FileAttachmentSummary, String)> {
+    let mut tx = pool.begin().await?;
+    let resource = sqlx::query_as::<_, (String, String, String)>(
+        "SELECT body, body_format, updated_at FROM project_resources WHERE id = ?1 AND status <> 'archived'",
+    )
+    .bind(resource_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))?;
+
+    if resource.2 != expected_updated_at {
+        return Err(AppError::Conflict(
+            "资料已更新，请重新读取后再删除附件".to_string(),
+        ));
+    }
+    if crate::domains::project_resources::resource_body_references_attachment(
+        resource_id,
+        &resource.0,
+        &resource.1,
+        attachment_id,
+    ) {
+        return Err(AppError::Conflict(
+            "资料正文仍引用该附件，不能删除".to_string(),
+        ));
+    }
+
+    let attachment = sqlx::query_as::<_, AttachmentRow>(
+        r#"
+        SELECT fa.id, fa.file_object_id, fo.object_key, fo.original_filename,
+               fo.content_type, fo.byte_size, fo.status,
+               fa.created_by_display_name_snapshot, fa.created_at
+        FROM file_attachments fa
+        JOIN file_objects fo ON fo.id = fa.file_object_id
+        WHERE fa.id = ?1 AND fa.target_type = 'project_resource'
+          AND fa.target_id = ?2 AND fo.status <> 'deleted'
+        "#,
+    )
+    .bind(attachment_id)
+    .bind(resource_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("附件不存在".to_string()))?;
+    let object_key = attachment.2.clone();
+    let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
+    sqlx::query(
+        "UPDATE file_objects SET status = 'deleted', updated_at = datetime('now') WHERE id = ?1 AND status <> 'deleted'",
+    )
+    .bind(attachment.1)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let _ = actor_user_id;
+    let _ = actor_display_name_snapshot;
+    Ok((attachment_from_row(attachment), object_key))
+}
+
 pub async fn cleanup_pending_file_objects(
     pool: &SqlitePool,
     older_than_hours: i64,

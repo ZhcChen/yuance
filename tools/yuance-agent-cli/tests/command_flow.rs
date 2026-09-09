@@ -239,6 +239,122 @@ async fn comments_distinguish_top_level_and_reply() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resource_and_notification_commands_use_fixed_api_paths() {
+    let (base_url, requests) = server().await;
+    run(&base_url, &["whoami"]);
+    run(
+        &base_url,
+        &["resources", "list", "--project-key", "YCE", "--tag", "接口"],
+    );
+    run(
+        &base_url,
+        &[
+            "resources",
+            "get",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+        ],
+    );
+    run(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "create",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--original-filename",
+            "guide.pdf",
+            "--content-type",
+            "application/pdf",
+            "--byte-size",
+            "12",
+        ],
+    );
+    run(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "upload-url",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+        ],
+    );
+    run(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "complete",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+            "--encrypted-sha256",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ],
+    );
+    run(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "delete",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+            "--if-match",
+            "v1",
+        ],
+    );
+    run(
+        &base_url,
+        &["notifications", "list", "--filter", "unread", "--page", "2"],
+    );
+
+    let requests = requests.lock().unwrap();
+    assert_request(&requests[0], Method::GET, "/api/v1/auth/me");
+    assert_eq!(query(&requests[1].uri)["tag"], "接口");
+    assert_eq!(requests[2].uri, "/api/v1/projects/YCE/resources/7");
+    assert_request(
+        &requests[3],
+        Method::POST,
+        "/api/v1/projects/YCE/resources/7/attachments",
+    );
+    assert_eq!(requests[3].body["original_filename"], "guide.pdf");
+    assert_request(
+        &requests[4],
+        Method::GET,
+        "/api/v1/projects/YCE/resources/7/attachments/8/upload-url",
+    );
+    assert_request(
+        &requests[5],
+        Method::POST,
+        "/api/v1/projects/YCE/resources/7/attachments/8/uploaded",
+    );
+    assert_eq!(
+        requests[5].body["encrypted_sha256"],
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert_eq!(requests[6].headers.get("if-match").unwrap(), "v1");
+    assert_eq!(query(&requests[7].uri)["filter"], "unread");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn long_body_reads_file_and_stdin() {
     let (base_url, requests) = server().await;
     let path = std::env::temp_dir().join(format!(
