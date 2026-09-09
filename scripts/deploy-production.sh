@@ -29,9 +29,9 @@ esac
 
 REMOTE_HOST="${YUANCE_DEPLOY_HOST:-}"
 REMOTE_ROOT="${YUANCE_DEPLOY_ROOT:-/srv/yuance}"
-# 服务器目录名沿用首次部署路径；发布流程只使用 SSH/SCP + Docker Compose，不调用 easy-deploy 平台。
-REMOTE_BACKEND_DIR="$REMOTE_ROOT/easy-deploy/production/backend"
-REMOTE_GATEWAY_DIR="$REMOTE_ROOT/easy-deploy/production/gateway"
+# 远程正式环境直接使用 /srv/yuance/backend；发布流程只使用 SSH/SCP + Docker Compose。
+REMOTE_BACKEND_DIR="${YUANCE_DEPLOY_BACKEND_DIR:-$REMOTE_ROOT/backend}"
+REMOTE_GATEWAY_DIR="${YUANCE_DEPLOY_GATEWAY_DIR:-$REMOTE_ROOT/gateway}"
 REMOTE_RELEASE_DIR="$REMOTE_ROOT/releases"
 
 IMAGE="${YUANCE_API_IMAGE:-yuance-api:latest}"
