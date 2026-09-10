@@ -3827,6 +3827,7 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(page.getByText('正文概览')).toBeVisible();
   const tableOfContents = page.getByRole('navigation', { name: '正文目录' });
   await expect(tableOfContents).toBeVisible();
+  await expect(tableOfContents.locator('strong')).toHaveCount(0);
   await expect(tableOfContents.getByRole('link')).toHaveText(['客户端联调参数', '接入准备', '凭证配置', '环境变量', '本地验证']);
   await expect(tableOfContents.getByRole('link', { name: '本地验证' })).toHaveAttribute('href', '#resource-heading-5-本地验证');
   const tocScrollState = await tableOfContents.evaluate((element) => { element.style.maxHeight = '96px'; element.style.overflowY = 'auto'; element.scrollTop = element.scrollHeight; return element.scrollTop; });
@@ -3837,7 +3838,7 @@ test('shared project resources filter read and unlock protected details', async 
   expect(publicDetailRequests).toBe(1);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainHeight);
     expect(geometry.cardHeight).toBeGreaterThan(0);
@@ -3846,6 +3847,7 @@ test('shared project resources filter read and unlock protected details', async 
     expect(geometry.contentOverflowY).toBe('auto');
     expect(geometry.tocDisplay).toBe(viewport.width <= 960 ? 'flex' : 'block');
     expect(geometry.contentColumns).toBe(viewport.width <= 960 ? 1 : 2);
+    if (viewport.width > 960) expect(geometry.tocIndentation).toEqual([12, 12, 32, 52, 72]);
   }
   await page.getByRole('link', { name: '返回资料库' }).click();
   await page.getByRole('region', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();

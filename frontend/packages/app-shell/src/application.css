@@ -1413,16 +1413,22 @@ html[data-theme="dark"] .project-stats div {
 .resource-unlock-form { display: grid; gap: 12px; }
 .resource-detail-side { display: grid; justify-items: end; gap: 4px; color: var(--yc-muted); font-size: 12px; }
 .resource-rich-body { min-height: 0; height: 100%; overflow: hidden; padding: 0; }
-.resource-rich-body .yc-rich-text-with-toc { height: 100%; min-height: 0; display: grid; grid-template-columns: 260px minmax(0, 1fr); align-items: stretch; margin: 0; }
-.resource-rich-body .yc-rich-text-toc { min-width: 0; min-height: 0; height: 100%; overflow: auto; padding: 20px 18px; border-right: 1px solid var(--yc-line); }
-.resource-rich-body .yc-rich-text-toc > strong { display: block; margin-bottom: 10px; color: var(--yc-text); font-size: 13px; letter-spacing: .02em; }
-.resource-rich-body .yc-rich-text-toc ol { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.resource-rich-body .yc-rich-text-toc li a { display: block; padding: 7px 10px; border-radius: 6px; color: var(--yc-muted-strong); font-size: 14px; line-height: 22px; text-decoration: none; }
+.resource-rich-body .yc-rich-text-with-toc { height: 100%; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: stretch; margin: 0; }
+.resource-rich-body .yc-rich-text-toc { min-width: 0; min-height: 0; height: 100%; overflow: auto; padding: 20px 16px 20px 20px; border-right: 1px solid var(--yc-line); }
+.resource-rich-body .yc-rich-text-toc ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.resource-rich-body .yc-rich-text-toc li { min-width: 0; }
+.resource-rich-body .yc-rich-text-toc li a { display: block; padding: 7px 12px 7px calc(12px + var(--resource-toc-indent)); border-radius: 6px; color: var(--yc-muted-strong); font-size: 14px; line-height: 21px; overflow-wrap: anywhere; text-decoration: none; }
+.resource-rich-body .yc-rich-text-toc-level-1,
+.resource-rich-body .yc-rich-text-toc-level-2 { --resource-toc-indent: 0px; }
 .resource-rich-body .yc-rich-text-toc li a:hover, .resource-rich-body .yc-rich-text-toc li a:focus-visible { background: var(--yc-brand-soft); color: var(--yc-brand-strong); outline: none; }
-.resource-rich-body .yc-rich-text-toc-level-2 { padding-left: 8px; }
-.resource-rich-body .yc-rich-text-toc-level-3 { padding-left: 16px; }
-.resource-rich-body .yc-rich-text-toc-level-4 { padding-left: 24px; }
-.resource-rich-body .yc-rich-text-toc-level-5 { padding-left: 32px; }
+.resource-rich-body .yc-rich-text-toc-level-3 { --resource-toc-indent: 20px; }
+.resource-rich-body .yc-rich-text-toc-level-4 { --resource-toc-indent: 40px; }
+.resource-rich-body .yc-rich-text-toc-level-5 { --resource-toc-indent: 60px; }
+.resource-rich-body .yc-rich-text-toc-level-1 a,
+.resource-rich-body .yc-rich-text-toc-level-2 a { color: var(--yc-text); font-weight: 750; }
+.resource-rich-body .yc-rich-text-toc-level-3 a { font-weight: 650; }
+.resource-rich-body .yc-rich-text-toc-level-4 a,
+.resource-rich-body .yc-rich-text-toc-level-5 a { font-size: 13px; }
 .resource-rich-body .yc-rich-text-with-toc .yc-rich-text-content { min-width: 0; min-height: 0; height: 100%; overflow: auto; padding: 20px; }
 .resource-rich-body .yc-rich-text-with-toc h1,
 .resource-rich-body .yc-rich-text-with-toc h2,
@@ -1495,10 +1501,9 @@ html[data-theme="dark"] .project-stats div {
   .resource-library-filter-bar .yc-filter-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .resource-rich-body .yc-rich-text-with-toc { grid-template-columns: 1fr; }
   .resource-rich-body .yc-rich-text-with-toc { grid-template-rows: auto minmax(0, 1fr); }
-  .resource-rich-body .yc-rich-text-toc { height: auto; display: flex; align-items: baseline; gap: 14px; overflow-x: auto; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--yc-line); white-space: nowrap; }
-  .resource-rich-body .yc-rich-text-toc > strong { flex: 0 0 auto; margin: 0; }
-  .resource-rich-body .yc-rich-text-toc ol { display: flex; gap: 4px; }
-  .resource-rich-body .yc-rich-text-toc li { padding-left: 0; }
+  .resource-rich-body .yc-rich-text-toc { height: auto; display: flex; align-items: baseline; gap: 0; overflow-x: auto; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--yc-line); white-space: nowrap; }
+  .resource-rich-body .yc-rich-text-toc ol { display: flex; gap: 4px; min-width: max-content; }
+  .resource-rich-body .yc-rich-text-toc li { --resource-toc-indent: 0px; padding-left: 0; }
   .resource-rich-body .yc-rich-text-toc li a { padding: 6px 10px; font-size: 14px; line-height: 22px; }
 }
 

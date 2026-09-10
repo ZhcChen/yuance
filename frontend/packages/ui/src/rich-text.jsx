@@ -326,7 +326,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <div className="yc-rich-text-content yc-rich-text-plain">{html}</div>;
   if (!showTableOfContents) return <div ref={contentRef} className="yc-rich-text-content" />;
-  return <div className="yc-rich-text-with-toc">{headings.length ? <nav className="yc-rich-text-toc" aria-label="正文目录"><strong>正文目录</strong><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}<div ref={contentRef} className="yc-rich-text-content" /></div>;
+  return <div className="yc-rich-text-with-toc">{headings.length ? <nav className="yc-rich-text-toc" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}<div ref={contentRef} className="yc-rich-text-content" /></div>;
 }
 
 /** @param {RichTextResolvedSource} resolved */
