@@ -109,6 +109,25 @@ pub struct UnlockProjectResourceRequest {
 }
 
 #[derive(Debug, Serialize)]
+pub struct CreateProjectResourceRequest {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related_work_item_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related_cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct UpdateProjectResourceRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,

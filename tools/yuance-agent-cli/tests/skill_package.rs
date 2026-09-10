@@ -8,7 +8,9 @@ fn skill_has_valid_trigger_metadata_and_core_boundaries() {
     assert!(skill.contains("普通本地代码任务"));
     assert!(skill.contains("写操作前读取目标工作项"));
     assert!(skill.contains("状态变化或处理人变化只使用 `work-items handoff`"));
-    assert!(skill.contains("资料、资料附件登记/签名请求/完成登记/条件删除和通知查询"));
+    assert!(
+        skill.contains("资料创建/查询/更新、资料附件登记/签名请求/完成登记/条件删除和通知查询")
+    );
 }
 
 #[test]

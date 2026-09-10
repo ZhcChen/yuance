@@ -355,6 +355,60 @@ async fn resource_and_notification_commands_use_fixed_api_paths() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resource_create_reads_body_file_and_password_from_stdin() {
+    let (base_url, requests) = server().await;
+    let path = std::env::temp_dir().join(format!(
+        "yuance-agent-resource-{}-{}.html",
+        std::process::id(),
+        Arc::as_ptr(&requests) as usize
+    ));
+    fs::write(&path, "<h2>待确认规则</h2><p>正文</p>").unwrap();
+    run_with_stdin(
+        &base_url,
+        &[
+            "resources",
+            "create",
+            "--project-key",
+            "YCE",
+            "--title",
+            "供应链售后规则",
+            "--category",
+            "other",
+            "--body-file",
+            path.to_str().unwrap(),
+            "--body-format",
+            "html",
+            "--access-password-stdin",
+            "--tags",
+            "供应链",
+            "售后",
+            "--related-work-item-key",
+            "YCE-REQ-1",
+            "--related-cycle-id",
+            "7",
+        ],
+        "safe-pass",
+    );
+    fs::remove_file(path).unwrap();
+
+    let requests = requests.lock().unwrap();
+    assert_request(&requests[0], Method::POST, "/api/v1/projects/YCE/resources");
+    assert_eq!(
+        requests[0].body,
+        json!({
+            "title": "供应链售后规则",
+            "category": "other",
+            "body": "<h2>待确认规则</h2><p>正文</p>",
+            "body_format": "html",
+            "access_password": "safe-pass",
+            "tags": ["供应链", "售后"],
+            "related_work_item_key": "YCE-REQ-1",
+            "related_cycle_id": 7
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn long_body_reads_file_and_stdin() {
     let (base_url, requests) = server().await;
     let path = std::env::temp_dir().join(format!(
@@ -410,6 +464,27 @@ async fn invalid_local_input_does_not_send_requests() {
 
     let output = command_output(&base_url, &["work-items", "list", "--page", "0"], None);
     assert_eq!(output.status.code(), Some(2));
+
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "create",
+            "--project-key",
+            "YCE",
+            "--title",
+            "资料",
+            "--body-file",
+            "-",
+            "--access-password-stdin",
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        json_stderr(&output)["error"]["code"],
+        "conflicting_stdin_inputs"
+    );
     assert!(requests.lock().unwrap().is_empty());
 }
 

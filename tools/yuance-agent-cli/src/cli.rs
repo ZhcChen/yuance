@@ -66,6 +66,7 @@ pub enum ResourcesCommand {
         #[arg(long)]
         resource_id: i64,
     },
+    Create(ResourcesCreateArgs),
     Unlock(ResourcesUnlockArgs),
     Update(ResourcesUpdateArgs),
     Attachments {
@@ -86,6 +87,28 @@ pub struct ResourcesListArgs {
     pub status: Option<String>,
     #[arg(long)]
     pub tag: Option<String>,
+    #[arg(long)]
+    pub related_work_item_key: Option<String>,
+    #[arg(long)]
+    pub related_cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourcesCreateArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub title: String,
+    #[arg(long)]
+    pub category: Option<String>,
+    #[arg(long, value_name = "PATH")]
+    pub body_file: Option<PathBuf>,
+    #[arg(long)]
+    pub body_format: Option<String>,
+    #[arg(long)]
+    pub access_password_stdin: bool,
+    #[arg(long, num_args = 1..)]
+    pub tags: Option<Vec<String>>,
     #[arg(long)]
     pub related_work_item_key: Option<String>,
     #[arg(long)]

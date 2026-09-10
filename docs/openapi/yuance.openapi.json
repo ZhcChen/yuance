@@ -1187,13 +1187,32 @@
         "tags": [
           "resources"
         ],
+        "operationId": "createProjectResource",
         "summary": "创建项目资料",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
         "requestBody": {
           "$ref": "#/components/requestBodies/CreateProjectResource"
         },
         "responses": {
           "201": {
-            "description": "创建成功"
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResourceEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3787,6 +3806,7 @@
       },
       "CreateProjectResourceRequest": {
         "type": "object",
+        "additionalProperties": false,
         "required": [
           "title"
         ],
@@ -3805,7 +3825,23 @@
             "default": "html"
           },
           "access_password": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "related_work_item_key": {
             "type": "string"
+          },
+          "related_cycle_id": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       },

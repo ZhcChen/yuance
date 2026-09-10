@@ -1,16 +1,18 @@
+use std::path::Path;
+
 use serde_json::Value;
 
 use crate::{
     cli::{
         ResourceAttachmentAccessArgs, ResourceAttachmentCompleteArgs, ResourceAttachmentCreateArgs,
         ResourceAttachmentDeleteArgs, ResourceAttachmentsCommand, ResourcesCommand,
-        ResourcesListArgs, ResourcesUnlockArgs, ResourcesUpdateArgs,
+        ResourcesCreateArgs, ResourcesListArgs, ResourcesUnlockArgs, ResourcesUpdateArgs,
     },
     client::ApiClient,
     error::AgentError,
     models::{
-        CompleteAttachmentUploadRequest, CreateAttachmentRequest, UnlockProjectResourceRequest,
-        UpdateProjectResourceRequest,
+        CompleteAttachmentUploadRequest, CreateAttachmentRequest, CreateProjectResourceRequest,
+        UnlockProjectResourceRequest, UpdateProjectResourceRequest,
     },
 };
 
@@ -40,10 +42,51 @@ pub async fn run(client: &ApiClient, command: ResourcesCommand) -> Result<Value,
                 )
                 .await
         }
+        ResourcesCommand::Create(args) => create(client, args).await,
         ResourcesCommand::Unlock(args) => unlock(client, args).await,
         ResourcesCommand::Update(args) => update(client, args).await,
         ResourcesCommand::Attachments { command } => attachments(client, command).await,
     }
+}
+
+async fn create(client: &ApiClient, args: ResourcesCreateArgs) -> Result<Value, AgentError> {
+    require_non_empty(&args.title, "资料标题")?;
+    if let Some(value) = &args.category {
+        require_non_empty(value, "资料分类")?;
+    }
+    if let Some(value) = &args.body_format {
+        require_non_empty(value, "资料正文格式")?;
+    }
+    if args.access_password_stdin && args.body_file.as_deref() == Some(Path::new("-")) {
+        return Err(AgentError::Config {
+            code: "conflicting_stdin_inputs",
+            message: "资料正文和访问密码不能同时从 stdin 读取".to_string(),
+        });
+    }
+
+    let body = read_text(None, args.body_file.as_deref(), "资料正文")?;
+    let access_password = if args.access_password_stdin {
+        Some(read_secret_stdin("访问密码")?)
+    } else {
+        None
+    };
+    let request = CreateProjectResourceRequest {
+        title: args.title,
+        category: args.category,
+        body,
+        body_format: args.body_format,
+        access_password,
+        tags: args.tags,
+        related_work_item_key: args.related_work_item_key,
+        related_cycle_id: args.related_cycle_id,
+    };
+
+    client
+        .post_segments(
+            &["api", "v1", "projects", &args.project_key, "resources"],
+            &request,
+        )
+        .await
 }
 
 async fn list(client: &ApiClient, args: ResourcesListArgs) -> Result<Value, AgentError> {

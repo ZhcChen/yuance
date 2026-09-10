@@ -36,6 +36,11 @@ fn supported_operations_and_request_bodies_exist() {
         ),
         ("/api/v1/projects/{project_key}/resources", "get", None),
         (
+            "/api/v1/projects/{project_key}/resources",
+            "post",
+            Some("#/components/requestBodies/CreateProjectResource"),
+        ),
+        (
             "/api/v1/projects/{project_key}/resources/{resource_id}",
             "get",
             None,
@@ -91,6 +96,7 @@ fn supported_operations_and_request_bodies_exist() {
         ("UpdateWorkItem", "UpdateWorkItemRequest"),
         ("HandoffWorkItem", "HandoffWorkItemRequest"),
         ("CreateComment", "CreateCommentRequest"),
+        ("CreateProjectResource", "CreateProjectResourceRequest"),
     ];
     for (request_body, schema) in request_bodies {
         assert_eq!(
@@ -140,6 +146,23 @@ fn supported_request_fields_and_enums_match_cli_contract() {
     assert_eq!(
         string_set(&schemas["CreateCommentRequest"]["required"]),
         set(["body"])
+    );
+    assert_eq!(
+        string_set(&schemas["CreateProjectResourceRequest"]["required"]),
+        set(["title"])
+    );
+    assert_properties(
+        &schemas["CreateProjectResourceRequest"],
+        &[
+            "title",
+            "category",
+            "body",
+            "body_format",
+            "access_password",
+            "tags",
+            "related_work_item_key",
+            "related_cycle_id",
+        ],
     );
 
     assert_eq!(

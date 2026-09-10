@@ -88,6 +88,16 @@ fn resource_and_notification_commands_have_explicit_boundaries() {
         [
             "yuance-agent",
             "resources",
+            "create",
+            "--project-key",
+            "YCE",
+            "--title",
+            "资料",
+        ]
+        .as_slice(),
+        [
+            "yuance-agent",
+            "resources",
             "unlock",
             "--project-key",
             "YCE",

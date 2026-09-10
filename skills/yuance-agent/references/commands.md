@@ -34,6 +34,16 @@ YUANCE_BASE_URL=https://...            # 可选，默认正式环境
 ## 项目资料
 
 ```text
+<cli> resources create \
+  --project-key <KEY> --title <TITLE> \
+  [--category <CATEGORY>] [--body-file <PATH|->] [--body-format html|plain] \
+  [--access-password-stdin] [--tags <TAG>...] \
+  [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
+```
+
+创建资料前必须确认项目 key 和标题；正文较长或包含 HTML 时使用 `--body-file`。访问密码只能通过 `--access-password-stdin` 从 stdin 传入；正文和访问密码不能同时从 stdin 读取。
+
+```text
 <cli> resources list --project-key <KEY> [--q <KEYWORD>] [--category <CATEGORY>] [--status active|archived|all] [--tag <TAG>] [--related-work-item-key <ITEM_KEY>] [--related-cycle-id <ID>]
 <cli> resources get --project-key <KEY> --resource-id <ID>
 printf '%s\n' '<RESOURCE_PASSWORD>' | <cli> resources unlock --project-key <KEY> --resource-id <ID>
