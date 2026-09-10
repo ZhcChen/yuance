@@ -4,6 +4,7 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
+import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
 import { Button, Modal, Select, TextArea, TextInput } from './primitives.jsx';
 
 const PIXELS_PER_DAY_BY_SCALE = {
@@ -125,6 +126,8 @@ export function TimeAllocationGantt({
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const [legendExpanded, setLegendExpanded] = useState(false);
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const ganttScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const ganttScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: ganttScrollRef, label: '时间排期' });
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
   const pxPerDay = viewScale === 'day'
@@ -867,7 +870,7 @@ export function TimeAllocationGantt({
 
       {error ? <div className="time-management-error" role="alert">{error}</div> : null}
 
-      <div className="time-gantt-wrap">
+      <div className="time-gantt-wrap yc-overlay-scroll-target" ref={ganttScrollbar.ref}>
         <div className={`time-gantt${viewScale !== 'day' ? ' time-gantt-fill' : ''}`} ref={ganttRef}
           onPointerDown={handleGanttPointerDown}
           onPointerMove={handleGanttPointerMove}
@@ -925,6 +928,7 @@ export function TimeAllocationGantt({
           ) : null}
         </div>
       </div>
+      {ganttScrollbar.scrollbar}
       <p className="time-management-tip">
         {viewMode === 'projects'
           ? '项目视角为只读：按项目查看成员排期，时间轴上的空白部分即为空窗期；如需调整排期，请切回“人员排期”视图。'

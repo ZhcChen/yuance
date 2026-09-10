@@ -3,6 +3,7 @@
 
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
 import { UserAvatar } from './user-avatar.jsx';
 
 const logoSrc = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"%3E%3Crect x="4" y="4" width="88" height="88" rx="22" fill="%231f5fbf"/%3E%3Cpath d="M22 22h27v14H36v38H22V22Z" fill="%23fff"/%3E%3Cpath d="M50 22h24v14H56L37 74H22l21-42c2-4 4-7 7-10Z" fill="%23fff"/%3E%3Cpath d="M57 45h17v14H50l7-14Z" fill="%23fff"/%3E%3Crect x="62" y="62" width="15" height="15" rx="4" fill="%232d8a68"/%3E%3C/svg%3E';
@@ -83,6 +84,11 @@ export function GlobalNavigation({
   onLogout,
 }) {
   const linksRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const projectOptionsRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const notificationListRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
+  const linksScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: linksRef, label: '应用导航' });
   const hasSyncedIndicatorRef = useRef(false);
   const displayName = user?.display_name || user?.username || '未知用户';
   const totalProjectPendingCount = projectOptions.reduce((total, project) => {
@@ -97,6 +103,8 @@ export function GlobalNavigation({
       ? projectOptions.filter((project) => `${project.key} ${project.name}`.toLocaleLowerCase().includes(query))
       : projectOptions;
   }, [projectOptions, projectQuery]);
+  const projectOptionsScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: projectOptionsRef, enabled: projectMenuOpen, label: '项目列表', refreshKey: filteredProjects.length });
+  const notificationScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: notificationListRef, enabled: notificationMenuOpen, label: '消息列表', refreshKey: notifications.length });
 
   useLayoutEffect(() => {
     const navigation = linksRef.current;
@@ -142,7 +150,7 @@ export function GlobalNavigation({
         <strong>{productName}</strong>
       </a>
 
-      <nav ref={linksRef} className="global-nav-links" aria-label="应用导航">
+      <nav ref={linksRef} className="global-nav-links yc-overlay-scroll-target" aria-label="应用导航">
         <span className="global-nav-links-indicator" aria-hidden="true" />
         {links.map((link) => {
           const badge = formatNavigationBadge(link.badge || 0);
@@ -165,10 +173,11 @@ export function GlobalNavigation({
           </details>
         ) : null}
       </nav>
+      {linksScrollbar.scrollbar}
 
       <div className="global-nav-tools">
         <a className="global-nav-download" href={downloadsHref} target="_blank" rel="noreferrer">桌面端下载</a>
-        <details className="global-nav-project" onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
+        <details className="global-nav-project" onToggle={(event) => setProjectMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
           <summary role="button" aria-label="切换当前项目">
             <span className="global-nav-project-label">当前项目</span>
             <strong title={currentProject?.name || '未选择项目'}>{currentProject?.name || '未选择项目'}</strong>
@@ -180,7 +189,7 @@ export function GlobalNavigation({
               <span className="shell-live-region">搜索项目</span>
               <input type="search" value={projectQuery} placeholder="搜索项目名称" autoComplete="off" onChange={(event) => setProjectQuery(event.currentTarget.value)} />
             </label>
-            <div className="global-nav-project-options" aria-label="可选项目">
+            <div ref={projectOptionsRef} className="global-nav-project-options yc-overlay-scroll-target" aria-label="可选项目">
               {filteredProjects.map((project) => (
                 <button key={project.key} type="button" className={currentProject?.key === project.key ? 'active' : ''} disabled={Boolean(projectSwitchingKey)} onClick={(event) => { closeContainingNavigationMenu(event); setProjectQuery(''); onProjectChange(project); }}>
                   <span>{project.name}</span>
@@ -189,6 +198,7 @@ export function GlobalNavigation({
               ))}
               {!filteredProjects.length ? <p className="global-nav-project-empty">没有匹配项目</p> : null}
             </div>
+            {projectOptionsScrollbar.scrollbar}
             <a href={projectsHref} onClick={(event) => { closeContainingNavigationMenu(event); onNavigate(event, projectsHref, '项目列表'); }}>查看全部项目</a>
           </div>
         </details>
@@ -200,14 +210,14 @@ export function GlobalNavigation({
           <button type="submit">搜索</button>
         </form>
 
-        <details className="global-nav-notifications" onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
+        <details className="global-nav-notifications" onToggle={(event) => setNotificationMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
           <summary role="button" aria-label="打开消息通知">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 11h4a2 2 0 0 1-4 0Z" /></svg>
             {formatNavigationBadge(unreadCount) ? <span className="global-nav-badge">{formatNavigationBadge(unreadCount)}</span> : null}
           </summary>
           <div className="global-nav-menu global-nav-notification-panel" role="dialog" aria-label="最近消息">
             <div className="global-nav-notification-head"><div><strong>消息</strong><span>{unreadCount ? `${unreadCount} 条未读` : '暂无未读'}</span></div><button type="button" disabled={notificationBusy || unreadCount === 0} onClick={onMarkAllRead}>一键已读</button></div>
-            <div className="global-nav-notification-list">
+            <div ref={notificationListRef} className="global-nav-notification-list yc-overlay-scroll-target">
               {notifications.length ? notifications.map((item) => (
                 <button key={item.id} type="button" className={`global-nav-notification-item${item.read ? '' : ' unread'}`} disabled={notificationBusy} onClick={() => onOpenNotification(item)}>
                   <span className="global-nav-notification-dot" aria-hidden="true" />
@@ -215,6 +225,7 @@ export function GlobalNavigation({
                 </button>
               )) : <p>暂无消息</p>}
             </div>
+            {notificationScrollbar.scrollbar}
             <a href={messagesHref} onClick={(event) => { closeContainingNavigationMenu(event); onNavigate(event, messagesHref, '消息中心'); }}>进入消息中心</a>
           </div>
         </details>

@@ -11,6 +11,7 @@ test('initial session recovery renders a shared app shell skeleton', async () =>
   assert.match(skeleton, /className="app-shell app-shell-skeleton"/u);
   assert.match(skeleton, /className="app-skeleton-nav"/u);
   assert.match(skeleton, /className="app-skeleton-main"/u);
+  assert.doesNotMatch(skeleton, /useOverlayScrollbar|useOverlayScrollbars|yc-overlay-scroll-target/u);
   assert.match(skeleton, /正在恢复当前会话/u);
   assert.match(skeleton, /aria-hidden="true"/u);
 

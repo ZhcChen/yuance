@@ -53,7 +53,7 @@ test('select preserves native form semantics inside the shared control', () => {
   assert.match(html, /class="yc-select-native"[^>]*name="status" required=""/u);
   assert.match(html, /aria-haspopup="listbox"/u);
   assert.match(html, /aria-expanded="false"/u);
-  assert.match(html, /class="yc-select-menu" role="listbox"/u);
+  assert.match(html, /class="yc-select-menu(?: [^"]+)?" role="listbox"/u);
   assert.match(html, /class="yc-select-caret" aria-hidden="true"/u);
   assert.match(html, /value="open" selected=""/u);
 
@@ -67,7 +67,7 @@ test('select preserves native form semantics inside the shared control', () => {
     createElement('option', { value: 'alice' }, 'Alice · alice')));
   assert.match(searchableHtml, /class="yc-select-menu is-searchable"/u);
   assert.match(searchableHtml, /type="search"[^>]*placeholder="搜索处理人"[^>]*aria-label="搜索处理人"/u);
-  assert.match(searchableHtml, /class="yc-select-options" role="listbox"/u);
+  assert.match(searchableHtml, /class="yc-select-options(?: [^"]+)?" role="listbox"/u);
 });
 
 test('filter bar and filter field compose compact filter forms', () => {

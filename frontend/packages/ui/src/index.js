@@ -14,3 +14,4 @@ export { WorkItemDetail } from './work-item-detail.jsx';
 export { TimeAllocationGantt, buildTimeAllocationSvg } from './time-allocation-gantt.jsx';
 export { UserAvatar, userAvatarColor, userAvatarInitial, userAvatarStyle } from './user-avatar.jsx';
 export { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
+export { useOverlayScrollbar, useOverlayScrollbars } from './overlay-scrollbar.jsx';

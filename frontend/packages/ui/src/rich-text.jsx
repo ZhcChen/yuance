@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 import { AttachmentImage } from './attachment-image.jsx';
+import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
 
 const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
 const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'style', 'title'];
@@ -163,11 +164,14 @@ function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = nul
  */
 export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource, downloadingAttachmentId = null, onHeadingsChange, showTableOfContents = false }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const tocRef = useRef(/** @type {HTMLElement | null} */ (null));
   const activateRef = useRef(onAttachmentActivate);
   const fileActivateRef = useRef(onFileAttachmentActivate);
   const resolveRef = useRef(resolveAttachmentSource);
   const headingsRef = useRef(onHeadingsChange);
   const [headings, setHeadings] = useState(/** @type {Array<{ id: string, level: number, label: string }>} */ ([]));
+  const contentScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: contentRef, label: '正文', refreshKey: `${html}:${format}:${showTableOfContents}:${headings.length}` });
+  const tocScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: tocRef, enabled: showTableOfContents && headings.length > 0, label: '正文目录', refreshKey: headings.length });
   activateRef.current = onAttachmentActivate;
   fileActivateRef.current = onFileAttachmentActivate;
   resolveRef.current = resolveAttachmentSource;
@@ -324,9 +328,9 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     }
   };
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
-  if (format !== 'html') return <div className="yc-rich-text-content yc-rich-text-plain">{html}</div>;
-  if (!showTableOfContents) return <div ref={contentRef} className="yc-rich-text-content" />;
-  return <div className="yc-rich-text-with-toc">{headings.length ? <nav className="yc-rich-text-toc" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}<div ref={contentRef} className="yc-rich-text-content" /></div>;
+  if (format !== 'html') return <><div ref={contentRef} className="yc-rich-text-content yc-rich-text-plain yc-overlay-scroll-target">{html}</div>{contentScrollbar.scrollbar}</>;
+  if (!showTableOfContents) return <><div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</>;
+  return <div className="yc-rich-text-with-toc">{headings.length ? <nav ref={tocRef} className="yc-rich-text-toc yc-overlay-scroll-target" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}{tocScrollbar.scrollbar}<div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</div>;
 }
 
 /** @param {RichTextResolvedSource} resolved */
@@ -457,6 +461,7 @@ export const DEFER_RICH_TEXT_PASTE = 'defer';
 /** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
 export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const mentionPanelRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const onPasteFileRef = useRef(onPasteFile);
   onPasteFileRef.current = onPasteFile;
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
@@ -482,6 +487,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const [toolbarMenuRoot, setToolbarMenuRoot] = useState(/** @type {HTMLDivElement | null} */ (null));
+  const inputScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: inputRef, label });
+  const mentionScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: mentionPanelRef, enabled: mentionQuery !== null, label: '提及候选', refreshKey: mentionQuery });
+  const moreScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: moreMenuRef, enabled: moreMenuOpen, label: '更多格式', refreshKey: moreMenuOpen });
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
     .filter((option) => {
       const query = mentionQuery.toLocaleLowerCase();
@@ -1111,7 +1119,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       <div
         id={id}
         ref={inputRef}
-        className="yc-rich-text-input"
+        className="yc-rich-text-input yc-overlay-scroll-target"
         contentEditable={!disabled}
         role="textbox"
         aria-label={label}
@@ -1180,7 +1188,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           publish(event.currentTarget);
         }}
       />
-      {mentionQuery !== null ? <div className="yc-rich-mention-panel" role="listbox" aria-label="提及候选">
+      {inputScrollbar.scrollbar}
+      {mentionQuery !== null ? <div ref={mentionPanelRef} className="yc-rich-mention-panel yc-overlay-scroll-target" role="listbox" aria-label="提及候选">
         {filteredMentions.length ? filteredMentions.map((option, index) => (
           <button
             key={option.username}
@@ -1194,8 +1203,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           </button>
         )) : <p>没有匹配成员</p>}
       </div> : null}
+      {mentionScrollbar.scrollbar}
       </div>
-      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
+      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu yc-overlay-scroll-target" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
         onMouseEnter={cancelMoreMenuClose}
         onMouseLeave={(event) => {
           if (relatedInside(event, moreTriggerRef)) return;
@@ -1211,6 +1221,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           </div>
         </section>
       </div> : null, toolbarMenuRoot) : null}
+      {moreScrollbar.scrollbar}
     </div>
   );
 
@@ -1498,6 +1509,7 @@ function ToolbarDropdown({ label, value = '', disabled = false, active = false, 
   const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const localMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: localMenuRef, enabled: open, label, refreshKey: open });
   const hoverCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
 
   useEffect(() => {
@@ -1612,7 +1624,7 @@ function ToolbarDropdown({ label, value = '', disabled = false, active = false, 
           if (typeof menuRef === 'function') menuRef(node);
           else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
         }}
-        className={`yc-rich-toolbar-popover${menuClassName ? ` ${menuClassName}` : ''}`}
+        className={`yc-rich-toolbar-popover yc-overlay-scroll-target${menuClassName ? ` ${menuClassName}` : ''}`}
         role="menu"
         aria-label={label}
         style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
@@ -1624,6 +1636,7 @@ function ToolbarDropdown({ label, value = '', disabled = false, active = false, 
       >
         {children}
       </div>, menuRoot) : null}
+      {scrollbar.scrollbar}
     </>
   );
 }

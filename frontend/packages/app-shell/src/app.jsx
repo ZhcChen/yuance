@@ -79,6 +79,8 @@ import {
   richTextAttachmentHtml,
   richTextAttachmentIds,
   richTextHasContent,
+  useOverlayScrollbar,
+  useOverlayScrollbars,
 } from '@yuance/frontend-ui';
 import { errorMessage, globalApiErrorMessage } from './errors.js';
 import { createApiErrorWrappingProxy } from './api-proxy.js';
@@ -962,6 +964,15 @@ function normalizeSystemApiDocs(payload) {
 }
 
 /**
+ * 为应用壳层中不属于共享 UI 组件的滚动区域接入统一浮层滚动条。
+ * @param {{ as?: string, axis?: 'vertical' | 'horizontal' | 'both', enabled?: boolean, refreshKey?: unknown, label: string, className?: string, children?: React.ReactNode, [key: string]: unknown }} props
+ */
+function OverlayScrollTarget({ as = 'div', axis = 'both', enabled = true, refreshKey = null, label, className = '', children, ...props }) {
+  const scrollbar = useOverlayScrollbar({ axis, enabled, label, refreshKey });
+  return <>{createElement(as, { ...props, ref: scrollbar.ref, className: ['yc-overlay-scroll-target', className].filter(Boolean).join(' ') }, children)}{scrollbar.scrollbar}</>;
+}
+
+/**
  * @param {{ services: {
  *   api: AppApiService,
  *   events: { supportsTopbarPolling?: boolean, supportsWorkItemTyping?: boolean, openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
@@ -1009,9 +1020,8 @@ export function SharedApp({ services }) {
   const topbarRef = useRef(/** @type {AppTopbarStatus | null} */ (null));
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
   const mainRef = useRef(/** @type {HTMLElement | null} */ (null));
-  const mainContentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
-  const scrollbarTrackRef = useRef(/** @type {HTMLDivElement | null} */ (null));
-  const scrollbarDragRef = useRef(/** @type {{ pointerId: number, startY: number, startScrollTop: number } | null} */ (null));
+  const dashboardTableRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const workTableRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const appUpdateControllerRef = useRef(/** @type {ReturnType<typeof createAppUpdateController> | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
@@ -1252,70 +1262,12 @@ export function SharedApp({ services }) {
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
   const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
-  const [scrollbar, setScrollbar] = useState({ visible: false, top: 0, height: 44 });
   const [appUpdatePrompt, setAppUpdatePrompt] = useState(/** @type {{ version: string } | null} */ (null));
+  const mainScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: mainRef, enabled: shellReady, label: '页面', refreshKey: `${shellReady}:${route.id}` });
+  const dashboardTableScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: dashboardTableRef, enabled: shellReady && route.id === 'home', label: '项目推进列表', refreshKey: `${shellReady}:${route.id}` });
+  const workTableScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: workTableRef, enabled: shellReady && isWorkItemListRouteId(route.id), label: '工作项列表', refreshKey: `${shellReady}:${route.id}` });
+  useOverlayScrollbars({ enabled: shellReady, targetRef: mainRef });
   if (!workItemTypingClientIdRef.current && events.supportsWorkItemTyping) workItemTypingClientIdRef.current = runtime.createSessionId?.() || '';
-
-  function syncScrollbar() {
-    const main = mainRef.current;
-    const track = scrollbarTrackRef.current;
-    if (!main || !track) return;
-    const maxScrollTop = main.scrollHeight - main.clientHeight;
-    const trackHeight = track.clientHeight;
-    if (maxScrollTop <= 1 || trackHeight <= 0) {
-      setScrollbar((current) => current.visible ? { ...current, visible: false } : current);
-      return;
-    }
-    const height = Math.max(44, Math.min(trackHeight, (main.clientHeight / main.scrollHeight) * trackHeight));
-    const top = (main.scrollTop / maxScrollTop) * (trackHeight - height);
-    setScrollbar({ visible: true, top, height });
-  }
-
-  useEffect(() => {
-    if (!shellReady) return undefined;
-    const main = mainRef.current;
-    const content = mainContentRef.current;
-    const track = scrollbarTrackRef.current;
-    if (!main || !content || !track) return undefined;
-    const sync = () => runtime.scheduleFrame(syncScrollbar);
-    const stopObserving = runtime.observeResize([main, content, track], sync);
-    main.addEventListener('scroll', syncScrollbar, { passive: true });
-    sync();
-    return () => {
-      stopObserving();
-      main.removeEventListener('scroll', syncScrollbar);
-    };
-  }, [shellReady]);
-
-  function handleScrollbarPointerDown(event) {
-    const main = mainRef.current;
-    if (!main) return;
-    scrollbarDragRef.current = { pointerId: event.pointerId, startY: event.clientY, startScrollTop: main.scrollTop };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function handleScrollbarPointerMove(event) {
-    const drag = scrollbarDragRef.current;
-    const main = mainRef.current;
-    const track = scrollbarTrackRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !main || !track) return;
-    const thumbTravel = track.clientHeight - scrollbar.height;
-    const maxScrollTop = main.scrollHeight - main.clientHeight;
-    if (thumbTravel > 0) main.scrollTop = drag.startScrollTop + ((event.clientY - drag.startY) / thumbTravel) * maxScrollTop;
-  }
-
-  function handleScrollbarPointerUp(event) {
-    if (scrollbarDragRef.current?.pointerId !== event.pointerId) return;
-    scrollbarDragRef.current = null;
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-
-  function handleScrollbarTrackPointerDown(event) {
-    if (event.target !== event.currentTarget || !mainRef.current) return;
-    const trackBounds = event.currentTarget.getBoundingClientRect();
-    const ratio = (event.clientY - trackBounds.top) / trackBounds.height;
-    mainRef.current.scrollTop = ratio * (mainRef.current.scrollHeight - mainRef.current.clientHeight);
-  }
 
   const currentProject = topbar?.current_project || null;
   topbarRef.current = topbar;
@@ -5588,8 +5540,8 @@ export function SharedApp({ services }) {
         onLogout={handleLogout}
       />
 
-      <main ref={mainRef} className="main">
-      <div ref={mainContentRef} className="main-content">
+      <main ref={mainScrollbar.ref} className="main yc-overlay-scroll-target">
+      <div className="main-content">
 
       {loading ? (
         <section className="shell-route-loading" role="status" aria-live="polite" aria-label={`正在加载${route.title}`}>
@@ -5657,7 +5609,7 @@ export function SharedApp({ services }) {
                 }}
                 footer={<Button variant="secondary" disabled={timeChangesLoading} onClick={() => setTimeChangesOpen(false)}>关闭</Button>}
               >
-                <div className="time-management-changes-modal-body">
+                <OverlayScrollTarget axis="vertical" label="时间管理修改记录" className="time-management-changes-modal-body">
                   <p className="shell-muted">记录每次新增、更新或删除排期时的操作人与字段差异，后续可据此回退。</p>
                   {timeChangesError ? <Feedback tone="danger" title="修改记录加载失败">{timeChangesError}</Feedback> : null}
                   {timeChangesLoading && !timeChangesPage ? <p className="shell-muted">正在加载修改记录…</p> : null}
@@ -5724,7 +5676,7 @@ export function SharedApp({ services }) {
                       />
                     </>
                   ) : null}
-                </div>
+                </OverlayScrollTarget>
               </Modal>
               <Modal
                 open={Boolean(timeChangeRestoreTarget)}
@@ -5828,11 +5780,11 @@ export function SharedApp({ services }) {
                     <p><strong>{operation.summary}</strong></p>
                     {operation.description ? <p className="shell-muted">{operation.description}</p> : null}
                     {operation.tags.length ? <p className="shell-muted">标签：{operation.tags.join('、')}</p> : null}
-                    <details><summary>查看完整操作契约</summary><pre className="shell-code-block">{operation.contract}</pre></details>
+                    <details><summary>查看完整操作契约</summary><OverlayScrollTarget as="pre" axis="both" label="完整操作契约" className="shell-code-block">{operation.contract}</OverlayScrollTarget></details>
                   </article>)}
                 </div>
-                <details><summary>查看 Components</summary><pre className="shell-code-block">{systemApiDocs.components}</pre></details>
-                <details><summary>查看完整 OpenAPI JSON</summary><pre className="shell-code-block">{systemApiDocs.source}</pre></details>
+                <details><summary>查看 Components</summary><OverlayScrollTarget as="pre" axis="both" label="Components" className="shell-code-block">{systemApiDocs.components}</OverlayScrollTarget></details>
+                <details><summary>查看完整 OpenAPI JSON</summary><OverlayScrollTarget as="pre" axis="both" label="完整 OpenAPI JSON" className="shell-code-block">{systemApiDocs.source}</OverlayScrollTarget></details>
               </> : null}
             </section>
           ) : route.id === 'system-openapi' ? (
@@ -6366,10 +6318,10 @@ export function SharedApp({ services }) {
                   <Field id="project-member-search" label="搜索用户"><TextInput type="search" value={projectMemberCandidateSearch} placeholder="姓名、用户名或角色" disabled={projectMemberCandidateLoading || !projectMemberCandidates.length} onChange={(event) => setProjectMemberCandidateSearch(event.target.value)} /></Field>
                   <div className="project-member-picker" aria-busy={projectMemberCandidateLoading}>
                     <div className="project-member-picker-head"><span>候选用户</span><strong>已选择 {projectMemberSelectedUsernames.length} 人</strong></div>
-                    {projectMemberCandidateLoading ? <p className="shell-muted">正在加载候选用户。</p> : visibleProjectMemberCandidates.length ? <div className="project-member-candidate-list">{visibleProjectMemberCandidates.map((candidate) => {
+                    {projectMemberCandidateLoading ? <p className="shell-muted">正在加载候选用户。</p> : visibleProjectMemberCandidates.length ? <OverlayScrollTarget axis="vertical" label="候选用户" className="project-member-candidate-list">{visibleProjectMemberCandidates.map((candidate) => {
                       const selected = projectMemberSelectedUsernames.includes(candidate.username);
                       return <label className="project-member-candidate" key={candidate.username}><input type="checkbox" checked={selected} onChange={(event) => setProjectMemberSelectedUsernames((current) => event.target.checked ? [...current, candidate.username] : current.filter((username) => username !== candidate.username))} /><span><strong>{candidate.display_name}</strong><em>@{candidate.username}</em></span><small>{candidate.roles || '未配置系统角色'}</small></label>;
-                    })}</div> : <p className="shell-muted">{projectMemberCandidates.length ? '没有匹配用户。' : '没有可加入用户。'}</p>}
+                    })}</OverlayScrollTarget> : <p className="shell-muted">{projectMemberCandidates.length ? '没有匹配用户。' : '没有可加入用户。'}</p>}
                   </div>
                   {projectMemberCandidateError ? <Feedback tone="danger" title="添加成员失败">{projectMemberCandidateError}</Feedback> : null}
                   <Field id="project-member-role" label="项目角色" required><Select value={projectMemberForm.memberRole} onChange={(event) => setProjectMemberForm((current) => ({ ...current, memberRole: event.target.value }))}><option value="member">项目成员</option><option value="maintainer">项目管理员</option><option value="viewer">只读成员</option></Select></Field>
@@ -6430,7 +6382,7 @@ export function SharedApp({ services }) {
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
-                <section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-content-actions"><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a>{canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}{user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}{canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}</div></div></div>{projectResourceLocked ? <section className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></section> : <article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={typeof files.attachments?.openProjectResourceAttachmentPreview === 'function' ? resolveProjectResourceInlineAttachmentSource : undefined} downloadingAttachmentId={projectResourceDownloadingId} showTableOfContents /></article>}</section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} contentType={projectAttachmentPreview?.attachment?.content_type || ''} loading={projectAttachmentPreview?.loading} downloading={projectResourceDownloadingId !== null && projectAttachmentPreview?.attachment?.id === projectResourceDownloadingId} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /><RichAttachmentMenu open={Boolean(projectResourceFileMenu)} title={projectResourceFileMenu?.title || '附件'} x={projectResourceFileMenu?.x || 0} y={projectResourceFileMenu?.y || 0} downloadUrl={projectResourceFileMenu ? appendProjectResourceAccess(projectResourceFileMenu.href) : ''} canPreview={projectResourceFileMenuCanPreview()} onClose={closeProjectResourceFileMenu} onDownload={projectResourceFileMenuDownloadHandler()} onStatus={({ tone, text }) => { if (tone === 'error') setProjectResourceError(text); else setStatusMessage(text); }} />
+                <section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-content-actions"><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a>{canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}{user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}{canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}</div></div></div>{projectResourceLocked ? <OverlayScrollTarget axis="vertical" label="资料访问验证" className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></OverlayScrollTarget> : <article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={typeof files.attachments?.openProjectResourceAttachmentPreview === 'function' ? resolveProjectResourceInlineAttachmentSource : undefined} downloadingAttachmentId={projectResourceDownloadingId} showTableOfContents /></article>}</section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} contentType={projectAttachmentPreview?.attachment?.content_type || ''} loading={projectAttachmentPreview?.loading} downloading={projectResourceDownloadingId !== null && projectAttachmentPreview?.attachment?.id === projectResourceDownloadingId} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /><RichAttachmentMenu open={Boolean(projectResourceFileMenu)} title={projectResourceFileMenu?.title || '附件'} x={projectResourceFileMenu?.x || 0} y={projectResourceFileMenu?.y || 0} downloadUrl={projectResourceFileMenu ? appendProjectResourceAccess(projectResourceFileMenu.href) : ''} canPreview={projectResourceFileMenuCanPreview()} onClose={closeProjectResourceFileMenu} onDownload={projectResourceFileMenuDownloadHandler()} onStatus={({ tone, text }) => { if (tone === 'error') setProjectResourceError(text); else setStatusMessage(text); }} />
               </> : null}
             </section>
           ) : route.id === 'project-cycle-detail' ? (
@@ -6532,7 +6484,7 @@ export function SharedApp({ services }) {
                     {workItemSelection.size ? <Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemSelection(new Set())}>清空选择</Button> : null}
                   </div> : null}
                   {workItemBatchError ? <Feedback tone="danger" title="部分工作项未更新">{workItemBatchError}</Feedback> : null}
-                  <div className="yc-table-wrap work-table-wrap"><table className="yc-table work-item-table" aria-label={route.title}><thead><tr>{workItemPage.can_manage_work_items ? <th className="work-table-select"><span className="visually-hidden">选择</span></th> : null}<th>编号</th><th className="work-table-title">标题</th><th>项目</th><th>处理人</th><th>优先级</th><th>状态</th><th className="work-table-actions">操作</th></tr></thead><tbody>{workItemPage.items.map((item) => { const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }); return <tr key={item.key} className="work-item-row">{workItemPage.can_manage_work_items ? <td className="work-table-select"><input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /></td> : null}<td><div className="work-table-key"><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code></div></td><td className="work-table-title"><a className="work-table-title-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>{item.title}</a></td><td className="work-table-muted">{item.project_name || item.project_key}</td><td>{item.assignee || '未分配'}</td><td><PriorityBadge priority={item.priority} /></td><td><Badge tone={workItemStatusTone(item.status)}>{workItemStatusLabel(item.status)}</Badge></td><td className="work-table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>打开详情</a></td></tr>; })}</tbody></table></div>
+                  <div ref={workTableRef} className="yc-table-wrap work-table-wrap yc-overlay-scroll-target"><table className="yc-table work-item-table" aria-label={route.title}><thead><tr>{workItemPage.can_manage_work_items ? <th className="work-table-select"><span className="visually-hidden">选择</span></th> : null}<th>编号</th><th className="work-table-title">标题</th><th>项目</th><th>处理人</th><th>优先级</th><th>状态</th><th className="work-table-actions">操作</th></tr></thead><tbody>{workItemPage.items.map((item) => { const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }); return <tr key={item.key} className="work-item-row">{workItemPage.can_manage_work_items ? <td className="work-table-select"><input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /></td> : null}<td><div className="work-table-key"><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code></div></td><td className="work-table-title"><a className="work-table-title-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>{item.title}</a></td><td className="work-table-muted">{item.project_name || item.project_key}</td><td>{item.assignee || '未分配'}</td><td><PriorityBadge priority={item.priority} /></td><td><Badge tone={workItemStatusTone(item.status)}>{workItemStatusLabel(item.status)}</Badge></td><td className="work-table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>打开详情</a></td></tr>; })}</tbody></table></div>{workTableScrollbar.scrollbar}
 
                   <Pagination ariaLabel="工作项分页" page={workItemPage.pagination.page} totalPages={workItemPage.pagination.total_pages} totalItems={workItemPage.pagination.total_items} rangeLabel={`当前显示 ${workItemRangeStart}-${workItemRangeEnd}`} pageSize={workItemPage.pagination.per_page} onPageSizeChange={changeWorkItemPageSize} onPageChange={changeWorkItemPage} />
                 </>
@@ -6704,7 +6656,7 @@ export function SharedApp({ services }) {
                     <div><h1 ref={headingRef} tabIndex={-1}>项目推进</h1><p>按最近更新排序，展示你有权限查看的全部项目待处理 / 进行中 / 待确认情况。</p></div>
                     {dashboard?.can_manage_projects ? <div className="toolbar-actions"><Button onClick={() => setProjectCreateOpen(true)}>新建项目</Button></div> : null}
                   </div>
-                  <div className="table-wrap">
+                  <div ref={dashboardTableRef} className="table-wrap yc-overlay-scroll-target">
                     <table className="compact-table"><thead><tr><th>编号</th><th>项目</th><th>项目负责人</th><th>工作项</th><th>我的待处理</th><th>状态</th><th>更新</th><th className="table-actions">操作</th></tr></thead>
                       <tbody>{dashboard?.projects.length ? dashboard.projects.map((project) => {
                         const detailPath = buildProjectDetailPath({ owner: route.owner, projectKey: project.key });
@@ -6716,7 +6668,7 @@ export function SharedApp({ services }) {
                         return <tr key={project.key}><td><code>{project.key}</code></td><td><a href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开项目 ${project.name}。`)}>{project.name}</a></td><td>{project.owner}</td><td><div className="work-count-cell"><strong>{project.active_work_item_count}</strong><span>待处理 / 进行中 / 待确认 · 共 {project.work_item_count}</span></div></td><td><div className="pending-shortcuts" aria-label={`${project.name}个人待处理`}><a href={requirementPath} onClick={(event) => handleNavigate(event, requirementPath, '已打开个人待处理需求。')}>需求 <strong>{project.pending_requirements}</strong></a><a href={taskPath} onClick={(event) => handleNavigate(event, taskPath, '已打开个人待处理任务。')}>任务 <strong>{project.pending_tasks}</strong></a><a href={bugPath} onClick={(event) => handleNavigate(event, bugPath, '已打开个人待处理 Bug。')}>Bug <strong>{project.pending_bugs}</strong></a></div></td><td><span className={`dashboard-status dashboard-status-${status.tone}`}>{status.label}</span></td><td>{dashboardTimestamp(project.updated_at)}</td><td className="table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={analysisPath} onClick={(event) => handleNavigate(event, analysisPath, `已打开 ${project.name} 个人分析。`)}>查看</a></td></tr>;
                       }) : <tr><td colSpan={8} className="dashboard-table-empty">暂无可查看的项目。</td></tr>}</tbody>
                     </table>
-                  </div>
+                  </div>{dashboardTableScrollbar.scrollbar}
                 </section>
               </div>
               <aside className="workspace-side" aria-label="最近动态">
@@ -6764,16 +6716,9 @@ export function SharedApp({ services }) {
       )}
       </div>
       </main>
-      <div ref={scrollbarTrackRef} className={`app-scrollbar${scrollbar.visible ? ' is-visible' : ''}`} aria-hidden="true" onPointerDown={handleScrollbarTrackPointerDown}>
-        <div
-          className="app-scrollbar-thumb"
-          style={{ height: `${scrollbar.height}px`, transform: `translateY(${scrollbar.top}px)` }}
-          onPointerDown={handleScrollbarPointerDown}
-          onPointerMove={handleScrollbarPointerMove}
-          onPointerUp={handleScrollbarPointerUp}
-          onPointerCancel={handleScrollbarPointerUp}
-        />
-      </div>
+      {mainScrollbar.scrollbar}
+      {dashboardTableScrollbar.scrollbar}
+      {workTableScrollbar.scrollbar}
     </div>
   );
 }

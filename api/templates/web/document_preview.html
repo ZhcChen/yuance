@@ -122,6 +122,11 @@
   </script>
 
   <script type="module">
+    import { initOverlayScrollbars } from "/static/overlay-scrollbar.mjs";
+    initOverlayScrollbars();
+  </script>
+
+  <script type="module">
     import { initDocumentPreview } from "/static/document-preview.mjs";
     initDocumentPreview({ root: document });
   </script>

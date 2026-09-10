@@ -12,7 +12,7 @@ test('rich text editor exposes the deferred paste sentinel used by pre-upload fl
 
 test('rich text content defers HTML injection to its client sanitizer and preserves plain text semantics', () => {
   const rich = renderToStaticMarkup(React.createElement(RichTextContent, { html: '<h2>方案</h2><pre><code>cargo test</code></pre>', format: 'html' }));
-  assert.equal(rich, '<div class="yc-rich-text-content"></div>');
+  assert.equal(rich, '<div class="yc-rich-text-content yc-overlay-scroll-target"></div>');
 
   const plain = renderToStaticMarkup(React.createElement(RichTextContent, { html: '<script>alert(1)</script>', format: 'plain' }));
   assert.doesNotMatch(plain, /<script>/);

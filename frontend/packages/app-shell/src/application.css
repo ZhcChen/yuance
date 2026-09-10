@@ -43,14 +43,7 @@ button:disabled {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
   padding: 18px;
-}
-
-.main::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 
 .main-content {
@@ -59,45 +52,6 @@ button:disabled {
 
 .main:has(.resource-detail-page) { overflow: hidden; }
 .main-content:has(.resource-detail-page) { height: 100%; min-height: 0; }
-
-.app-scrollbar {
-  position: absolute;
-  z-index: 30;
-  top: calc(var(--yc-topbar-height) + 2px);
-  right: 2px;
-  bottom: 2px;
-  width: 10px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.app-scrollbar.is-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.app-scrollbar-thumb {
-  width: 100%;
-  min-height: 44px;
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--yc-muted) 48%, transparent);
-  background-clip: padding-box;
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-  will-change: transform;
-}
-
-.app-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--yc-muted-strong) 68%, transparent);
-  background-clip: padding-box;
-}
-
-.app-scrollbar-thumb:active {
-  cursor: grabbing;
-}
 
 .app-shell-skeleton {
   background: var(--yc-bg);

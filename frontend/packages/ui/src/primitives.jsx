@@ -3,6 +3,7 @@
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
+import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
 import { useAnimatedDialog } from './use-animated-dialog.js';
 
 /** @param {React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost', size?: 'md' | 'sm', className?: string, loading?: boolean, ariaLabel?: string }} props */
@@ -48,6 +49,8 @@ export function Select({ children, className = '', id, value, defaultValue = '',
   const nativeRef = useRef(/** @type {HTMLSelectElement | null} */ (null));
   const triggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const searchRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+  const menuRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
+  const optionsRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState(String(defaultValue ?? ''));
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -63,6 +66,9 @@ export function Select({ children, className = '', id, value, defaultValue = '',
     const optionValue = String(option.props.value ?? '');
     return `${selectOptionText(option.props.children)} ${optionValue}`.toLocaleLowerCase().includes(normalizedSearchQuery);
   }).map(({ index }) => index);
+  const scrollbarRefreshKey = `${open}:${searchable}:${options.length}:${visibleOptionIndices.length}`;
+  const menuScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: menuRef, enabled: open, label: '选择项', refreshKey: scrollbarRefreshKey });
+  const optionsScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: optionsRef, enabled: open, label: '选择项', refreshKey: scrollbarRefreshKey });
 
   useEffect(() => {
     if (!open) return undefined;
@@ -160,8 +166,10 @@ export function Select({ children, className = '', id, value, defaultValue = '',
       <button ref={triggerRef} id={controlId} className="yc-select-trigger" type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listboxId} aria-describedby={selectProps['aria-describedby']} aria-invalid={selectProps['aria-invalid']} onClick={() => { if (open) { setOpen(false); setSearchQuery(''); } else openAt(selectedIndex); }}>
         <span className="yc-select-value">{selectedOption?.props.children || '请选择'}</span><span className="yc-select-caret" aria-hidden="true" />
       </button>
-      {searchable ? <span className="yc-select-menu is-searchable" aria-hidden={!open}><span className="yc-select-search"><input ref={searchRef} type="search" value={searchQuery} placeholder={searchPlaceholder} aria-label={searchPlaceholder} tabIndex={open ? 0 : -1} onChange={handleSearchChange} /></span><span id={listboxId} className="yc-select-options" role="listbox">{optionNodes.length ? optionNodes : <span className="yc-select-empty">{emptyText}</span>}</span></span>
-        : <span id={listboxId} className="yc-select-menu" role="listbox" aria-hidden={!open}>{optionNodes}</span>}
+      {searchable ? <span className="yc-select-menu is-searchable" aria-hidden={!open}><span className="yc-select-search"><input ref={searchRef} type="search" value={searchQuery} placeholder={searchPlaceholder} aria-label={searchPlaceholder} tabIndex={open ? 0 : -1} onChange={handleSearchChange} /></span><span ref={optionsRef} id={listboxId} className="yc-select-options yc-overlay-scroll-target" role="listbox">{optionNodes.length ? optionNodes : <span className="yc-select-empty">{emptyText}</span>}</span></span>
+        : <span ref={menuRef} id={listboxId} className="yc-select-menu yc-overlay-scroll-target" role="listbox" aria-hidden={!open}>{optionNodes}</span>}
+      {menuScrollbar.scrollbar}
+      {optionsScrollbar.scrollbar}
     </span>
   );
 }
@@ -227,6 +235,7 @@ export function PriorityBadge({ priority, children }) {
 /** @param {{ children?: React.ReactNode, ariaLabel: string }} props */
 export function ContentTabs({ children, ariaLabel }) {
   const tabsRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const scrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: tabsRef, label: ariaLabel, refreshKey: children });
   const hasSyncedRef = useRef(false);
 
   useLayoutEffect(() => {
@@ -250,7 +259,7 @@ export function ContentTabs({ children, ariaLabel }) {
     return () => observer?.disconnect();
   }, [children]);
 
-  return <nav ref={tabsRef} className="yc-content-tabs" aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>;
+  return <><nav ref={tabsRef} className="yc-content-tabs yc-overlay-scroll-target" aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>{scrollbar.scrollbar}</>;
 }
 
 /** @param {{ children?: React.ReactNode, href?: string, active?: boolean, badge?: number, onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement> }} props */
@@ -265,12 +274,15 @@ export function ContentTab({ children, href, active = false, badge = 0, onClick 
 /** @param {{ open: boolean, title: string, wide?: boolean, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void }} props */
 export function Modal({ open, title, wide = false, children, footer, onClose }) {
   const ref = useRef(/** @type {HTMLDialogElement | null} */ (null));
+  const bodyRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const titleId = useId();
+  const bodyScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: bodyRef, enabled: open, label: title, refreshKey: open });
   useAnimatedDialog(open, ref, 'yc-modal-closing');
   return (
     <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={() => { if (open) onClose(); }}>
       <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
-      <div className="yc-modal-body">{children}</div>
+      <div ref={bodyRef} className="yc-modal-body yc-overlay-scroll-target">{children}</div>
+      {bodyScrollbar.scrollbar}
       {footer ? <div className="yc-modal-footer">{footer}</div> : null}
     </dialog>
   );
@@ -278,7 +290,9 @@ export function Modal({ open, title, wide = false, children, footer, onClose }) 
 
 /** @template T @param {{ columns: Array<{ key: string, label: string, render(row: T): React.ReactNode }>, rows: T[], rowKey(row: T): string | number, caption: string, emptyText?: string }} props */
 export function DataTable({ columns, rows, rowKey, caption, emptyText = '暂无数据' }) {
-  return <div className="yc-table-wrap"><table className="yc-table"><caption className="shell-live-region">{caption}</caption><thead><tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={rowKey(row)}>{columns.map((column) => <td key={column.key}>{column.render(row)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="yc-table-empty">{emptyText}</td></tr>}</tbody></table></div>;
+  const tableRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: tableRef, label: caption, refreshKey: rows.length });
+  return <><div ref={tableRef} className="yc-table-wrap yc-overlay-scroll-target"><table className="yc-table"><caption className="shell-live-region">{caption}</caption><thead><tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={rowKey(row)}>{columns.map((column) => <td key={column.key}>{column.render(row)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="yc-table-empty">{emptyText}</td></tr>}</tbody></table></div>{scrollbar.scrollbar}</>;
 }
 
 /** @param {{ page: number, totalPages: number, totalItems: number, onPageChange(page: number): void, ariaLabel?: string, itemLabel?: string, rangeLabel?: string, pageSize?: number, pageSizes?: number[], onPageSizeChange?: React.ChangeEventHandler<HTMLSelectElement> }} props */
@@ -392,6 +406,8 @@ export function PaginatedTable({
   const rangeStart = rows.length ? (currentPage - 1) * pageSize + 1 : 0;
   const rangeEnd = rows.length ? Math.min(currentPage * pageSize, rows.length) : 0;
   const visibleRows = rows.slice(rangeStart - 1, rangeEnd);
+  const tableRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbar = useOverlayScrollbar({ axis: 'both', targetRef: tableRef, label: caption, refreshKey: `${rows.length}:${currentPage}:${pageSize}` });
 
   useEffect(() => {
     setPage(1);
@@ -408,7 +424,7 @@ export function PaginatedTable({
 
   return (
     <>
-      <div className={['yc-table-wrap', tableWrapClassName].filter(Boolean).join(' ')}>
+      <div ref={tableRef} className={['yc-table-wrap', 'yc-overlay-scroll-target', tableWrapClassName].filter(Boolean).join(' ')}>
         <table className={['yc-table', tableClassName].filter(Boolean).join(' ')} aria-label={caption}>
           <thead>
             <tr>
@@ -424,6 +440,7 @@ export function PaginatedTable({
           </tbody>
         </table>
       </div>
+      {scrollbar.scrollbar}
       <Pagination
         ariaLabel={caption}
         page={currentPage}

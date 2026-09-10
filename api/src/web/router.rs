@@ -923,6 +923,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/version.json", get(version_manifest))
         .route("/static/auth.css", get(static_auth_css))
         .route(
+            "/static/overlay-scrollbar.mjs",
+            get(static_overlay_scrollbar),
+        )
+        .route(
             "/static/desktop-downloads.css",
             get(static_desktop_downloads_css),
         )
@@ -1656,6 +1660,22 @@ fn web_app_content_type(path: &str) -> &'static str {
 
 async fn static_auth_css() -> impl IntoResponse {
     static_boundary_css(include_str!("../../static/auth.css"))
+}
+
+async fn static_overlay_scrollbar() -> impl IntoResponse {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
+        ],
+        include_str!("../../static/overlay-scrollbar.mjs"),
+    )
 }
 
 async fn static_desktop_downloads_css() -> impl IntoResponse {

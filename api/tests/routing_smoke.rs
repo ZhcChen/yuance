@@ -289,6 +289,11 @@ async fn auth_css_is_bundled_without_retired_business_selectors() {
     );
     let body = response_body(response).await;
     assert!(body.contains(".auth-panel"));
+    assert!(body.contains("--scrollbar-thumb-alpha: 30%;"));
+    assert!(body.contains("*::-webkit-scrollbar"));
+    assert!(body.contains(".yc-overlay-scrollbar-thumb"));
+    assert!(body.contains(".yc-overlay-scrollbar"));
+    assert!(!body.contains("overflow: overlay;"));
     assert!(body.contains(".visual-workspace-grid"));
     assert!(body.contains(".setup-dashboard"));
     assert!(body.contains(".device-authorization-actions"));
@@ -311,6 +316,35 @@ async fn auth_css_is_bundled_without_retired_business_selectors() {
             .expect("router should respond");
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
     }
+}
+
+#[tokio::test]
+async fn overlay_scrollbar_module_is_bundled() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/overlay-scrollbar.mjs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+    let body = response_body(response).await;
+    assert!(body.contains("export function initOverlayScrollbars"));
+    assert!(body.contains("DOMContentLoaded"));
+    assert!(body.contains("shadowScrollbarStyles"));
+    assert!(body.contains("handleMutations"));
+    assert!(body.contains("scheduleRecords"));
+    assert!(body.contains("aria-valuemax"));
+    assert!(!body.contains("setAttribute(\"aria-hidden\", \"true\")"));
 }
 
 #[tokio::test]

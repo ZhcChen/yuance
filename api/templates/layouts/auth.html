@@ -20,6 +20,10 @@
   </script>
   <link rel="stylesheet" href="/static/auth.css">
   <script src="/static/vendor/htmx.min.js" defer></script>
+  <script type="module">
+    import { initOverlayScrollbars } from "/static/overlay-scrollbar.mjs";
+    initOverlayScrollbars();
+  </script>
 </head>
 <body class="auth-body">
   <main class="auth-shell">
