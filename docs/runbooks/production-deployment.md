@@ -10,16 +10,16 @@ date: 2026-08-02
 元策正式环境运行在内网部署目标 `qfy-test2`，由目标机上的 Docker Engine 承载。
 发布机通过 SSH/SCP 将本地构建好的 `linux/amd64` 镜像传输到
 `qfy-test2`；正式服务器和 `/srv/yuance` 运行目录禁止源码编译和镜像构建。
-公网服务器 `qfy-sc-test` 只保留 Caddy、FRPS 和已停止的旧环境作为冷回滚。
+公网服务器 `qfy-sc-test` 只保留 Nginx、FRPS 和已停止的旧环境作为冷回滚。
 
 ## 当前拓扑
 
 ```text
 yuance.quanxinfu.com
--> qfy-sc-test Caddy :443
+-> qfy-sc-test Nginx :443
 -> FRPS 127.0.0.1:40000
--> WSL FRPC
--> WSL Docker 127.0.0.1:33033
+-> qfy-test2 FRPC
+-> qfy-test2 Docker 127.0.0.1:33033
 -> yuance-api
 ```
 
@@ -186,7 +186,7 @@ curl -I https://yuance.quanxinfu.com/web
 curl -I https://yuance.quanxinfu.com/static/auth.css
 ```
 
-## FRP 与 Caddy
+## Nginx 与 FRP
 
 Yuance 路由由 FRP Web 管理：
 
@@ -198,15 +198,28 @@ route id：6b1c1c6f-59b4-486d-9e00-a1dd5546ae4d
 远端端口：40000
 ```
 
-WSL 受管 FRPC 片段位于 `/etc/frp/conf.d/frp-web/*.toml`。主配置必须同时
+`qfy-test2` 受管 FRPC 片段位于 `/etc/frp/conf.d/frp-web/*.toml`。主配置必须同时
 加载顶层人工片段与该受管子目录：
 
 ```toml
 includes = ["/etc/frp/conf.d/*.toml", "/etc/frp/conf.d/frp-web/*.toml"]
 ```
 
-服务器受管 Caddy 片段位于 `/etc/caddy/Caddyfile.d/frp-web/*.caddy`。
-原 `/etc/caddy/Caddyfile.d/yuance.caddy` 已移出加载范围并保留备份。
+公网入口 Nginx 配置位于 `/etc/nginx/conf.d/qfy-443-frp-web.conf`，
+Yuance 对应 `server_name yuance.quanxinfu.com` 的 server block。
+仓库中的 `deploy/easy-deploy/production/gateway/nginx-yuance.example.conf`
+包含本地维护页配置，替换该 server block 后执行：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+维护页由 Nginx 本地生成，捕获 502、503、504 并返回“系统正在更新中”，
+不依赖 `yuance-api`、FRP 或 SSE。页面默认带 `Cache-Control: no-store`、
+`Retry-After: 5`，并每 5 秒自动重试。不要把该 server block 与旧 Yuance
+block 同时保留。
+
 FRPS 的代理端口只监听 `127.0.0.1`，禁止向公网开放 `40000-40999`。
 
 ## 数据备份
@@ -246,11 +259,11 @@ docker compose --env-file .env -f compose.yaml exec -T api \
 
 ## 回滚到公网旧环境
 
-观察期内不得删除公网服务器的旧容器、旧数据、镜像、迁移包或 Caddy 备份。
+观察期内不得删除公网服务器的旧容器、旧数据、镜像、迁移包或 Nginx/Caddy 备份。
 回滚遵循单写原则：
 
-1. 在 WSL 停止 `yuance-api`。
-2. 在 FRP Web 停用 Yuance 路由，或把受管 FRPC/Caddy 片段移出加载范围。
+1. 在 `qfy-test2` 停止当前 `yuance-api`。
+2. 在 FRP Web 停用 Yuance 路由，或把受管 FRPC 片段移出加载范围。
 3. 恢复服务器旧 `yuance.caddy`，执行 Caddy validate/reload。
 4. 在 `qfy-sc-test` 启动旧 `yuance-api`，不执行 migrate 或 seed。
 5. 验证 health、ready、登录、项目数据和 OSS 文件读取。
@@ -258,7 +271,7 @@ docker compose --env-file .env -f compose.yaml exec -T api \
 关键命令：
 
 ```bash
-# WSL
+# qfy-test2
 cd /srv/yuance/backend
 docker compose --env-file .env -f compose.yaml stop api
 
@@ -267,7 +280,7 @@ cd /srv/yuance/easy-deploy/production/backend
 docker compose --env-file .env -f compose.yaml up -d api
 ```
 
-如只回滚 WSL 应用版本，加载 `/srv/yuance/releases` 中上一版 tar 后重建
+如只回滚 qfy-test2 应用版本，加载 `/srv/yuance/releases` 中上一版 tar 后重建
 容器。若还需回滚数据库，必须先停服务，再成组恢复主库、WAL 和 SHM。
 
 ## 禁止事项
@@ -277,4 +290,4 @@ docker compose --env-file .env -f compose.yaml up -d api
 - 禁止修改已经发布的 SQL migration。
 - 禁止新旧两端同时提供写服务。
 - 禁止把 `qfy-sc-test` 作为部署脚本的隐式默认目标。
-- 禁止手工创建第二个同域名 Caddy 站点。
+- 禁止手工创建第二个同域名 Nginx 或 Caddy 站点。

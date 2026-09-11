@@ -32,6 +32,7 @@ require_file "deploy/easy-deploy/production/backend/scripts/80-files-audit.sh"
 require_file "deploy/easy-deploy/production/backend/scripts/90-healthcheck.sh"
 require_file "deploy/easy-deploy/production/gateway/README.md"
 require_file "deploy/easy-deploy/production/gateway/Caddyfile.yuance.example"
+require_file "deploy/easy-deploy/production/gateway/nginx-yuance.example.conf"
 require_file "docs/runbooks/production-deployment.md"
 
 for script in \
@@ -83,6 +84,25 @@ done
 
 if ! grep -q '127.0.0.1.*33033' "$GATEWAY_DIR/Caddyfile.yuance.example"; then
   echo "旧环境回滚用 Caddy 模板必须反代到 127.0.0.1:33033。" >&2
+  exit 1
+fi
+
+for directive in \
+  'proxy_intercept_errors on' \
+  'error_page 502 503 504 =200' \
+  'Cache-Control "no-store' \
+  'Retry-After "5"' \
+  '系统正在更新中'
+do
+  if ! grep -q "$directive" "$GATEWAY_DIR/nginx-yuance.example.conf"; then
+    echo "Nginx 维护页模板缺少关键配置: $directive" >&2
+    exit 1
+  fi
+done
+
+if ! grep -q 'server_name yuance.quanxinfu.com' "$GATEWAY_DIR/nginx-yuance.example.conf" \
+  || ! grep -q '127.0.0.1:40000' "$GATEWAY_DIR/nginx-yuance.example.conf"; then
+  echo "Nginx Yuance 模板必须指向 yuance.quanxinfu.com -> 127.0.0.1:40000。" >&2
   exit 1
 fi
 

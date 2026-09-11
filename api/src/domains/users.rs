@@ -421,6 +421,7 @@ pub async fn change_own_password(
         .execute(&mut *tx)
         .await?;
     }
+    auth::clear_browser_refresh_rotation_recovery(&mut tx, user_id).await?;
     if let Some(family_id) = current_device_family {
         sqlx::query(
             r#"
@@ -537,6 +538,7 @@ pub async fn reset_user_password(
     .bind(user_id)
     .execute(&mut *tx)
     .await?;
+    auth::clear_browser_refresh_rotation_recovery(&mut tx, user_id).await?;
     tx.commit().await?;
 
     Ok(())
@@ -595,6 +597,7 @@ pub async fn set_user_status(pool: &SqlitePool, username: &str, status: &str) ->
         .bind(user_id)
         .execute(&mut *tx)
         .await?;
+        auth::clear_browser_refresh_rotation_recovery(&mut tx, user_id).await?;
     }
     tx.commit().await?;
 

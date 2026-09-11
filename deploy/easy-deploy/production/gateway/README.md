@@ -1,14 +1,14 @@
-# 元策 Caddy 网关片段
+# 元策公网网关模板
 
-本目录保留元策旧环境的 Caddy 站点片段，当前只用于回滚。正式域名由
-WSL 的 FRP Web 控制台发布受管 FRPC/Caddy 片段，禁止再把本模板复制为
-生效中的 `yuance.caddy`，否则会产生同域名重复站点。
+正式域名当前由 `qfy-sc-test` 的 Nginx 接入，Nginx 将流量转发到 FRPS，
+再经 FRP Web 路由到 `qfy-test2`。`Caddyfile.yuance.example` 仅保留为
+公网旧环境冷回滚模板，不是当前生效入口。
 
 当前链路：
 
 ```text
 https://yuance.quanxinfu.com
-  -> qfy-sc-test Caddy
+  -> qfy-sc-test Nginx :443
   -> FRPS 127.0.0.1:40000
   -> qfy-test2 FRPC
   -> qfy-test2 127.0.0.1:33033
@@ -25,8 +25,28 @@ qfy-test2 本地端口：33033
 远端端口：40000
 ```
 
-服务器受管文件位于 `/etc/caddy/Caddyfile.d/frp-web/*.caddy`。FRPS
-代理端口必须只监听 `127.0.0.1`，不得向公网开放 `40000-40999`。
+服务器当前 Nginx 配置位于 `/etc/nginx/conf.d/qfy-443-frp-web.conf`，
+Yuance 对应 `server_name yuance.quanxinfu.com` 的 server block。
+FRPS 代理端口必须只监听 `127.0.0.1`，不得向公网开放 `40000-40999`。
+
+## 更新期间维护页
+
+`nginx-yuance.example.conf` 已包含 502、503、504 的本地维护页。它不依赖
+`yuance-api`，因此 API 容器停止期间仍可显示“系统正在更新中”，并自动每 5 秒
+重试。将现有 Nginx 文件中 Yuance 的整个 server block 替换为该模板后校验并
+reload：
+
+```bash
+scp deploy/easy-deploy/production/gateway/nginx-yuance.example.conf \
+  qfy-sc-test:/tmp/nginx-yuance.example.conf
+ssh qfy-sc-test
+sudo cp /etc/nginx/conf.d/qfy-443-frp-web.conf \
+  /etc/nginx/conf.d/qfy-443-frp-web.conf.before-yuance-maintenance
+# 将 /tmp/nginx-yuance.example.conf 的 Yuance server block 合并到现有配置，
+# 保留其他域名 server block，且不要保留旧的 Yuance block。
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 ## 验证
 
@@ -46,5 +66,5 @@ sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 sudo systemctl reload caddy
 ```
 
-恢复前必须先停用 WSL Yuance 路由，并将 FRP Web 受管的 Yuance Caddy
-片段移出加载范围，避免新旧两端同时提供写服务。
+恢复前必须先停用 qfy-test2 Yuance 路由，并移出当前 Nginx 的 Yuance
+server block，避免新旧两端同时提供写服务。

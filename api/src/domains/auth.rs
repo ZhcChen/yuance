@@ -2,10 +2,13 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_ha
 use axum::http::{HeaderMap, header};
 use rand_core::OsRng;
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
-use crate::platform::error::{AppError, AppResult};
+use crate::platform::{
+    crypto,
+    error::{AppError, AppResult},
+};
 
 pub const SESSION_COOKIE_NAME: &str = "yuance_session";
 pub const REFRESH_SESSION_COOKIE_NAME: &str = "yuance_refresh";
@@ -24,6 +27,16 @@ pub struct AuthUser {
 pub struct IssuedSession {
     pub raw_token: String,
     pub refresh_token: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RefreshSessionRecord {
+    id: i64,
+    user_id: i64,
+    session_status: String,
+    revoke_reason: String,
+    rotated_session_token_ciphertext: Option<String>,
+    rotated_refresh_token_ciphertext: Option<String>,
 }
 
 pub fn hash_password(password: &str) -> AppResult<String> {
@@ -239,6 +252,18 @@ pub async fn revoke_refresh_session(
     reason: &str,
 ) -> AppResult<()> {
     let token_hash = hash_refresh_token(raw_token);
+    let mut tx = pool.begin().await?;
+    let Some(user_id) = sqlx::query_scalar::<_, i64>(
+        "SELECT user_id FROM refresh_sessions WHERE refresh_token_hash = ?1",
+    )
+    .bind(&token_hash)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        tx.commit().await?;
+        return Ok(());
+    };
+
     sqlx::query(
         r#"
         UPDATE refresh_sessions
@@ -250,11 +275,35 @@ pub async fn revoke_refresh_session(
           AND session_status = 'active'
         "#,
     )
-    .bind(token_hash)
+    .bind(&token_hash)
     .bind(reason.trim())
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
+    clear_browser_refresh_rotation_recovery(&mut tx, user_id).await?;
+    tx.commit().await?;
+
+    Ok(())
+}
+
+pub(crate) async fn clear_browser_refresh_rotation_recovery(
+    tx: &mut Transaction<'_, Sqlite>,
+    user_id: i64,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET rotated_session_token_ciphertext = NULL,
+            rotated_refresh_token_ciphertext = NULL,
+            rotation_recovery_expires_at = NULL,
+            updated_at = datetime('now')
+        WHERE user_id = ?1
+          AND rotation_recovery_expires_at IS NOT NULL
+        "#,
+    )
+    .bind(user_id)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
@@ -308,31 +357,27 @@ pub async fn refresh_session(
     raw_refresh_token: &str,
     access_ttl_seconds: i64,
     refresh_ttl_seconds: i64,
+    rotation_recovery_ttl_seconds: i64,
+    security_master_key: &str,
 ) -> AppResult<Option<IssuedSession>> {
     let refresh_token_hash = hash_refresh_token(raw_refresh_token);
-    let row = sqlx::query_as::<_, (i64, i64)>(
-        r#"
-        SELECT r.id, r.user_id
-        FROM refresh_sessions r
-        JOIN users u ON u.id = r.user_id
-        WHERE r.refresh_token_hash = ?1
-          AND r.session_status = 'active'
-          AND r.expires_at > datetime('now')
-          AND u.status = 'active'
-        "#,
-    )
-    .bind(&refresh_token_hash)
-    .fetch_optional(pool)
-    .await?;
-
-    let Some((refresh_session_id, user_id)) = row else {
+    let Some(row) = find_refresh_session(pool, &refresh_token_hash).await? else {
         return Ok(None);
     };
+
+    if row.session_status == "revoked" {
+        return recover_rotated_session(&row, &refresh_token_hash, security_master_key);
+    }
 
     let raw_token = Uuid::new_v4().to_string();
     let next_refresh_token = Uuid::new_v4().to_string();
     let token_hash = hash_session_token(&raw_token);
     let next_refresh_token_hash = hash_refresh_token(&next_refresh_token);
+    let aad = rotation_recovery_aad(row.id, &refresh_token_hash);
+    let rotated_session_token_ciphertext =
+        crypto::encrypt_secret(security_master_key, &raw_token, aad.as_bytes())?;
+    let rotated_refresh_token_ciphertext =
+        crypto::encrypt_secret(security_master_key, &next_refresh_token, aad.as_bytes())?;
     let mut tx = pool.begin().await?;
     let revoked = sqlx::query(
         r#"
@@ -340,18 +385,27 @@ pub async fn refresh_session(
         SET session_status = 'revoked',
             revoked_at = datetime('now'),
             revoke_reason = 'rotated',
+            rotated_session_token_ciphertext = ?2,
+            rotated_refresh_token_ciphertext = ?3,
+            rotation_recovery_expires_at = datetime('now', '+' || ?4 || ' seconds'),
             updated_at = datetime('now')
         WHERE id = ?1
           AND session_status = 'active'
         "#,
     )
-    .bind(refresh_session_id)
+    .bind(row.id)
+    .bind(&rotated_session_token_ciphertext)
+    .bind(&rotated_refresh_token_ciphertext)
+    .bind(rotation_recovery_ttl_seconds)
     .execute(&mut *tx)
     .await?
     .rows_affected();
     if revoked == 0 {
         tx.rollback().await?;
-        return Ok(None);
+        let Some(rotated_row) = find_refresh_session(pool, &refresh_token_hash).await? else {
+            return Ok(None);
+        };
+        return recover_rotated_session(&rotated_row, &refresh_token_hash, security_master_key);
     }
 
     sqlx::query(
@@ -371,7 +425,7 @@ pub async fn refresh_session(
         "#,
     )
     .bind(token_hash)
-    .bind(user_id)
+    .bind(row.user_id)
     .bind(access_ttl_seconds)
     .execute(&mut *tx)
     .await?;
@@ -393,7 +447,7 @@ pub async fn refresh_session(
         "#,
     )
     .bind(next_refresh_token_hash)
-    .bind(user_id)
+    .bind(row.user_id)
     .bind(refresh_ttl_seconds)
     .execute(&mut *tx)
     .await?;
@@ -404,6 +458,66 @@ pub async fn refresh_session(
         raw_token,
         refresh_token: next_refresh_token,
     }))
+}
+
+async fn find_refresh_session(
+    pool: &SqlitePool,
+    refresh_token_hash: &str,
+) -> AppResult<Option<RefreshSessionRecord>> {
+    Ok(sqlx::query_as::<_, RefreshSessionRecord>(
+        r#"
+        SELECT r.id,
+               r.user_id,
+               r.session_status,
+               r.revoke_reason,
+               r.rotated_session_token_ciphertext,
+               r.rotated_refresh_token_ciphertext
+        FROM refresh_sessions r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.refresh_token_hash = ?1
+          AND u.status = 'active'
+          AND (
+              (r.session_status = 'active' AND r.expires_at > datetime('now'))
+              OR (
+                  r.session_status = 'revoked'
+                  AND r.revoke_reason = 'rotated'
+                  AND r.rotation_recovery_expires_at > datetime('now')
+              )
+          )
+        "#,
+    )
+    .bind(refresh_token_hash)
+    .fetch_optional(pool)
+    .await?)
+}
+
+fn recover_rotated_session(
+    row: &RefreshSessionRecord,
+    refresh_token_hash: &str,
+    security_master_key: &str,
+) -> AppResult<Option<IssuedSession>> {
+    if row.session_status != "revoked" || row.revoke_reason != "rotated" {
+        return Ok(None);
+    }
+    let (Some(session_ciphertext), Some(refresh_ciphertext)) = (
+        row.rotated_session_token_ciphertext.as_deref(),
+        row.rotated_refresh_token_ciphertext.as_deref(),
+    ) else {
+        return Ok(None);
+    };
+    let aad = rotation_recovery_aad(row.id, refresh_token_hash);
+    let raw_token =
+        crypto::decrypt_secret(security_master_key, session_ciphertext, aad.as_bytes())?;
+    let refresh_token =
+        crypto::decrypt_secret(security_master_key, refresh_ciphertext, aad.as_bytes())?;
+    Ok(Some(IssuedSession {
+        raw_token,
+        refresh_token,
+    }))
+}
+
+fn rotation_recovery_aad(refresh_session_id: i64, refresh_token_hash: &str) -> String {
+    format!("yuance:browser-refresh-rotation:{refresh_session_id}:{refresh_token_hash}")
 }
 
 pub async fn user_from_headers(

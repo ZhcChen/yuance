@@ -7,10 +7,10 @@
 
 ```text
 yuance.quanxinfu.com
-  -> qfy-sc-test Caddy
+  -> qfy-sc-test Nginx :443
   -> FRPS 127.0.0.1:40000
-  -> Ubuntu WSL FRPC
-  -> WSL Docker 127.0.0.1:33033
+  -> qfy-test2 FRPC
+  -> qfy-test2 Docker 127.0.0.1:33033
   -> yuance-api
 ```
 
@@ -18,7 +18,8 @@ yuance.quanxinfu.com
 `qfy-test2:/srv/yuance/releases`。SQLite 数据必须位于目标机 Linux 文件系统。
 镜像在发布机完成构建后通过 SSH/SCP 传输；目标机和 `/srv/yuance` 内禁止源码
 编译或镜像构建。公网服务器上的旧 Compose 和
-`gateway/Caddyfile.yuance.example` 只用于冷回滚，不接收日常发布。
+`gateway/Caddyfile.yuance.example` 只用于冷回滚；
+`gateway/nginx-yuance.example.conf` 用于维护当前 Nginx 入口，不接收后端日常发布。
 
 ## 目录
 
@@ -30,7 +31,8 @@ backend/
   scripts/               备份、迁移、seed、审计与健康检查
 
 gateway/
-  Caddyfile.yuance.example  公网旧环境回滚模板
+  nginx-yuance.example.conf 当前公网 Nginx 入口与维护页模板
+  Caddyfile.yuance.example 公网旧环境回滚模板
 ```
 
 元策只部署一个 `api` 服务，不部署 Redis、PostgreSQL、NATS、Worker 或独立
@@ -71,7 +73,7 @@ YUANCE_DEPLOY_HOST=qfy-test \
 - `YUANCE_SECURITY_MASTER_KEY` 与 `YUANCE_SERVER_INSTANCE_ID` 必须长期稳定。
 - 正式环境不执行 `seed demo` 或 `seed local-admin`。
 - 新旧环境不得同时提供写服务。
-- FRP Web 管理正式域名路由，不得手工创建第二个同域名 Caddy 站点。
+- FRP Web 管理正式域名路由，不得手工创建第二个同域名 Nginx 或 Caddy 站点。
 
 完整发布、验证、备份和回滚步骤见
 `docs/runbooks/production-deployment.md`。

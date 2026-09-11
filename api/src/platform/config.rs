@@ -161,6 +161,10 @@ impl Settings {
         parse_duration_seconds("YUANCE_REFRESH_SESSION_TTL", &self.refresh_session_ttl)
     }
 
+    pub fn cache_session_ttl_seconds(&self) -> AppResult<i64> {
+        parse_duration_seconds("YUANCE_CACHE_SESSION_TTL", &self.cache_session_ttl)
+    }
+
     pub fn web_dist_dir(&self) -> PathBuf {
         match env::var("YUANCE_WEB_DIST_DIR") {
             Ok(value) if !value.trim().is_empty() => PathBuf::from(value.trim()),

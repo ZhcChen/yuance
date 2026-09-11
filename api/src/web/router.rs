@@ -1075,6 +1075,9 @@ async fn session_refresh_middleware(
     let Ok(refresh_ttl_seconds) = state.settings.refresh_session_ttl_seconds() else {
         return next.run(request).await;
     };
+    let Ok(rotation_recovery_ttl_seconds) = state.settings.cache_session_ttl_seconds() else {
+        return next.run(request).await;
+    };
     let secure = state.settings.env == "production";
     let mut access_cookie_to_set: Option<String> = None;
     let mut refresh_cookie_to_set: Option<String> = None;
@@ -1122,8 +1125,15 @@ async fn session_refresh_middleware(
             }
         }
     } else if let Some(raw_refresh) = refresh_cookie.as_deref() {
-        match auth::refresh_session(pool, raw_refresh, access_ttl_seconds, refresh_ttl_seconds)
-            .await
+        match auth::refresh_session(
+            pool,
+            raw_refresh,
+            access_ttl_seconds,
+            refresh_ttl_seconds,
+            rotation_recovery_ttl_seconds,
+            &state.settings.security_master_key,
+        )
+        .await
         {
             Ok(Some(issued)) => {
                 clear_access_cookie = false;
