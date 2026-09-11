@@ -47,6 +47,9 @@ import { UserAvatar } from './user-avatar.jsx';
  *   error: string,
  *   canManageWorkItems: boolean,
  *   canEditPrimaryPost: boolean,
+ *   canManageResourceLibraryLink: boolean,
+ *   resourceLibraryLinked: boolean,
+ *   resourceLibrarySubmitting: boolean,
  *   canCloseWorkItem: boolean,
  *   canReopenWorkItem: boolean,
  *   canRestoreWorkItem: boolean,
@@ -63,6 +66,7 @@ import { UserAvatar } from './user-avatar.jsx';
  *   onSubmitEdit: (event: import('react').FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>,
  *   onSubmitHandoff: (event: import('react').FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>,
  *   onRequestLifecycleAction: (action: 'close' | 'reopen' | 'restore') => void,
+ *   onRequestResourceLibraryLink: (action: 'link' | 'unlink') => boolean | void | Promise<boolean | void>,
  *   onPasteFile?: (file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null | typeof import('./rich-text.jsx').DEFER_RICH_TEXT_PASTE>,
  *   resolveAttachmentSource?: (attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
  *   onAttachmentActivate?: (attachmentId: number) => void,
@@ -87,6 +91,9 @@ export function WorkItemDetail({
   error,
   canManageWorkItems,
   canEditPrimaryPost,
+  canManageResourceLibraryLink,
+  resourceLibraryLinked,
+  resourceLibrarySubmitting,
   canCloseWorkItem,
   canReopenWorkItem,
   canRestoreWorkItem,
@@ -103,6 +110,7 @@ export function WorkItemDetail({
   onSubmitEdit,
   onSubmitHandoff,
   onRequestLifecycleAction,
+  onRequestResourceLibraryLink,
   onPasteFile,
   resolveAttachmentSource,
   onAttachmentActivate,
@@ -111,6 +119,7 @@ export function WorkItemDetail({
   children,
 }) {
   const [activePanel, setActivePanel] = useState(/** @type {'edit' | 'handoff' | 'history' | null} */ (null));
+  const [resourceLibraryAction, setResourceLibraryAction] = useState(/** @type {'link' | 'unlink' | null} */ (null));
   const previous = navigation.previous;
   const next = navigation.next;
   const isDeleted = Boolean(item.deleted_at.trim());
@@ -147,6 +156,8 @@ export function WorkItemDetail({
             {canManageWorkItems && !isDeleted ? <Button onClick={() => setActivePanel('handoff')}>指派 / 流转</Button> : null}
             {canEditPrimaryPost && !isDeleted ? <Button variant="secondary" onClick={() => setActivePanel('edit')}>编辑内容</Button> : null}
             {canManageWorkItems && !isDeleted ? <a className="yc-button yc-button-secondary" href="#work-item-comments">发表新评论</a> : null}
+            {resourceLibraryLinked ? <span className="work-item-resource-library-status">已链接到资料库</span> : null}
+            {canManageResourceLibraryLink && !isDeleted ? <Button variant="secondary" disabled={mutationBusy || resourceLibrarySubmitting} onClick={() => setResourceLibraryAction(resourceLibraryLinked ? 'unlink' : 'link')}>{resourceLibraryLinked ? '取消资料库链接' : '链接到资料库'}</Button> : null}
             <Button variant="secondary" onClick={() => setActivePanel('history')}>查看操作记录</Button>
             {canCloseWorkItem ? <Button variant="danger" onClick={() => onRequestLifecycleAction('close')}>关闭工作项</Button> : null}
             {canReopenWorkItem ? <Button variant="secondary" onClick={() => onRequestLifecycleAction('reopen')}>重新打开</Button> : null}
@@ -154,6 +165,10 @@ export function WorkItemDetail({
           <dl className="action-panel-context"><div><dt>报告人</dt><dd>{item.reporter || '未知'}</dd></div>{item.parent_item_key ? <div><dt>父级需求</dt><dd><a href={parentHref} onClick={onOpenParent}>{item.parent_item_key} · {item.parent_title}</a></dd></div> : null}{cycleLabel ? <div><dt>所属周期</dt><dd>{cycleLabel}</dd></div> : null}<div><dt>创建时间</dt><dd>{item.created_at || '未知'}</dd></div><div><dt>截止日期</dt><dd>{item.due_date || '未设置'}</dd></div></dl>
         </section></aside>
       </div>
+
+      <Modal open={resourceLibraryAction !== null} title={resourceLibraryAction === 'unlink' ? '取消资料库链接' : '链接到资料库'} onClose={() => { if (!resourceLibrarySubmitting) setResourceLibraryAction(null); }} footer={<><Button variant="secondary" disabled={resourceLibrarySubmitting} onClick={() => setResourceLibraryAction(null)}>取消</Button><Button loading={resourceLibrarySubmitting} disabled={resourceLibrarySubmitting} onClick={async () => { if (!resourceLibraryAction) return; const completed = await onRequestResourceLibraryLink(resourceLibraryAction); if (completed) setResourceLibraryAction(null); }}>{resourceLibraryAction === 'unlink' ? '确认取消' : '确认链接'}</Button></>}>
+        {resourceLibraryAction === 'unlink' ? <p>取消后，资料库不再显示这条发布内容；工作项、正文和附件不会被删除。</p> : <p>这会把当前主发布内容加入项目资料库。资料库只保存链接，不复制正文或附件。</p>}
+      </Modal>
 
       {canEditPrimaryPost && !isDeleted ? <Modal wide open={activePanel === 'edit'} title="编辑工作项" onClose={closePanel} footer={<><Button variant="secondary" disabled={mutationBusy} onClick={closePanel}>取消</Button><Button type="submit" form="work-item-edit-form" loading={editSubmitting}>保存修改</Button></>}>
         <form id="work-item-edit-form" className="work-item-action-form work-item-edit-form" onSubmit={async (event) => { if (await onSubmitEdit(event)) setActivePanel(null); }}>

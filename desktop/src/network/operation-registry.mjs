@@ -101,6 +101,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.attachmentpreview", projectAttachmentPreviewOperation],
     ["project.attachmentarchive", projectAttachmentArchiveOperation],
     ["project.resources", projectResourcesOperation],
+    ["project.resourcelinkedworkitemposts", projectResourceLinkedWorkItemPostsOperation],
     ["project.resourcedetail", projectResourceDetailOperation],
     ["project.resourceunlock", projectResourceUnlockOperation],
     ["project.resourcecreate", projectResourceCreateOperation],
@@ -126,8 +127,11 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.savedviewdelete", workItemSavedViewDeleteOperation],
     ["workitem.detail", workItemDetailOperation],
     ["workitem.detailview", workItemDetailViewOperation],
+    ["workitem.resourcelibrarylinkstatus", workItemResourceLibraryLinkStatusOperation],
     ["workitem.update", workItemUpdateOperation],
     ["workitem.primarypostupdate", workItemPrimaryPostUpdateOperation],
+    ["workitem.resourcelibrarylink", workItemResourceLibraryLinkOperation],
+    ["workitem.resourcelibraryunlink", workItemResourceLibraryUnlinkOperation],
     ["workitem.restore", workItemRestoreOperation],
     ["workitem.handoff", workItemHandoffOperation],
     ["workitem.comments", workItemCommentsOperation],
@@ -307,6 +311,13 @@ function projectResourcesOperation(input) {
   appendOptionalString(query, "related_work_item_key", input.relatedWorkItemKey === undefined ? "" : optionalItemKey(input.relatedWorkItemKey));
   appendOptionalString(query, "related_cycle_id", input.relatedCycleId === undefined || input.relatedCycleId === "" ? "" : String(positiveInteger(Number(input.relatedCycleId))));
   return descriptor("GET", withQuery(`/api/v1/projects/${projectKey(input.projectKey)}/resources`, query), parseProjectResources, true, "array");
+}
+
+function projectResourceLinkedWorkItemPostsOperation(input) {
+  exactKeys(input, ["projectKey", "q"]);
+  const query = new URLSearchParams();
+  appendOptionalString(query, "q", optionalText(input.q, "q", 200));
+  return descriptor("GET", withQuery(`/api/v1/projects/${projectKey(input.projectKey)}/resource-library/linked-work-item-posts`, query), parseProjectResourceLinkedWorkItemPosts, true, "array");
 }
 
 function projectResourceDetailOperation(input) {
@@ -785,6 +796,11 @@ function workItemDetailViewOperation(input) {
   return descriptor("GET", `/api/v1/work-item-detail-view/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetailView);
 }
 
+function workItemResourceLibraryLinkStatusOperation(input) {
+  exactKeys(input, ["itemKey"]);
+  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/resource-library-link`, parseWorkItemResourceLibraryLink, true);
+}
+
 function workItemUpdateOperation(input) {
   exactKeys(input, ["itemKey", "payload"]);
   const payload = plainPayload(input.payload, "payload");
@@ -816,6 +832,16 @@ function workItemPrimaryPostUpdateOperation(input) {
   const body = boundedRequiredText(payload.body, "body", 20_000);
   if (payload.bodyFormat !== "html") throw new TypeError("bodyFormat is invalid");
   return descriptor("PATCH", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/primary-post`, parseComment, false, "object", jsonBody({ body, body_format: "html" }));
+}
+
+function workItemResourceLibraryLinkOperation(input) {
+  exactKeys(input, ["itemKey"]);
+  return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/resource-library-link`, parseWorkItemResourceLibraryLink, false);
+}
+
+function workItemResourceLibraryUnlinkOperation(input) {
+  exactKeys(input, ["itemKey"]);
+  return descriptor("DELETE", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/resource-library-link`, parseWorkItemResourceLibraryLink, false);
 }
 
 function workItemHandoffOperation(input) {
@@ -1173,6 +1199,13 @@ function parseProjectResources(data) {
   if (!Array.isArray(data)) throw new TypeError("project resources are invalid");
   return Object.freeze(data.map(parseProjectResource));
 }
+function parseProjectResourceLinkedWorkItemPosts(data) {
+  if (!Array.isArray(data)) throw new TypeError("linked work item posts are invalid");
+  return Object.freeze(data.map((value) => freezeExactDto(value, {
+    key: shortString, item_type: shortString, title: textString, summary: longString,
+    author: textString, updated_at: shortString, linked_at: shortString, url: webPath,
+  })));
+}
 function parseProjectResource(value) { return freezeDto(value, {
   id: positiveInteger, project_key: shortString, title: textString, category: shortString, body: longString, body_format: shortString,
   summary: textString, status: shortString, is_protected: boolean, tags: resourceTags,
@@ -1266,6 +1299,9 @@ function parseWorkItemDetailView(value) {
     }),
   });
 }
+function parseWorkItemResourceLibraryLink(value) { return freezeExactDto(value, {
+  item_key: shortString, linked: boolean, linked_at: shortString, can_manage: boolean,
+}); }
 function parseDetailOption(value) { return freezeExactDto(value, { value: shortString, label: textString }); }
 function nullableDetailOption(value) { return value === null ? null : parseDetailOption(value); }
 function nullableDetailNavigationLink(value) { return value === null ? null : freezeExactDto(value, { item_key: shortString, title: textString }); }

@@ -3,6 +3,10 @@ use serde_json::{Value, json};
 const RESOURCE_PATH: &str = "/api/v1/projects/{project_key}/resources/{resource_id}";
 const RESOURCE_ATTACHMENTS_PATH: &str =
     "/api/v1/projects/{project_key}/resources/{resource_id}/attachments";
+const LINKED_WORK_ITEM_POSTS_PATH: &str =
+    "/api/v1/projects/{project_key}/resource-library/linked-work-item-posts";
+const WORK_ITEM_RESOURCE_LIBRARY_LINK_PATH: &str =
+    "/api/v1/work-items/{item_key}/resource-library-link";
 
 // This fixture is intentionally independent of the OpenAPI document. It mirrors the
 // fields emitted by project_resource_payload and attachment_payload in the API layer.
@@ -57,6 +61,8 @@ fn authorization_matrix_freezes_resource_boundaries() {
     let matrix = json!([
         {"operation": "auth/me", "permission": null, "scope": null, "protected": false},
         {"operation": "resources list/get", "permission": "project.view", "scope": "resource:read", "protected": true},
+        {"operation": "linked work item posts list", "permission": "project.view + work_item.view", "scope": "resource:read + work_item:read", "protected": true},
+        {"operation": "work item resource link", "permission": "work_item.view + project.content.write", "scope": "work_item:write + resource:write", "protected": false},
         {"operation": "resources unlock", "permission": "project.view", "scope": "resource:read + resource:unlock", "protected": true},
         {"operation": "resources update", "permission": "project.view + project.content.write", "scope": "resource:write", "protected": false},
         {"operation": "attachment list/download", "permission": "project.view", "scope": "resource:read", "protected": true},
@@ -65,9 +71,11 @@ fn authorization_matrix_freezes_resource_boundaries() {
     ]);
 
     assert_eq!(matrix[1]["scope"], "resource:read");
-    assert_eq!(matrix[2]["scope"], "resource:read + resource:unlock");
-    assert_eq!(matrix[4]["protected"], true);
-    assert_eq!(matrix[6]["scope"], "notification:read");
+    assert_eq!(matrix[2]["scope"], "resource:read + work_item:read");
+    assert_eq!(matrix[3]["scope"], "work_item:write + resource:write");
+    assert_eq!(matrix[4]["scope"], "resource:read + resource:unlock");
+    assert_eq!(matrix[6]["protected"], true);
+    assert_eq!(matrix[8]["scope"], "notification:read");
 }
 
 #[test]
@@ -78,6 +86,7 @@ fn openapi_covers_runtime_resource_actions_without_fake_pagination() {
     let required = [
         ("/api/v1/auth/me", "get"),
         ("/api/v1/projects/{project_key}/resources", "get"),
+        (LINKED_WORK_ITEM_POSTS_PATH, "get"),
         (RESOURCE_PATH, "get"),
         (RESOURCE_PATH, "patch"),
         (
@@ -106,6 +115,8 @@ fn openapi_covers_runtime_resource_actions_without_fake_pagination() {
             "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}",
             "delete",
         ),
+        (WORK_ITEM_RESOURCE_LIBRARY_LINK_PATH, "post"),
+        (WORK_ITEM_RESOURCE_LIBRARY_LINK_PATH, "delete"),
         ("/api/v1/notifications", "get"),
     ];
 
@@ -130,6 +141,60 @@ fn openapi_covers_runtime_resource_actions_without_fake_pagination() {
     assert!(names.contains(&"related_cycle_id"));
     assert!(!names.contains(&"page"));
     assert!(!names.contains(&"per_page"));
+
+    let linked_parameters = paths[LINKED_WORK_ITEM_POSTS_PATH]["get"]["parameters"]
+        .as_array()
+        .unwrap();
+    let linked_query = linked_parameters
+        .iter()
+        .find(|parameter| parameter["name"] == "q")
+        .expect("linked post query should exist");
+    assert_eq!(linked_query["schema"]["maxLength"], 200);
+    assert!(
+        paths[LINKED_WORK_ITEM_POSTS_PATH]["get"]["description"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("正文和附件仍从原工作项详情读取")
+    );
+    let linked_operation = &paths[LINKED_WORK_ITEM_POSTS_PATH]["get"];
+    for status in ["400", "403", "404"] {
+        assert!(linked_operation["responses"][status].is_object());
+    }
+    let linked_post_schema = &spec["components"]["schemas"]["ProjectResourceLinkedWorkItemPost"];
+    assert_eq!(linked_post_schema["additionalProperties"], false);
+    assert_eq!(
+        linked_post_schema["properties"]["item_type"]["enum"],
+        json!(["requirement", "task", "bug"])
+    );
+    let linked_list_schema =
+        &spec["components"]["schemas"]["ProjectResourceLinkedWorkItemPostListEnvelope"];
+    assert_eq!(linked_list_schema["additionalProperties"], false);
+    assert_eq!(linked_list_schema["properties"]["data"]["type"], "array");
+
+    let link_schema = &spec["components"]["schemas"]["WorkItemResourceLibraryLink"];
+    assert_eq!(link_schema["additionalProperties"], false);
+    assert_eq!(link_schema["required"].as_array().unwrap().len(), 4);
+    assert!(spec["paths"][WORK_ITEM_RESOURCE_LIBRARY_LINK_PATH]["get"].is_object());
+    assert_eq!(
+        spec["paths"][WORK_ITEM_RESOURCE_LIBRARY_LINK_PATH]["delete"]["description"],
+        "只删除链接关系，不删除工作项、主发布内容或附件；重复调用保持成功。"
+    );
+    assert!(
+        spec["paths"][WORK_ITEM_RESOURCE_LIBRARY_LINK_PATH]["delete"]["responses"]["400"]
+            .is_object()
+    );
+
+    let detail_view_schema = &spec["components"]["schemas"]["WorkItemDetailViewEnvelope"];
+    assert!(
+        !detail_view_schema
+            .to_string()
+            .contains("can_manage_resource_library_link")
+    );
+    assert!(
+        !detail_view_schema
+            .to_string()
+            .contains("resource_library_linked")
+    );
 }
 
 #[test]

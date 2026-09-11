@@ -1907,8 +1907,7 @@ async fn api_v1_search_returns_visible_paginated_results() {
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
     let response = app
         .clone()
         .oneshot(
@@ -2296,6 +2295,16 @@ async fn api_v1_work_item_detail_view_returns_atomic_shared_page_contract() {
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
+    projects::upsert_work_item_primary_post(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "<h2>统一前后端工作项模型</h2><p>统一资料内容</p>",
+        "系统管理员",
+    )
+    .await
+    .expect("primary post should be ready for detail view");
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let response = app
@@ -2343,6 +2352,597 @@ async fn api_v1_work_item_detail_view_returns_atomic_shared_page_contract() {
     assert!(data["flow_history"]["items"].is_array());
     assert_eq!(data["flow_history"]["pagination"]["page"], 1);
     assert_eq!(data["flow_history"]["pagination"]["per_page"], 10);
+}
+
+#[tokio::test]
+async fn api_v1_work_item_resource_library_link_lifecycle_is_idempotent_and_live() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::upsert_work_item_primary_post(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "<h2>统一前后端工作项模型</h2><p>统一资料内容</p>",
+        "系统管理员",
+    )
+    .await
+    .expect("task primary post should be ready for linking");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let first_link_request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+        .header(header::COOKIE, initialized.cookie.clone())
+        .header("x-yuance-csrf-token", CSRF_TOKEN)
+        .body(Body::empty())
+        .expect("request should build");
+    let second_link_request = Request::builder()
+        .method("POST")
+        .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+        .header(header::COOKIE, initialized.cookie.clone())
+        .header("x-yuance-csrf-token", CSRF_TOKEN)
+        .body(Body::empty())
+        .expect("request should build");
+    let (link, duplicate) = tokio::join!(
+        app.clone().oneshot(first_link_request),
+        app.clone().oneshot(second_link_request),
+    );
+    let link = link.expect("router should respond");
+    let duplicate = duplicate.expect("router should respond");
+    let link_status = link.status();
+    let link_body_text = response_body(link).await;
+    assert_eq!(
+        link_status,
+        StatusCode::OK,
+        "link response: {link_body_text}"
+    );
+    let link_body: serde_json::Value =
+        serde_json::from_str(&link_body_text).expect("link response should be json");
+    assert_eq!(link_body["data"]["item_key"], "YCE-TASK-2");
+    assert_eq!(link_body["data"]["linked"], true);
+    assert_eq!(link_body["data"]["can_manage"], true);
+    let linked_at = link_body["data"]["linked_at"]
+        .as_str()
+        .expect("link time should be a string")
+        .to_string();
+
+    assert_eq!(duplicate.status(), StatusCode::OK);
+    let duplicate_body: serde_json::Value = serde_json::from_str(&response_body(duplicate).await)
+        .expect("duplicate response should be json");
+    assert_eq!(duplicate_body["data"]["linked_at"], linked_at);
+    assert_eq!(duplicate_body["data"]["can_manage"], true);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM project_resource_work_item_links WHERE work_item_id = (SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("link count should load"),
+        1
+    );
+
+    let link_state = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(link_state.status(), StatusCode::OK);
+    let link_state_body: serde_json::Value =
+        serde_json::from_str(&response_body(link_state).await).expect("link state should be json");
+    assert_eq!(link_state_body["data"]["linked"], true);
+    assert_eq!(link_state_body["data"]["can_manage"], true);
+
+    let listed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts?q=统一")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(listed.status(), StatusCode::OK);
+    let listed_body: serde_json::Value =
+        serde_json::from_str(&response_body(listed).await).expect("list response should be json");
+    assert_eq!(listed_body["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(listed_body["data"][0]["key"], "YCE-TASK-2");
+    assert!(
+        listed_body["data"][0]["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.contains("统一"))
+    );
+    assert_eq!(listed_body["data"][0]["url"], "/web/work-items/YCE-TASK-2");
+
+    let primary_post_id = sqlx::query_scalar::<_, i64>(
+        "SELECT primary_post_comment_id FROM work_items WHERE item_key = 'YCE-TASK-2'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("primary post id should load");
+    sqlx::query("UPDATE work_item_comments SET is_draft = 1 WHERE id = ?1")
+        .bind(primary_post_id)
+        .execute(&pool)
+        .await
+        .expect("linked primary post should become draft");
+    let hidden_draft = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let hidden_draft_body: serde_json::Value =
+        serde_json::from_str(&response_body(hidden_draft).await)
+            .expect("draft list should be json");
+    assert_eq!(hidden_draft_body["data"].as_array().map(Vec::len), Some(0));
+    sqlx::query("UPDATE work_item_comments SET is_draft = 0 WHERE id = ?1")
+        .bind(primary_post_id)
+        .execute(&pool)
+        .await
+        .expect("linked primary post should be published again");
+
+    sqlx::query("UPDATE work_items SET deleted_at = datetime('now') WHERE item_key = 'YCE-TASK-2'")
+        .execute(&pool)
+        .await
+        .expect("linked work item should become deleted");
+    let hidden_item = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let hidden_item_body: serde_json::Value =
+        serde_json::from_str(&response_body(hidden_item).await)
+            .expect("deleted list should be json");
+    assert_eq!(hidden_item_body["data"].as_array().map(Vec::len), Some(0));
+    sqlx::query("UPDATE work_items SET deleted_at = NULL WHERE item_key = 'YCE-TASK-2'")
+        .execute(&pool)
+        .await
+        .expect("linked work item should be restored for the remaining assertions");
+
+    let update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<h2>最新售后资料</h2><p>新的关联摘要</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(update.status(), StatusCode::OK);
+
+    let refreshed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts?q=售后")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let refreshed_body: serde_json::Value = serde_json::from_str(&response_body(refreshed).await)
+        .expect("refreshed list should be json");
+    assert_eq!(
+        refreshed_body["data"][0]["title"],
+        "设计项目与工作项数据模型"
+    );
+    assert!(
+        refreshed_body["data"][0]["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.contains("最新售后资料"))
+    );
+
+    let unlink = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unlink.status(), StatusCode::OK);
+    let unlink_body: serde_json::Value =
+        serde_json::from_str(&response_body(unlink).await).expect("unlink response should be json");
+    assert_eq!(unlink_body["data"]["linked"], false);
+    assert_eq!(unlink_body["data"]["can_manage"], true);
+
+    let after_unlink = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let after_unlink_body: serde_json::Value =
+        serde_json::from_str(&response_body(after_unlink).await)
+            .expect("after unlink response should be json");
+    assert_eq!(after_unlink_body["data"].as_array().map(Vec::len), Some(0));
+
+    let detail = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert!(detail.primary_post_comment_id.is_some());
+    let comments = projects::list_work_item_comments(&pool, detail.id)
+        .await
+        .expect("comments should load");
+    assert!(
+        comments
+            .iter()
+            .any(|comment| comment.body.contains("最新售后资料"))
+    );
+}
+
+#[tokio::test]
+async fn api_v1_work_item_resource_library_links_requirement_task_and_bug_posts() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+
+    for (item_key, body) in [
+        ("YCE-REQ-1", "需求售后处理说明"),
+        ("YCE-TASK-1", "任务售后处理说明"),
+        ("YCE-BUG-1", "Bug 售后复盘说明"),
+    ] {
+        projects::upsert_work_item_primary_post(
+            &pool,
+            initialized.user_id,
+            item_key,
+            None,
+            &format!("<p>{body}</p>"),
+            "系统管理员",
+        )
+        .await
+        .expect("primary post should create");
+    }
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    for item_key in ["YCE-REQ-1", "YCE-TASK-1", "YCE-BUG-1"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/api/v1/work-items/{item_key}/resource-library-link"
+                    ))
+                    .header(header::COOKIE, initialized.cookie.clone())
+                    .header("x-yuance-csrf-token", CSRF_TOKEN)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        let status = response.status();
+        let body = response_body(response).await;
+        assert_eq!(status, StatusCode::OK, "{item_key}: {body}");
+    }
+
+    let listed = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let listed_body: serde_json::Value =
+        serde_json::from_str(&response_body(listed).await).expect("list response should be json");
+    let listed_items = listed_body["data"]
+        .as_array()
+        .expect("data should be an array");
+    assert_eq!(listed_items.len(), 3);
+    assert!(
+        listed_items
+            .iter()
+            .any(|item| item["key"] == "YCE-REQ-1" && item["item_type"] == "requirement")
+    );
+    assert!(
+        listed_items
+            .iter()
+            .any(|item| item["key"] == "YCE-TASK-1" && item["item_type"] == "task")
+    );
+    assert!(
+        listed_items
+            .iter()
+            .any(|item| item["key"] == "YCE-BUG-1" && item["item_type"] == "bug")
+    );
+
+    let filtered = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts?q=Bug")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let filtered_body: serde_json::Value = serde_json::from_str(&response_body(filtered).await)
+        .expect("filtered response should be json");
+    assert_eq!(filtered_body["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(filtered_body["data"][0]["key"], "YCE-BUG-1");
+}
+
+#[tokio::test]
+async fn api_v1_work_item_resource_library_link_rejects_missing_or_hidden_primary_posts() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    for (item_key, body) in [
+        ("YCE-TASK-2", "任务主发布内容"),
+        ("YCE-REQ-1", "需求主发布内容"),
+    ] {
+        projects::upsert_work_item_primary_post(
+            &pool,
+            initialized.user_id,
+            item_key,
+            None,
+            &format!("<p>{body}</p>"),
+            "系统管理员",
+        )
+        .await
+        .expect("primary post should exist");
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let draft_comment_id = sqlx::query_scalar::<_, i64>(
+        "SELECT primary_post_comment_id FROM work_items WHERE item_key = 'YCE-TASK-2'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("primary post should exist");
+    sqlx::query("UPDATE work_item_comments SET is_draft = 1 WHERE id = ?1")
+        .bind(draft_comment_id)
+        .execute(&pool)
+        .await
+        .expect("primary post should become draft");
+
+    let draft_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(draft_response.status(), StatusCode::BAD_REQUEST);
+
+    sqlx::query(
+        "UPDATE work_item_comments SET is_draft = 0, deleted_at = datetime('now') WHERE id = ?1",
+    )
+    .bind(draft_comment_id)
+    .execute(&pool)
+    .await
+    .expect("primary post should become deleted");
+    let deleted_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(deleted_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM project_resource_work_item_links WHERE work_item_id = (SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("link count should load"),
+        0
+    );
+
+    sqlx::query(
+        "UPDATE work_items SET primary_post_comment_id = NULL WHERE item_key = 'YCE-REQ-1'",
+    )
+    .execute(&pool)
+    .await
+    .expect("primary post should unbind");
+    let legacy_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-REQ-1/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(legacy_response.status(), StatusCode::OK);
+    assert!(
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT primary_post_comment_id FROM work_items WHERE item_key = 'YCE-REQ-1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("legacy primary post pointer should load")
+        .is_some()
+    );
+
+    let missing_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-BUG-1/resource-library-link")
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(missing_response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn api_v1_work_item_resource_library_link_requires_both_write_scopes() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    projects::upsert_work_item_primary_post(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "<p>scope visibility fixture</p>",
+        "系统管理员",
+    )
+    .await
+    .expect("scope visibility primary post should exist");
+    let cookie_link = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cookie_link.status(), StatusCode::OK);
+    let missing_resource_write = create_test_api_token(
+        app.clone(),
+        &initialized.cookie,
+        r#"{"name":"工作项写入但资料只读","scopes":["project:read","work_item:read","work_item:write","resource:read"],"project_scope":"YCE"}"#,
+    )
+    .await;
+    let missing_work_item_write = create_test_api_token(
+        app.clone(),
+        &initialized.cookie,
+        r#"{"name":"资料写入但工作项只读","scopes":["project:read","work_item:read","resource:read","resource:write"],"project_scope":"YCE"}"#,
+    )
+    .await;
+    let missing_resource_read = create_test_api_token(
+        app.clone(),
+        &initialized.cookie,
+        r#"{"name":"工作项读写但资料不可见","scopes":["project:read","work_item:read","work_item:write"],"project_scope":"YCE"}"#,
+    )
+    .await;
+
+    let detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-detail-view/YCE-TASK-2")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {missing_resource_write}"),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail.status(), StatusCode::OK);
+
+    let hidden_link_state = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {missing_resource_read}"),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(hidden_link_state.status(), StatusCode::OK);
+    let hidden_link_state: serde_json::Value =
+        serde_json::from_str(&response_body(hidden_link_state).await)
+            .expect("hidden link state should be json");
+    assert_eq!(hidden_link_state["data"]["linked"], false);
+    assert_eq!(hidden_link_state["data"]["can_manage"], false);
+
+    for (token, scope) in [
+        (missing_resource_write, "resource:write"),
+        (missing_work_item_write, "work_item:write"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(response_body(response).await.contains(scope));
+    }
 }
 
 #[tokio::test]
@@ -3717,6 +4317,19 @@ async fn api_v1_project_attachment_subflows_require_rbac_permissions() {
         .await
         .expect("router should respond");
     assert_eq!(upload_url_response.status(), StatusCode::FORBIDDEN);
+
+    let linked_posts_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts")
+                .header(header::COOKIE, view_only.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(linked_posts_response.status(), StatusCode::FORBIDDEN);
 
     let uploaded_response = app
         .clone()

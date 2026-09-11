@@ -21,11 +21,13 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
 /** @typedef {{ body: string, bodyFormat?: string, parentCommentId?: number | null }} CommentRequestPayload */
 /** @typedef {{ originalFilename: string, contentType: string, byteSize: number, checksumSha256?: string }} AttachmentCreatePayload */
 /** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
+/** @typedef {{ item_key: string, linked: boolean, linked_at: string, can_manage: boolean }} WorkItemResourceLibraryLink */
 /**
  * @typedef {object} WorkItemClient
  * @property {(query?: WorkItemListQuery) => Promise<{ items: WorkItemSummary[], pagination: Pagination }>} getWorkItems
  * @property {(query?: WorkItemListQuery) => Promise<WorkItemListView>} getWorkItemListView
  * @property {(itemKey: string) => Promise<WorkItemDetailView>} getWorkItemDetailView
+ * @property {(itemKey: string) => Promise<WorkItemResourceLibraryLink>} getWorkItemResourceLibraryLink
  * @property {(payload: WorkItemCreatePayload) => Promise<WorkItemDetail>} createWorkItem
  * @property {(payload: WorkItemBatchUpdatePayload) => Promise<WorkItemBatchUpdateResult>} batchUpdateWorkItems
  * @property {(payload: WorkItemSavedViewCreatePayload) => Promise<WorkItemSavedView>} createWorkItemSavedView
@@ -37,6 +39,8 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(itemKey: string, payload: { clientId: string, active: boolean }) => Promise<void>} updateWorkItemTyping
  * @property {(itemKey: string, payload: WorkItemUpdatePayload) => Promise<WorkItemDetail>} updateWorkItem
  * @property {(itemKey: string, body: string) => Promise<WorkItemComment>} updateWorkItemPrimaryPost
+ * @property {(itemKey: string) => Promise<WorkItemResourceLibraryLink>} linkWorkItemToResourceLibrary
+ * @property {(itemKey: string) => Promise<WorkItemResourceLibraryLink>} unlinkWorkItemFromResourceLibrary
  * @property {(itemKey: string) => Promise<WorkItemDetail>} restoreWorkItem
  * @property {(itemKey: string) => Promise<WorkItemDetail>} closeWorkItem
  * @property {(itemKey: string, payload: WorkItemHandoffPayload) => Promise<WorkItemDetail>} handoffWorkItem
@@ -378,6 +382,11 @@ export function createWorkItemClient({ request, prepareWrite }) {
     },
 
     /** @param {string} itemKey */
+    async getWorkItemResourceLibraryLink(itemKey) {
+      return workItemResourceLibraryLinkFromPayload(await request(`${workItemApiPath(itemKey)}/resource-library-link`));
+    },
+
+    /** @param {string} itemKey */
     getWorkItemComments(itemKey) {
       return request(`${workItemApiPath(itemKey)}/comments`);
     },
@@ -427,6 +436,18 @@ export function createWorkItemClient({ request, prepareWrite }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ body, body_format: 'html' }),
       });
+    },
+
+    /** @param {string} itemKey */
+    async linkWorkItemToResourceLibrary(itemKey) {
+      await prepareWrite();
+      return workItemResourceLibraryLinkFromPayload(await request(`${workItemApiPath(itemKey)}/resource-library-link`, { method: 'POST' }));
+    },
+
+    /** @param {string} itemKey */
+    async unlinkWorkItemFromResourceLibrary(itemKey) {
+      await prepareWrite();
+      return workItemResourceLibraryLinkFromPayload(await request(`${workItemApiPath(itemKey)}/resource-library-link`, { method: 'DELETE' }));
     },
 
     /** @param {string} itemKey */
@@ -671,4 +692,12 @@ export function createWorkItemClient({ request, prepareWrite }) {
       ));
     },
   };
+}
+
+export function workItemResourceLibraryLinkFromPayload(payload) {
+  const value = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+  if (typeof value.item_key !== 'string' || typeof value.linked !== 'boolean' || typeof value.linked_at !== 'string' || typeof value.can_manage !== 'boolean') {
+    throw new TypeError('work item resource library link is invalid');
+  }
+  return Object.freeze({ item_key: value.item_key, linked: value.linked, linked_at: value.linked_at, can_manage: value.can_manage });
 }

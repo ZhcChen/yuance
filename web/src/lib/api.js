@@ -122,6 +122,7 @@ export const markProjectAttachmentUploaded = apiClient.markProjectAttachmentUplo
 export const getProjectAttachmentDownloadUrl = apiClient.getProjectAttachmentDownloadUrl;
 export const archiveProjectAttachment = apiClient.archiveProjectAttachment;
 export const getProjectResources = apiClient.getProjectResources;
+export const getProjectResourceLinkedWorkItemPosts = apiClient.getProjectResourceLinkedWorkItemPosts;
 export const getProjectResource = apiClient.getProjectResource;
 export const unlockProjectResource = apiClient.unlockProjectResource;
 export const createProjectResource = apiClient.createProjectResource;
@@ -162,9 +163,12 @@ export const deleteWorkItemSavedView = apiClient.deleteWorkItemSavedView;
 
 export const getWorkItem = /** @type {(itemKey: string) => Promise<WorkItemDetail>} */ (apiClient.getWorkItem);
 export const getWorkItemDetailView = apiClient.getWorkItemDetailView;
+export const getWorkItemResourceLibraryLink = apiClient.getWorkItemResourceLibraryLink;
 export const restoreWorkItem = apiClient.restoreWorkItem;
 export const closeWorkItem = apiClient.closeWorkItem;
 export const updateWorkItemPrimaryPost = apiClient.updateWorkItemPrimaryPost;
+export const linkWorkItemToResourceLibrary = apiClient.linkWorkItemToResourceLibrary;
+export const unlinkWorkItemFromResourceLibrary = apiClient.unlinkWorkItemFromResourceLibrary;
 
 export const getWorkItemComments = /** @type {(itemKey: string) => Promise<WorkItemComment[]>} */ (apiClient.getWorkItemComments);
 export const updateWorkItemTyping = /** @type {(itemKey: string, payload: { clientId: string, active: boolean }) => Promise<void>} */ (apiClient.updateWorkItemTyping);
@@ -277,6 +281,7 @@ export const webApi = {
   getProjectPersonalAnalysis,
   getProjectResource,
   getProjectResources,
+  getProjectResourceLinkedWorkItemPosts,
   getProjects,
   getTopbarStatus,
   getDashboard,
@@ -320,9 +325,12 @@ export const webApi = {
   updateSystemUserProjectRole,
   getWorkItem,
   getWorkItemDetailView,
+  getWorkItemResourceLibraryLink,
   restoreWorkItem,
   closeWorkItem,
   updateWorkItemPrimaryPost,
+  linkWorkItemToResourceLibrary,
+  unlinkWorkItemFromResourceLibrary,
   getWorkItemAttachmentDownloadUrl,
   getWorkItemAttachmentPreview,
   getWorkItemAttachmentUploadUrl,

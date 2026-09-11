@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use crate::{
-    domains::auth,
+    domains::{auth, projects},
     platform::{
         crypto,
         error::{AppError, AppResult},
@@ -82,6 +82,17 @@ pub struct ProjectResourceSummary {
     pub updated_by_display_name: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectResourceLinkedWorkItemPost {
+    pub item_key: String,
+    pub item_type: String,
+    pub title: String,
+    pub summary: String,
+    pub author_display_name: String,
+    pub updated_at: String,
+    pub linked_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,6 +295,321 @@ pub async fn list_resources(
         .collect::<Vec<_>>();
     populate_resource_summary_metadata(pool, &mut resources).await?;
     Ok(resources)
+}
+
+pub async fn list_linked_work_item_posts(
+    pool: &SqlitePool,
+    project_id: i64,
+    keyword: &str,
+) -> AppResult<Vec<ProjectResourceLinkedWorkItemPost>> {
+    if project_id <= 0 {
+        return Err(AppError::BadRequest("项目 ID 无效".to_string()));
+    }
+    let keyword = validate_optional_text(keyword, "关键词", 200)?;
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            String,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            wi.id,
+            link.id,
+            wi.item_key,
+            wi.item_type,
+            wi.title,
+            wi.updated_at,
+            wi.primary_post_comment_id,
+            COALESCE(reporter.username, ''),
+            c.body,
+            c.body_format,
+            COALESCE(NULLIF(c.actor_display_name_snapshot, ''), author.display_name, ''),
+            c.updated_at,
+            link.created_at
+        FROM project_resource_work_item_links link
+        JOIN work_items wi ON wi.id = link.work_item_id
+        LEFT JOIN work_item_comments c
+            ON c.id = wi.primary_post_comment_id
+           AND c.work_item_id = wi.id
+           AND c.deleted_at IS NULL
+           AND c.is_draft = 0
+        LEFT JOIN users author ON author.id = c.author_user_id
+        LEFT JOIN users reporter ON reporter.id = wi.reporter_user_id
+        WHERE link.project_id = ?1
+          AND wi.project_id = link.project_id
+          AND wi.deleted_at IS NULL
+        ORDER BY wi.updated_at DESC, link.id DESC
+        "#,
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    let keyword = keyword.to_lowercase();
+    let mut posts = Vec::new();
+    for (
+        work_item_id,
+        link_id,
+        item_key,
+        item_type,
+        title,
+        _,
+        primary_post_comment_id,
+        reporter_username,
+        body,
+        body_format,
+        author_display_name,
+        updated_at,
+        linked_at,
+    ) in rows
+    {
+        let post_data = match (primary_post_comment_id, body, body_format, updated_at) {
+            (Some(_), Some(body), Some(body_format), Some(updated_at)) => {
+                Some((body, body_format, author_display_name, updated_at))
+            }
+            (None, _, _, _) => current_work_item_primary_post(pool, work_item_id)
+                .await?
+                .map(|primary_post| {
+                    (
+                        primary_post.body,
+                        primary_post.body_format,
+                        primary_post.author_display_name,
+                        primary_post.updated_at,
+                    )
+                }),
+            _ => None,
+        };
+        let Some((body, body_format, author_display_name, updated_at)) = post_data else {
+            continue;
+        };
+        let post = ProjectResourceLinkedWorkItemPost {
+            item_key,
+            item_type,
+            title,
+            summary: projects::work_item_primary_post_summary(&body, &body_format),
+            author_display_name: if author_display_name.is_empty() {
+                reporter_username
+            } else {
+                author_display_name
+            },
+            updated_at,
+            linked_at,
+        };
+        if keyword.is_empty()
+            || post.item_key.to_lowercase().contains(&keyword)
+            || post.title.to_lowercase().contains(&keyword)
+            || post.summary.to_lowercase().contains(&keyword)
+        {
+            posts.push((post, link_id));
+        }
+    }
+    posts.sort_by(|(left, left_link_id), (right, right_link_id)| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| right_link_id.cmp(left_link_id))
+    });
+    Ok(posts.into_iter().map(|(post, _)| post).collect())
+}
+
+async fn current_work_item_primary_post(
+    pool: &SqlitePool,
+    work_item_id: i64,
+) -> AppResult<Option<projects::WorkItemCommentSummary>> {
+    let Some(item_key) =
+        sqlx::query_scalar::<_, String>("SELECT item_key FROM work_items WHERE id = ?1")
+            .bind(work_item_id)
+            .fetch_optional(pool)
+            .await?
+    else {
+        return Ok(None);
+    };
+    let Some(item) = projects::get_work_item_detail(pool, &item_key).await? else {
+        return Ok(None);
+    };
+    let comments = projects::list_work_item_comments(pool, item.id).await?;
+    Ok(projects::work_item_primary_post(
+        &comments,
+        item.primary_post_comment_id,
+        &item.reporter_username,
+        &item.description,
+    )
+    .cloned())
+}
+
+pub async fn get_work_item_post_resource_link(
+    pool: &SqlitePool,
+    project_id: i64,
+    work_item_id: i64,
+) -> AppResult<Option<String>> {
+    if project_id <= 0 || work_item_id <= 0 {
+        return Err(AppError::BadRequest("工作项链接参数无效".to_string()));
+    }
+
+    let linked_at = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT link.created_at
+        FROM project_resource_work_item_links link
+        JOIN work_items wi ON wi.id = link.work_item_id
+        WHERE link.project_id = ?1
+          AND link.work_item_id = ?2
+          AND wi.project_id = link.project_id
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(project_id)
+    .bind(work_item_id)
+    .fetch_optional(pool)
+    .await?;
+    if linked_at.is_none()
+        || current_work_item_primary_post(pool, work_item_id)
+            .await?
+            .is_none()
+    {
+        return Ok(None);
+    }
+    Ok(linked_at)
+}
+
+pub async fn link_work_item_post(
+    pool: &SqlitePool,
+    project_id: i64,
+    work_item_id: i64,
+    actor_user_id: i64,
+) -> AppResult<String> {
+    if project_id <= 0 || work_item_id <= 0 || actor_user_id <= 0 {
+        return Err(AppError::BadRequest("工作项链接参数无效".to_string()));
+    }
+
+    let persisted_primary_post_comment_id = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT primary_post_comment_id FROM work_items WHERE id = ?1",
+    )
+    .bind(work_item_id)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+    let legacy_primary_post_comment_id = if persisted_primary_post_comment_id.is_none() {
+        current_work_item_primary_post(pool, work_item_id)
+            .await?
+            .map(|comment| comment.id)
+    } else {
+        None
+    };
+
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let (item_project_id, item_type, deleted_at, primary_post_comment_id) =
+        sqlx::query_as::<_, (i64, String, Option<String>, Option<i64>)>(
+            r#"
+        SELECT project_id, item_type, deleted_at, primary_post_comment_id
+        FROM work_items
+        WHERE id = ?1
+        "#,
+        )
+        .bind(work_item_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+
+    if item_project_id != project_id {
+        return Err(AppError::BadRequest("工作项不属于当前项目".to_string()));
+    }
+    if deleted_at.is_some() {
+        return Err(AppError::BadRequest(
+            "历史工作项不能链接到资料库".to_string(),
+        ));
+    }
+    projects::validate_work_item_type(&item_type)?;
+    let Some(primary_post_comment_id) = primary_post_comment_id.or(legacy_primary_post_comment_id)
+    else {
+        return Err(AppError::BadRequest(
+            "工作项没有可链接的主发布内容".to_string(),
+        ));
+    };
+    let primary_post_exists = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT 1
+        FROM work_item_comments
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+          AND is_draft = 0
+        "#,
+    )
+    .bind(primary_post_comment_id)
+    .bind(work_item_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .is_some();
+    if !primary_post_exists {
+        return Err(AppError::BadRequest(
+            "工作项没有可链接的主发布内容".to_string(),
+        ));
+    }
+
+    if legacy_primary_post_comment_id.is_some() {
+        sqlx::query(
+            "UPDATE work_items SET primary_post_comment_id = ?1 WHERE id = ?2 AND primary_post_comment_id IS NULL",
+        )
+        .bind(primary_post_comment_id)
+        .bind(work_item_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT OR IGNORE INTO project_resource_work_item_links (
+            project_id,
+            work_item_id,
+            created_by_user_id
+        )
+        VALUES (?1, ?2, ?3)
+        "#,
+    )
+    .bind(project_id)
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+    let linked_at = sqlx::query_scalar::<_, String>(
+        "SELECT created_at FROM project_resource_work_item_links WHERE work_item_id = ?1",
+    )
+    .bind(work_item_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(linked_at)
+}
+
+pub async fn unlink_work_item_post(
+    pool: &SqlitePool,
+    project_id: i64,
+    work_item_id: i64,
+) -> AppResult<()> {
+    if project_id <= 0 || work_item_id <= 0 {
+        return Err(AppError::BadRequest("工作项链接参数无效".to_string()));
+    }
+    sqlx::query(
+        "DELETE FROM project_resource_work_item_links WHERE project_id = ?1 AND work_item_id = ?2",
+    )
+    .bind(project_id)
+    .bind(work_item_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn list_project_resource_tags(

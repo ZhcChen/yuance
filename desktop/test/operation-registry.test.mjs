@@ -52,6 +52,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["project.cycledetail", { projectKey: "DEMO", cycleId: 7 }, "/api/v1/projects/DEMO/cycles/7"],
     ["project.personalanalysis", { projectKey: "DEMO" }, "/api/v1/projects/DEMO/my-analysis"],
     ["project.resources", { projectKey: "DEMO", q: "发布", category: "development", relatedCycleId: 7 }, "/api/v1/projects/DEMO/resources?q=%E5%8F%91%E5%B8%83&category=development&related_cycle_id=7"],
+    ["project.resourcelinkedworkitemposts", { projectKey: "DEMO", q: "售后" }, "/api/v1/projects/DEMO/resource-library/linked-work-item-posts?q=%E5%94%AE%E5%90%8E"],
     ["project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }, "/api/v1/projects/DEMO/resources/9"],
     ["project.resourceattachments", { projectKey: "DEMO", resourceId: 9, accessToken: "grant-token" }, "/api/v1/projects/DEMO/resources/9/attachments?access=grant-token"],
     ["project.resourceattachmentpreview", { projectKey: "DEMO", resourceId: 9, attachmentId: 11, accessToken: "grant token" }, "/api/v1/projects/DEMO/resources/9/attachments/11/preview?access=grant+token"],
@@ -82,6 +83,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
   assert.equal(registry.resolve("workitem.comments", { itemKey: "DEMO-1" }).dataKind, "array");
   assert.equal(registry.resolve("project.members", { projectKey: "DEMO" }).dataKind, "array");
   assert.equal(registry.resolve("workitem.attachments", { itemKey: "DEMO-1" }).dataKind, "array");
+  assert.equal(registry.resolve("project.resourcelinkedworkitemposts", { projectKey: "DEMO" }).dataKind, "array");
   assert.equal(registry.resolve("project.current", {}).dataKind, "nullable-object");
 });
 
@@ -491,6 +493,44 @@ test("project resources accept the complete unpaginated server response", () => 
   assert.equal(Object.isFrozen(resources), true);
 });
 
+test("project linked work item posts enforce the fixed response and query contract", () => {
+  const registry = createOperationRegistry();
+  const post = {
+    key: "DEMO-TASK-1", item_type: "task", title: "售后流程", summary: "处理步骤",
+    author: "Alice", updated_at: "2026-08-07T00:00:00Z", linked_at: "2026-08-06T00:00:00Z",
+    url: "/web/work-items/DEMO-TASK-1",
+  };
+  const operation = registry.resolve("project.resourcelinkedworkitemposts", { projectKey: "DEMO", q: "售后" });
+  assert.deepEqual({ method: operation.method, path: operation.path, idempotent: operation.idempotent }, {
+    method: "GET",
+    path: "/api/v1/projects/DEMO/resource-library/linked-work-item-posts?q=%E5%94%AE%E5%90%8E",
+    idempotent: true,
+  });
+  assert.deepEqual(operation.parse([post]), [post]);
+  assert.equal(Object.isFrozen(operation.parse([post])), true);
+  assert.equal(Object.isFrozen(operation.parse([post])[0]), true);
+  assert.throws(() => operation.parse([{ ...post, source_body: "private" }]), /fields/i);
+  assert.throws(() => operation.parse([{ ...post, url: "https://evil.example" }]), /path/i);
+  const largeResult = operation.parse(Array.from({ length: 2_001 }, (_, index) => ({ ...post, key: `DEMO-TASK-${index + 1}`, url: `/web/work-items/DEMO-TASK-${index + 1}` })));
+  assert.equal(largeResult.length, 2_001);
+  assert.equal(largeResult.at(-1).key, "DEMO-TASK-2001");
+  assert.throws(() => registry.resolve("project.resourcelinkedworkitemposts", { projectKey: "DEMO", q: "x".repeat(201) }), /q/i);
+  assert.throws(() => registry.resolve("project.resourcelinkedworkitemposts", { projectKey: "DEMO", q: "x", page: 2 }), /fields/i);
+});
+
+test("work item resource library link descriptors enforce the exact DTO", () => {
+  const registry = createOperationRegistry();
+  const payload = { item_key: "DEMO-TASK-1", linked: true, linked_at: "2026-08-07T00:00:00Z", can_manage: true };
+
+  for (const name of ["workitem.resourcelibrarylinkstatus", "workitem.resourcelibrarylink", "workitem.resourcelibraryunlink"]) {
+    const parsed = registry.resolve(name, { itemKey: "DEMO-TASK-1" }).parse(payload);
+    assert.deepEqual(parsed, payload);
+    assert.equal(Object.isFrozen(parsed), true);
+    assert.throws(() => registry.resolve(name, { itemKey: "DEMO-TASK-1" }).parse({ ...payload, linked: "true" }), /invalid/i);
+    assert.throws(() => registry.resolve(name, { itemKey: "DEMO-TASK-1" }).parse({ ...payload, extra: true }), /fields/i);
+  }
+});
+
 test("builds non-idempotent mutation descriptors from bounded domain payloads", () => {
   const registry = createOperationRegistry();
   const cases = [
@@ -533,6 +573,8 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["workitem.savedviewdelete", { savedViewId: 7 }, "DELETE", "/api/v1/work-item-saved-views/7", undefined],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assigneeUsername: "alice", dueDate: "2026-08-31", parentItemKey: "" } }, "PATCH", "/api/v1/work-items/DEMO-1", { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assignee_username: "alice", due_date: "2026-08-31", parent_item_key: "" }],
     ["workitem.primarypostupdate", { itemKey: "DEMO-1", payload: { body: "<p>Updated</p>", bodyFormat: "html" } }, "PATCH", "/api/v1/work-items/DEMO-1/primary-post", { body: "<p>Updated</p>", body_format: "html" }],
+    ["workitem.resourcelibrarylink", { itemKey: "DEMO-1" }, "POST", "/api/v1/work-items/DEMO-1/resource-library-link", undefined],
+    ["workitem.resourcelibraryunlink", { itemKey: "DEMO-1" }, "DELETE", "/api/v1/work-items/DEMO-1/resource-library-link", undefined],
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Continue", sourceCommentId: null } }, "POST", "/api/v1/work-items/DEMO-1/handoff", { status: "in_progress", assignee_username: "alice", body: "Continue", source_comment_id: null }],
     ["workitem.restore", { itemKey: "DEMO-1" }, "POST", "/api/v1/work-items/DEMO-1/restore", undefined],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "<p>Comment</p>", bodyFormat: "html" } }, "POST", "/api/v1/work-items/DEMO-1/comments", { body: "<p>Comment</p>", body_format: "html" }],

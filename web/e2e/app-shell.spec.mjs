@@ -10,6 +10,14 @@ async function routeEmptyProjectResourceAttachments(page) {
   await page.route(/\/api\/v1\/projects\/[^/]+\/resources\/\d+\/attachments(?:\?.*)?$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
 }
 
+async function routeEmptyProjectResourceLinkedWorkItemPosts(page) {
+  await page.route(/\/api\/v1\/projects\/[^/]+\/resource-library\/linked-work-item-posts(?:\?.*)?$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+}
+
+test.beforeEach(async ({ page }) => {
+  await routeEmptyProjectResourceLinkedWorkItemPosts(page);
+});
+
 async function login(page, entryPath) {
   await page.goto(entryPath);
   await expect(page).toHaveURL(/\/web\/login/);
@@ -108,6 +116,20 @@ function projectResourceFixture(overrides = {}) {
     updated_at: '2026-08-07T08:00:00Z',
     url: '/web/projects/YCE/resources/901',
     access_token: '',
+    ...overrides,
+  };
+}
+
+function linkedWorkItemPostFixture(overrides = {}) {
+  return {
+    key: 'YCE-TASK-2',
+    item_type: 'task',
+    title: '售后处理流程',
+    summary: '记录售后排查和处理步骤。',
+    author: '元策开发管理员',
+    updated_at: '2026-09-11T08:00:00Z',
+    linked_at: '2026-09-10T08:00:00Z',
+    url: '/web/work-items/YCE-TASK-2',
     ...overrides,
   };
 }
@@ -3879,6 +3901,213 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(page.locator('.resource-content-card')).toBeVisible();
   await expect(page.getByText('secret=desktop-browser-parity')).toBeVisible();
   expect(unlockPasswords).toEqual(['stale-pass', 'wrong-pass', 'safe-pass']);
+});
+
+test('shared work item detail links and unlinks the primary post from the resource library', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  let linked = false;
+  const mutations = [];
+
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.primary_post = workItemCommentFixture({ body: '<p>售后主发布内容</p>', body_format: 'html' });
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/resource-library-link', async (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { item_key: 'YCE-TASK-2', linked, linked_at: linked ? '2026-09-11T09:00:00Z' : '', can_manage: true } }),
+      });
+      return;
+    }
+    mutations.push(method);
+    linked = method === 'POST';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { item_key: 'YCE-TASK-2', linked, linked_at: linked ? '2026-09-11T09:00:00Z' : '', can_manage: true } }),
+    });
+  });
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: '链接到资料库' })).toBeVisible();
+  await page.getByRole('button', { name: '链接到资料库' }).click();
+  const linkDialog = page.getByRole('dialog', { name: '链接到资料库' });
+  await expect(linkDialog).toContainText('不复制正文或附件');
+  await linkDialog.getByRole('button', { name: '确认链接' }).click();
+
+  await expect.poll(() => mutations).toEqual(['POST']);
+  await expect(page.getByText('已链接到资料库', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '取消资料库链接' })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已链接到资料库。');
+
+  await page.getByRole('button', { name: '取消资料库链接' }).click();
+  const unlinkDialog = page.getByRole('dialog', { name: '取消资料库链接' });
+  await expect(unlinkDialog).toContainText('正文和附件不会被删除');
+  await unlinkDialog.getByRole('button', { name: '确认取消' }).click();
+
+  await expect.poll(() => mutations).toEqual(['POST', 'DELETE']);
+  await expect(page.getByRole('button', { name: '链接到资料库' })).toBeVisible();
+  await expect(page.getByText('已链接到资料库', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已取消资料库链接。');
+  await expect(page.locator('.work-item-description .yc-rich-text-content')).toHaveText('售后主发布内容');
+});
+
+test('shared work item detail keeps the link state after a failed or repeated link submission', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  let postRequests = 0;
+  let releasePost;
+  const postGate = new Promise((resolve) => { releasePost = resolve; });
+
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.primary_post = workItemCommentFixture({ body: '<p>失败场景主发布内容</p>', body_format: 'html' });
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/resource-library-link', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { item_key: 'YCE-TASK-2', linked: false, linked_at: '', can_manage: true } }),
+      });
+      return;
+    }
+    postRequests += 1;
+    await postGate;
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'resource_link_failed', message: '资料库链接暂时不可用。' } }),
+    });
+  });
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: '链接到资料库' })).toBeVisible();
+  await page.getByRole('button', { name: '链接到资料库' }).click();
+  const linkDialog = page.getByRole('dialog', { name: '链接到资料库' });
+  const confirmButton = linkDialog.locator('button').last();
+  await confirmButton.evaluate((button) => { button.click(); button.click(); });
+  await expect.poll(() => postRequests).toBe(1);
+  await expect(confirmButton).toBeDisabled();
+  await expect(page.getByRole('button', { name: '链接到资料库' })).toBeVisible();
+
+  releasePost();
+  await expect(page.locator('.work-item-action-error')).toHaveText('资料库链接暂时不可用。');
+  await expect(page.getByRole('button', { name: '链接到资料库' })).toBeVisible();
+  await expect(page.getByText('已链接到资料库', { exact: true })).toHaveCount(0);
+  expect(postRequests).toBe(1);
+});
+
+test('shared work item detail ignores a late resource link response after navigation', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  let postRequests = 0;
+  let releasePost;
+  const postGate = new Promise((resolve) => { releasePost = resolve; });
+
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.primary_post = workItemCommentFixture({ body: '<p>竞态场景主发布内容</p>', body_format: 'html' });
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/resource-library-link', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: { item_key: 'YCE-TASK-2', linked: false, linked_at: '', can_manage: true } }),
+      });
+      return;
+    }
+    postRequests += 1;
+    await postGate;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: { item_key: 'YCE-TASK-2', linked: true, linked_at: '2026-09-11T09:00:00Z', can_manage: true } }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-1/resource-library-link', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: { item_key: 'YCE-TASK-1', linked: false, linked_at: '', can_manage: true } }),
+  }));
+
+  await page.reload();
+  await page.getByRole('button', { name: '链接到资料库' }).click();
+  await page.getByRole('dialog', { name: '链接到资料库' }).getByRole('button', { name: '确认链接' }).click();
+  await expect.poll(() => postRequests).toBe(1);
+
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/web/app/work-items/YCE-TASK-1');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-1$/u);
+  await expect(page.getByRole('heading', { level: 1, name: /YCE-TASK-1/u })).toBeVisible();
+
+  releasePost();
+  await expect(page.getByRole('heading', { level: 1, name: /YCE-TASK-1/u })).toBeVisible();
+  await expect(page.getByText('YCE-TASK-2 已链接到资料库。', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '链接到资料库' })).toBeVisible();
+  expect(postRequests).toBe(1);
+});
+
+test('project resource library presents linked posts with keyword-only filtering and source navigation', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const resource = projectResourceFixture({ title: '真实资料条目', summary: '独立资料内容', url: '/web/projects/YCE/resources/991' });
+  const linkedPosts = [
+    linkedWorkItemPostFixture({ key: 'YCE-REQ-1', item_type: 'requirement', title: '售后需求说明', summary: '需求范围和交付边界。', url: '/web/work-items/YCE-REQ-1' }),
+    linkedWorkItemPostFixture({ key: 'YCE-TASK-2', item_type: 'task', title: '售后处理流程', summary: '处理步骤和责任人。' }),
+    linkedWorkItemPostFixture({ key: 'YCE-BUG-3', item_type: 'bug', title: '售后缺陷复盘', summary: '缺陷现象和修复结论。', url: '/web/work-items/YCE-BUG-3' }),
+  ];
+  const linkedQueries = [];
+
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
+  await page.route(/\/api\/v1\/projects\/YCE\/resource-library\/linked-work-item-posts(?:\?.*)?$/u, (route) => {
+    const url = new URL(route.request().url());
+    const query = url.searchParams.get('q') || '';
+    linkedQueries.push(query);
+    const data = query ? linkedPosts.filter((post) => `${post.key} ${post.title} ${post.summary}`.includes(query)) : linkedPosts;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE/resources');
+  const linkedSection = page.locator('.project-resource-library-linked-card');
+  await expect(linkedSection).toContainText('YCE-REQ-1');
+  await expect(linkedSection).toContainText('售后需求说明');
+  await expect(linkedSection).toContainText('售后处理流程');
+  await expect(linkedSection).toContainText('售后缺陷复盘');
+  await expect(linkedSection.locator('.project-resource-linked-post')).toHaveCount(3);
+  await expect(linkedSection).toContainText('需求');
+  await expect(linkedSection).toContainText('任务');
+  await expect(linkedSection).toContainText('Bug');
+  await expect(page.getByRole('region', { name: '项目资料列表' })).toContainText('真实资料条目');
+
+  await page.getByLabel('关键词').fill('YCE-BUG-3');
+  await page.getByRole('button', { name: '筛选' }).click();
+  await expect(linkedSection.locator('.project-resource-linked-post')).toHaveCount(1);
+  await expect(linkedSection).toContainText('售后缺陷复盘');
+  expect(linkedQueries.at(-1)).toBe('YCE-BUG-3');
+
+  const filterCard = page.locator('.project-resource-library-filter-card');
+  await filterCard.locator('#project-resource-filter-category-native').selectOption('customer');
+  await filterCard.locator('#project-resource-filter-status-native').selectOption('archived');
+  await filterCard.getByLabel('标签').fill('其他');
+  await page.getByRole('button', { name: '筛选' }).click();
+  await expect(linkedSection.locator('.project-resource-linked-post')).toHaveCount(1);
+  expect(linkedQueries.at(-1)).toBe('YCE-BUG-3');
+
+  await linkedSection.getByRole('link', { name: '售后缺陷复盘' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-BUG-3$/);
 });
 
 test('shared project resources create edit password actions and archive', async ({ page }) => {

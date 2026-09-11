@@ -74,6 +74,8 @@ function resolveReadOperation(url, options) {
   if (projectResource) return projectResource;
   const projectResources = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources$/u);
   if (projectResources) return { operation: "project.resources", input: { projectKey: decodeSegment(projectResources[1]), ...parseQuery(parsed.searchParams, { q: "q", category: "category", status: "status", tag: "tag", related_work_item_key: "relatedWorkItemKey", related_cycle_id: "relatedCycleId" }) } };
+  const projectResourceLinkedWorkItemPosts = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resource-library\/linked-work-item-posts$/u);
+  if (projectResourceLinkedWorkItemPosts) return { operation: "project.resourcelinkedworkitemposts", input: { projectKey: decodeSegment(projectResourceLinkedWorkItemPosts[1]), ...parseQuery(parsed.searchParams, { q: "q" }) } };
   const projectDetail = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)$/u, "project.detail", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectDetail) return projectDetail;
   if (parsed.pathname === "/api/v1/search") return { operation: "search.list", input: parseQuery(parsed.searchParams, {
@@ -115,6 +117,8 @@ function resolveReadOperation(url, options) {
   if (commentAttachments) return commentAttachments;
   const detailView = matchPath(parsed, /^\/api\/v1\/work-item-detail-view\/([^/]+)$/u, "workitem.detailview", ([itemKey]) => ({ itemKey: decodeSegment(itemKey) }));
   if (detailView) return detailView;
+  const resourceLibraryLink = matchPath(parsed, /^\/api\/v1\/work-items\/([^/]+)\/resource-library-link$/u, "workitem.resourcelibrarylinkstatus", ([itemKey]) => ({ itemKey: decodeSegment(itemKey) }));
+  if (resourceLibraryLink) return resourceLibraryLink;
   const childMatch = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/(comments|attachments)$/u);
   if (childMatch) {
     rejectQuery(parsed.searchParams, []);
@@ -418,6 +422,15 @@ function resolveMutationOperation(parsed, method, options) {
   const primaryPost = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/primary-post$/u);
   if (method === "PATCH" && primaryPost) {
     return { operation: "workitem.primarypostupdate", input: { itemKey: decodeSegment(primaryPost[1]), payload: commentPayload(options) } };
+  }
+  const resourceLibraryLink = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/resource-library-link$/u);
+  if (resourceLibraryLink && method === "POST") {
+    rejectBody(options);
+    return { operation: "workitem.resourcelibrarylink", input: { itemKey: decodeSegment(resourceLibraryLink[1]) } };
+  }
+  if (resourceLibraryLink && method === "DELETE") {
+    rejectBody(options);
+    return { operation: "workitem.resourcelibraryunlink", input: { itemKey: decodeSegment(resourceLibraryLink[1]) } };
   }
   const comments = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments$/u);
   if (method === "POST" && comments) {

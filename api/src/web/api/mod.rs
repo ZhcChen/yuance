@@ -486,6 +486,26 @@ pub struct WorkItemDetailViewPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ProjectResourceLinkedWorkItemPostPayload {
+    pub key: String,
+    pub item_type: String,
+    pub title: String,
+    pub summary: String,
+    pub author: String,
+    pub updated_at: String,
+    pub linked_at: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemResourceLibraryLinkPayload {
+    pub item_key: String,
+    pub linked: bool,
+    pub linked_at: String,
+    pub can_manage: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CommentPayload {
     pub id: i64,
     pub parent_comment_id: Option<i64>,
@@ -1721,6 +1741,12 @@ pub struct ResourceQuery {
     related_work_item_key: String,
     #[serde(default)]
     related_cycle_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LinkedWorkItemPostQuery {
+    #[serde(default)]
+    q: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4144,7 +4170,6 @@ pub async fn get_work_item_detail_view(
     )
     .cloned()
     .map(comment_payload);
-
     Ok(json(WorkItemDetailViewPayload {
         item: work_item_detail_payload(item.clone()),
         primary_post,
@@ -4188,6 +4213,154 @@ pub async fn get_work_item_detail_view(
                 total_pages: flow_total_pages,
             },
         },
+    }))
+}
+
+pub async fn get_work_item_resource_library_link(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemResourceLibraryLinkPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+
+    // 没有资料库读取 scope 时只返回隐藏状态，避免把资料库关系元数据泄露到工作项接口。
+    if !api_token_allows_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await? {
+        return Ok(json(WorkItemResourceLibraryLinkPayload {
+            item_key,
+            linked: false,
+            linked_at: String::new(),
+            can_manage: false,
+        }));
+    }
+
+    let comments = projects::list_work_item_comments(pool, item.id).await?;
+    let primary_post = projects::work_item_primary_post(
+        &comments,
+        item.primary_post_comment_id,
+        &item.reporter_username,
+        &item.description,
+    );
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
+        && ((can_access_all_projects
+            && rbac::user_has_permission(pool, user.id, "work_item.manage").await?)
+            || projects::user_can_write_project_content(
+                pool,
+                project.id,
+                user.id,
+                user.is_super_admin,
+            )
+            .await?);
+    let can_manage = item.deleted_at.trim().is_empty()
+        && primary_post.is_some()
+        && can_manage_work_items
+        && api_token_allows_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE)
+            .await?
+        && api_token_allows_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE)
+            .await?;
+    let linked_at = project_resources::get_work_item_post_resource_link(pool, project.id, item.id)
+        .await?
+        .unwrap_or_default();
+
+    Ok(json(WorkItemResourceLibraryLinkPayload {
+        item_key,
+        linked: !linked_at.is_empty(),
+        linked_at,
+        can_manage,
+    }))
+}
+
+pub async fn link_work_item_to_resource_library(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemResourceLibraryLinkPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let linked_at =
+        project_resources::link_work_item_post(pool, project.id, item.id, user.id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.resource_library_linked",
+        "work_item",
+        &item.item_key,
+        &principal.audit_details_with(serde_json::json!({"project": project.project_key})),
+    )
+    .await?;
+
+    Ok(json(WorkItemResourceLibraryLinkPayload {
+        item_key,
+        linked: true,
+        linked_at,
+        can_manage: true,
+    }))
+}
+
+pub async fn unlink_work_item_from_resource_library(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemResourceLibraryLinkPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    project_resources::unlink_work_item_post(pool, project.id, item.id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.resource_library_unlinked",
+        "work_item",
+        &item.item_key,
+        &principal.audit_details_with(serde_json::json!({"project": project.project_key})),
+    )
+    .await?;
+
+    Ok(json(WorkItemResourceLibraryLinkPayload {
+        item_key,
+        linked: false,
+        linked_at: String::new(),
+        can_manage: true,
     }))
 }
 
@@ -5609,6 +5782,30 @@ pub async fn list_project_resources(
     .into_iter()
     .map(project_resource_summary_payload)
     .collect();
+
+    Ok(json(payload))
+}
+
+pub async fn list_project_resource_linked_work_item_posts(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Query(query): Query<LinkedWorkItemPostQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectResourceLinkedWorkItemPostPayload>>>> {
+    let user = require_d2_api_principal(&state, &headers).await?.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let payload = project_resources::list_linked_work_item_posts(pool, project.id, &query.q)
+        .await?
+        .into_iter()
+        .map(project_resource_linked_work_item_post_payload)
+        .collect();
 
     Ok(json(payload))
 }
@@ -8929,6 +9126,21 @@ async fn ensure_api_token_scope(
     )))
 }
 
+async fn api_token_allows_scope(
+    pool: &sqlx::SqlitePool,
+    headers: &HeaderMap,
+    user_id: i64,
+    required_scope: &str,
+) -> AppResult<bool> {
+    let Some(raw_token) = api_tokens::bearer_token(headers) else {
+        return Ok(true);
+    };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(true);
+    }
+    api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, required_scope).await
+}
+
 fn api_scope_for_permission(permission_key: &str) -> Option<&'static str> {
     match permission_key {
         "project.view" => Some(api_tokens::SCOPE_PROJECT_READ),
@@ -9735,6 +9947,21 @@ fn project_resource_summary_payload(
             resource.project_key, resource.id
         ),
         access_token: None,
+    }
+}
+
+fn project_resource_linked_work_item_post_payload(
+    post: project_resources::ProjectResourceLinkedWorkItemPost,
+) -> ProjectResourceLinkedWorkItemPostPayload {
+    ProjectResourceLinkedWorkItemPostPayload {
+        key: post.item_key.clone(),
+        item_type: post.item_type,
+        title: post.title,
+        summary: post.summary,
+        author: post.author_display_name,
+        updated_at: post.updated_at,
+        linked_at: post.linked_at,
+        url: format!("/web/work-items/{}", post.item_key),
     }
 }
 

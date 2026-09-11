@@ -8593,7 +8593,7 @@ fn work_item_comment_summary_from_row(
     }
 }
 
-fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {
+pub(crate) fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {
     match item_type.trim() {
         "requirement" => Ok("requirement"),
         "task" => Ok("task"),

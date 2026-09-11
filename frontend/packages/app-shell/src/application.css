@@ -1103,6 +1103,7 @@ html[data-theme="dark"] .shell-code-block {
 @media (max-width: 860px) {
   .main { padding: 12px; }
   .project-resource-library-page { height: auto; overflow: visible; }
+  .project-resource-library-linked-card { flex: 0 0 300px; max-height: 300px; }
 }
 
 html[data-theme="dark"] .shell-card,
@@ -1272,6 +1273,25 @@ html[data-theme="dark"] .project-stats div {
 .project-resource-library-filter-card .resource-library-filter-bar { padding: 8px 10px; }
 .project-resource-library-list-card > .resource-library-status { flex: 0 0 auto; margin: 8px 12px 0; }
 .project-resource-library-list-card > .yc-feedback { flex: 0 0 auto; margin: 8px 12px 0; }
+.project-resource-library-linked-card { min-width: 0; min-height: 0; flex: 0 1 clamp(180px, 28vh, 320px); display: flex; flex-direction: column; overflow: hidden; border-bottom: 1px solid var(--yc-line); background: var(--yc-panel-soft); }
+.project-resource-library-linked-head { min-width: 0; flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 14px 16px 10px; }
+.project-resource-library-linked-head > div { min-width: 0; }
+.project-resource-library-linked-head h2 { margin: 2px 0 4px; font-size: 17px; line-height: 24px; }
+.project-resource-library-linked-head p { margin: 0; }
+.project-resource-library-linked-count { flex: 0 0 auto; color: var(--yc-muted-strong); font-size: 13px; line-height: 22px; white-space: nowrap; }
+.project-resource-library-linked-card > .yc-feedback { flex: 0 0 auto; margin: 0 12px 8px; }
+.project-resource-library-linked-list { min-width: 0; min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 8px; overflow: auto; padding: 0 12px 12px; }
+.project-resource-linked-post { min-width: 0; display: grid; gap: 7px; padding: 11px 12px; border: 1px solid var(--yc-line); border-radius: var(--yc-card-radius); background: var(--yc-panel); }
+.project-resource-linked-post-head, .project-resource-linked-post-source, .project-resource-linked-post-foot { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.project-resource-linked-post-head { justify-content: space-between; color: var(--yc-muted); font-size: 12px; line-height: 18px; }
+.project-resource-linked-post-head time { white-space: nowrap; }
+.project-resource-linked-post-title { min-width: 0; overflow-wrap: anywhere; color: var(--yc-text); font-size: 15px; font-weight: 750; line-height: 22px; text-decoration: none; }
+.project-resource-linked-post-title:hover { color: var(--yc-brand-strong); }
+.project-resource-linked-post-summary { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--yc-muted-strong); font-size: 13px; line-height: 20px; }
+.project-resource-linked-post-foot { color: var(--yc-muted); font-size: 12px; line-height: 18px; }
+.project-resource-linked-post-foot .shell-link { margin-left: auto; }
+.project-resource-library-linked-empty { min-height: 96px; display: grid; place-content: center; gap: 4px; padding: 16px; color: var(--yc-muted); text-align: center; }
+.project-resource-library-linked-empty strong { color: var(--yc-text); font-size: 14px; }
 .project-resource-library-list-card > .yc-pagination-empty { min-height: 220px; flex: 1 1 auto; display: grid; place-items: center; padding: 24px 12px; }
 .project-resource-library-list-card > .yc-pagination { flex: 0 0 auto; padding: 8px 12px; border-top: 1px solid var(--yc-line); }
 .project-resource-library-table-wrap { min-width: 0; min-height: 0; flex: 1 1 auto; overflow: auto; }
@@ -1483,6 +1503,9 @@ html[data-theme="dark"] .project-stats div {
   .project-detail-dl { grid-template-columns: 1fr; }
   .project-tab-section-head { flex-direction: column; }
   .resource-library-filter-bar { grid-template-columns: 1fr; }
+  .project-resource-library-linked-head { flex-direction: column; gap: 8px; }
+  .project-resource-library-linked-count { align-self: flex-start; }
+  .project-resource-linked-post-foot .shell-link { margin-left: 0; }
   .project-resource-form-fields { grid-template-columns: 1fr; }
   .project-member-candidate { grid-template-columns: auto minmax(0, 1fr); }
   .project-member-candidate small { grid-column: 2; text-align: left; }

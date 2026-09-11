@@ -28,6 +28,16 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     let pool = test_pool().await;
     let admin_id = bootstrap_admin(&pool).await;
     projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    projects::upsert_work_item_primary_post(
+        &pool,
+        admin_id,
+        "YCE-TASK-2",
+        None,
+        "<p>Device resource library parity post</p>",
+        "系统管理员",
+    )
+    .await
+    .unwrap();
     seed_memory_storage(&pool, admin_id).await;
     let credentials = issue_device_credentials(&pool, admin_id, "business-parity").await;
     let app = test_app(pool.clone());
@@ -44,6 +54,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         "/api/v1/notifications",
         "/api/v1/work-item-list-view?item_type=task&project_key=YCE",
         "/api/v1/work-item-detail-view/YCE-TASK-2",
+        "/api/v1/work-items/YCE-TASK-2/resource-library-link",
         "/api/v1/work-items?project_key=YCE",
         "/api/v1/work-items/YCE-TASK-2",
         "/api/v1/work-items/YCE-TASK-2/comments",
@@ -52,6 +63,39 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         let response = request(&app, "GET", path, &credentials.access_token, None).await;
         assert_eq!(response.status(), StatusCode::OK, "path: {path}");
     }
+
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/work-items/YCE-TASK-2/resource-library-link",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["linked"], true);
+    let response = request(
+        &app,
+        "GET",
+        "/api/v1/work-items/YCE-TASK-2/resource-library-link",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let link_state = json_body(response).await;
+    assert_eq!(link_state["data"]["linked"], true);
+    assert_eq!(link_state["data"]["can_manage"], true);
+    let response = request(
+        &app,
+        "DELETE",
+        "/api/v1/work-items/YCE-TASK-2/resource-library-link",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["linked"], false);
 
     let response = request(
         &app,

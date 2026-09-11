@@ -707,6 +707,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_project_resources).post(web::api::create_project_resource),
         )
         .route(
+            "/api/v1/projects/{project_key}/resource-library/linked-work-item-posts",
+            get(web::api::list_project_resource_linked_work_item_posts),
+        )
+        .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}",
             get(web::api::get_project_resource)
                 .patch(web::api::update_project_resource)
@@ -831,6 +835,12 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/work-items/{item_key}/primary-post",
             axum::routing::patch(web::api::update_work_item_primary_post),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/resource-library-link",
+            get(web::api::get_work_item_resource_library_link)
+                .post(web::api::link_work_item_to_resource_library)
+                .delete(web::api::unlink_work_item_from_resource_library),
         )
         .route(
             "/api/v1/work-items/{item_key}/handoff",

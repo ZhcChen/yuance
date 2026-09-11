@@ -17,6 +17,8 @@ import {
   projectMemberApiPath,
   projectPersonalAnalysisApiPath,
   projectResourceApiPath,
+  projectResourceLinkedWorkItemPostsApiPath,
+  projectResourceLinkedWorkItemPostsFromPayload,
   timeManagementChangeRestoreApiPath,
   timeManagementMembersApiPath,
   workItemApiPath,
@@ -143,6 +145,36 @@ test('project resources normalize list detail and unlock responses', async () =>
     ['/api/v1/projects/YCE/resources/9/unlock', 'POST', '{"access_password":"vault-pass"}'],
   ]);
   assert.deepEqual(writes, ['prepare']);
+});
+
+test('linked work item posts use a keyword-only list path and preserve the unpaginated DTO', async () => {
+  const calls = [];
+  const post = {
+    key: 'YCE-TASK-2',
+    item_type: 'task',
+    title: '售后处理流程',
+    summary: '记录售后排查步骤。',
+    author: 'Alice',
+    updated_at: '2026-09-11T08:00:00Z',
+    linked_at: '2026-09-10T08:00:00Z',
+    url: '/web/work-items/YCE-TASK-2',
+  };
+  const client = createApiClient({
+    request: async (url, options = {}) => {
+      calls.push({ url, options });
+      return [post];
+    },
+    prepareWrite: async () => {},
+  });
+
+  const result = await client.getProjectResourceLinkedWorkItemPosts('YCE', { q: ' 售后 ' });
+
+  assert.equal(projectResourceLinkedWorkItemPostsApiPath('YCE'), '/api/v1/projects/YCE/resource-library/linked-work-item-posts');
+  assert.deepEqual(calls, [{ url: '/api/v1/projects/YCE/resource-library/linked-work-item-posts?q=%E5%94%AE%E5%90%8E', options: {} }]);
+  assert.deepEqual(result[0], post);
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result[0]), true);
+  assert.equal(projectResourceLinkedWorkItemPostsFromPayload(Array.from({ length: 2001 }, () => post)).length, 2001);
 });
 
 test('project resource mutations use fixed JSON contracts', async () => {
@@ -312,6 +344,41 @@ test('project attachment preview normalizes capability and navigation without pr
 
 test('work item paths encode item keys', () => {
   assert.equal(workItemApiPath('YCE-TASK/2'), '/api/v1/work-items/YCE-TASK%2F2');
+});
+
+test('work item resource library link mutations use fixed CSRF-ready paths', async () => {
+  const calls = [];
+  const writes = [];
+  const client = createApiClient({
+    request: async (url, options = {}) => {
+      calls.push({ url, options });
+      return { item_key: 'YCE-TASK-2', linked: options.method !== 'DELETE', linked_at: options.method === 'DELETE' ? '' : '2026-09-11T08:00:00Z', can_manage: true };
+    },
+    prepareWrite: async () => { writes.push('prepare'); },
+  });
+
+  await client.linkWorkItemToResourceLibrary('YCE-TASK-2');
+  await client.unlinkWorkItemFromResourceLibrary('YCE-TASK-2');
+
+  assert.deepEqual(calls, [
+    { url: '/api/v1/work-items/YCE-TASK-2/resource-library-link', options: { method: 'POST' } },
+    { url: '/api/v1/work-items/YCE-TASK-2/resource-library-link', options: { method: 'DELETE' } },
+  ]);
+  assert.deepEqual(writes, ['prepare', 'prepare']);
+});
+
+test('work item resource library link status uses the shared read path', async () => {
+  const calls = [];
+  const client = createApiClient({
+    request: async (url, options = {}) => {
+      calls.push({ url, options });
+      return { item_key: 'YCE-TASK/2', linked: true, linked_at: '2026-09-11T08:00:00Z', can_manage: false };
+    },
+    prepareWrite: async () => {},
+  });
+  await client.getWorkItemResourceLibraryLink('YCE-TASK/2');
+  assert.equal(calls[0].url, '/api/v1/work-items/YCE-TASK%2F2/resource-library-link');
+  assert.equal(calls[0].options.method, undefined);
 });
 
 test('work item typing uses the fixed CSRF-protected JSON contract', async () => {

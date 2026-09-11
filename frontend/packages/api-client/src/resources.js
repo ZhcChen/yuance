@@ -5,10 +5,15 @@ import { projectAttachmentPreviewFromPayload } from './projects.js';
 
 /** @typedef {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite: () => Promise<void> }} ResourceClientDependencies */
 /** @typedef {ReturnType<typeof createResourceClient>} ResourceClient */
+/** @typedef {{ key: string, item_type: string, title: string, summary: string, author: string, updated_at: string, linked_at: string, url: string }} LinkedWorkItemPost */
 
 export function projectResourceApiPath(projectKey, resourceId) {
   const base = `/api/v1/projects/${encodeURIComponent(String(projectKey))}/resources`;
   return resourceId === undefined ? base : `${base}/${encodeURIComponent(String(resourceId))}`;
+}
+
+export function projectResourceLinkedWorkItemPostsApiPath(projectKey) {
+  return `/api/v1/projects/${encodeURIComponent(String(projectKey))}/resource-library/linked-work-item-posts`;
 }
 
 export function createResourceClient({ request, prepareWrite }) {
@@ -21,6 +26,12 @@ export function createResourceClient({ request, prepareWrite }) {
       }
       const suffix = params.size ? `?${params}` : '';
       return projectResourcesFromPayload(await request(`${projectResourceApiPath(projectKey)}${suffix}`));
+    },
+    async getProjectResourceLinkedWorkItemPosts(projectKey, query = {}) {
+      const params = new URLSearchParams();
+      if (typeof query.q === 'string' && query.q.trim()) params.set('q', query.q.trim());
+      const suffix = params.size ? `?${params}` : '';
+      return projectResourceLinkedWorkItemPostsFromPayload(await request(`${projectResourceLinkedWorkItemPostsApiPath(projectKey)}${suffix}`));
     },
     async getProjectResource(projectKey, resourceId) {
       return projectResourceFromPayload(await request(projectResourceApiPath(projectKey, resourceId)));
@@ -99,6 +110,25 @@ export function projectResourceMutationBody(payload, update) {
 export function projectResourcesFromPayload(payload) {
   if (!Array.isArray(payload)) throw new TypeError('project resources are invalid');
   return Object.freeze(payload.map(projectResourceFromPayload));
+}
+
+export function projectResourceLinkedWorkItemPostsFromPayload(payload) {
+  if (!Array.isArray(payload)) throw new TypeError('linked work item posts are invalid');
+  return Object.freeze(payload.map(projectResourceLinkedWorkItemPostFromPayload));
+}
+
+export function projectResourceLinkedWorkItemPostFromPayload(payload) {
+  const value = object(payload, 'linked work item post');
+  return Object.freeze({
+    key: string(value.key, 64, 'linked work item key'),
+    item_type: string(value.item_type, 32, 'linked work item type'),
+    title: string(value.title, 512, 'linked work item title'),
+    summary: string(value.summary, 5000, 'linked work item summary'),
+    author: string(value.author, 256, 'linked work item author'),
+    updated_at: string(value.updated_at, 128, 'linked work item updated time'),
+    linked_at: string(value.linked_at, 128, 'linked work item linked time'),
+    url: internalPath(value.url, 'linked work item URL'),
+  });
 }
 
 export function projectResourceFromPayload(payload) {

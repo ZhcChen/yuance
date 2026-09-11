@@ -67,6 +67,7 @@
     "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
     "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
     "HEAD /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+    "GET /api/v1/projects/{project_key}/resource-library/linked-work-item-posts",
     "GET /api/v1/current-project",
     "PATCH /api/v1/current-project",
     "GET /api/v1/topbar/status",
@@ -87,6 +88,9 @@
     "GET /api/v1/work-items/{item_key}",
     "PATCH /api/v1/work-items/{item_key}",
     "PATCH /api/v1/work-items/{item_key}/primary-post",
+    "GET /api/v1/work-items/{item_key}/resource-library-link",
+    "POST /api/v1/work-items/{item_key}/resource-library-link",
+    "DELETE /api/v1/work-items/{item_key}/resource-library-link",
     "POST /api/v1/work-items/{item_key}/restore",
     "POST /api/v1/work-items/{item_key}/handoff",
     "GET /api/v1/work-items/{item_key}/events",
@@ -1307,6 +1311,24 @@
         }
       }
     },
+    "/api/v1/projects/{project_key}/resource-library/linked-work-item-posts": {
+      "get": {
+        "tags": ["resources"],
+        "operationId": "listProjectResourceLinkedWorkItemPosts",
+        "summary": "列出资料库关联的工作项发布内容",
+        "description": "只返回已链接且当前可见的需求、任务和 Bug 主发布内容摘要；正文和附件仍从原工作项详情读取。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"name": "q", "in": "query", "required": false, "schema": {"type": "string", "maxLength": 200}, "description": "匹配工作项编号、标题或主发布内容摘要。"}
+        ],
+        "responses": {
+          "200": {"description": "关联发布内容列表", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectResourceLinkedWorkItemPostListEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/api/v1/projects/{project_key}/resources/{resource_id}/unlock": {
       "post": {
         "tags": [
@@ -1787,6 +1809,46 @@
           "403": {"$ref": "#/components/responses/Error"},
           "404": {"$ref": "#/components/responses/Error"},
           "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/resource-library-link": {
+      "get": {
+        "tags": ["work-items"],
+        "operationId": "getWorkItemResourceLibraryLink",
+        "summary": "获取工作项主发布内容的资料库链接状态",
+        "description": "仅返回链接状态和操作权限，不返回主发布内容正文或附件。缺少资料库读取 scope 时返回隐藏状态。",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "链接状态", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemResourceLibraryLinkEnvelope"}}}},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "post": {
+        "tags": ["work-items"],
+        "operationId": "linkWorkItemToResourceLibrary",
+        "summary": "将工作项主发布内容链接到资料库",
+        "description": "关系只保存工作项身份，不复制正文、摘要或附件。重复调用为幂等成功。",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "链接成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemResourceLibraryLinkEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "delete": {
+        "tags": ["work-items"],
+        "operationId": "unlinkWorkItemFromResourceLibrary",
+        "summary": "取消工作项主发布内容与资料库的链接",
+        "description": "只删除链接关系，不删除工作项、主发布内容或附件；重复调用保持成功。",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "取消链接成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemResourceLibraryLinkEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -3803,6 +3865,44 @@
         "properties": {
           "data": {"$ref": "#/components/schemas/ProjectResource"}
         }
+      },
+      "ProjectResourceLinkedWorkItemPost": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "item_type", "title", "summary", "author", "updated_at", "linked_at", "url"],
+        "properties": {
+          "key": {"type": "string"},
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "title": {"type": "string"},
+          "summary": {"type": "string"},
+          "author": {"type": "string"},
+          "updated_at": {"type": "string"},
+          "linked_at": {"type": "string"},
+          "url": {"type": "string"}
+        }
+      },
+      "ProjectResourceLinkedWorkItemPostListEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {"data": {"type": "array", "items": {"$ref": "#/components/schemas/ProjectResourceLinkedWorkItemPost"}}}
+      },
+      "WorkItemResourceLibraryLink": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_key", "linked", "linked_at", "can_manage"],
+        "properties": {
+          "item_key": {"type": "string"},
+          "linked": {"type": "boolean"},
+          "linked_at": {"type": "string"},
+          "can_manage": {"type": "boolean"}
+        }
+      },
+      "WorkItemResourceLibraryLinkEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {"data": {"$ref": "#/components/schemas/WorkItemResourceLibraryLink"}}
       },
       "CreateProjectResourceRequest": {
         "type": "object",

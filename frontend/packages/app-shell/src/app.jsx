@@ -194,6 +194,18 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
  */
 
 /**
+ * @typedef AppProjectResourceLinkedWorkItemPost
+ * @property {string} key
+ * @property {string} item_type
+ * @property {string} title
+ * @property {string} summary
+ * @property {string} author
+ * @property {string} updated_at
+ * @property {string} linked_at
+ * @property {string} url
+ */
+
+/**
  * @typedef AppProjectCycle
  * @property {number} id
  * @property {string} name
@@ -613,6 +625,10 @@ function workItemTypeLabel(itemType) {
     default:
       return '任务';
   }
+}
+
+function linkedWorkItemTypeLabel(itemType) {
+  return itemType === 'bug' ? 'Bug' : workItemTypeLabel(itemType);
 }
 
 function workItemCreateLabel(itemType) {
@@ -1038,6 +1054,8 @@ export function SharedApp({ services }) {
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
+  const workItemResourceLibraryMutationRef = useRef(false);
+  const workItemResourceLibraryLinkGenerationRef = useRef(0);
   const workItemPrimaryPostRetryRef = useRef(/** @type {{ itemKey: string, fields: string } | null} */ (null));
   const workItemAttachmentActionRef = useRef(0);
   const workItemAttachmentMutationRef = useRef(false);
@@ -1064,11 +1082,13 @@ export function SharedApp({ services }) {
   const [projectMembers, setProjectMembers] = useState(/** @type {AppProjectMember[]} */ ([]));
   const [projectCycles, setProjectCycles] = useState(/** @type {AppProjectCycle[]} */ ([]));
   const [projectResources, setProjectResources] = useState(/** @type {readonly AppProjectResource[]} */ ([]));
+  const [projectResourceLinkedWorkItemPosts, setProjectResourceLinkedWorkItemPosts] = useState(/** @type {readonly AppProjectResourceLinkedWorkItemPost[]} */ ([]));
   const [projectResourceDetail, setProjectResourceDetail] = useState(/** @type {AppProjectResource | null} */ (null));
   const [projectResourceLocked, setProjectResourceLocked] = useState(false);
   const [projectResourcePassword, setProjectResourcePassword] = useState('');
   const [projectResourceUnlocking, setProjectResourceUnlocking] = useState(false);
   const [projectResourceError, setProjectResourceError] = useState('');
+  const [projectResourceLinkedError, setProjectResourceLinkedError] = useState('');
   const [projectResourceFilters, setProjectResourceFilters] = useState({ q: '', category: '', status: '', tag: '' });
   const [projectResourceSubmitting, setProjectResourceSubmitting] = useState(false);
   const [projectResourceModalOpen, setProjectResourceModalOpen] = useState(false);
@@ -1210,6 +1230,7 @@ export function SharedApp({ services }) {
   const [workItemBatchError, setWorkItemBatchError] = useState('');
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemDetailView, setWorkItemDetailView] = useState(/** @type {Awaited<ReturnType<AppApiService['getWorkItemDetailView']>> | null} */ (null));
+  const [workItemResourceLibraryLink, setWorkItemResourceLibraryLink] = useState(/** @type {Awaited<ReturnType<AppApiService['getWorkItemResourceLibraryLink']>> | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
   const [workItemTyping, setWorkItemTyping] = useState(/** @type {{ itemKey: string, users: Array<{ userId: number, displayName: string }> }} */ ({ itemKey: '', users: [] }));
   const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
@@ -1231,6 +1252,7 @@ export function SharedApp({ services }) {
   });
   const [workItemEditSubmitting, setWorkItemEditSubmitting] = useState(false);
   const [workItemHandoffSubmitting, setWorkItemHandoffSubmitting] = useState(false);
+  const [workItemResourceLibrarySubmitting, setWorkItemResourceLibrarySubmitting] = useState(false);
   const [workItemActionError, setWorkItemActionError] = useState('');
   const [workItemLifecycleAction, setWorkItemLifecycleAction] = useState(/** @type {'close' | 'reopen' | 'restore' | null} */ (null));
   const [workItemLifecycleSubmitting, setWorkItemLifecycleSubmitting] = useState(false);
@@ -1349,9 +1371,14 @@ export function SharedApp({ services }) {
   const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
     ? workItemDetail
     : null;
-  const activeWorkItemDetailView = activeWorkItemDetail && workItemDetailView?.item?.key === activeWorkItemDetail.key
+  const baseActiveWorkItemDetailView = activeWorkItemDetail && workItemDetailView?.item?.key === activeWorkItemDetail.key
     ? workItemDetailView
     : null;
+  const activeWorkItemResourceLibraryLink = activeWorkItemDetail
+    && workItemResourceLibraryLink?.item_key === activeWorkItemDetail.key
+    ? workItemResourceLibraryLink
+    : null;
+  const activeWorkItemDetailView = baseActiveWorkItemDetailView;
   const projectScopeKey = projectDetailRoute?.projectKey
     || projectResourceDetailRoute?.projectKey
     || projectPersonalAnalysisRoute?.projectKey
@@ -1423,6 +1450,7 @@ export function SharedApp({ services }) {
   const workItemAttachmentSubmitting = workItemAttachmentUploading || workItemCommentAttachmentUploadingId !== null || workItemNewCommentAttachmentUploading;
   const workItemMutationSubmitting = workItemEditSubmitting
     || workItemHandoffSubmitting
+    || workItemResourceLibrarySubmitting
     || workItemLifecycleSubmitting
     || workItemCommentSubmitting
     || workItemEditCommentSubmitting
@@ -1479,8 +1507,10 @@ export function SharedApp({ services }) {
         setProjectMemberRemoveTarget(null);
         setProjectCycles([]);
         setProjectResources([]);
+        setProjectResourceLinkedWorkItemPosts([]);
         setProjectResourceFilters({ q: '', category: '', status: '', tag: '' });
         setProjectResourceError('');
+        setProjectResourceLinkedError('');
         setProjectResourceModalOpen(false);
         setProjectResourceArchiveTarget(null);
         setProjectResourceStatus('');
@@ -1497,8 +1527,10 @@ export function SharedApp({ services }) {
         setProjectDetail(null);
         setProjectMembers([]);
         setProjectResources([]);
+        setProjectResourceLinkedWorkItemPosts([]);
         setProjectResourceFilters({ q: '', category: '', status: '', tag: '' });
         setProjectResourceError('');
+        setProjectResourceLinkedError('');
         setProjectResourceStatus('');
         setProjectResourceModalOpen(false);
         setProjectResourceArchiveTarget(null);
@@ -1530,13 +1562,17 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'work-item-detail') {
         workItemActionRef.current += 1;
+        workItemResourceLibraryLinkGenerationRef.current += 1;
         workItemAttachmentActionRef.current += 1;
         workItemMutationActionRef.current = 0;
         workItemMutationRef.current = false;
+        workItemResourceLibraryMutationRef.current = false;
         workItemAttachmentMutationRef.current = false;
         setWorkItemEditSubmitting(false);
         setWorkItemHandoffSubmitting(false);
+        setWorkItemResourceLibrarySubmitting(false);
         setWorkItemDetail(null);
+        setWorkItemResourceLibraryLink(null);
         setWorkItemComments([]);
         setWorkItemActionError('');
         setWorkItemLifecycleAction(null);
@@ -1641,17 +1677,20 @@ export function SharedApp({ services }) {
             const itemKey = String(targetRoute.itemKey || '');
             const commentsPromise = api.getWorkItemComments(itemKey);
             const attachmentsPromise = api.getWorkItemAttachments(itemKey);
+            const resourceLibraryLinkPromise = api.getWorkItemResourceLibraryLink(itemKey).catch(() => null);
             void attachmentsPromise.catch(() => {});
-            const [detailView, comments, attachmentBundle] = await Promise.all([
+            const [detailView, comments, attachmentBundle, resourceLibraryLink] = await Promise.all([
               api.getWorkItemDetailView(itemKey),
               commentsPromise,
               commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
+              resourceLibraryLinkPromise,
             ]);
             return {
               detailView,
               item: detailView.item,
               comments: comments.filter((comment) => comment.id !== detailView.primary_post?.id),
               attachmentBundle,
+              resourceLibraryLink,
             };
           })()
           : Promise.resolve(null),
@@ -1668,11 +1707,29 @@ export function SharedApp({ services }) {
           ])
           : Promise.resolve(null),
         targetRoute.id === 'project-resource-library'
-          ? Promise.all([
-            api.getProject(targetRoute.projectKey),
-            api.getProjectMembers(targetRoute.projectKey),
-            api.getProjectResources(targetRoute.projectKey, mode === 'load' ? {} : projectResourceFilters),
-          ])
+          ? (async () => {
+            const [project, members] = await Promise.all([
+              api.getProject(targetRoute.projectKey),
+              api.getProjectMembers(targetRoute.projectKey),
+            ]);
+            const resourceFilters = mode === 'load' ? {} : projectResourceFilters;
+            const [resourcesResult, linkedPostsResult] = await Promise.allSettled([
+              api.getProjectResources(targetRoute.projectKey, resourceFilters),
+              api.getProjectResourceLinkedWorkItemPosts(targetRoute.projectKey, { q: resourceFilters.q || '' }),
+            ]);
+            return {
+              project,
+              members,
+              resources: resourcesResult.status === 'fulfilled' ? resourcesResult.value : [],
+              resourceError: resourcesResult.status === 'rejected'
+                ? errorMessage(resourcesResult.reason instanceof Error ? resourcesResult.reason : new Error('资料列表加载失败。'))
+                : '',
+              linkedWorkItemPosts: linkedPostsResult.status === 'fulfilled' ? linkedPostsResult.value : [],
+              linkedError: linkedPostsResult.status === 'rejected'
+                ? errorMessage(linkedPostsResult.reason instanceof Error ? linkedPostsResult.reason : new Error('关联发布内容加载失败。'))
+                : '',
+            };
+          })()
           : Promise.resolve(null),
         targetRoute.id === 'project-cycle-detail'
           ? Promise.all([api.getProjectCycle(targetRoute.projectKey, targetRoute.cycleId), api.getProjectMembers(targetRoute.projectKey)])
@@ -1805,9 +1862,12 @@ export function SharedApp({ services }) {
         setProjectTimeAllocations(nextProjectBundle?.[4] || []);
       }
       if (targetRoute.id === 'project-resource-library') {
-        setProjectDetail(nextProjectResourceLibraryBundle?.[0] || null);
-        setProjectMembers(nextProjectResourceLibraryBundle?.[1] || []);
-        setProjectResources(nextProjectResourceLibraryBundle?.[2] || []);
+        setProjectDetail(nextProjectResourceLibraryBundle?.project || null);
+        setProjectMembers(nextProjectResourceLibraryBundle?.members || []);
+        setProjectResources(nextProjectResourceLibraryBundle?.resources || []);
+        setProjectResourceLinkedWorkItemPosts(nextProjectResourceLibraryBundle?.linkedWorkItemPosts || []);
+        setProjectResourceError(nextProjectResourceLibraryBundle?.resourceError || '');
+        setProjectResourceLinkedError(nextProjectResourceLibraryBundle?.linkedError || '');
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectCycleDetail(nextCycleDetailBundle?.[0] || null);
@@ -1867,6 +1927,7 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'work-item-detail') {
         setWorkItemDetailView(nextWorkItemBundle?.detailView || null);
         setWorkItemDetail(nextWorkItemBundle?.item || null);
+        setWorkItemResourceLibraryLink(nextWorkItemBundle?.resourceLibraryLink || null);
         setWorkItemComments(nextWorkItemBundle?.comments || []);
         setWorkItemAttachments(nextWorkItemBundle?.attachmentBundle?.attachments || []);
         setWorkItemCommentAttachments(nextWorkItemBundle?.attachmentBundle?.commentAttachments || {});
@@ -3028,15 +3089,22 @@ export function SharedApp({ services }) {
     const actionId = projectResourceActionRef.current + 1;
     projectResourceActionRef.current = actionId;
     setProjectResourceError('');
-    try {
-      const resources = await api.getProjectResources(projectKey, filters);
-      const currentRoute = routeRef.current;
-      if (projectResourceActionRef.current !== actionId || !isProjectResourceListRoute(currentRoute) || projectResourceListProjectKey(currentRoute) !== projectKey) return;
-      setProjectResources(resources);
-    } catch (caught) {
-      const currentRoute = routeRef.current;
-      if (projectResourceActionRef.current !== actionId || !isProjectResourceListRoute(currentRoute) || projectResourceListProjectKey(currentRoute) !== projectKey) return;
-      setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料列表加载失败。')));
+    setProjectResourceLinkedError('');
+    const [resourcesResult, linkedPostsResult] = await Promise.allSettled([
+      api.getProjectResources(projectKey, filters),
+      api.getProjectResourceLinkedWorkItemPosts(projectKey, { q: filters.q || '' }),
+    ]);
+    const currentRoute = routeRef.current;
+    if (projectResourceActionRef.current !== actionId || !isProjectResourceListRoute(currentRoute) || projectResourceListProjectKey(currentRoute) !== projectKey) return;
+    if (resourcesResult.status === 'fulfilled') {
+      setProjectResources(resourcesResult.value);
+    } else {
+      setProjectResourceError(errorMessage(resourcesResult.reason instanceof Error ? resourcesResult.reason : new Error('资料列表加载失败。')));
+    }
+    if (linkedPostsResult.status === 'fulfilled') {
+      setProjectResourceLinkedWorkItemPosts(linkedPostsResult.value);
+    } else {
+      setProjectResourceLinkedError(errorMessage(linkedPostsResult.reason instanceof Error ? linkedPostsResult.reason : new Error('关联发布内容加载失败。')));
     }
   }
 
@@ -3863,11 +3931,14 @@ export function SharedApp({ services }) {
   async function refreshWorkItemRealtimeState(itemKey) {
     const commentsPromise = api.getWorkItemComments(itemKey);
     const attachmentsPromise = api.getWorkItemAttachments(itemKey);
+    const resourceLibraryLinkGeneration = workItemResourceLibraryLinkGenerationRef.current;
+    const resourceLibraryLinkPromise = api.getWorkItemResourceLibraryLink(itemKey);
     void attachmentsPromise.catch(() => {});
-    const [detailViewResult, commentsResult, attachmentBundleResult] = await Promise.allSettled([
+    const [detailViewResult, commentsResult, attachmentBundleResult, resourceLibraryLinkResult] = await Promise.allSettled([
       api.getWorkItemDetailView(itemKey),
       commentsPromise,
       commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
+      resourceLibraryLinkPromise,
     ]);
     const current = routeRef.current;
     if (current.id !== 'work-item-detail' || current.itemKey !== itemKey) return;
@@ -3885,6 +3956,9 @@ export function SharedApp({ services }) {
       setWorkItemAttachments(attachmentBundleResult.value.attachments);
       setWorkItemCommentAttachments(attachmentBundleResult.value.commentAttachments);
       setWorkItemAttachmentLoadWarning(attachmentBundleResult.value.loadFailed ? '部分附件列表加载失败，请刷新重试。' : '');
+    }
+    if (workItemResourceLibraryLinkGenerationRef.current === resourceLibraryLinkGeneration && resourceLibraryLinkResult.status === 'fulfilled') {
+      setWorkItemResourceLibraryLink(resourceLibraryLinkResult.value);
     }
   }
 
@@ -4042,6 +4116,47 @@ export function SharedApp({ services }) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('更新工作项生命周期失败。')));
     } finally {
       clearWorkItemMutation(actionId, setWorkItemLifecycleSubmitting);
+    }
+  }
+
+  /** @param {'link' | 'unlink'} action */
+  async function requestWorkItemResourceLibraryLink(action) {
+    if (!activeWorkItemDetail || !activeWorkItemResourceLibraryLink?.can_manage) {
+      return false;
+    }
+    if (workItemMutationRef.current || workItemAttachmentMutationRef.current || workItemResourceLibraryMutationRef.current) {
+      return false;
+    }
+    const itemKey = activeWorkItemDetail.key;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemResourceLibraryLinkGenerationRef.current += 1;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    workItemResourceLibraryMutationRef.current = true;
+    setWorkItemResourceLibrarySubmitting(true);
+    setWorkItemActionError('');
+    try {
+      const result = action === 'link'
+        ? await api.linkWorkItemToResourceLibrary(itemKey)
+        : await api.unlinkWorkItemFromResourceLibrary(itemKey);
+      if (!isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        return false;
+      }
+      workItemResourceLibraryLinkGenerationRef.current += 1;
+      setWorkItemResourceLibraryLink(result);
+      setStatusMessage(result.linked ? `${itemKey} 已链接到资料库。` : `${itemKey} 已取消资料库链接。`);
+      return true;
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error(action === 'link' ? '链接到资料库失败。' : '取消资料库链接失败。')));
+      }
+      return false;
+    } finally {
+      if (workItemMutationActionRef.current === actionId) {
+        workItemResourceLibraryMutationRef.current = false;
+        clearWorkItemMutation(actionId, setWorkItemResourceLibrarySubmitting);
+      }
     }
   }
 
@@ -5404,6 +5519,39 @@ export function SharedApp({ services }) {
       </FilterBar>
       </section>
       <section className="shell-card project-resource-library-list-card" aria-label="项目资料列表">
+        <section className="project-resource-library-linked-card" aria-labelledby="project-resource-linked-posts-title">
+          <div className="project-resource-library-linked-head">
+            <div>
+              <p className="shell-eyebrow">工作项资料</p>
+              <h2 id="project-resource-linked-posts-title">关联发布内容</h2>
+              <p className="shell-muted">链接自需求、任务或 Bug 的主发布内容，不复制正文和附件；分类、状态和标签筛选只作用于下方资料。</p>
+            </div>
+            <span className="project-resource-library-linked-count">{projectResourceLinkedWorkItemPosts.length} 条</span>
+          </div>
+          {projectResourceLinkedError ? <Feedback tone="danger" title="关联发布内容加载失败">{projectResourceLinkedError}</Feedback> : null}
+          {projectResourceLinkedWorkItemPosts.length ? (
+            <div className="project-resource-library-linked-list" role="list" aria-label="关联发布内容列表">
+              {projectResourceLinkedWorkItemPosts.map((post) => {
+                const postPath = routePathForOwner(post.url, route.owner);
+                return (
+                  <article className="project-resource-linked-post" role="listitem" key={post.key}>
+                    <div className="project-resource-linked-post-head">
+                      <div className="project-resource-linked-post-source"><Badge>{linkedWorkItemTypeLabel(post.item_type)}</Badge><code>{post.key}</code></div>
+                      <time dateTime={post.updated_at}>更新于 {formatTimestamp(post.updated_at)}</time>
+                    </div>
+                    <a className="project-resource-linked-post-title" href={postPath} title={post.title} onClick={(event) => handleNavigate(event, postPath, `已打开 ${post.key}。`)}>{post.title}</a>
+                    <p className="project-resource-linked-post-summary">{post.summary || '暂无主发布内容摘要。'}</p>
+                    <div className="project-resource-linked-post-foot">
+                      <span>作者：{post.author || '未标注'}</span>
+                      <span>关联于：{formatTimestamp(post.linked_at)}</span>
+                      <a className="shell-link" href={postPath} onClick={(event) => handleNavigate(event, postPath, `已打开 ${post.key}。`)}>查看工作项</a>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : <div className="project-resource-library-linked-empty"><strong>暂无关联发布内容</strong><span>在需求、任务或 Bug 详情中链接主发布内容后，会显示在这里。</span></div>}
+        </section>
         {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
         {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
         <PaginatedTable
@@ -6533,6 +6681,9 @@ export function SharedApp({ services }) {
                     error={workItemActionError}
                     canManageWorkItems={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items)}
                     canEditPrimaryPost={Boolean(activeWorkItemDetailView?.permissions.can_edit_primary_post)}
+                    canManageResourceLibraryLink={Boolean(activeWorkItemResourceLibraryLink?.can_manage)}
+                    resourceLibraryLinked={Boolean(activeWorkItemResourceLibraryLink?.linked)}
+                    resourceLibrarySubmitting={workItemResourceLibrarySubmitting}
                     canCloseWorkItem={Boolean(activeWorkItemDetailView?.permissions.can_close_work_item)}
                     canReopenWorkItem={Boolean(activeWorkItemDetailView?.permissions.can_reopen_work_item)}
                     canRestoreWorkItem={Boolean(activeWorkItemDetailView?.permissions.can_restore_work_item)}
@@ -6549,6 +6700,7 @@ export function SharedApp({ services }) {
                     onSubmitEdit={submitWorkItemEdit}
                     onSubmitHandoff={submitWorkItemHandoff}
                     onRequestLifecycleAction={setWorkItemLifecycleAction}
+                    onRequestResourceLibraryLink={requestWorkItemResourceLibraryLink}
                     onPasteFile={(file, options) => pasteWorkItemPrimaryPostFile(file, options)}
                     backHref={detailBackPath}
                     onOpenBack={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}

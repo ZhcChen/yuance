@@ -1268,6 +1268,7 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 .action-panel-sequence-nav, .action-panel-buttons { display: grid; gap: 9px; padding: 16px 18px; border-bottom: 1px solid var(--yc-line); }
 .action-panel-sequence-nav .yc-button, .action-panel-buttons .yc-button { width: 100%; min-width: 0; }
 .action-panel-sequence-nav .disabled { pointer-events: none; opacity: .55; }
+.work-item-resource-library-status { display: flex; align-items: center; min-height: 34px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--yc-success) 36%, var(--yc-line)); border-radius: 6px; background: color-mix(in srgb, var(--yc-success) 8%, var(--yc-panel)); color: var(--yc-success); font-size: 12px; font-weight: 750; }
 .action-panel-context { display: grid; gap: 0; margin: 0; padding: 8px 18px 12px; }
 .action-panel-context div { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--yc-line); }
 .action-panel-context div:last-child { border-bottom: 0; }

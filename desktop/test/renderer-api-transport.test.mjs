@@ -5,6 +5,7 @@ import { ApiError, createApiClient } from "@yuance/frontend-api-client";
 import { createDesktopApiTransport } from "../src/renderer/platform/api-transport.js";
 
 const resourceFixture = { id: 9, project_key: "DEMO", title: "Release", category: "development", body: "Body", body_format: "markdown", summary: "Summary", status: "active", is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: "Alice", updated_by: "Alice", created_at: "2026-08-07T00:00:00Z", updated_at: "2026-08-07T00:00:00Z", url: "/web/projects/DEMO/resources/9" };
+const linkedWorkItemPostFixture = { key: "DEMO-TASK-1", item_type: "task", title: "售后流程", summary: "处理步骤", author: "Alice", updated_at: "2026-08-07T00:00:00Z", linked_at: "2026-08-06T00:00:00Z", url: "/web/work-items/DEMO-TASK-1" };
 const attachmentFixture = { id: 8, filename: "resource.txt", content_type: "text/plain", byte_size: 12, status: "deleted", created_by: "Alice", created_at: "2026-08-07T00:00:00Z" };
 
 test("desktop API transport maps only known read routes to domain operations", async () => {
@@ -33,6 +34,8 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/projects/DEMO/my-analysis", "project.personalanalysis", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/attachments", "project.attachments", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/resources?q=release&category=development&related_cycle_id=7", "project.resources", { projectKey: "DEMO", q: "release", category: "development", relatedCycleId: "7" }],
+    ["/api/v1/projects/DEMO/resource-library/linked-work-item-posts?q=%E5%94%AE%E5%90%8E", "project.resourcelinkedworkitemposts", { projectKey: "DEMO", q: "售后" }],
+    ["/api/v1/projects/DEMO/resource-library/linked-work-item-posts", "project.resourcelinkedworkitemposts", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/resources/9", "project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }],
     ["/api/v1/projects/DEMO/resources/9/attachments?access=grant-token", "project.resourceattachments", { projectKey: "DEMO", resourceId: 9, accessToken: "grant-token" }],
     ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
@@ -41,6 +44,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/work-items?item_type=bug&q=crash&priority=P1&project_key=DEMO&cycle_id=7&sort=priority_desc", "workitem.list", { itemType: "bug", q: "crash", priority: "P1", projectKey: "DEMO", cycleId: 7, sort: "priority_desc" }],
     ["/api/v1/work-item-list-view?item_type=bug&project_key=DEMO&page=2", "workitem.listview", { itemType: "bug", projectKey: "DEMO", page: 2 }],
     ["/api/v1/work-item-detail-view/DEMO-1", "workitem.detailview", { itemKey: "DEMO-1" }],
+    ["/api/v1/work-items/DEMO-1/resource-library-link", "workitem.resourcelibrarylinkstatus", { itemKey: "DEMO-1" }],
     ["/api/v1/work-items/DEMO-1", "workitem.detail", { itemKey: "DEMO-1" }],
     ["/api/v1/work-items/DEMO-1/comments", "workitem.comments", { itemKey: "DEMO-1" }],
     ["/api/v1/work-items/DEMO-1/attachments", "workitem.attachments", { itemKey: "DEMO-1" }],
@@ -65,6 +69,9 @@ test("desktop API transport rejects request primitives and ambiguous routes befo
     ["/api/v1/work-items/DEMO-1", { method: "PATCH" }],
     ["/api/v1/work-items/DEMO-1", { method: "GET", headers: { Authorization: "Bearer forged" } }],
     ["/api/v1/work-items/DEMO-1", { method: "GET", body: "{}" }],
+    ["/api/v1/projects/DEMO/resource-library/linked-work-item-posts?page=1"],
+    ["/api/v1/projects/DEMO/resource-library/linked-work-item-posts?q=one&q=two"],
+    ["/api/v1/projects/DEMO/resource-library/linked-work-item-posts", { method: "GET", headers: { Authorization: "Bearer forged" } }],
   ];
   for (const [url, options] of rejected) await assert.rejects(transport.request(url, options), ApiError);
   assert.equal(calls, 0);
@@ -80,6 +87,38 @@ test("desktop API transport validates public IPC envelopes", async () => {
     await assert.rejects(invalid.request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "invalid_response");
   }
   await assert.rejects(createDesktopApiTransport().request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "business_unavailable");
+});
+
+test("desktop API transport maps linked resource reads and mutations to fixed operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    if (operation === "project.resourcelinkedworkitemposts") return { ok: true, data: [linkedWorkItemPostFixture] };
+    return { ok: true, data: { item_key: "DEMO-TASK-1", linked: operation === "workitem.resourcelibrarylinkstatus" || operation === "workitem.resourcelibrarylink", linked_at: operation === "workitem.resourcelibrarylinkstatus" || operation === "workitem.resourcelibrarylink" ? "2026-08-07T00:00:00Z" : "", can_manage: true } };
+  } });
+  const api = createApiClient({ request: transport.request });
+
+  const posts = await api.getProjectResourceLinkedWorkItemPosts("DEMO", { q: "售后" });
+  const state = await api.getWorkItemResourceLibraryLink("DEMO-TASK-1");
+  const linked = await api.linkWorkItemToResourceLibrary("DEMO-TASK-1");
+  const unlinked = await api.unlinkWorkItemFromResourceLibrary("DEMO-TASK-1");
+
+  assert.deepEqual(posts, [linkedWorkItemPostFixture]);
+  assert.equal(state.linked, true);
+  assert.equal(linked.linked, true);
+  assert.equal(unlinked.linked, false);
+  assert.deepEqual(calls, [
+    ["project.resourcelinkedworkitemposts", { projectKey: "DEMO", q: "售后" }],
+    ["workitem.resourcelibrarylinkstatus", { itemKey: "DEMO-TASK-1" }],
+    ["workitem.resourcelibrarylink", { itemKey: "DEMO-TASK-1" }],
+    ["workitem.resourcelibraryunlink", { itemKey: "DEMO-TASK-1" }],
+  ]);
+
+  for (const options of [
+    { method: "POST", body: "{}" },
+    { method: "DELETE", body: "{}" },
+    { method: "POST", headers: { Authorization: "Bearer forged" } },
+  ]) await assert.rejects(transport.request("/api/v1/work-items/DEMO-TASK-1/resource-library-link", options), ApiError);
 });
 
 test("api-client mutations map to fixed domain operations without request primitives", async () => {

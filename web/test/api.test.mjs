@@ -23,6 +23,7 @@ import {
   getProjectResourceAttachmentPreview,
   getProjectResourceAttachments,
   getProjectResources,
+  getProjectResourceLinkedWorkItemPosts,
   getSystemOpenApiView,
   getSystemDatabaseStats,
   getWorkItemCommentAttachmentDownloadUrl,
@@ -30,7 +31,9 @@ import {
   getWorkItemCommentAttachments,
   getWorkItemAttachmentDownloadUrl,
   getWorkItemAttachments,
+  getWorkItemResourceLibraryLink,
   handoffWorkItem,
+  linkWorkItemToResourceLibrary,
   markWorkItemAttachmentUploaded,
   markWorkItemCommentAttachmentUploaded,
   markProjectResourceAttachmentUploaded,
@@ -42,6 +45,7 @@ import {
   updateProjectResource,
   updateSystemApiToken,
   unlockProjectResource,
+  unlinkWorkItemFromResourceLibrary,
 } from '../src/lib/api.js';
 
 test('system OpenAPI token lifecycle is exposed through the bounded browser API adapter', async () => {
@@ -178,6 +182,36 @@ test('project resources are exposed through the bounded browser API adapter', as
     assert.equal(calls[3].options.method, 'POST');
     assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-resource-token');
     assert.deepEqual(JSON.parse(String(calls[3].options.body)), { access_password: 'safe-pass' });
+  });
+});
+
+test('linked work item posts and link mutations share Browser paths and CSRF contracts', async () => {
+  await withFetchQueue([
+    jsonResponse([{ key: 'YCE-TASK-2', item_type: 'task', title: '售后流程', summary: '处理步骤', author: 'Alice', updated_at: '2026-09-11T08:00:00Z', linked_at: '2026-09-10T08:00:00Z', url: '/web/work-items/YCE-TASK-2' }]),
+    jsonResponse({ item_key: 'YCE-TASK-2', linked: true, linked_at: '2026-09-10T08:00:00Z', can_manage: true }),
+    jsonResponse({ csrf_token: 'csrf-link' }, { csrfToken: 'csrf-link' }),
+    jsonResponse({ item_key: 'YCE-TASK-2', linked: true, linked_at: '2026-09-11T08:00:00Z', can_manage: true }),
+    jsonResponse({ csrf_token: 'csrf-unlink' }, { csrfToken: 'csrf-unlink' }),
+    jsonResponse({ item_key: 'YCE-TASK-2', linked: false, linked_at: '', can_manage: true }),
+  ], async (calls) => {
+    const posts = await getProjectResourceLinkedWorkItemPosts('YCE', { q: '售后' });
+    const state = await getWorkItemResourceLibraryLink('YCE-TASK-2');
+    const linked = await linkWorkItemToResourceLibrary('YCE-TASK-2');
+    const unlinked = await unlinkWorkItemFromResourceLibrary('YCE-TASK-2');
+
+    assert.equal(posts[0].summary, '处理步骤');
+    assert.equal(state.linked, true);
+    assert.equal(linked.linked, true);
+    assert.equal(unlinked.linked, false);
+    assert.equal(calls[0].url, '/api/v1/projects/YCE/resource-library/linked-work-item-posts?q=%E5%94%AE%E5%90%8E');
+    assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK-2/resource-library-link');
+    assert.equal(calls[3].options.method, 'POST');
+    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-link');
+    assert.equal(calls[5].url, '/api/v1/work-items/YCE-TASK-2/resource-library-link');
+    assert.equal(calls[5].options.method, 'DELETE');
+    assert.equal(new Headers(calls[5].options.headers).get('x-yuance-csrf-token'), 'csrf-unlink');
+    assert.equal(calls[3].options.body, undefined);
+    assert.equal(calls[5].options.body, undefined);
   });
 });
 

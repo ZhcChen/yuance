@@ -42,6 +42,9 @@ function renderDetail(overrides = {}) {
     error: '',
     canManageWorkItems: true,
     canEditPrimaryPost: true,
+    canManageResourceLibraryLink: true,
+    resourceLibraryLinked: false,
+    resourceLibrarySubmitting: false,
     canCloseWorkItem: true,
     canReopenWorkItem: false,
     canRestoreWorkItem: false,
@@ -58,6 +61,7 @@ function renderDetail(overrides = {}) {
     onSubmitEdit: () => {},
     onSubmitHandoff: () => {},
     onRequestLifecycleAction: () => {},
+    onRequestResourceLibraryLink: () => true,
     backHref: '/web/app/work-items/tasks',
     onOpenBack: () => {},
     ...overrides,
@@ -78,6 +82,7 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /title="前一任务"/);
   assert.match(html, /状态：待处理 → 进行中/);
   assert.match(html, /关闭工作项/);
+  assert.match(html, /<button[^>]*>链接到资料库<\/button>/);
   assert.match(html, /yc-rich-text-content/);
   assert.match(html, /aria-label="主内容"/);
   assert.match(html, /yc-select/);
@@ -108,11 +113,30 @@ test('work item detail keeps handoff available while hiding author-only primary 
 });
 
 test('work item detail hides mutations for read-only users', () => {
-  const html = renderDetail({ canManageWorkItems: false, canEditPrimaryPost: false });
+  const html = renderDetail({ canManageWorkItems: false, canEditPrimaryPost: false, canManageResourceLibraryLink: false });
 
   assert.doesNotMatch(html, /编辑工作项/);
   assert.doesNotMatch(html, /推进并指派/);
   assert.match(html, /当前项目权限为只读/);
+});
+
+test('work item detail shows linked state and cancellation action', () => {
+  const html = renderDetail({ resourceLibraryLinked: true });
+
+  assert.match(html, /已链接到资料库/);
+  assert.match(html, /<button[^>]*>取消资料库链接<\/button>/);
+});
+
+test('work item detail hides resource library mutation without its permission', () => {
+  const html = renderDetail({ resourceLibraryLinked: false, canManageResourceLibraryLink: false });
+
+  assert.doesNotMatch(html, /<button[^>]*>链接到资料库<\/button>/);
+});
+
+test('work item detail disables resource library mutation while submitting', () => {
+  const html = renderDetail({ resourceLibrarySubmitting: true });
+
+  assert.match(html, /<button[^>]*disabled=""[^>]*>链接到资料库<\/button>/);
 });
 
 test('work item detail hides mutations until a deleted item is restored', () => {
