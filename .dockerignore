@@ -16,3 +16,15 @@ frontend/node_modules
 frontend/packages/*/node_modules
 frontend/packages/*/dist
 desktop/node_modules
+desktop/renderer-dist
+desktop/release
+frontend/packages/*/.cache
+.artifacts
+.code-review-graph
+.context
+.local
+test-results
+.tmp-docx-harness
+coverage
+*.tsbuildinfo
+*.tgz

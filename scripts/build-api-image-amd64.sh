@@ -11,8 +11,8 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! docker buildx version >/dev/null 2>&1; then
-  echo "docker buildx 不可用，请先安装或启用 Docker Buildx。" >&2
+if ! docker buildx version >/dev/null 2>&1 || ! docker buildx inspect --bootstrap >/dev/null 2>&1; then
+  echo "Docker Buildx/BuildKit 不可用，请先安装并启动可用的 builder。" >&2
   exit 1
 fi
 
@@ -25,6 +25,7 @@ docker buildx build \
   -t "$IMAGE" \
   -f api/Dockerfile \
   --build-arg "YUANCE_BUILD_RELEASE_VERSION=$RELEASE_VERSION" \
+  --build-arg "YUANCE_SKIP_FRONTEND_CHECK=1" \
   --load \
   .
 
