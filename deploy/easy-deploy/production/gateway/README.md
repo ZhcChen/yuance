@@ -10,8 +10,8 @@ WSL 的 FRP Web 控制台发布受管 FRPC/Caddy 片段，禁止再把本模板�
 https://yuance.quanxinfu.com
   -> qfy-sc-test Caddy
   -> FRPS 127.0.0.1:40000
-  -> WSL FRPC
-  -> WSL 127.0.0.1:33033
+  -> qfy-test2 FRPC
+  -> qfy-test2 127.0.0.1:33033
   -> yuance-api
 ```
 
@@ -21,7 +21,7 @@ https://yuance.quanxinfu.com
 FRP Web：http://127.0.0.1:8067
 名称：yuance
 域名：yuance.quanxinfu.com
-WSL 本地端口：33033
+qfy-test2 本地端口：33033
 远端端口：40000
 ```
 

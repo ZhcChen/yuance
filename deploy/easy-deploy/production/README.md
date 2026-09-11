@@ -14,10 +14,11 @@ yuance.quanxinfu.com
   -> yuance-api
 ```
 
-正式运行目录固定为 WSL `/srv/yuance/backend`，镜像保存在
-`/srv/yuance/releases`。SQLite 数据必须位于 WSL Linux 文件系统，不得放到
-`/mnt/c`。公网服务器上的旧 Compose 和 `gateway/Caddyfile.yuance.example`
-只用于冷回滚，不接收日常发布。
+正式运行目录固定为 `qfy-test2:/srv/yuance/backend`，镜像保存在
+`qfy-test2:/srv/yuance/releases`。SQLite 数据必须位于目标机 Linux 文件系统。
+镜像在发布机完成构建后通过 SSH/SCP 传输；目标机和 `/srv/yuance` 内禁止源码
+编译或镜像构建。公网服务器上的旧 Compose 和
+`gateway/Caddyfile.yuance.example` 只用于冷回滚，不接收日常发布。
 
 ## 目录
 
@@ -37,15 +38,16 @@ gateway/
 
 ## 发布
 
-在 `Ubuntu-24.04` WSL 的仓库目录执行：
+在发布机的仓库目录执行，当前优先发布到内网目标 `qfy-test2`：
 
 ```bash
-cd /mnt/c/Users/Administrator/code/yuance
+YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_HOST=qfy-test2 \
 ./scripts/deploy-production.sh
 ```
 
-脚本默认使用 `local-wsl`，要求干净且与 `origin/main` 一致的 `main` 分支，
-并使用 WSL 原生 `/usr/bin/docker`。它会构建 `linux/amd64` 镜像、备份 SQLite
+脚本要求干净且与 `origin/main` 一致的 `main` 分支。它会在发布机构建
+`linux/amd64` 镜像、备份目标机 SQLite
 和旧镜像、同步模板、执行迁移与基础 seed、重建容器并验证健康状态和文件对象。
 
 只构建镜像时执行：
@@ -54,11 +56,11 @@ cd /mnt/c/Users/Administrator/code/yuance
 ./scripts/build-api-image-amd64.sh
 ```
 
-旧远程模式必须同时显式指定模式与主机，不会默认回退到 `qfy-sc-test`：
+备用目标 `qfy-test` 也必须同时显式指定模式与主机，不会默认回退：
 
 ```bash
 YUANCE_DEPLOY_MODE=remote \
-YUANCE_DEPLOY_HOST=<明确目标主机> \
+YUANCE_DEPLOY_HOST=qfy-test \
 ./scripts/deploy-production.sh
 ```
 

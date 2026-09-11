@@ -7,7 +7,9 @@ date: 2026-08-02
 
 # 元策正式环境部署运行手册
 
-元策正式环境运行在本机 Ubuntu WSL，由 WSL 原生 Docker Engine 承载。
+元策正式环境运行在内网部署目标 `qfy-test2`，由目标机上的 Docker Engine 承载。
+发布机通过 SSH/SCP 将本地构建好的 `linux/amd64` 镜像传输到
+`qfy-test2`；正式服务器和 `/srv/yuance` 运行目录禁止源码编译和镜像构建。
 公网服务器 `qfy-sc-test` 只保留 Caddy、FRPS 和已停止的旧环境作为冷回滚。
 
 ## 当前拓扑
@@ -24,7 +26,8 @@ yuance.quanxinfu.com
 运行口径：
 
 ```text
-WSL 发行版：Ubuntu-24.04
+SSH 部署目标：qfy-test2（内网优先）
+备用目标：qfy-test（仅允许显式指定）
 运行目录：/srv/yuance/backend
 镜像目录：/srv/yuance/releases
 迁移包目录：/srv/yuance/incoming
@@ -72,10 +75,11 @@ docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' yuance-api
 
 ## 构建镜像
 
-在 WSL 内从仓库执行：
+在发布机从仓库执行，镜像构建发生在发布机；不要在 `qfy-test2` 或
+`/srv/yuance` 内执行构建：
 
 ```bash
-cd /mnt/c/Users/Administrator/code/yuance
+cd <仓库目录>
 ./scripts/build-api-image-amd64.sh
 ```
 
@@ -84,15 +88,16 @@ cd /mnt/c/Users/Administrator/code/yuance
 
 ## 一键发布
 
-默认模式是 `local-wsl`：
+当前正式环境优先使用 `qfy-test2` 的内网 remote 模式：
 
 ```bash
-cd /mnt/c/Users/Administrator/code/yuance
+cd <仓库目录>
+YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_HOST=qfy-test2 \
 ./scripts/deploy-production.sh
 ```
 
-脚本要求 `main` 工作区干净并与 `origin/main` 一致，使用 WSL 原生
-`/usr/bin/docker`，然后执行：
+脚本要求 `main` 工作区干净并与 `origin/main` 一致，然后执行：
 
 1. 构建并校验 `linux/amd64` 镜像 tar。
 2. 备份 `/srv/yuance/releases` 中当前镜像 tar。
@@ -100,6 +105,14 @@ cd /mnt/c/Users/Administrator/code/yuance
 4. 加载镜像并备份 SQLite 主库、WAL、SHM。
 5. 在单次维护容器内执行 `migrate status`、`migrate up`、`seed core`。
 6. 重建 `yuance-api`，检查 health、ready、文件对象审计和镜像 ID。
+
+`qfy-test` 只能在明确确认目标后显式指定，不作为默认或隐式回退目标：
+
+```bash
+YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_HOST=qfy-test \
+./scripts/deploy-production.sh
+```
 
 可选参数：
 
@@ -117,8 +130,9 @@ YUANCE_DEPLOY_HOST=<明确目标主机> \
 ./scripts/deploy-production.sh
 ```
 
-`local-wsl` 模式设置 `YUANCE_DEPLOY_HOST` 会被拒绝；`remote` 模式缺少目标
-主机也会被拒绝。
+`local-wsl` 是历史兼容模式，设置 `YUANCE_DEPLOY_HOST` 会被拒绝；`remote`
+模式缺少目标主机也会被拒绝。当前发布默认不使用 `local-wsl`，应显式指定
+`YUANCE_DEPLOY_MODE=remote` 和目标主机。
 
 ## 手工检查
 
