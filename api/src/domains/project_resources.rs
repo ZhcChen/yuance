@@ -317,6 +317,7 @@ pub async fn list_linked_work_item_posts(
             String,
             Option<i64>,
             String,
+            String,
             Option<String>,
             Option<String>,
             String,
@@ -334,6 +335,7 @@ pub async fn list_linked_work_item_posts(
             wi.updated_at,
             wi.primary_post_comment_id,
             COALESCE(reporter.username, ''),
+            wi.description,
             c.body,
             c.body_format,
             COALESCE(NULLIF(c.actor_display_name_snapshot, ''), author.display_name, ''),
@@ -366,40 +368,59 @@ pub async fn list_linked_work_item_posts(
         item_key,
         item_type,
         title,
-        _,
+        work_item_updated_at,
         primary_post_comment_id,
         reporter_username,
+        description,
         body,
         body_format,
         author_display_name,
-        updated_at,
+        comment_updated_at,
         linked_at,
     ) in rows
     {
-        let post_data = match (primary_post_comment_id, body, body_format, updated_at) {
-            (Some(_), Some(body), Some(body_format), Some(updated_at)) => {
-                Some((body, body_format, author_display_name, updated_at))
+        let post_data = if primary_post_comment_id.is_some() {
+            match (body, body_format, comment_updated_at) {
+                (Some(body), Some(body_format), Some(updated_at)) => {
+                    Some((body, body_format, author_display_name, updated_at, false))
+                }
+                _ => None,
             }
-            (None, _, _, _) => current_work_item_primary_post(pool, work_item_id)
-                .await?
-                .map(|primary_post| {
-                    (
-                        primary_post.body,
-                        primary_post.body_format,
-                        primary_post.author_display_name,
-                        primary_post.updated_at,
-                    )
-                }),
-            _ => None,
+        } else if let Some(primary_post) =
+            current_work_item_primary_post(pool, work_item_id).await?
+        {
+            Some((
+                primary_post.body,
+                primary_post.body_format,
+                primary_post.author_display_name,
+                primary_post.updated_at,
+                false,
+            ))
+        } else if description.trim().is_empty() {
+            None
+        } else {
+            Some((
+                description.clone(),
+                projects::COMMENT_BODY_FORMAT_PLAIN.to_string(),
+                reporter_username.clone(),
+                work_item_updated_at,
+                true,
+            ))
         };
-        let Some((body, body_format, author_display_name, updated_at)) = post_data else {
+        let Some((body, body_format, author_display_name, updated_at, is_legacy_description)) =
+            post_data
+        else {
             continue;
         };
         let post = ProjectResourceLinkedWorkItemPost {
             item_key,
             item_type,
             title,
-            summary: projects::work_item_primary_post_summary(&body, &body_format),
+            summary: if is_legacy_description {
+                projects::work_item_description_summary(&body)
+            } else {
+                projects::work_item_primary_post_summary(&body, &body_format)
+            },
             author_display_name: if author_display_name.is_empty() {
                 reporter_username
             } else {
@@ -474,11 +495,39 @@ pub async fn get_work_item_post_resource_link(
     .bind(work_item_id)
     .fetch_optional(pool)
     .await?;
-    if linked_at.is_none()
-        || current_work_item_primary_post(pool, work_item_id)
-            .await?
-            .is_none()
-    {
+    if linked_at.is_none() {
+        return Ok(None);
+    }
+    let Some((primary_post_comment_id, reporter_username, description)) =
+        sqlx::query_as::<_, (Option<i64>, String, String)>(
+            r#"
+        SELECT
+            wi.primary_post_comment_id,
+            COALESCE(reporter.username, ''),
+            wi.description
+        FROM work_items wi
+        LEFT JOIN users reporter ON reporter.id = wi.reporter_user_id
+        WHERE wi.id = ?1
+        "#,
+        )
+        .bind(work_item_id)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let comments = projects::list_work_item_comments(pool, work_item_id).await?;
+    let primary_post = projects::work_item_primary_post(
+        &comments,
+        primary_post_comment_id,
+        &reporter_username,
+        &description,
+    );
+    if !projects::work_item_has_linkable_primary_post(
+        primary_post,
+        primary_post_comment_id,
+        &description,
+    ) {
         return Ok(None);
     }
     Ok(linked_at)
@@ -510,10 +559,10 @@ pub async fn link_work_item_post(
     };
 
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let (item_project_id, item_type, deleted_at, primary_post_comment_id) =
-        sqlx::query_as::<_, (i64, String, Option<String>, Option<i64>)>(
+    let (item_project_id, item_type, deleted_at, primary_post_comment_id, description) =
+        sqlx::query_as::<_, (i64, String, Option<String>, Option<i64>, String)>(
             r#"
-        SELECT project_id, item_type, deleted_at, primary_post_comment_id
+        SELECT project_id, item_type, deleted_at, primary_post_comment_id, description
         FROM work_items
         WHERE id = ?1
         "#,
@@ -532,14 +581,15 @@ pub async fn link_work_item_post(
         ));
     }
     projects::validate_work_item_type(&item_type)?;
-    let Some(primary_post_comment_id) = primary_post_comment_id.or(legacy_primary_post_comment_id)
-    else {
+    let primary_post_comment_id = primary_post_comment_id.or(legacy_primary_post_comment_id);
+    if primary_post_comment_id.is_none() && description.trim().is_empty() {
         return Err(AppError::BadRequest(
             "工作项没有可链接的主发布内容".to_string(),
         ));
-    };
-    let primary_post_exists = sqlx::query_scalar::<_, i64>(
-        r#"
+    }
+    if let Some(primary_post_comment_id) = primary_post_comment_id {
+        let primary_post_exists = sqlx::query_scalar::<_, i64>(
+            r#"
         SELECT 1
         FROM work_item_comments
         WHERE id = ?1
@@ -547,26 +597,27 @@ pub async fn link_work_item_post(
           AND deleted_at IS NULL
           AND is_draft = 0
         "#,
-    )
-    .bind(primary_post_comment_id)
-    .bind(work_item_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .is_some();
-    if !primary_post_exists {
-        return Err(AppError::BadRequest(
-            "工作项没有可链接的主发布内容".to_string(),
-        ));
-    }
-
-    if legacy_primary_post_comment_id.is_some() {
-        sqlx::query(
-            "UPDATE work_items SET primary_post_comment_id = ?1 WHERE id = ?2 AND primary_post_comment_id IS NULL",
         )
         .bind(primary_post_comment_id)
         .bind(work_item_id)
-        .execute(&mut *tx)
-        .await?;
+        .fetch_optional(&mut *tx)
+        .await?
+        .is_some();
+        if !primary_post_exists {
+            return Err(AppError::BadRequest(
+                "工作项没有可链接的主发布内容".to_string(),
+            ));
+        }
+
+        if legacy_primary_post_comment_id.is_some() {
+            sqlx::query(
+                "UPDATE work_items SET primary_post_comment_id = ?1 WHERE id = ?2 AND primary_post_comment_id IS NULL",
+            )
+            .bind(primary_post_comment_id)
+            .bind(work_item_id)
+            .execute(&mut *tx)
+            .await?;
+        }
     }
 
     sqlx::query(

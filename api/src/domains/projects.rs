@@ -7326,12 +7326,29 @@ pub fn work_item_primary_post<'a>(
     })
 }
 
+pub fn work_item_has_linkable_primary_post(
+    primary_post: Option<&WorkItemCommentSummary>,
+    primary_post_comment_id: Option<i64>,
+    description: &str,
+) -> bool {
+    primary_post.is_some() || (primary_post_comment_id.is_none() && !description.trim().is_empty())
+}
+
 pub fn work_item_primary_post_summary(body: &str, body_format: &str) -> String {
     let plain = work_item_comment_plain_text(body, body_format);
     if plain.trim().is_empty() {
         return "见首条图文说明".to_string();
     }
     plain.chars().take(5000).collect()
+}
+
+pub fn work_item_description_summary(description: &str) -> String {
+    let body_format = if looks_like_rich_work_item_description(description) {
+        COMMENT_BODY_FORMAT_HTML
+    } else {
+        COMMENT_BODY_FORMAT_PLAIN
+    };
+    work_item_primary_post_summary(description, body_format)
 }
 
 pub async fn upsert_work_item_primary_post(
@@ -9256,7 +9273,7 @@ mod tests {
     use super::{
         WorkItemCommentSummary, prepare_work_item_comment_body, strip_inline_attachment_node,
         work_item_comment_body_html_for_display, work_item_description_html_for_display,
-        work_item_primary_post, work_item_primary_post_summary,
+        work_item_description_summary, work_item_primary_post, work_item_primary_post_summary,
     };
 
     #[test]
@@ -9322,6 +9339,18 @@ mod tests {
         assert_eq!(
             work_item_primary_post(&comments, None, "reporter", &summary).map(|comment| comment.id),
             Some(17)
+        );
+    }
+
+    #[test]
+    fn work_item_description_summary_supports_plain_and_rich_legacy_content() {
+        assert_eq!(
+            work_item_description_summary("历史纯文本说明"),
+            "历史纯文本说明"
+        );
+        assert_eq!(
+            work_item_description_summary("<p>历史富文本说明</p>"),
+            "历史富文本说明"
         );
     }
 

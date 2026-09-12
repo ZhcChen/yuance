@@ -2613,6 +2613,167 @@ async fn api_v1_work_item_resource_library_link_lifecycle_is_idempotent_and_live
 }
 
 #[tokio::test]
+async fn api_v1_work_item_resource_library_link_remains_available_after_comment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::upsert_work_item_primary_post(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "<p>先发布主帖，再追加讨论。</p>",
+        "系统管理员",
+    )
+    .await
+    .expect("primary post should be ready for linking");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let comment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>追加一条普通评论。</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(comment.status(), StatusCode::CREATED);
+
+    let state = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(state.status(), StatusCode::OK);
+    let state_body: serde_json::Value =
+        serde_json::from_str(&response_body(state).await).expect("link state should be json");
+    assert_eq!(state_body["data"]["can_manage"], true);
+
+    let link = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(link.status(), StatusCode::OK);
+    let link_body: serde_json::Value =
+        serde_json::from_str(&response_body(link).await).expect("link response should be json");
+    assert_eq!(link_body["data"]["linked"], true);
+}
+
+#[tokio::test]
+async fn api_v1_work_item_resource_library_link_supports_legacy_description_after_comment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let comment = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"历史工作项的普通讨论","body_format":"plain"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(comment.status(), StatusCode::CREATED);
+
+    let state = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(state.status(), StatusCode::OK);
+    let state_body: serde_json::Value =
+        serde_json::from_str(&response_body(state).await).expect("link state should be json");
+    assert_eq!(state_body["data"]["can_manage"], true);
+
+    let link = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/resource-library-link")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(link.status(), StatusCode::OK);
+    let link_body: serde_json::Value =
+        serde_json::from_str(&response_body(link).await).expect("link response should be json");
+    assert_eq!(link_body["data"]["linked"], true);
+    assert!(
+        sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT primary_post_comment_id FROM work_items WHERE item_key = 'YCE-TASK-2'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("legacy primary post pointer should load")
+        .is_none()
+    );
+
+    let listed = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resource-library/linked-work-item-posts")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(listed.status(), StatusCode::OK);
+    let listed_body: serde_json::Value =
+        serde_json::from_str(&response_body(listed).await).expect("list response should be json");
+    assert_eq!(listed_body["data"][0]["key"], "YCE-TASK-2");
+    assert_eq!(
+        listed_body["data"][0]["summary"],
+        "落地项目、成员、需求、任务、Bug、评论和动态表。"
+    );
+}
+
+#[tokio::test]
 async fn api_v1_work_item_resource_library_links_requirement_task_and_bug_posts() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -2820,6 +2981,11 @@ async fn api_v1_work_item_resource_library_link_rejects_missing_or_hidden_primar
         .expect("legacy primary post pointer should load")
         .is_some()
     );
+
+    sqlx::query("UPDATE work_items SET description = '' WHERE item_key = 'YCE-BUG-1'")
+        .execute(&pool)
+        .await
+        .expect("missing primary post fixture should have no description");
 
     let missing_response = app
         .oneshot(

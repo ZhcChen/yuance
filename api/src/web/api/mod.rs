@@ -4251,6 +4251,11 @@ pub async fn get_work_item_resource_library_link(
         &item.reporter_username,
         &item.description,
     );
+    let has_linkable_primary_post = projects::work_item_has_linkable_primary_post(
+        primary_post,
+        item.primary_post_comment_id,
+        &item.description,
+    );
     let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
     let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
         && ((can_access_all_projects
@@ -4263,7 +4268,7 @@ pub async fn get_work_item_resource_library_link(
             )
             .await?);
     let can_manage = item.deleted_at.trim().is_empty()
-        && primary_post.is_some()
+        && has_linkable_primary_post
         && can_manage_work_items
         && api_token_allows_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE)
             .await?
