@@ -1,3 +1,4 @@
+use quick_xml::{Reader, events::Event};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -10,6 +11,8 @@ use crate::{
 };
 
 pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 1024 * 1024 * 1024;
+const MAX_SVG_XML_BYTE_SIZE: usize = 16 * 1024 * 1024;
+const MAX_SVG_XML_DEPTH: usize = 64;
 const ALLOWED_CONTENT_TYPE_PREFIXES: &[&str] = &["image/", "text/", "video/"];
 const ALLOWED_CONTENT_TYPES: &[&str] = &[
     "application/gzip",
@@ -663,6 +666,271 @@ pub async fn mark_attachment_uploaded(
     let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
     mark_file_uploaded(pool, attachment.file_object_id).await?;
     get_attachment(pool, attachment.id).await
+}
+
+/// 验证 SVG 只包含可用于流程图的静态内容。
+/// 这里拒绝未知元素和危险属性，而不是尝试对原始 XML 做不完整的修补。
+pub fn validate_svg_content(content: &[u8]) -> AppResult<()> {
+    if content.is_empty() || content.len() > MAX_SVG_XML_BYTE_SIZE {
+        return Err(AppError::BadRequest(
+            "SVG 文件为空或超过安全大小限制".to_string(),
+        ));
+    }
+
+    let mut reader = Reader::from_reader(content);
+    reader.config_mut().trim_text(true);
+    let mut buffer = Vec::new();
+    let mut depth = 0_usize;
+    let mut style_depth = 0_usize;
+    let mut root_seen = false;
+    let mut root_closed = false;
+
+    loop {
+        match reader.read_event_into(&mut buffer) {
+            Ok(Event::Decl(_)) | Ok(Event::Comment(_)) => {}
+            Ok(Event::Text(text)) => {
+                if style_depth > 0 {
+                    let value = std::str::from_utf8(text.as_ref())
+                        .map_err(|_| AppError::BadRequest("SVG 样式内容无效".to_string()))?;
+                    if !style_is_safe(value) {
+                        return Err(AppError::BadRequest("SVG 样式内容不安全".to_string()));
+                    }
+                }
+            }
+            Ok(Event::CData(text)) => {
+                if style_depth > 0 {
+                    let value = std::str::from_utf8(text.as_ref())
+                        .map_err(|_| AppError::BadRequest("SVG 样式内容无效".to_string()))?;
+                    if !style_is_safe(value) {
+                        return Err(AppError::BadRequest("SVG 样式内容不安全".to_string()));
+                    }
+                }
+            }
+            Ok(Event::DocType(_)) => {
+                return Err(AppError::BadRequest("SVG 不允许包含 DOCTYPE".to_string()));
+            }
+            Ok(Event::Start(element)) => {
+                let name = element.local_name();
+                let name = std::str::from_utf8(name.as_ref())
+                    .map_err(|_| AppError::BadRequest("SVG 元素名称无效".to_string()))?;
+                if root_closed || (!root_seen && name != "svg") || !allowed_svg_element(name) {
+                    return Err(AppError::BadRequest(format!("SVG 元素不受支持：{name}")));
+                }
+                validate_svg_attributes(name, element.attributes().with_checks(true))?;
+                root_seen = true;
+                depth += 1;
+                if name == "style" {
+                    style_depth += 1;
+                }
+                if depth > MAX_SVG_XML_DEPTH {
+                    return Err(AppError::BadRequest("SVG 嵌套层级超过安全限制".to_string()));
+                }
+            }
+            Ok(Event::Empty(element)) => {
+                let name = element.local_name();
+                let name = std::str::from_utf8(name.as_ref())
+                    .map_err(|_| AppError::BadRequest("SVG 元素名称无效".to_string()))?;
+                if root_closed || (!root_seen && name != "svg") || !allowed_svg_element(name) {
+                    return Err(AppError::BadRequest(format!("SVG 元素不受支持：{name}")));
+                }
+                validate_svg_attributes(name, element.attributes().with_checks(true))?;
+                root_seen = true;
+            }
+            Ok(Event::End(element)) => {
+                let local_name = element.local_name();
+                let name = std::str::from_utf8(local_name.as_ref())
+                    .map_err(|_| AppError::BadRequest("SVG 元素名称无效".to_string()))?;
+                depth = depth
+                    .checked_sub(1)
+                    .ok_or_else(|| AppError::BadRequest("SVG XML 结构无效".to_string()))?;
+                if name == "style" {
+                    style_depth = style_depth
+                        .checked_sub(1)
+                        .ok_or_else(|| AppError::BadRequest("SVG XML 结构无效".to_string()))?;
+                }
+                if depth == 0 {
+                    root_closed = true;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => {
+                return Err(AppError::BadRequest(format!("SVG XML 无效：{error}")));
+            }
+            _ => {}
+        }
+        buffer.clear();
+    }
+
+    if !root_seen || !root_closed || depth != 0 {
+        return Err(AppError::BadRequest(
+            "SVG XML 缺少完整 svg 根元素".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn allowed_svg_element(name: &str) -> bool {
+    matches!(
+        name,
+        "svg"
+            | "g"
+            | "rect"
+            | "path"
+            | "line"
+            | "polyline"
+            | "polygon"
+            | "circle"
+            | "text"
+            | "marker"
+            | "defs"
+            | "style"
+    )
+}
+
+fn validate_svg_attributes<'a>(
+    element: &str,
+    attributes: impl Iterator<
+        Item = Result<
+            quick_xml::events::attributes::Attribute<'a>,
+            quick_xml::events::attributes::AttrError,
+        >,
+    >,
+) -> AppResult<()> {
+    for attribute in attributes {
+        let attribute = attribute.map_err(|_| AppError::BadRequest("SVG 属性无效".to_string()))?;
+        let name = std::str::from_utf8(attribute.key.as_ref())
+            .map_err(|_| AppError::BadRequest("SVG 属性名称无效".to_string()))?;
+        let value = attribute
+            .unescape_value()
+            .map_err(|_| AppError::BadRequest("SVG 属性值无效".to_string()))?;
+        if name.starts_with("on") || name.eq_ignore_ascii_case("style") && !style_is_safe(&value) {
+            return Err(AppError::BadRequest("SVG 包含不安全属性".to_string()));
+        }
+        let lower_value = value.to_ascii_lowercase();
+        if lower_value.contains("javascript:")
+            || lower_value.contains("expression(")
+            || (lower_value.contains("url(") && !lower_value.contains("url(#"))
+        {
+            return Err(AppError::BadRequest("SVG 属性值不安全".to_string()));
+        }
+        if name.eq_ignore_ascii_case("href") || name.eq_ignore_ascii_case("xlink:href") {
+            if !value.starts_with('#') {
+                return Err(AppError::BadRequest("SVG 不允许外部资源引用".to_string()));
+            }
+        }
+        if name.eq_ignore_ascii_case("id") && value.contains(['<', '>', '"', '\'']) {
+            return Err(AppError::BadRequest("SVG ID 无效".to_string()));
+        }
+        if name.starts_with("xmlns") && !value.starts_with("http://www.w3.org/") {
+            return Err(AppError::BadRequest("SVG 命名空间无效".to_string()));
+        }
+        if !allowed_svg_attribute(element, name) {
+            return Err(AppError::BadRequest(format!("SVG 属性不受支持：{name}")));
+        }
+    }
+    Ok(())
+}
+
+fn allowed_svg_attribute(element: &str, name: &str) -> bool {
+    matches!(
+        name,
+        "xmlns"
+            | "xmlns:xlink"
+            | "viewBox"
+            | "version"
+            | "width"
+            | "height"
+            | "x"
+            | "y"
+            | "x1"
+            | "x2"
+            | "y1"
+            | "y2"
+            | "cx"
+            | "cy"
+            | "r"
+            | "rx"
+            | "ry"
+            | "d"
+            | "points"
+            | "fill"
+            | "fill-opacity"
+            | "stroke"
+            | "stroke-width"
+            | "stroke-linecap"
+            | "stroke-linejoin"
+            | "stroke-dasharray"
+            | "stroke-opacity"
+            | "opacity"
+            | "transform"
+            | "text-anchor"
+            | "font-family"
+            | "font-size"
+            | "font-weight"
+            | "dominant-baseline"
+            | "marker-start"
+            | "marker-mid"
+            | "marker-end"
+            | "refX"
+            | "refY"
+            | "orient"
+            | "markerWidth"
+            | "markerHeight"
+            | "preserveAspectRatio"
+            | "id"
+            | "class"
+            | "style"
+    ) || (element == "style" && name == "type")
+}
+
+fn style_is_safe(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("url(") && !lower.contains("url(#") {
+        return false;
+    }
+    if lower.contains("expression(") || lower.contains("javascript:") || lower.contains("@import") {
+        return false;
+    }
+
+    let declarations = if value.contains('{') || value.contains('}') {
+        let mut blocks = value.split('{');
+        let _selector = blocks.next().unwrap_or_default();
+        let mut declarations = Vec::new();
+        for block in blocks {
+            let Some((body, _)) = block.split_once('}') else {
+                return false;
+            };
+            declarations.push(body);
+        }
+        if declarations.is_empty() {
+            return false;
+        }
+        declarations.join(";")
+    } else {
+        value.to_string()
+    };
+
+    declarations.split(';').all(|declaration| {
+        declaration
+            .split_once(':')
+            .map(|(property, _)| {
+                matches!(
+                    property.trim().to_ascii_lowercase().as_str(),
+                    "fill"
+                        | "fill-opacity"
+                        | "stroke"
+                        | "stroke-width"
+                        | "stroke-opacity"
+                        | "opacity"
+                        | "font-family"
+                        | "font-size"
+                        | "font-weight"
+                        | "text-anchor"
+                        | "color"
+                )
+            })
+            .unwrap_or_else(|| declaration.trim().is_empty())
+    })
 }
 
 pub async fn mark_attachment_uploaded_encrypted(
@@ -1614,4 +1882,47 @@ fn build_folder_tree(parent_id: Option<i64>, items: &[FolderTreeItem]) -> Vec<Fo
             children: build_folder_tree(Some(item.id), items),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod svg_tests {
+    use super::validate_svg_content;
+
+    const VALID_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">
+      <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#333"/></marker></defs>
+      <style>rect { fill: #fff; stroke: #333; }</style>
+      <rect x="5" y="5" width="45" height="25" rx="3" style="fill:#fff;stroke:#333"/>
+      <line x1="50" y1="18" x2="90" y2="18" stroke="#333" marker-end="url(#arrow)"/>
+      <text x="12" y="22" font-family="sans-serif">&#x4E2D;&#x6587;&#x6D41;&#x7A0B;</text>
+    </svg>"##;
+
+    #[test]
+    fn accepts_static_flowchart_svg_with_chinese_text() {
+        let result = validate_svg_content(VALID_SVG);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn rejects_script_and_event_attributes() {
+        for svg in [
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#
+                .as_slice(),
+            br#"<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>"#.as_slice(),
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><rect onclick="alert(1)"/></svg>"#
+                .as_slice(),
+        ] {
+            assert!(validate_svg_content(svg).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_external_resources_and_embedded_content() {
+        for svg in [
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.test/x"/></svg>"#.as_slice(),
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>"#.as_slice(),
+            br#"<svg xmlns="http://www.w3.org/2000/svg"><style>rect { fill: url(https://evil.test); }</style></svg>"#.as_slice(),
+        ] {
+            assert!(validate_svg_content(svg).is_err());
+        }
+    }
 }

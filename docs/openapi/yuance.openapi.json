@@ -1420,7 +1420,7 @@
         "tags": ["resources"],
         "operationId": "getProjectResourceAttachmentUploadUrl",
         "summary": "获取资料附件上传请求",
-        "description": "返回短时对象存储请求。request、签名 headers、encryption.key 和 access_token 均属于敏感数据，只能按机器可读结果在当前进程内使用。",
+        "description": "返回短时对象存储请求。支持 image/svg+xml 资料附件；request、签名 headers、encryption.key 和 access_token 均属于敏感数据，只能按机器可读结果在当前进程内使用。SVG 会在上传完成确认时进行 XML 和静态内容安全校验。",
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
@@ -1440,7 +1440,7 @@
         "tags": ["resources"],
         "operationId": "completeProjectResourceAttachmentUpload",
         "summary": "确认资料附件上传完成",
-        "description": "明文附件可使用空请求体；加密附件必须提交 encrypted_sha256。服务端会重新校验对象大小和 checksum。",
+        "description": "明文附件可使用空请求体；加密附件必须提交 encrypted_sha256。服务端会重新校验对象大小和 checksum，并对 image/svg+xml 附件读取原文执行静态 SVG 安全校验；危险元素、事件属性、外部资源和不安全 CSS 会被拒绝。",
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
@@ -2256,7 +2256,7 @@
         "tags": ["resources"],
         "operationId": "previewProjectResourceAttachment",
         "summary": "获取资料附件预览元数据",
-        "description": "复用资料访问权限与短时 access grant，返回预览分类、受控内容地址和同资料附件前后项。",
+        "description": "复用资料访问权限与短时 access grant，返回预览分类、受控内容地址和同资料附件前后项。image/svg+xml 通过浏览器图片预览展示，正文不开放任意内联 SVG。",
         "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},

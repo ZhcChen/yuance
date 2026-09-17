@@ -6244,6 +6244,7 @@ pub async fn project_resource_attachment_mark_uploaded(
             "application/octet-stream",
         )
         .await?;
+        validate_svg_attachment_content(&state, pool, &attachment).await?;
         files::mark_attachment_uploaded_encrypted(
             pool,
             attachment_id,
@@ -6262,6 +6263,7 @@ pub async fn project_resource_attachment_mark_uploaded(
             &attachment.content_type,
         )
         .await?;
+        validate_svg_attachment_content(&state, pool, &attachment).await?;
         files::mark_attachment_uploaded(pool, attachment_id, "project_resource", resource.id)
             .await?
     };
@@ -6279,6 +6281,37 @@ pub async fn project_resource_attachment_mark_uploaded(
     .await?;
 
     Ok(json(attachment_payload(attachment)))
+}
+
+async fn validate_svg_attachment_content(
+    state: &AppState,
+    pool: &SqlitePool,
+    attachment: &files::FileAttachmentSummary,
+) -> AppResult<()> {
+    if !attachment
+        .content_type
+        .eq_ignore_ascii_case("image/svg+xml")
+    {
+        return Ok(());
+    }
+    if attachment.byte_size > 16 * 1024 * 1024 {
+        return Err(AppError::BadRequest("SVG 文件超过安全大小限制".to_string()));
+    }
+
+    let encryption = files::get_file_object_encryption(pool, attachment.file_object_id).await?;
+    let (_, stored_content) =
+        storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+    let content = if let Some(encryption) = encryption {
+        let data_key = file_crypto::open_data_key(
+            &state.settings.file_master_key,
+            &encryption.data_key_envelope,
+            attachment.object_key.as_bytes(),
+        )?;
+        file_crypto::decrypt_ciphertext_full(&data_key, attachment.file_object_id, &stored_content)?
+    } else {
+        stored_content
+    };
+    files::validate_svg_content(&content)
 }
 
 #[derive(Debug, Deserialize)]
