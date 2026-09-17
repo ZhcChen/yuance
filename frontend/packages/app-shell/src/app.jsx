@@ -2399,7 +2399,15 @@ export function SharedApp({ services }) {
     if (attachment) void openProjectResourceAttachmentPreview(attachment);
   }
 
-  function activateProjectResourceInlineAttachment(attachmentId) {
+  /** @param {number} attachmentId @param {{ source?: string, title?: string } | undefined} [inlineImage] */
+  function activateProjectResourceInlineAttachment(attachmentId, inlineImage) {
+    if (attachmentId === 0 && inlineImage?.source?.startsWith('data:image/svg+xml;base64,')) {
+      const previousCapability = projectAttachmentPreviewCapabilityRef.current;
+      projectAttachmentPreviewCapabilityRef.current = '';
+      if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
+      setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: null, source: inlineImage.source, kind: 'image', strategy: null, fileType: 'svg', position: 0, total: 0, previousId: null, nextId: null });
+      return;
+    }
     const attachment = projectResourceAttachments.find((value) => value.id === attachmentId);
     if (attachment && attachmentIsUploaded(attachment)) void openProjectResourceAttachmentPreview(attachment);
   }

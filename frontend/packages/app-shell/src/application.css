@@ -1448,6 +1448,8 @@ html[data-theme="dark"] .project-stats div {
 .resource-rich-body.discussion-rich-body figure[data-yuance-attachment-kind] > figcaption { display: none; }
 .resource-rich-body.discussion-rich-body img,
 .resource-rich-body.discussion-rich-body video { max-width: 100%; border-radius: 10px; }
+.resource-rich-body.discussion-rich-body .resource-inline-svg img { cursor: zoom-in; outline: none; }
+.resource-rich-body.discussion-rich-body .resource-inline-svg img:focus-visible { outline: 2px solid var(--yc-brand); outline-offset: 4px; }
 .resource-rich-body.discussion-rich-body figure[data-yuance-attachment-kind="image"][data-yuance-orientation="portrait"] img,
 .resource-rich-body.discussion-rich-body figure[data-yuance-attachment-kind="image"][data-yuance-orientation="square"] img { width: 100%; max-width: none; height: auto; }
 

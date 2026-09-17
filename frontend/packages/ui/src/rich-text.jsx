@@ -151,7 +151,7 @@ function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = nul
  *   html: string,
  *   format?: string,
  *   emptyText?: string,
- *   onAttachmentActivate?: (attachmentId: number) => void,
+ *   onAttachmentActivate?: (attachmentId: number, inlineImage?: { source: string, title: string }) => void,
  *   onFileAttachmentActivate?: (attachmentId: number, file: { href: string, title: string, fileExt: string, fileKind: string, x: number, y: number }) => void,
  *   resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource>,
  *   downloadingAttachmentId?: number | null,
@@ -189,6 +189,11 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       heading.id = id;
       return { id, level: Number(heading.tagName.slice(1)), label };
     });
+    for (const image of staging.querySelectorAll('img[src^="data:image/svg+xml;base64,"]')) {
+      image.setAttribute('tabindex', '0');
+      image.setAttribute('role', 'button');
+      image.setAttribute('aria-label', '预览 SVG 流程图');
+    }
     const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
     if (resolveRef.current) for (const media of mediaReferences) media.removeAttribute('src');
     content.replaceChildren(...staging.childNodes);
@@ -243,6 +248,14 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     }
     const activate = (event) => {
       const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
+      const inlineSvg = !target && event.target instanceof view.Element
+        ? event.target.closest('img[src^="data:image/svg+xml;base64,"]')
+        : null;
+      if (inlineSvg && activateRef.current) {
+        event.preventDefault();
+        activateRef.current(0, { source: inlineSvg.getAttribute('src') || '', title: 'SVG 流程图' });
+        return;
+      }
       const attachmentId = Number(target?.getAttribute('data-yuance-attachment-id'));
       if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) return;
       if (target?.matches('a[data-yuance-attachment-kind="file"]') && fileActivateRef.current && !activateRef.current) {
@@ -276,11 +289,22 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
         y: event.clientY,
       });
     };
+    const activateInlineSvgWithKeyboard = (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const target = event.target instanceof view.Element
+        ? event.target.closest('img[src^="data:image/svg+xml;base64,"]')
+        : null;
+      if (!target || !activateRef.current) return;
+      event.preventDefault();
+      activateRef.current(0, { source: target.getAttribute('src') || '', title: 'SVG 流程图' });
+    };
     content.addEventListener('click', activate);
+    content.addEventListener('keydown', activateInlineSvgWithKeyboard);
     content.addEventListener('contextmenu', openFileMenu);
     return () => {
       active = false;
       content.removeEventListener('click', activate);
+      content.removeEventListener('keydown', activateInlineSvgWithKeyboard);
       content.removeEventListener('contextmenu', openFileMenu);
       setHeadings([]);
       headingsRef.current?.([]);
