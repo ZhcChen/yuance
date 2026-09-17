@@ -288,6 +288,7 @@ pub struct ProjectResourcePayload {
     pub category: String,
     pub body: String,
     pub body_format: String,
+    pub body_html: String,
     pub summary: String,
     pub status: String,
     pub is_protected: bool,
@@ -9962,6 +9963,7 @@ fn project_resource_summary_payload(
         category: resource.category,
         body: String::new(),
         body_format: resource.body_format,
+        body_html: String::new(),
         summary: if is_protected {
             "受保护资料，验证访问密码后查看正文。".to_string()
         } else {
@@ -10016,9 +10018,14 @@ fn project_resource_payload(
         body: if is_protected {
             String::new()
         } else {
-            resource.body
+            resource.body.clone()
         },
         body_format: resource.body_format,
+        body_html: if is_protected {
+            String::new()
+        } else {
+            resource.body_html
+        },
         summary: if is_protected {
             "受保护资料，验证访问密码后查看正文。".to_string()
         } else {
@@ -10057,6 +10064,7 @@ fn project_resource_unlocked_payload(
         category: resource.category,
         body: resource.body,
         body_format: resource.body_format,
+        body_html: resource.body_html,
         summary: resource.summary,
         status: resource.status,
         is_protected: resource.is_protected,

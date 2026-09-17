@@ -147,6 +147,15 @@ test('project resources normalize list detail and unlock responses', async () =>
   assert.deepEqual(writes, ['prepare']);
 });
 
+test('project resources preserve the safe display body separately from editable body', async () => {
+  const resource = { id: 9, project_key: 'YCE', title: '流程图', category: 'development', body: '<details><pre><code>&lt;svg&gt;...&lt;/svg&gt;</code></pre></details>', body_html: '<p class="resource-inline-svg"><img src="data:image/svg+xml;base64,abc" /></p>', body_format: 'html', summary: '流程图', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', url: '/web/projects/YCE/resources/9' };
+  const client = createApiClient({ request: async () => resource, prepareWrite: async () => {} });
+  const result = await client.getProjectResource('YCE', 9);
+  assert.equal(result.body, resource.body_html);
+  assert.equal(result.source_body, resource.body);
+  assert.equal(result.body_html, resource.body_html);
+});
+
 test('linked work item posts use a keyword-only list path and preserve the unpaginated DTO', async () => {
   const calls = [];
   const post = {

@@ -135,7 +135,7 @@ export function projectResourceFromPayload(payload) {
   const value = object(payload, 'project resource');
   return Object.freeze({
     id: positiveInteger(value.id, 'resource ID'), project_key: string(value.project_key, 64, 'project key'), title: string(value.title, 512, 'resource title'),
-    category: string(value.category, 64, 'resource category'), body: string(value.body, 128 * 1024, 'resource body'), body_format: string(value.body_format, 32, 'resource body format'),
+    category: string(value.category, 64, 'resource category'), body: optionalString(value.body_html, 128 * 1024, 'resource display body') || string(value.body, 128 * 1024, 'resource body'), source_body: string(value.body, 128 * 1024, 'resource body'), body_html: optionalString(value.body_html, 128 * 1024, 'resource display body') || string(value.body, 128 * 1024, 'resource body'), body_format: string(value.body_format, 32, 'resource body format'),
     summary: string(value.summary, 4096, 'resource summary'), status: string(value.status, 64, 'resource status'), is_protected: boolean(value.is_protected, 'resource protected flag'),
     tags: strings(value.tags, 100, 128, 'resource tags'), related_work_item: nullableRelation(value.related_work_item, workItemRelation), related_cycle: nullableRelation(value.related_cycle, cycleRelation),
     created_by: string(value.created_by, 256, 'resource creator'), updated_by: string(value.updated_by, 256, 'resource updater'),

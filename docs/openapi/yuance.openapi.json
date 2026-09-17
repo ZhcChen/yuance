@@ -3815,6 +3815,10 @@
           "body_format": {
             "type": "string"
           },
+          "body_html": {
+            "type": "string",
+            "description": "服务端安全清洗后的展示正文；编辑时应继续使用 body。"
+          },
           "summary": {
             "type": "string"
           },
