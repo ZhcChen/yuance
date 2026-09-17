@@ -927,6 +927,12 @@ fn style_is_safe(value: &str) -> bool {
                         | "font-weight"
                         | "text-anchor"
                         | "color"
+                        | "marker-start"
+                        | "marker-mid"
+                        | "marker-end"
+                        | "rx"
+                        | "ry"
+                        | "stroke-dasharray"
                 )
             })
             .unwrap_or_else(|| declaration.trim().is_empty())
@@ -1890,7 +1896,7 @@ mod svg_tests {
 
     const VALID_SVG: &[u8] = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60">
       <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#333"/></marker></defs>
-      <style>rect { fill: #fff; stroke: #333; }</style>
+      <style>rect { fill: #fff; stroke: #333; rx: 3; } line { marker-end: url(#arrow); }</style>
       <rect x="5" y="5" width="45" height="25" rx="3" style="fill:#fff;stroke:#333"/>
       <line x1="50" y1="18" x2="90" y2="18" stroke="#333" marker-end="url(#arrow)"/>
       <text x="12" y="22" font-family="sans-serif">&#x4E2D;&#x6587;&#x6D41;&#x7A0B;</text>
