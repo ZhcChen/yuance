@@ -3,12 +3,14 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use chrono::Utc;
+use quick_xml::escape::unescape;
 use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use crate::{
-    domains::{auth, projects},
+    domains::{auth, files, projects},
     platform::{
         crypto,
         error::{AppError, AppResult},
@@ -1960,6 +1962,7 @@ fn normalize_display_name_snapshot(display_name: &str) -> String {
 
 fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> String {
     let project_key = project_key.to_string();
+    let body = inline_safe_svg_code_blocks(body);
     ammonia::Builder::default()
         .add_tags(&[
             "blockquote",
@@ -1978,11 +1981,13 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
             "pre",
             "video",
         ])
-        .add_tag_attributes("img", &["src", "alt", "title", "loading"])
+        .add_tag_attributes("img", &["src", "alt", "title", "loading", "class"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
         .add_tag_attributes("span", &["style"])
+        .add_url_schemes(&["data"])
         .add_generic_attributes(&[
+            "class",
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
             "data-yuance-align",
@@ -1992,16 +1997,71 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
         .filter_style_properties(std::collections::HashSet::from(["color", "font-size"]))
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
+                (_, _) if value.trim_start().starts_with("data:") => {
+                    if element == "img" && attribute == "src" && is_safe_inline_svg_data_url(value)
+                    {
+                        Some(Cow::Borrowed(value))
+                    } else {
+                        None
+                    }
+                }
                 ("img", "src") | ("source", "src") | ("video", "src")
-                    if !resource_attachment_url_like(value, &project_key, resource_id) =>
+                    if !resource_attachment_url_like(value, &project_key, resource_id)
+                        && !is_safe_inline_svg_data_url(value) =>
                 {
                     None
                 }
                 _ => Some(Cow::Borrowed(value)),
             },
         )
-        .clean(body)
+        .clean(&body)
         .to_string()
+}
+
+fn inline_safe_svg_code_blocks(body: &str) -> String {
+    let mut output = String::with_capacity(body.len());
+    let mut cursor = 0;
+    while let Some(details_start) = body[cursor..].find("<details") {
+        let details_start = cursor + details_start;
+        output.push_str(&body[cursor..details_start]);
+        let Some(details_end) = body[details_start..].find("</details>") else {
+            output.push_str(&body[details_start..]);
+            return output;
+        };
+        let details_end = details_start + details_end + "</details>".len();
+        let block = &body[details_start..details_end];
+        let replacement = block
+            .find("<pre><code>")
+            .and_then(|start| {
+                let content_start = start + "<pre><code>".len();
+                let content_end = block[content_start..].find("</code></pre>")? + content_start;
+                let encoded = &block[content_start..content_end];
+                let decoded = unescape(encoded).ok()?.into_owned();
+                if !decoded.trim_start().starts_with("<svg")
+                    || files::validate_svg_content(decoded.as_bytes()).is_err()
+                {
+                    return None;
+                }
+                Some(format!(
+                    "<p class=\"resource-inline-svg\"><img src=\"data:image/svg+xml;base64,{}\" alt=\"SVG 流程图\" loading=\"lazy\"></p>",
+                    BASE64.encode(decoded.as_bytes())
+                ))
+            });
+        output.push_str(replacement.as_deref().unwrap_or(block));
+        cursor = details_end;
+    }
+    output.push_str(&body[cursor..]);
+    output
+}
+
+fn is_safe_inline_svg_data_url(value: &str) -> bool {
+    let Some(encoded) = value.strip_prefix("data:image/svg+xml;base64,") else {
+        return false;
+    };
+    BASE64
+        .decode(encoded)
+        .map(|content| files::validate_svg_content(&content).is_ok())
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -2064,6 +2124,42 @@ mod tests {
         assert!(rendered.contains("<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>"));
         assert!(rendered.contains("<hr"));
         assert!(!rendered.contains("javascript:"));
+    }
+
+    #[test]
+    fn resource_body_renders_safe_escaped_svg_code_block_as_image() {
+        let html = concat!(
+            "<details><summary>打开 SVG 源码</summary><pre><code>",
+            "&lt;svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\">",
+            "&lt;rect width=\"10\" height=\"10\" fill=\"#fff\"/>",
+            "&lt;/svg>",
+            "</code></pre></details>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(
+            rendered.contains("class=\"resource-inline-svg\""),
+            "{rendered}"
+        );
+        assert!(rendered.contains("data:image/svg+xml;base64,"));
+        assert!(!rendered.contains("打开 SVG 源码"));
+    }
+
+    #[test]
+    fn resource_body_keeps_unsafe_svg_source_as_text() {
+        let html = concat!(
+            "<details><summary>打开 SVG 源码</summary><pre><code>",
+            "&lt;svg xmlns=\"http://www.w3.org/2000/svg\">",
+            "&lt;script>alert(1)&lt;/script>",
+            "&lt;/svg>",
+            "</code></pre></details>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(!rendered.contains("data:image/svg+xml;base64,"));
+        assert!(rendered.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
     }
 }
 

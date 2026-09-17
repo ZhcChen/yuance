@@ -6,12 +6,13 @@ date: 2026-09-17
 
 # 复核结论
 
-本次服务端改动已完成资料附件 SVG 的安全校验接入。合法的静态流程图可以进入上传完成状态，危险 SVG 在状态提交前被拒绝；资料附件已有的图片预览和下载 API 不需要新增路由。
+本次服务端改动已完成资料附件 SVG 的安全校验接入，并补上历史资料正文中转义 SVG 源码块的安全展示。合法的静态流程图可以进入上传完成状态或在正文展示为图片，危险 SVG 在上传确认或正文转换前被拒绝；资料附件已有的图片预览和下载 API 不需要新增路由。
 
 ## 证据
 
 - `api/src/domains/files.rs` 使用有界 XML 解析、元素/属性白名单、静态 CSS 检查，并拒绝 DOCTYPE、脚本、事件属性、外部资源、危险协议和不支持元素。
 - `api/src/web/api/mod.rs` 在资料附件明文及加密上传完成路径调用校验；加密附件先解密原文再校验，且超出 16 MiB 的 SVG 不会被读取进入解析阶段。
+- `api/src/domains/project_resources.rs` 只转换明确的 `<details><pre><code>` SVG 源码块，并将通过校验的内容转为安全 data 图片；普通代码块和危险源码保持文本展示。
 - `docs/openapi/yuance.openapi.json` 已说明 SVG 校验和资料附件浏览器预览语义。
 - `cargo fmt --check`、`cargo check`、`cargo test svg_tests` 通过；OpenAPI JSON 解析通过；`git diff --check` 通过。
 
@@ -20,6 +21,7 @@ date: 2026-09-17
 - 合法 `svg`、`defs`、`marker`、`path`、`rect`、`line`、`text`、中文实体文本和受限 CSS。
 - `<script>`、`onload`、`onclick`。
 - 外部 `href`、`foreignObject`、CSS 外链 `url()`。
+- 历史转义源码块的合法转换和危险源码不转换。
 
 ## 遗留项
 
