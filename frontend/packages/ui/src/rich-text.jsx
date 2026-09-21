@@ -531,7 +531,11 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     }
     for (const node of pendingNodes) node.remove();
     const sanitized = sanitizeEditorHtml(input, value);
-    if (input.innerHTML !== sanitized) input.innerHTML = sanitized;
+    if (input.innerHTML !== sanitized) {
+      const selection = captureEditorSelection(input);
+      input.innerHTML = sanitized;
+      restoreEditorSelection(input, selection);
+    }
     for (const node of pendingNodes) input.appendChild(node);
     if (sanitized !== value) onChange(sanitized);
   }, [value]);
@@ -1266,6 +1270,49 @@ function currentInsertionRange(input) {
   range.selectNodeContents(input);
   range.collapse(false);
   return range;
+}
+
+/** @param {HTMLDivElement} input @returns {{ start: number, end: number } | null} */
+function captureEditorSelection(input) {
+  const selection = input.ownerDocument.getSelection();
+  if (!selection?.rangeCount || !selection.anchorNode || !input.contains(selection.anchorNode)) return null;
+  const range = selection.getRangeAt(0);
+  const beforeStart = range.cloneRange();
+  beforeStart.selectNodeContents(input);
+  beforeStart.setEnd(range.startContainer, range.startOffset);
+  const beforeEnd = range.cloneRange();
+  beforeEnd.selectNodeContents(input);
+  beforeEnd.setEnd(range.endContainer, range.endOffset);
+  return { start: beforeStart.toString().length, end: beforeEnd.toString().length };
+}
+
+/** @param {HTMLDivElement} input @param {{ start: number, end: number } | null} selection */
+function restoreEditorSelection(input, selection) {
+  if (!selection) return;
+  const view = input.ownerDocument.defaultView;
+  if (!view) return;
+  const walker = input.ownerDocument.createTreeWalker(input, view.NodeFilter.SHOW_TEXT);
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) textNodes.push(node);
+  const point = (offset) => {
+    let remaining = offset;
+    for (const textNode of textNodes) {
+      if (remaining <= textNode.data.length) return { node: textNode, offset: remaining };
+      remaining -= textNode.data.length;
+    }
+    const last = textNodes.at(-1);
+    return last ? { node: last, offset: last.data.length } : null;
+  };
+  const start = point(selection.start);
+  const end = point(selection.end);
+  if (!start || !end) return;
+  const range = input.ownerDocument.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  const current = input.ownerDocument.getSelection();
+  current?.removeAllRanges();
+  current?.addRange(range);
 }
 
 /** @param {HTMLDivElement} input */

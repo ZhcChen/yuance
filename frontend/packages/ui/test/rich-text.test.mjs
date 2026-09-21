@@ -82,6 +82,13 @@ test('rich text content exposes an attachment downloading state on file cards', 
   assert.match(source, /正在下载中/u);
 });
 
+test('rich text editor restores the selection after sanitizing controlled HTML', async () => {
+  const source = await readFile(new URL('../src/rich-text.jsx', import.meta.url), 'utf8');
+  assert.match(source, /captureEditorSelection\(input\)/u);
+  assert.match(source, /restoreEditorSelection\(input, selection\)/u);
+  assert.match(source, /createTreeWalker\(input, view\.NodeFilter\.SHOW_TEXT\)/u);
+});
+
 test('rich text content makes safe inline SVG images previewable and keyboard accessible', async () => {
   const source = await readFile(new URL('../src/rich-text.jsx', import.meta.url), 'utf8');
   assert.match(source, /data:image\/svg\+xml;base64,/u);
