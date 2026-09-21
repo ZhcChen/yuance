@@ -138,7 +138,10 @@ for contract in \
   'YUANCE_BUILD_ROOT' \
   'YUANCE_BUILD_ROOT 不得位于正式运行目录或数据目录' \
   'YUANCE_ALLOW_DIRTY_LOCAL_CONFIG' \
-  'YUANCE_REMOTE_BUILD_DIR'
+  'YUANCE_REMOTE_BUILD_DIR' \
+  'npm --prefix frontend ci' \
+  'npm --prefix web ci' \
+  'npm --prefix desktop ci'
 do
   if ! grep -q "$contract" "$ROOT_DIR/scripts/deploy-production.sh"; then
     echo "正式部署脚本缺少同机编译安全契约: $contract" >&2

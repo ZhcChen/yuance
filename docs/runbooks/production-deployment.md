@@ -90,8 +90,9 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 
 `qfy-test2` 必须预先安装并可用 `npm`、Node.js、Docker Buildx/BuildKit、
 Docker Compose、`ssh` 传输所需的系统工具。脚本会在
-`/srv/yuance/build/<commit>` 中解压提交归档，执行 `npm run check:frontend`、
-`docker buildx build --platform linux/amd64` 和 `docker save`；构建产物先写入
+`/srv/yuance/build/<commit>` 中解压提交归档，先按三个 lockfile 执行 `npm ci`，
+再执行 `npm run check:frontend`、`docker buildx build --platform linux/amd64`
+和 `docker save`。这样归档工作区自包含，不依赖发布机的 `node_modules`；构建产物先写入
 该编译目录，完成运行目录当前镜像备份后才复制到 `/srv/yuance/releases`。
 
 构建目录与 `/srv/yuance/backend`、`/srv/yuance/backend/data` 有明确隔离，
