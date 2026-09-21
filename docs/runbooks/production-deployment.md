@@ -94,6 +94,8 @@ Docker Compose、`ssh` 传输所需的系统工具。脚本会在
 再执行 `npm run check:frontend`、`docker buildx build --platform linux/amd64`
 和 `docker save`。这样归档工作区自包含，不依赖发布机的 `node_modules`；构建产物先写入
 该编译目录，完成运行目录当前镜像备份后才复制到 `/srv/yuance/releases`。
+桌面端依赖安装时设置 `ELECTRON_SKIP_BINARY_DOWNLOAD=1`，正式 API 镜像只需要桌面端
+源码检查和 renderer 构建，不下载与服务端无关的 Electron 平台二进制。
 
 构建目录与 `/srv/yuance/backend`、`/srv/yuance/backend/data` 有明确隔离，
 构建失败不会加载镜像、执行迁移或重启服务。发布成功后删除该提交的临时源码和
