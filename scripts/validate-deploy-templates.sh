@@ -133,6 +133,29 @@ if ! grep -q 'remote 模式必须显式设置 YUANCE_DEPLOY_HOST' "$ROOT_DIR/scr
   exit 1
 fi
 
+for contract in \
+  'BUILD_MODE="${YUANCE_DEPLOY_BUILD_MODE:-local}"' \
+  'YUANCE_BUILD_ROOT' \
+  'YUANCE_BUILD_ROOT 不得位于正式运行目录或数据目录' \
+  'YUANCE_ALLOW_DIRTY_LOCAL_CONFIG' \
+  'YUANCE_REMOTE_BUILD_DIR'
+do
+  if ! grep -q "$contract" "$ROOT_DIR/scripts/deploy-production.sh"; then
+    echo "正式部署脚本缺少同机编译安全契约: $contract" >&2
+    exit 1
+  fi
+done
+
+if ! grep -q 'archive --format=tar.gz' "$ROOT_DIR/scripts/deploy-production.sh"; then
+  echo "远程编译必须从提交归档同步源码，禁止直接同步工作区。" >&2
+  exit 1
+fi
+
+if ! grep -q 'YUANCE_DEPLOY_BUILD_MODE=remote' "$ROOT_DIR/docs/runbooks/production-deployment.md"; then
+  echo "正式部署手册缺少 qfy-test2 同机编译命令。" >&2
+  exit 1
+fi
+
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   (
     cd "$BACKEND_DIR"

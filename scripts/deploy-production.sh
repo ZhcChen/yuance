@@ -4,6 +4,7 @@ set -eu
 ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
 DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-local-wsl}"
+BUILD_MODE="${YUANCE_DEPLOY_BUILD_MODE:-local}"
 LOCAL_WSL_ROOT="${YUANCE_LOCAL_WSL_ROOT:-/srv/yuance}"
 LOCAL_BACKEND_DIR="$LOCAL_WSL_ROOT/backend"
 LOCAL_RELEASE_DIR="$LOCAL_WSL_ROOT/releases"
@@ -27,12 +28,22 @@ case "$DEPLOY_MODE" in
     ;;
 esac
 
+case "$BUILD_MODE" in
+  local|remote)
+    ;;
+  *)
+    echo "YUANCE_DEPLOY_BUILD_MODE 仅支持 local 或 remote：$BUILD_MODE" >&2
+    exit 1
+    ;;
+esac
+
 REMOTE_HOST="${YUANCE_DEPLOY_HOST:-}"
 REMOTE_ROOT="${YUANCE_DEPLOY_ROOT:-/srv/yuance}"
 # 远程正式环境直接使用 /srv/yuance/backend；发布流程只使用 SSH/SCP + Docker Compose。
 REMOTE_BACKEND_DIR="${YUANCE_DEPLOY_BACKEND_DIR:-$REMOTE_ROOT/backend}"
 REMOTE_GATEWAY_DIR="${YUANCE_DEPLOY_GATEWAY_DIR:-$REMOTE_ROOT/gateway}"
 REMOTE_RELEASE_DIR="$REMOTE_ROOT/releases"
+REMOTE_BUILD_ROOT="${YUANCE_BUILD_ROOT:-$REMOTE_ROOT/build}"
 
 IMAGE="${YUANCE_API_IMAGE:-yuance-api:latest}"
 IMAGE_TAR="${YUANCE_API_IMAGE_TAR:-dist/yuance-api-linux-amd64.tar}"
@@ -43,6 +54,10 @@ SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
 STOP_GRACE_PERIOD="${YUANCE_STOP_GRACE_PERIOD:-45s}"
 MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 SKIP_BUILD="${YUANCE_SKIP_LOCAL_BUILD:-0}"
+SOURCE_COMMIT=""
+REMOTE_BUILD_DIR=""
+REMOTE_BUILD_TAR=""
+SOURCE_ARCHIVE=""
 
 require_file() {
   if [ ! -f "$ROOT_DIR/$1" ]; then
@@ -62,9 +77,19 @@ require_clean_main() {
     echo "正式环境部署必须在 main 分支执行，当前分支：$branch" >&2
     exit 1
   fi
-  if [ -n "$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)" ]; then
-    echo "正式环境部署前工作区必须干净，请先提交或还原本地改动。" >&2
-    exit 1
+  dirty="$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)"
+  if [ -n "$dirty" ]; then
+    if [ "${YUANCE_ALLOW_DIRTY_LOCAL_CONFIG:-0}" != "1" ]; then
+      echo "正式环境部署前工作区必须干净，请先提交或还原本地改动。" >&2
+      exit 1
+    fi
+    unexpected_dirty="$(printf '%s\n' "$dirty" | awk 'length($0) > 0 && substr($0, 4) != ".compound-engineering/config.yaml"')"
+    if [ -n "$unexpected_dirty" ]; then
+      echo "仅允许保留未提交的 .compound-engineering/config.yaml，发现其他本地改动：" >&2
+      printf '%s\n' "$unexpected_dirty" >&2
+      exit 1
+    fi
+    echo "已按显式开关保留本地配置改动，不会将其纳入发布源码。" >&2
   fi
   git -C "$ROOT_DIR" fetch --quiet origin main
   local_head="$(git -C "$ROOT_DIR" rev-parse HEAD)"
@@ -96,18 +121,41 @@ require_file "deploy/easy-deploy/production/gateway/Caddyfile.yuance.example"
 
 require_clean_main
 
-if [ "$SKIP_BUILD" != "1" ]; then
-  run "$ROOT_DIR/scripts/build-api-image-amd64.sh"
-fi
+SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 
-if [ ! -f "$ROOT_DIR/$IMAGE_TAR" ]; then
-  echo "缺少镜像 tar: $IMAGE_TAR" >&2
-  exit 1
+if [ "$DEPLOY_MODE" = "remote" ] && [ "$BUILD_MODE" = "remote" ]; then
+  if [ "$SKIP_BUILD" = "1" ]; then
+    echo "remote 构建模式不支持 YUANCE_SKIP_LOCAL_BUILD=1，请让 qfy-test2 从源码构建。" >&2
+    exit 1
+  fi
+  case "$REMOTE_BUILD_ROOT" in
+    "$REMOTE_BACKEND_DIR"|"$REMOTE_BACKEND_DIR"/*|"$REMOTE_BACKEND_DIR/data"|"$REMOTE_BACKEND_DIR/data"/*)
+      echo "YUANCE_BUILD_ROOT 不得位于正式运行目录或数据目录：$REMOTE_BUILD_ROOT" >&2
+      exit 1
+      ;;
+  esac
+  SOURCE_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/yuance-source.XXXXXX.tar.gz")"
+  trap 'rm -f "$SOURCE_ARCHIVE"' EXIT HUP INT TERM
+  run git -C "$ROOT_DIR" archive --format=tar.gz --output="$SOURCE_ARCHIVE" HEAD
+  REMOTE_BUILD_DIR="$REMOTE_BUILD_ROOT/$SOURCE_COMMIT"
+  REMOTE_BUILD_TAR="$REMOTE_BUILD_DIR/dist/$(basename "$IMAGE_TAR")"
+  run ssh "$REMOTE_HOST" "set -eu; mkdir -p '$REMOTE_BUILD_ROOT'; rm -rf '$REMOTE_BUILD_DIR.incoming'; mkdir -p '$REMOTE_BUILD_DIR.incoming'"
+  run scp "$SOURCE_ARCHIVE" "$REMOTE_HOST:$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz"
+  run ssh "$REMOTE_HOST" "set -eu; tar -xzf '$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz' -C '$REMOTE_BUILD_DIR.incoming'; printf '%s\\n' '$SOURCE_COMMIT' > '$REMOTE_BUILD_DIR.incoming/.yuance-source-commit'; rm -rf '$REMOTE_BUILD_DIR'; mv '$REMOTE_BUILD_DIR.incoming' '$REMOTE_BUILD_DIR'; rm -f '$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz'; cd '$REMOTE_BUILD_DIR'; test \"\$(cat .yuance-source-commit)\" = '$SOURCE_COMMIT'; YUANCE_API_IMAGE='$IMAGE' YUANCE_API_IMAGE_TAR='$REMOTE_BUILD_TAR' YUANCE_RELEASE_VERSION='${YUANCE_RELEASE_VERSION:-}' sh scripts/build-api-image-amd64.sh; sha256sum '$REMOTE_BUILD_TAR'"
+  rm -f "$SOURCE_ARCHIVE"
+  trap - EXIT HUP INT TERM
+else
+  if [ "$SKIP_BUILD" != "1" ]; then
+    run "$ROOT_DIR/scripts/build-api-image-amd64.sh"
+  fi
+  if [ ! -f "$ROOT_DIR/$IMAGE_TAR" ]; then
+    echo "缺少镜像 tar: $IMAGE_TAR" >&2
+    exit 1
+  fi
+  LOCAL_SHA="$(local_sha256 "$ROOT_DIR/$IMAGE_TAR")"
+  echo "本地镜像 tar: $IMAGE_TAR"
+  echo "本地 SHA256: $LOCAL_SHA"
 fi
-
-LOCAL_SHA="$(local_sha256 "$ROOT_DIR/$IMAGE_TAR")"
-echo "本地镜像 tar: $IMAGE_TAR"
-echo "本地 SHA256: $LOCAL_SHA"
 
 if [ "$DEPLOY_MODE" = "local-wsl" ]; then
   if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
@@ -205,7 +253,13 @@ fi
 
 run ssh "$REMOTE_HOST" "set -eu; mkdir -p '$REMOTE_RELEASE_DIR' '$REMOTE_BACKEND_DIR' '$REMOTE_GATEWAY_DIR'; if [ -f '$REMOTE_IMAGE_TAR' ]; then ts=\$(date +%Y%m%d%H%M%S); backup='${REMOTE_IMAGE_TAR%.tar}.before-'\$ts'.tar'; cp '$REMOTE_IMAGE_TAR' \"\$backup\"; echo \"已备份当前镜像 tar: \$(basename \"\$backup\")\"; fi"
 
-run scp "$ROOT_DIR/$IMAGE_TAR" "$REMOTE_HOST:$REMOTE_IMAGE_TAR"
+if [ "$BUILD_MODE" = "remote" ]; then
+  REMOTE_SHA="$(ssh "$REMOTE_HOST" "sha256sum '$REMOTE_BUILD_TAR' | awk '{print \$1}'")"
+  run ssh "$REMOTE_HOST" "set -eu; cp '$REMOTE_BUILD_TAR' '$REMOTE_IMAGE_TAR'"
+  echo "qfy-test2 构建产物 SHA256: $REMOTE_SHA"
+else
+  run scp "$ROOT_DIR/$IMAGE_TAR" "$REMOTE_HOST:$REMOTE_IMAGE_TAR"
+fi
 run scp "$ROOT_DIR/deploy/easy-deploy/production/backend/app.yaml.example" "$REMOTE_HOST:$REMOTE_BACKEND_DIR/app.yaml"
 run scp "$ROOT_DIR/deploy/easy-deploy/production/backend/compose.yaml.example" "$REMOTE_HOST:$REMOTE_BACKEND_DIR/compose.yaml"
 run scp "$ROOT_DIR/deploy/easy-deploy/production/backend/.env.example" "$REMOTE_HOST:$REMOTE_BACKEND_DIR/.env.example"
@@ -213,14 +267,19 @@ run scp -r "$ROOT_DIR/deploy/easy-deploy/production/backend/scripts" "$REMOTE_HO
 run scp "$ROOT_DIR/deploy/easy-deploy/production/gateway/Caddyfile.yuance.example" "$REMOTE_HOST:$REMOTE_GATEWAY_DIR/Caddyfile.yuance"
 
 REMOTE_SHA="$(ssh "$REMOTE_HOST" "sha256sum '$REMOTE_IMAGE_TAR' | awk '{print \$1}'")"
-if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+if [ "$BUILD_MODE" = "remote" ]; then
+  if [ "$REMOTE_SHA" != "$(ssh "$REMOTE_HOST" "sha256sum '$REMOTE_BUILD_TAR' | awk '{print \$1}'")" ]; then
+    echo "qfy-test2 编译产物复制到 releases 后 SHA256 不一致：$REMOTE_SHA" >&2
+    exit 1
+  fi
+elif [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
   echo "远程镜像 tar SHA256 不一致：$REMOTE_SHA" >&2
   exit 1
 fi
 echo "远程 SHA256 校验通过。"
 
 run ssh "$REMOTE_HOST" \
-  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' YUANCE_STOP_GRACE_PERIOD='$STOP_GRACE_PERIOD' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' sh -s" <<'REMOTE_SCRIPT'
+  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' YUANCE_STOP_GRACE_PERIOD='$STOP_GRACE_PERIOD' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' YUANCE_BUILD_MODE='$BUILD_MODE' YUANCE_REMOTE_BUILD_DIR='$REMOTE_BUILD_DIR' sh -s" <<'REMOTE_SCRIPT'
 set -eu
 
 IMAGE="${YUANCE_IMAGE:-yuance-api:latest}"
@@ -334,6 +393,9 @@ if [ "$PRUNE_DANGLING_IMAGES" = "1" ]; then
 fi
 
 echo "正式环境部署完成。"
+if [ "${YUANCE_BUILD_MODE:-local}" = "remote" ]; then
+  rm -rf "${YUANCE_REMOTE_BUILD_DIR:?}"
+fi
 REMOTE_SCRIPT
 
 echo "正式环境部署完成：$REMOTE_HOST"

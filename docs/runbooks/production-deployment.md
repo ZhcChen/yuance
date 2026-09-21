@@ -8,8 +8,9 @@ date: 2026-08-02
 # 元策正式环境部署运行手册
 
 元策正式环境运行在内网部署目标 `qfy-test2`，由目标机上的 Docker Engine 承载。
-发布机通过 SSH/SCP 将本地构建好的 `linux/amd64` 镜像传输到
-`qfy-test2`；正式服务器和 `/srv/yuance` 运行目录禁止源码编译和镜像构建。
+发布机通过 SSH/SCP 将当前 `main` 提交归档同步到 `qfy-test2` 的独立编译工作区，
+由 `qfy-test2` 完成前端检查、BuildKit 镜像构建和发布；正式服务器的
+`/srv/yuance/backend` 运行目录禁止源码编译和镜像构建。
 公网服务器 `qfy-sc-test` 只保留 Nginx、FRPS 和已停止的旧环境作为冷回滚。
 
 ## 当前拓扑
@@ -30,6 +31,7 @@ SSH 部署目标：qfy-test2（内网优先）
 备用目标：qfy-test（仅允许显式指定）
 运行目录：/srv/yuance/backend
 镜像目录：/srv/yuance/releases
+编译目录：/srv/yuance/build/<commit>
 迁移包目录：/srv/yuance/incoming
 Compose 服务：api
 容器：yuance-api
@@ -75,16 +77,38 @@ docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' yuance-api
 
 ## 构建镜像
 
-在发布机从仓库执行，镜像构建发生在发布机；不要在 `qfy-test2` 或
-`/srv/yuance` 内执行构建：
+正式发布时，构建和部署都在 `qfy-test2` 完成。发布机只做 `main` 提交校验、
+源码归档和传输，不要求本机安装 Docker：
 
 ```bash
 cd <仓库目录>
-./scripts/build-api-image-amd64.sh
+YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_BUILD_MODE=remote \
+YUANCE_DEPLOY_HOST=qfy-test2 \
+./scripts/deploy-production.sh
 ```
 
-服务器和 `/srv/yuance` 运行目录内禁止执行 `cargo build` 或
-`docker build`。
+`qfy-test2` 必须预先安装并可用 `npm`、Node.js、Docker Buildx/BuildKit、
+Docker Compose、`ssh` 传输所需的系统工具。脚本会在
+`/srv/yuance/build/<commit>` 中解压提交归档，执行 `npm run check:frontend`、
+`docker buildx build --platform linux/amd64` 和 `docker save`；构建产物先写入
+该编译目录，完成运行目录当前镜像备份后才复制到 `/srv/yuance/releases`。
+
+构建目录与 `/srv/yuance/backend`、`/srv/yuance/backend/data` 有明确隔离，
+构建失败不会加载镜像、执行迁移或重启服务。发布成功后删除该提交的临时源码和
+tar，Docker BuildKit 缓存由 Docker 自己管理，不通过发布脚本误删。
+
+本地构建仍可用于离线验证，但不再是正式 qfy-test2 发布的默认路径：
+
+```bash
+./scripts/build-api-image-amd64.sh
+YUANCE_DEPLOY_MODE=remote YUANCE_DEPLOY_BUILD_MODE=local \
+YUANCE_DEPLOY_HOST=qfy-test2 YUANCE_SKIP_LOCAL_BUILD=1 \
+./scripts/deploy-production.sh
+```
+
+服务器运行目录内禁止执行 `cargo build` 或 `docker build`；只有专用的
+`/srv/yuance/build` 编译工作区允许构建。
 
 ## 一键发布
 
@@ -93,6 +117,7 @@ cd <仓库目录>
 ```bash
 cd <仓库目录>
 YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_BUILD_MODE=remote \
 YUANCE_DEPLOY_HOST=qfy-test2 \
 ./scripts/deploy-production.sh
 ```
@@ -117,10 +142,13 @@ YUANCE_DEPLOY_HOST=qfy-test \
 可选参数：
 
 ```bash
-YUANCE_SKIP_LOCAL_BUILD=1 ./scripts/deploy-production.sh
 YUANCE_KEEP_RELEASE_BACKUPS=2 ./scripts/deploy-production.sh
 YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
 ```
+
+如果发布机存在仅用于本地开发的 `.compound-engineering/config.yaml` 未提交改动，
+可显式设置 `YUANCE_ALLOW_DIRTY_LOCAL_CONFIG=1`；该文件不会进入 `git archive`，
+其他任何工作区改动仍会阻止正式发布。不要用该开关绕过代码、依赖或部署模板改动。
 
 保留的旧远程流程只能显式调用，不会默认回退到旧服务器：
 
