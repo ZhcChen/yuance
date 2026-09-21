@@ -4058,7 +4058,7 @@ test('shared work item detail ignores a late resource link response after naviga
   expect(postRequests).toBe(1);
 });
 
-test('project resource library presents linked posts with keyword-only filtering and source navigation', async ({ page }) => {
+test('project resource library presents linked posts as source rows with keyword filtering and navigation', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-09-11T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
   const resource = projectResourceFixture({ title: '真实资料条目', summary: '独立资料内容', url: '/web/projects/YCE/resources/991' });
@@ -4069,7 +4069,11 @@ test('project resource library presents linked posts with keyword-only filtering
   ];
   const linkedQueries = [];
 
-  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/u, (route) => {
+    const query = new URL(route.request().url()).searchParams.get('q') || '';
+    const data = query ? [resource].filter((item) => `${item.title} ${item.summary}`.includes(query)) : [resource];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data }) });
+  });
   await page.route(/\/api\/v1\/projects\/YCE\/resource-library\/linked-work-item-posts(?:\?.*)?$/u, (route) => {
     const url = new URL(route.request().url());
     const query = url.searchParams.get('q') || '';
@@ -4081,21 +4085,19 @@ test('project resource library presents linked posts with keyword-only filtering
   await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
 
   await login(page, '/web/app/projects/YCE/resources');
-  const linkedSection = page.locator('.project-resource-library-linked-card');
-  await expect(linkedSection).toContainText('YCE-REQ-1');
-  await expect(linkedSection).toContainText('售后需求说明');
-  await expect(linkedSection).toContainText('售后处理流程');
-  await expect(linkedSection).toContainText('售后缺陷复盘');
-  await expect(linkedSection.locator('.project-resource-linked-post')).toHaveCount(3);
-  await expect(linkedSection).toContainText('需求');
-  await expect(linkedSection).toContainText('任务');
-  await expect(linkedSection).toContainText('Bug');
+  const resourceTable = page.getByRole('table', { name: '项目资料列表' });
+  await expect(resourceTable).toContainText('YCE-REQ-1');
+  await expect(resourceTable).toContainText('售后需求说明');
+  await expect(resourceTable).toContainText('售后处理流程');
+  await expect(resourceTable).toContainText('售后缺陷复盘');
+  await expect(resourceTable.locator('tbody tr')).toHaveCount(4);
+  await expect(resourceTable).toContainText('工作项发布');
   await expect(page.getByRole('region', { name: '项目资料列表' })).toContainText('真实资料条目');
 
   await page.getByLabel('关键词').fill('YCE-BUG-3');
   await page.getByRole('button', { name: '筛选' }).click();
-  await expect(linkedSection.locator('.project-resource-linked-post')).toHaveCount(1);
-  await expect(linkedSection).toContainText('售后缺陷复盘');
+  await expect(resourceTable.locator('tbody tr')).toHaveCount(1);
+  await expect(resourceTable).toContainText('售后缺陷复盘');
   expect(linkedQueries.at(-1)).toBe('YCE-BUG-3');
 
   const filterCard = page.locator('.project-resource-library-filter-card');
@@ -4103,10 +4105,10 @@ test('project resource library presents linked posts with keyword-only filtering
   await filterCard.locator('#project-resource-filter-status-native').selectOption('archived');
   await filterCard.getByLabel('标签').fill('其他');
   await page.getByRole('button', { name: '筛选' }).click();
-  await expect(linkedSection.locator('.project-resource-linked-post')).toHaveCount(1);
+  await expect(resourceTable.locator('tbody tr')).toHaveCount(1);
   expect(linkedQueries.at(-1)).toBe('YCE-BUG-3');
 
-  await linkedSection.getByRole('link', { name: '售后缺陷复盘' }).click();
+  await resourceTable.getByRole('link', { name: '售后缺陷复盘' }).click();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-BUG-3$/);
 });
 

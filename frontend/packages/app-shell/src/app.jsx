@@ -633,6 +633,27 @@ function linkedWorkItemTypeLabel(itemType) {
   return itemType === 'bug' ? 'Bug' : workItemTypeLabel(itemType);
 }
 
+function buildProjectResourceLibraryRows(resources, linkedPosts) {
+  return [
+    ...resources.map((resource) => ({ ...resource, row_type: 'resource' })),
+    ...linkedPosts.map((post) => ({
+      ...post,
+      id: `linked:${post.key}`,
+      row_type: 'linked-work-item',
+      category: 'work-item',
+      status: 'active',
+      is_protected: false,
+      tags: [],
+      related_work_item: null,
+      related_cycle: null,
+      created_by: post.author,
+      updated_by: post.author,
+      created_at: post.linked_at,
+      updated_at: post.updated_at,
+    })),
+  ];
+}
+
 function workItemCreateLabel(itemType) {
   return itemType === 'bug' ? '新建 Bug' : `新建${workItemTypeLabel(itemType)}`;
 }
@@ -5503,6 +5524,10 @@ export function SharedApp({ services }) {
     }
   }
 
+  const projectResourceLibraryRows = useMemo(
+    () => buildProjectResourceLibraryRows(projectResources, projectResourceLinkedWorkItemPosts),
+    [projectResources, projectResourceLinkedWorkItemPosts],
+  );
   const projectResourcesPanel = activeProjectDetail && route.id === 'project-resource-library' ? (
     <>
       <section className="shell-card project-resource-library-filter-card" aria-label="项目资料筛选">
@@ -5529,40 +5554,8 @@ export function SharedApp({ services }) {
       </FilterBar>
       </section>
       <section className="shell-card project-resource-library-list-card" aria-label="项目资料列表">
-        <section className="project-resource-library-linked-card" aria-labelledby="project-resource-linked-posts-title">
-          <div className="project-resource-library-linked-head">
-            <div>
-              <p className="shell-eyebrow">工作项资料</p>
-              <h2 id="project-resource-linked-posts-title">关联发布内容</h2>
-              <p className="shell-muted">链接自需求、任务或 Bug 的主发布内容，不复制正文和附件；分类、状态和标签筛选只作用于下方资料。</p>
-            </div>
-            <span className="project-resource-library-linked-count">{projectResourceLinkedWorkItemPosts.length} 条</span>
-          </div>
-          {projectResourceLinkedError ? <Feedback tone="danger" title="关联发布内容加载失败">{projectResourceLinkedError}</Feedback> : null}
-          {projectResourceLinkedWorkItemPosts.length ? (
-            <div className="project-resource-library-linked-list" role="list" aria-label="关联发布内容列表">
-              {projectResourceLinkedWorkItemPosts.map((post) => {
-                const postPath = routePathForOwner(post.url, route.owner);
-                return (
-                  <article className="project-resource-linked-post" role="listitem" key={post.key}>
-                    <div className="project-resource-linked-post-head">
-                      <div className="project-resource-linked-post-source"><Badge>{linkedWorkItemTypeLabel(post.item_type)}</Badge><code>{post.key}</code></div>
-                      <time dateTime={post.updated_at}>更新于 {formatTimestamp(post.updated_at)}</time>
-                    </div>
-                    <a className="project-resource-linked-post-title" href={postPath} title={post.title} onClick={(event) => handleNavigate(event, postPath, `已打开 ${post.key}。`)}>{post.title}</a>
-                    <p className="project-resource-linked-post-summary">{post.summary || '暂无主发布内容摘要。'}</p>
-                    <div className="project-resource-linked-post-foot">
-                      <span>作者：{post.author || '未标注'}</span>
-                      <span>关联于：{formatTimestamp(post.linked_at)}</span>
-                      <a className="shell-link" href={postPath} onClick={(event) => handleNavigate(event, postPath, `已打开 ${post.key}。`)}>查看工作项</a>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : <div className="project-resource-library-linked-empty"><strong>暂无关联发布内容</strong><span>在需求、任务或 Bug 详情中链接主发布内容后，会显示在这里。</span></div>}
-        </section>
         {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
+        {projectResourceLinkedError ? <Feedback tone="danger" title="来源内容加载失败">{projectResourceLinkedError}</Feedback> : null}
         {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
         <PaginatedTable
           columns={[
@@ -5571,10 +5564,12 @@ export function SharedApp({ services }) {
               label: '标题',
               className: 'resource-table-title-cell',
               render: (resource) => {
-                const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
+                const resourcePath = resource.row_type === 'linked-work-item'
+                  ? routePathForOwner(resource.url, route.owner)
+                  : buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
                 return (
                   <div className="resource-table-title-main">
-                    <a className="resource-table-title-link" href={resourcePath} title={resource.title} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a>
+                    <a className="resource-table-title-link" href={resourcePath} title={resource.title} onClick={(event) => handleNavigate(event, resourcePath, resource.row_type === 'linked-work-item' ? `已打开 ${resource.key}。` : `已打开资料 ${resource.title}。`)}>{resource.title}</a>
                     {resource.summary ? <span className="resource-table-summary" title={resource.summary}>{resource.summary}</span> : null}
                   </div>
                 );
@@ -5584,7 +5579,7 @@ export function SharedApp({ services }) {
               key: 'category',
               label: '分类',
               className: 'resource-table-category-cell',
-              render: (resource) => <span className={`resource-category resource-category-kind resource-kind-${resource.category || 'other'}`} title={resource.category || ''}>{projectResourceCategoryLabel(resource.category)}</span>,
+              render: (resource) => <span className={`resource-category resource-category-kind resource-kind-${resource.category || 'other'}`} title={resource.category || ''}>{resource.row_type === 'linked-work-item' ? '工作项发布' : projectResourceCategoryLabel(resource.category)}</span>,
             },
             {
               key: 'status',
@@ -5606,17 +5601,20 @@ export function SharedApp({ services }) {
                 : <span className="shell-muted">—</span>,
             },
             {
-              key: 'related',
-              label: '关联',
-              className: 'resource-table-related-cell',
+              key: 'source',
+              label: '来源',
+              className: 'resource-table-source-cell',
               render: (resource) => {
-                if (!resource.related_work_item && !resource.related_cycle) return <span className="shell-muted">—</span>;
-                const parts = [];
-                if (resource.related_work_item) parts.push(`工作项 ${resource.related_work_item.key}`);
-                if (resource.related_cycle) parts.push(`周期 ${resource.related_cycle.name}`);
-                const text = parts.join(' · ');
-                const detail = resource.related_work_item?.title || resource.related_cycle?.name || '';
-                return <span className="resource-table-cell-text" title={`${text}${detail ? ` · ${detail}` : ''}`}>{text}</span>;
+                if (resource.row_type === 'linked-work-item') {
+                  const sourcePath = routePathForOwner(resource.url, route.owner);
+                  return <a className="resource-table-source-link" href={sourcePath} title={`${linkedWorkItemTypeLabel(resource.item_type)} ${resource.key}`} onClick={(event) => handleNavigate(event, sourcePath, `已打开 ${resource.key}。`)}><Badge>{linkedWorkItemTypeLabel(resource.item_type)}</Badge><span>{resource.key}</span></a>;
+                }
+                if (resource.related_work_item) {
+                  const sourcePath = routePathForOwner(resource.related_work_item.url, route.owner);
+                  return <a className="resource-table-source-link" href={sourcePath} title={resource.related_work_item.title} onClick={(event) => handleNavigate(event, sourcePath, `已打开 ${resource.related_work_item.key}。`)}><span>工作项</span><span>{resource.related_work_item.key}</span></a>;
+                }
+                if (resource.related_cycle) return <span className="resource-table-cell-text" title={resource.related_cycle.name}>周期 · {resource.related_cycle.name}</span>;
+                return <span className="shell-muted">资料库</span>;
               },
             },
             {
@@ -5630,13 +5628,17 @@ export function SharedApp({ services }) {
               label: '操作',
               className: 'resource-table-actions-cell',
               render: (resource) => {
+                if (resource.row_type === 'linked-work-item') {
+                  const postPath = routePathForOwner(resource.url, route.owner);
+                  return <a className="yc-button yc-button-secondary yc-button-sm" href={postPath} onClick={(event) => handleNavigate(event, postPath, `已打开 ${resource.key}。`)}>打开</a>;
+                }
                 const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: projectScopeKey || currentProject?.key || '', resourceId: resource.id });
                 return <a className="yc-button yc-button-secondary yc-button-sm" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>打开</a>;
               },
             },
           ]}
-          rows={projectResources}
-          rowKey={(resource) => resource.id}
+          rows={projectResourceLibraryRows}
+          rowKey={(resource) => resource.row_type === 'linked-work-item' ? resource.id : resource.id}
           caption="项目资料列表"
           emptyText="当前筛选下没有项目资料，可以清除筛选后重新查看。"
           tableClassName="resource-library-table"
