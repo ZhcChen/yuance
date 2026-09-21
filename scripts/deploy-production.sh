@@ -134,7 +134,7 @@ if [ "$DEPLOY_MODE" = "remote" ] && [ "$BUILD_MODE" = "remote" ]; then
       exit 1
       ;;
   esac
-  SOURCE_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/yuance-source.XXXXXX.tar.gz")"
+  SOURCE_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/yuance-source.XXXXXX")"
   trap 'rm -f "$SOURCE_ARCHIVE"' EXIT HUP INT TERM
   run git -C "$ROOT_DIR" archive --format=tar.gz --output="$SOURCE_ARCHIVE" HEAD
   REMOTE_BUILD_DIR="$REMOTE_BUILD_ROOT/$SOURCE_COMMIT"
