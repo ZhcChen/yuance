@@ -13,6 +13,7 @@
 - `bash scripts/test-install-codex-skill.sh` 通过，覆盖首次安装、原子升级、checksum 失败、缺少二进制和离线自检失败回滚。
 - CLI mock 闭环验证了 `create -> upload-url -> PUT -> complete`，对象存储请求不携带 API Bearer Token 或 Cookie。
 - 加密流验证了空文件、单分块、多分块、明文摘要、密文摘要和源文件变更检测。
+- 人工差异复核补充发现并修复了服务端签名 header 数组编码与兼容对象编码的 DTO 解析差异，并新增回归测试。
 
 ## 安全结论
 
@@ -25,6 +26,7 @@
 ## 未执行与剩余风险
 
 - 当前机器没有 PowerShell，`scripts/test-install-codex-skill.ps1` 未执行；由 Windows Release job 负责验证。
+- 本轮独立 `ce-code-review` 代理未在等待窗口内返回终态，已停止；最终采用人工差异复核和完整本地测试，未将未完成代理视为通过。
 - 六平台正式资产需要 GitHub Actions tag workflow 生成；本地未伪造六平台构建结果。
 - 真实元策 API 和对象存储闭环需要配置测试 Token 与测试资料，未使用生产资料做写入验证。
 - 正式发布仍需推送 `yuance-agent-v0.1.2` tag，并等待六平台 workflow、checksum 和安装包校验全部通过。
