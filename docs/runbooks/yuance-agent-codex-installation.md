@@ -43,7 +43,7 @@ work_item:write
 comment:write
 ```
 
-资料写入按需增加 `resource:write`；受保护资料解锁需要 `resource:unlock`。附件文件字节上传/下载尚未由当前 CLI 代传，签名请求查询和完成登记仍遵守资料保护与最小权限边界。
+资料写入按需增加 `resource:write`；受保护资料解锁需要 `resource:unlock`。资料附件本地文件上传由 CLI 在进程内完成登记、签名校验、加密 PUT 和完成确认；文件下载仍未由当前 CLI 代传。
 
 将 Token 放在启动 Codex 的环境中，不要写入 Skill、Codex 配置、仓库文件或命令历史：
 
@@ -84,6 +84,8 @@ CLI 默认连接 `https://yuance.quanxinfu.com`。只有私有部署或测试环
 
 受保护资料密码只通过 stdin 交给 `resources unlock`；附件 `access_token` 只通过 `--access-token-stdin` 传入当前进程。不要把密码、Token、签名 URL、签名 headers 或 `encryption.key` 写入命令历史、普通文件或日志。
 
+上传附件前必须确认用户明确授权的本地路径、项目和资料。使用 `resources attachments upload --file <PATH>`；`.svg` 会默认登记为 `image/svg+xml`。CLI 会自行完成签名请求、`YUANCE-ENC-v1` 加密传输和完成确认，不要手工 PUT 签名 URL。
+
 使用 `CODEX_HOME` 或 Windows 时，替换为实际安装目录及 `yuance-agent.exe`。
 
 ## 从旧接入迁移
@@ -123,6 +125,6 @@ $env:YUANCE_AGENT_VERSION = "0.1.1"
 - `dns` / `connect` / `tls`：检查网络、服务地址和证书，不关闭 TLS 校验。
 - 状态机错误：重新读取工作项详情和评论，确认目标状态后再操作，不盲目重试。
 - 资料 `409`：资料版本已变化或正文仍引用附件；重新读取资料与附件，确认后再继续。
-- 文件上传/下载：当前 CLI 仅提供签名 URL 查询和上传完成登记；对象存储来源、重定向和 header 安全边界未确认前，不使用手写 URL 代传。
+- 文件下载：当前 CLI 尚未提供下载文件字节能力。上传确认不确定时先读取附件状态，只使用同一密文摘要重试完成登记，不覆盖重传。
 
 完整命令与行为边界随 Skill 一起安装在 `references/` 中。
