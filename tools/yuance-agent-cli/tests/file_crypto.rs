@@ -1,4 +1,9 @@
-use std::{fs, io::Write, path::PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use aes_gcm::{
     Aes256Gcm, Nonce,
@@ -60,6 +65,23 @@ async fn stops_when_source_file_changes_during_encryption() {
     panic!("source change should fail the stream");
 }
 
+#[tokio::test]
+async fn marks_digest_finished_when_last_chunk_is_emitted() {
+    let path = fixture_path(32);
+    fs::write(&path, vec![b'x'; 32]).unwrap();
+    let digest = hash_file(&path).unwrap();
+    let mut stream = EncryptedFileStream::open(path.clone(), 42, [9_u8; 32], &digest).unwrap();
+
+    stream.next().await.unwrap().unwrap();
+    assert!(stream.next().await.unwrap().is_ok());
+    let encrypted_digest = stream
+        .digest()
+        .encrypted_sha256()
+        .expect("digest should finish with the last chunk");
+    assert_eq!(encrypted_digest.len(), 64);
+    fs::remove_file(path).unwrap();
+}
+
 async fn collect_stream(stream: &mut EncryptedFileStream) -> Vec<u8> {
     let mut output = Vec::new();
     while let Some(item) = stream.next().await {
@@ -119,8 +141,10 @@ fn decrypt_fixture(ciphertext: &[u8], key: [u8; 32], file_object_id: i64) -> Vec
 }
 
 fn fixture_path(size: usize) -> PathBuf {
+    static FIXTURE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let nonce = FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "yuance-agent-file-{}-{size}.bin",
-        std::process::id()
+        "yuance-agent-file-{}-{size}-{nonce}.bin",
+        std::process::id(),
     ))
 }

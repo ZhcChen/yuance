@@ -262,6 +262,36 @@ impl Stream for EncryptedFileStream {
                 self.finished = true;
                 return Poll::Ready(Some(Err(error)));
             }
+            if self.chunk_index == total_chunks {
+                match FileSignature::read(&self.path) {
+                    Ok(signature) if signature == self.expected_signature => {
+                        if hex::encode(self.plaintext_hasher.clone().finalize())
+                            != self.plaintext.sha256
+                        {
+                            self.finished = true;
+                            return Poll::Ready(Some(Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "文件在上传期间发生变化",
+                            ))));
+                        }
+                        self.finished = true;
+                        if let Ok(mut digest) = self.digest.lock() {
+                            digest.finished = true;
+                        }
+                    }
+                    Ok(_) => {
+                        self.finished = true;
+                        return Poll::Ready(Some(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "文件在上传期间发生变化",
+                        ))));
+                    }
+                    Err(error) => {
+                        self.finished = true;
+                        return Poll::Ready(Some(Err(error)));
+                    }
+                }
+            }
             Poll::Ready(Some(Ok(encrypted)))
         }
     }
