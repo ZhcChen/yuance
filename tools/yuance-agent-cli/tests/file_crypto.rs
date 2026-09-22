@@ -6,7 +6,9 @@ use aes_gcm::{
 };
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
-use yuance_agent::file_crypto::{EncryptedFileStream, FILE_CHUNK_SIZE, hash_file};
+use yuance_agent::file_crypto::{
+    EncryptedFileStream, FILE_CHUNK_SIZE, encrypted_total_size, hash_file,
+};
 
 #[tokio::test]
 async fn encrypts_empty_single_and_multi_chunk_files_with_compatible_layout() {
@@ -26,6 +28,10 @@ async fn encrypts_empty_single_and_multi_chunk_files_with_compatible_layout() {
         assert_eq!(
             u64::try_from(encrypted.len()).unwrap(),
             encrypted.len() as u64
+        );
+        assert_eq!(
+            encrypted.len() as u64,
+            encrypted_total_size(contents.len() as u64)
         );
         assert_eq!(decrypt_fixture(&encrypted, key, 42), contents);
         fs::remove_file(path).unwrap();

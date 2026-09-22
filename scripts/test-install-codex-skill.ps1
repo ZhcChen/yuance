@@ -58,7 +58,7 @@ try {
     }
     Remove-Item Env:YUANCE_AGENT_TEST_ARCH -ErrorAction SilentlyContinue
 
-    New-TestRelease "0.1.2" "default"
+    New-TestRelease "0.1.3" "default"
     Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
     Set-Variable -Name HOME -Value $DefaultHome -Force
     & $Installer -ReleaseDir $ReleaseDir | Out-Null
@@ -66,7 +66,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $DefaultHome ".agents/skills/yuance-agent")) { throw "不应再写入旧的 .agents Skill 目录" }
     Set-Variable -Name HOME -Value $OriginalHome -Force
 
-    New-TestRelease "0.1.2" "initial"
+    New-TestRelease "0.1.3" "initial"
     $env:YUANCE_API_TOKEN = $TokenSentinel
     $env:CODEX_HOME = $LegacyCodexHome
     New-Item -ItemType Directory -Path $LegacyCodexHome | Out-Null
@@ -79,15 +79,15 @@ try {
     if (-not $output.Contains("检测到旧版元策接入")) { throw "安装输出缺少旧版迁移提示" }
     if (-not (Select-String -LiteralPath (Join-Path $LegacyCodexHome "config.toml") -Pattern '^\[mcp_servers\.other\]' -Quiet)) { throw "安装器修改了其他旧配置" }
 
-    New-TestRelease "0.1.3" "upgraded"
-    & $Installer -Version "0.1.3" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
+    New-TestRelease "0.1.4" "upgraded"
+    & $Installer -Version "0.1.4" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
     Assert-Equal (Get-Content -LiteralPath (Join-Path $InstallDir "fixture-marker.txt") -Raw) "upgraded"
 
-    New-TestRelease "0.1.3" "checksum-failure"
+    New-TestRelease "0.1.4" "checksum-failure"
     $currentTarget = (& $Installer -DetectOnly).Trim()
-    Add-Content -LiteralPath (Join-Path $ReleaseDir "yuance-agent-v0.1.3-$currentTarget.zip") -Value "tampered"
+    Add-Content -LiteralPath (Join-Path $ReleaseDir "yuance-agent-v0.1.4-$currentTarget.zip") -Value "tampered"
     try {
-        & $Installer -Version "0.1.3" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
+        & $Installer -Version "0.1.4" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
         throw "校验和错误时安装器意外成功"
     } catch {
         if ($_.Exception.Message -eq "校验和错误时安装器意外成功") { throw }

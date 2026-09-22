@@ -14,6 +14,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect},
     routing::{get, put},
 };
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use chrono::{Duration as ChronoDuration, Utc};
 use serde_json::json;
 use tokio::{net::TcpListener, time::sleep};
@@ -23,6 +24,38 @@ use yuance_agent::{
     models::AttachmentSignedUrlEnvelope,
     transfer::{SignedObjectTransport, ValidatedUploadContract},
 };
+
+#[test]
+fn encrypted_attachment_contract_uses_server_ciphertext_size() {
+    let payload = serde_json::from_value::<AttachmentSignedUrlEnvelope>(json!({
+        "data": {
+            "attachment": {"id": 8, "file_object_id": 9, "filename": "a.svg", "content_type": "image/svg+xml", "byte_size": 3, "status": "pending"},
+            "request": {"method": "PUT", "url": "https://storage.example.test/upload", "headers": {"content-length": "96", "content-type": "application/octet-stream"}},
+            "expires_in_seconds": 60,
+            "expires_at": (Utc::now() + ChronoDuration::seconds(60)).to_rfc3339(),
+            "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "encryption": {
+                "algorithm": "AES-256-GCM",
+                "format": "YUANCE-ENC-v1",
+                "chunk_size": 1048576,
+                "key": BASE64.encode([0_u8; 32]),
+                "file_object_id": 9,
+                "plaintext_byte_size": 3,
+                "plaintext_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "encrypted_byte_size": 96,
+                "encrypted_checksum_sha256": ""
+            }
+        }
+    }))
+    .unwrap()
+    .data;
+
+    let contract =
+        ValidatedUploadContract::parse(payload, "https://yuance.example.test/", Utc::now())
+            .expect("encrypted signed contract should validate");
+    assert_eq!(contract.expected_bytes, 96);
+    assert_eq!(contract.encryption.unwrap().encrypted_byte_size, 96);
+}
 
 #[tokio::test]
 async fn preserves_success_envelope_and_sends_auth_headers() {

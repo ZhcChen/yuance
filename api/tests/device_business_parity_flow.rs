@@ -373,6 +373,21 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     let signed = json_body(signed_response).await;
     let encryption = signed["data"]["encryption"].clone();
     assert_eq!(encryption["format"], "YUANCE-ENC-v1");
+    let expected_encrypted_byte_size =
+        file_crypto::encrypted_total_size(attachment_content.len() as u64);
+    assert_eq!(
+        encryption["encrypted_byte_size"].as_i64().unwrap(),
+        expected_encrypted_byte_size as i64
+    );
+    assert!(
+        signed["data"]["request"]["headers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|pair| {
+                pair[0] == "content-length" && pair[1] == expected_encrypted_byte_size.to_string()
+            })
+    );
     let file_object_id = encryption["file_object_id"].as_i64().unwrap();
     let stored_envelope =
         sqlx::query_scalar::<_, String>("SELECT data_key_envelope FROM file_objects WHERE id = ?1")

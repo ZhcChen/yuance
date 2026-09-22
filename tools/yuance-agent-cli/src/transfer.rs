@@ -6,6 +6,7 @@ use reqwest::{Client, StatusCode, Url, header};
 
 use crate::{
     error::AgentError,
+    file_crypto::encrypted_total_size,
     models::{AttachmentEncryptionPayload, AttachmentSignedUrlPayload},
 };
 
@@ -43,6 +44,7 @@ pub struct ValidatedEncryption {
     pub file_object_id: i64,
     pub plaintext_byte_size: i64,
     pub plaintext_sha256: String,
+    pub encrypted_byte_size: i64,
 }
 
 impl ValidatedUploadContract {
@@ -82,12 +84,14 @@ impl ValidatedUploadContract {
             .transpose()?;
         let expected_bytes = encryption
             .as_ref()
-            .map(|value| encrypted_total_size(value.plaintext_byte_size))
+            .map(|value| value.encrypted_byte_size)
             .unwrap_or(attachment.byte_size);
         if let Some(value) = headers.get("content-length")
             && value != &expected_bytes.to_string()
         {
-            return Err(contract_error("签名请求的 Content-Length 不匹配"));
+            return Err(contract_error(&format!(
+                "签名请求的 Content-Length 不匹配：签名值 {value}，期望 {expected_bytes}"
+            )));
         }
         if let Some(value) = headers.get("content-type") {
             let expected_type = if encryption.is_some() {
@@ -168,6 +172,16 @@ fn validate_encryption(
     {
         return Err(contract_error("加密上传契约无效"));
     }
+    let calculated_byte_size = encrypted_total_size(value.plaintext_byte_size as u64);
+    if value.encrypted_byte_size < 0
+        || (value.encrypted_byte_size > 0
+            && u64::try_from(value.encrypted_byte_size).ok() != Some(calculated_byte_size))
+    {
+        return Err(contract_error(&format!(
+            "服务端密文大小无效：声明 {}，协议计算 {}",
+            value.encrypted_byte_size, calculated_byte_size
+        )));
+    }
     let key = BASE64
         .decode(value.key)
         .map_err(|_| contract_error("加密密钥格式无效"))?;
@@ -179,6 +193,13 @@ fn validate_encryption(
         file_object_id: value.file_object_id,
         plaintext_byte_size: value.plaintext_byte_size,
         plaintext_sha256: value.plaintext_sha256,
+        encrypted_byte_size: if value.encrypted_byte_size > 0 {
+            value.encrypted_byte_size
+        } else {
+            calculated_byte_size
+                .try_into()
+                .map_err(|_| contract_error("加密文件大小超出系统支持范围"))?
+        },
     })
 }
 
@@ -249,15 +270,6 @@ fn validate_sha256(value: &str) -> Result<String, AgentError> {
         return Err(contract_error("SHA-256 校验值无效"));
     }
     Ok(value.to_string())
-}
-
-fn encrypted_total_size(plaintext: i64) -> i64 {
-    let chunks = if plaintext == 0 {
-        0
-    } else {
-        (plaintext + FILE_CHUNK_SIZE - 1) / FILE_CHUNK_SIZE
-    };
-    65 + chunks * 12 + plaintext + chunks * 16
 }
 
 fn contract_error(message: &str) -> AgentError {

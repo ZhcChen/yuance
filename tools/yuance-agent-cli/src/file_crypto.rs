@@ -24,6 +24,15 @@ const FORMAT_VERSION: u32 = 1;
 const NONCE_LENGTH: usize = 12;
 const HEADER_FIXED_LENGTH: usize = 13 + 4 + 4 + 8 + 32 + 4;
 
+pub fn encrypted_total_size(plaintext: u64) -> u64 {
+    let chunks = if plaintext == 0 {
+        0
+    } else {
+        plaintext.div_ceil(FILE_CHUNK_SIZE as u64)
+    };
+    HEADER_FIXED_LENGTH as u64 + chunks * NONCE_LENGTH as u64 + plaintext + chunks * 16
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileDigest {
     pub byte_size: u64,

@@ -1,6 +1,6 @@
 [package]
 name = "yuance-agent"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 rust-version = "1.94"
 description = "Codex Skill CLI for the Yuance OpenAPI"

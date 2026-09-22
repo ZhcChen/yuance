@@ -9264,6 +9264,13 @@ async fn signed_attachment_url_payload(
         }
     };
     if matches!(kind, SignedUrlKind::Upload) {
+        if encryption.is_some() {
+            let encrypted_byte_size = i64::try_from(file_crypto::encrypted_total_size(
+                attachment.byte_size as u64,
+            ))
+            .map_err(|_| AppError::BadRequest("加密文件大小超出系统支持范围".to_string()))?;
+            set_signed_upload_content_length(&mut request, encrypted_byte_size);
+        }
         bind_test_storage_upload_grant(
             state,
             &attachment.object_key,
@@ -9295,6 +9302,10 @@ async fn signed_attachment_url_payload(
             attachment.object_key.as_bytes(),
         )?;
         let is_download = matches!(kind, SignedUrlKind::Download);
+        let encrypted_byte_size = i64::try_from(file_crypto::encrypted_total_size(
+            attachment.byte_size as u64,
+        ))
+        .map_err(|_| AppError::BadRequest("加密文件大小超出系统支持范围".to_string()))?;
         Some(AttachmentEncryptionPayload {
             algorithm: "AES-256-GCM",
             format: encryption.encryption_format,
@@ -9306,7 +9317,7 @@ async fn signed_attachment_url_payload(
             encrypted_byte_size: if is_download {
                 encryption.encrypted_byte_size
             } else {
-                0
+                encrypted_byte_size
             },
             encrypted_checksum_sha256: if is_download {
                 encryption.encrypted_checksum_sha256
@@ -9326,6 +9337,19 @@ async fn signed_attachment_url_payload(
         checksum_sha256,
         encryption: encryption_payload,
     })
+}
+
+fn set_signed_upload_content_length(
+    request: &mut storage::SignedObjectRequest,
+    encrypted_byte_size: i64,
+) {
+    request
+        .headers
+        .retain(|(name, _)| !name.eq_ignore_ascii_case("content-length"));
+    request.headers.push((
+        "content-length".to_string(),
+        encrypted_byte_size.to_string(),
+    ));
 }
 
 fn normalize_signed_url_expiration(kind: SignedUrlKind, value: Option<u64>) -> AppResult<u64> {
