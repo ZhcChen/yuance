@@ -141,7 +141,28 @@ fn resource_and_notification_commands_have_explicit_boundaries() {
             "attachments",
             "upload",
             "--project-key",
-            "YCE"
+            "YCE",
+            "--resource-id",
+            "7",
+            "--file",
+            "diagram.svg",
+        ])
+        .is_ok()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "yuance-agent",
+            "resources",
+            "attachments",
+            "upload",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--file",
+            "diagram.svg",
+            "--upload-url",
+            "https://evil.test/upload",
         ])
         .is_err()
     );

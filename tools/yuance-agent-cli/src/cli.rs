@@ -154,6 +154,7 @@ pub struct ResourcesUpdateArgs {
 pub enum ResourceAttachmentsCommand {
     List(ResourceAttachmentAccessArgs),
     Create(ResourceAttachmentCreateArgs),
+    Upload(ResourceAttachmentUploadArgs),
     UploadUrl(ResourceAttachmentAccessArgs),
     Complete(ResourceAttachmentCompleteArgs),
     DownloadUrl(ResourceAttachmentAccessArgs),
@@ -188,6 +189,18 @@ pub struct ResourceAttachmentCreateArgs {
     pub byte_size: i64,
     #[arg(long)]
     pub checksum_sha256: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentUploadArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long, value_name = "PATH")]
+    pub file: PathBuf,
+    #[arg(long)]
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Args)]

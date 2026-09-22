@@ -1,4 +1,6 @@
 use clap::ValueEnum;
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, ValueEnum)]
@@ -165,6 +167,52 @@ pub struct CompleteAttachmentUploadRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct AttachmentSignedUrlEnvelope {
+    pub data: AttachmentSignedUrlPayload,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttachmentSignedUrlPayload {
+    pub attachment: AttachmentPayload,
+    pub request: SignedObjectRequest,
+    pub expires_in_seconds: u64,
+    pub expires_at: String,
+    pub checksum_sha256: String,
+    pub encryption: Option<AttachmentEncryptionPayload>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttachmentPayload {
+    pub id: i64,
+    pub file_object_id: i64,
+    pub filename: String,
+    pub content_type: String,
+    pub byte_size: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SignedObjectRequest {
+    pub method: String,
+    pub url: String,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttachmentEncryptionPayload {
+    pub algorithm: String,
+    pub format: String,
+    pub chunk_size: i64,
+    pub key: String,
+    pub file_object_id: i64,
+    pub plaintext_byte_size: i64,
+    pub plaintext_sha256: String,
+    pub encrypted_byte_size: i64,
+    pub encrypted_checksum_sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ApiErrorEnvelope {
     pub error: ApiErrorBody,
 }
@@ -186,7 +234,13 @@ pub struct ErrorEnvelope<'a> {
 pub struct ErrorBody<'a> {
     pub kind: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub stage: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
     pub code: &'a str,
     pub message: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachment_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encrypted_sha256: Option<&'a str>,
 }

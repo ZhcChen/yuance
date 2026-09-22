@@ -1,15 +1,18 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
+use chrono::Utc;
 use serde_json::Value;
 
 use crate::{
     cli::{
         ResourceAttachmentAccessArgs, ResourceAttachmentCompleteArgs, ResourceAttachmentCreateArgs,
-        ResourceAttachmentDeleteArgs, ResourceAttachmentsCommand, ResourcesCommand,
-        ResourcesCreateArgs, ResourcesListArgs, ResourcesUnlockArgs, ResourcesUpdateArgs,
+        ResourceAttachmentDeleteArgs, ResourceAttachmentUploadArgs, ResourceAttachmentsCommand,
+        ResourcesCommand, ResourcesCreateArgs, ResourcesListArgs, ResourcesUnlockArgs,
+        ResourcesUpdateArgs,
     },
     client::ApiClient,
     error::AgentError,
+    file_crypto::{EncryptedFileBody, hash_file},
     models::{
         CompleteAttachmentUploadRequest, CreateAttachmentRequest, CreateProjectResourceRequest,
         UnlockProjectResourceRequest, UpdateProjectResourceRequest,
@@ -174,12 +177,221 @@ async fn attachments(
     match command {
         ResourceAttachmentsCommand::List(args) => list_attachments(client, args).await,
         ResourceAttachmentsCommand::Create(args) => create_attachment(client, args).await,
+        ResourceAttachmentsCommand::Upload(args) => upload_attachment(client, args).await,
         ResourceAttachmentsCommand::UploadUrl(args) => signed_url(client, args, "upload-url").await,
         ResourceAttachmentsCommand::DownloadUrl(args) => {
             signed_url(client, args, "download-url").await
         }
         ResourceAttachmentsCommand::Complete(args) => complete_attachment(client, args).await,
         ResourceAttachmentsCommand::Delete(args) => delete_attachment(client, args).await,
+    }
+}
+
+async fn upload_attachment(
+    client: &ApiClient,
+    args: ResourceAttachmentUploadArgs,
+) -> Result<Value, AgentError> {
+    let filename = args
+        .file
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| upload_error("local-validation", "文件名无效", None, None))?
+        .to_string();
+    let digest = hash_file(&args.file).map_err(|error| {
+        upload_error(
+            "local-validation",
+            &format!("读取上传文件失败: {error}"),
+            None,
+            None,
+        )
+    })?;
+    let content_type = args
+        .content_type
+        .or_else(|| infer_content_type(&filename).map(str::to_string))
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let created = client
+        .post_segments(
+            &[
+                "api",
+                "v1",
+                "projects",
+                &args.project_key,
+                "resources",
+                &args.resource_id.to_string(),
+                "attachments",
+            ],
+            &CreateAttachmentRequest {
+                original_filename: filename,
+                content_type,
+                byte_size: i64::try_from(digest.byte_size).map_err(|_| {
+                    upload_error("local-validation", "文件大小超出支持范围", None, None)
+                })?,
+                checksum_sha256: Some(digest.sha256.clone()),
+            },
+        )
+        .await
+        .map_err(|error| upload_error("registering", &error.to_string(), None, None))?;
+    let attachment_id = created
+        .get("data")
+        .and_then(|value| value.get("id"))
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+        .ok_or_else(|| upload_error("registering", "附件登记响应缺少有效 ID", None, None))?;
+
+    let signed = signed_url(
+        client,
+        ResourceAttachmentAccessArgs {
+            project_key: args.project_key.clone(),
+            resource_id: args.resource_id,
+            attachment_id: Some(attachment_id),
+            access_token_stdin: false,
+            expires_in_seconds: Some(60),
+        },
+        "upload-url",
+    )
+    .await
+    .map_err(|error| upload_error("signing", &error.to_string(), Some(attachment_id), None))?;
+    let signed = serde_json::from_value::<crate::models::AttachmentSignedUrlEnvelope>(signed)
+        .map_err(|_| upload_error("signing", "签名响应格式无效", Some(attachment_id), None))?
+        .data;
+    let contract = crate::transfer::ValidatedUploadContract::parse(
+        signed,
+        &format!("{}/", client.api_origin()),
+        Utc::now(),
+    )
+    .map_err(|error| upload_error("signing", &error.to_string(), Some(attachment_id), None))?;
+    if contract.attachment_id != attachment_id
+        || contract.plaintext_bytes != i64::try_from(digest.byte_size).unwrap_or(-1)
+        || contract.plaintext_sha256 != digest.sha256
+    {
+        return Err(upload_error(
+            "signing",
+            "签名响应与本地文件元数据不匹配",
+            Some(attachment_id),
+            None,
+        ));
+    }
+
+    let transport =
+        crate::transfer::SignedObjectTransport::new(Duration::from_secs(30)).map_err(|error| {
+            upload_error("uploading", &error.to_string(), Some(attachment_id), None)
+        })?;
+    let (body, encrypted_digest) = if let Some(encryption) = &contract.encryption {
+        let body = EncryptedFileBody::open(
+            &args.file,
+            encryption.file_object_id,
+            encryption.key,
+            &digest,
+        )
+        .map_err(|error| {
+            upload_error(
+                "uploading",
+                &format!("加密文件失败: {error}"),
+                Some(attachment_id),
+                None,
+            )
+        })?;
+        let digest_handle = body.digest();
+        (body.into_body(), Some(digest_handle))
+    } else {
+        let file = tokio::fs::File::open(&args.file).await.map_err(|error| {
+            upload_error(
+                "uploading",
+                &format!("打开上传文件失败: {error}"),
+                Some(attachment_id),
+                None,
+            )
+        })?;
+        let stream = tokio_util::io::ReaderStream::new(file);
+        (reqwest::Body::wrap_stream(stream), None)
+    };
+    transport.put(&contract, body).await.map_err(|error| {
+        upload_error("uploading", &error.to_string(), Some(attachment_id), None)
+    })?;
+    let encrypted_sha256 = if let Some(handle) = encrypted_digest {
+        Some(handle.encrypted_sha256().map_err(|error| {
+            upload_error(
+                "uploading",
+                &format!("读取密文摘要失败: {error}"),
+                Some(attachment_id),
+                None,
+            )
+        })?)
+    } else {
+        let current = hash_file(&args.file).map_err(|error| {
+            upload_error(
+                "uploading",
+                &format!("复核上传文件失败: {error}"),
+                Some(attachment_id),
+                None,
+            )
+        })?;
+        if current != digest {
+            return Err(upload_error(
+                "uploading",
+                "文件在上传期间发生变化",
+                Some(attachment_id),
+                None,
+            ));
+        }
+        None
+    };
+    let completed = client
+        .post_segments(
+            &[
+                "api",
+                "v1",
+                "projects",
+                &args.project_key,
+                "resources",
+                &args.resource_id.to_string(),
+                "attachments",
+                &attachment_id.to_string(),
+                "uploaded",
+            ],
+            &CompleteAttachmentUploadRequest {
+                encrypted_sha256: encrypted_sha256.clone(),
+            },
+        )
+        .await
+        .map_err(|error| {
+            upload_error(
+                "confirming",
+                &error.to_string(),
+                Some(attachment_id),
+                encrypted_sha256.clone(),
+            )
+        })?;
+    Ok(completed)
+}
+
+fn infer_content_type(filename: &str) -> Option<&'static str> {
+    match filename
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+    {
+        Some(extension) if extension == "svg" => Some("image/svg+xml"),
+        Some(extension) if extension == "png" => Some("image/png"),
+        Some(extension) if extension == "jpg" || extension == "jpeg" => Some("image/jpeg"),
+        Some(extension) if extension == "gif" => Some("image/gif"),
+        Some(extension) if extension == "pdf" => Some("application/pdf"),
+        _ => None,
+    }
+}
+
+fn upload_error(
+    stage: &'static str,
+    message: &str,
+    attachment_id: Option<i64>,
+    encrypted_sha256: Option<String>,
+) -> AgentError {
+    AgentError::Upload {
+        stage,
+        code: "upload_failed",
+        message: message.to_string(),
+        attachment_id,
+        encrypted_sha256,
     }
 }
 

@@ -10,9 +10,9 @@ use axum::{
     Router,
     body::Bytes,
     extract::{OriginalUri, State},
-    http::{HeaderMap, Method},
+    http::{HeaderMap, Method, StatusCode},
     response::IntoResponse,
-    routing::any,
+    routing::{any, get, post, put},
 };
 use serde_json::{Value, json};
 
@@ -25,6 +25,72 @@ struct CapturedRequest {
 }
 
 type Requests = Arc<Mutex<Vec<CapturedRequest>>>;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resource_attachment_upload_runs_the_complete_plain_file_flow() {
+    let file = std::env::temp_dir().join(format!("yuance-agent-upload-{}.svg", std::process::id()));
+    let contents = b"<svg/>";
+    fs::write(&file, contents).unwrap();
+    let app = Router::new()
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments",
+            post(|| async {
+                axum::Json(json!({"data": {"id": 8}}))
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/8/upload-url",
+            get(|| async {
+                axum::Json(json!({
+                    "data": {
+                        "attachment": {"id": 8, "file_object_id": 9, "filename": "upload.svg", "content_type": "image/svg+xml", "byte_size": 6, "status": "pending"},
+                        "request": {"method": "PUT", "url": "/signed-upload", "headers": {"content-length": "6", "content-type": "image/svg+xml"}},
+                        "expires_in_seconds": 60,
+                        "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
+                        "checksum_sha256": "d4dc56669143034f31aa309635d4113d9ad76a02b1739da22c965ed2049be9e6",
+                        "encryption": null
+                    }
+                }))
+            }),
+        )
+        .route(
+            "/signed-upload",
+            put(move |body: Bytes| async move {
+                assert_eq!(body.as_ref(), contents);
+                StatusCode::NO_CONTENT
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/8/uploaded",
+            post(|| async { axum::Json(json!({"data": {"id": 8, "status": "uploaded"}})) }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let output = command_output(
+        &format!("http://{address}"),
+        &[
+            "resources",
+            "attachments",
+            "upload",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--file",
+            file.to_str().unwrap(),
+        ],
+        None,
+    );
+    fs::remove_file(&file).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["data"]["status"], "uploaded");
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn project_commands_encode_queries_and_path_segments() {

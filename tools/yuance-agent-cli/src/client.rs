@@ -94,6 +94,10 @@ impl ApiClient {
         })
     }
 
+    pub fn api_origin(&self) -> String {
+        self.base_url.origin().ascii_serialization()
+    }
+
     pub async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value, AgentError> {
         let url = self.url(path)?;
         self.request::<Value>(Method::GET, url, query, None).await

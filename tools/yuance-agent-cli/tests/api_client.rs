@@ -12,13 +12,16 @@ use axum::{
     extract::Request,
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect},
-    routing::get,
+    routing::{get, put},
 };
+use chrono::{Duration as ChronoDuration, Utc};
 use serde_json::json;
 use tokio::{net::TcpListener, time::sleep};
 use yuance_agent::{
     client::{ApiClient, ClientConfig},
     error::AgentError,
+    models::AttachmentSignedUrlEnvelope,
+    transfer::{SignedObjectTransport, ValidatedUploadContract},
 };
 
 #[tokio::test]
@@ -218,6 +221,99 @@ async fn rejects_redirects_and_oversized_responses() {
             ..
         }
     ));
+}
+
+#[tokio::test]
+async fn signed_attachment_contract_rejects_ambient_credentials_and_uploads_without_them() {
+    let seen_headers = Arc::new(std::sync::Mutex::new(None::<HeaderMap>));
+    let captured = Arc::clone(&seen_headers);
+    let app = Router::new().route(
+        "/signed-upload",
+        put(move |headers: HeaderMap, body: axum::body::Bytes| {
+            let captured = Arc::clone(&captured);
+            async move {
+                assert_eq!(body.as_ref(), b"abc");
+                *captured.lock().unwrap() = Some(headers);
+                StatusCode::NO_CONTENT
+            }
+        }),
+    );
+    let base_url = spawn(app).await;
+    let expires_at = (Utc::now() + ChronoDuration::seconds(60)).to_rfc3339();
+    let payload = serde_json::from_value::<AttachmentSignedUrlEnvelope>(json!({
+        "data": {
+            "attachment": {
+                "id": 8,
+                "file_object_id": 9,
+                "filename": "diagram.svg",
+                "content_type": "image/svg+xml",
+                "byte_size": 3,
+                "status": "pending"
+            },
+            "request": {
+                "method": "PUT",
+                "url": format!("{base_url}/signed-upload"),
+                "headers": {
+                    "content-length": "3",
+                    "content-type": "image/svg+xml"
+                }
+            },
+            "expires_in_seconds": 60,
+            "expires_at": expires_at,
+            "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "encryption": null
+        }
+    }))
+    .unwrap()
+    .data;
+    let contract = ValidatedUploadContract::parse(payload, &format!("{base_url}/"), Utc::now())
+        .expect("loopback signed contract should validate");
+    let transport = SignedObjectTransport::new(Duration::from_secs(2)).unwrap();
+    transport
+        .put(&contract, reqwest::Body::from("abc"))
+        .await
+        .expect("signed upload should succeed");
+    let headers = seen_headers.lock().unwrap().clone().unwrap();
+    assert!(headers.get("authorization").is_none());
+    assert!(headers.get("cookie").is_none());
+    assert_eq!(headers.get("content-length").unwrap(), "3");
+}
+
+#[test]
+fn signed_attachment_contract_rejects_external_http_and_unsafe_headers() {
+    let expires_at = (Utc::now() + ChronoDuration::seconds(60)).to_rfc3339();
+    for (url, headers) in [
+        (
+            "http://storage.example.test/upload",
+            json!({"content-length": "3", "content-type": "image/svg+xml"}),
+        ),
+        (
+            "https://storage.example.test/upload",
+            json!({"authorization": "Bearer leaked", "content-length": "3"}),
+        ),
+    ] {
+        let payload = serde_json::from_value::<AttachmentSignedUrlEnvelope>(json!({
+            "data": {
+                "attachment": {"id": 8, "file_object_id": 9, "filename": "a.svg", "content_type": "image/svg+xml", "byte_size": 3, "status": "pending"},
+                "request": {"method": "PUT", "url": url, "headers": headers},
+                "expires_in_seconds": 60,
+                "expires_at": expires_at,
+                "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "encryption": null
+            }
+        }))
+        .unwrap()
+        .data;
+        let error = ValidatedUploadContract::parse(payload, "http://127.0.0.1:4000/", Utc::now())
+            .expect_err("unsafe signed contract should fail");
+        assert!(matches!(
+            error,
+            AgentError::Upload {
+                code: "invalid_transfer_contract",
+                ..
+            }
+        ));
+    }
 }
 
 #[test]

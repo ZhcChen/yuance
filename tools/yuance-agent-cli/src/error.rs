@@ -24,6 +24,14 @@ pub enum AgentError {
     Connect,
     #[error("{message}")]
     Response { code: &'static str, message: String },
+    #[error("上传阶段 {stage}: {message}")]
+    Upload {
+        stage: &'static str,
+        code: &'static str,
+        message: String,
+        attachment_id: Option<i64>,
+        encrypted_sha256: Option<String>,
+    },
     #[error("内部错误: {0}")]
     Internal(String),
 }
@@ -69,6 +77,7 @@ impl AgentError {
             Self::Tls => 22,
             Self::Connect => 23,
             Self::Response { .. } => 24,
+            Self::Upload { .. } => 25,
             Self::Internal(_) => 1,
         }
     }
@@ -86,6 +95,21 @@ impl AgentError {
             Self::Tls => error_envelope("tls", None, "tls_failed", "元策服务 TLS 连接失败"),
             Self::Connect => error_envelope("connect", None, "connect_failed", "无法连接元策服务"),
             Self::Response { code, message } => error_envelope("response", None, code, message),
+            Self::Upload {
+                stage,
+                code,
+                message,
+                attachment_id,
+                encrypted_sha256,
+            } => error_envelope_with_context(
+                "upload",
+                Some(stage),
+                None,
+                code,
+                message,
+                *attachment_id,
+                encrypted_sha256.as_deref(),
+            ),
             Self::Internal(message) => error_envelope("internal", None, "internal", message),
         }
     }
@@ -97,12 +121,27 @@ fn error_envelope<'a>(
     code: &'a str,
     message: &'a str,
 ) -> ErrorEnvelope<'a> {
+    error_envelope_with_context(kind, None, status, code, message, None, None)
+}
+
+fn error_envelope_with_context<'a>(
+    kind: &'a str,
+    stage: Option<&'a str>,
+    status: Option<u16>,
+    code: &'a str,
+    message: &'a str,
+    attachment_id: Option<i64>,
+    encrypted_sha256: Option<&'a str>,
+) -> ErrorEnvelope<'a> {
     ErrorEnvelope {
         error: ErrorBody {
             kind,
+            stage,
             status,
             code,
             message,
+            attachment_id,
+            encrypted_sha256,
         },
     }
 }
