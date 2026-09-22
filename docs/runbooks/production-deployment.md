@@ -13,6 +13,14 @@ date: 2026-08-02
 `/srv/yuance/backend` 运行目录禁止源码编译和镜像构建。
 公网服务器 `qfy-sc-test` 只保留 Nginx、FRPS 和已停止的旧环境作为冷回滚。
 
+## 构建发布唯一口径
+
+- 正式环境的源码校验、依赖安装、前端检查、镜像构建、镜像传输、数据库迁移和服务重启，统一由本机发布脚本配合 `qfy-test2` 完成。
+- GitHub Actions、GitHub workflow、GitHub hosted runner 和 GitHub Release 不参与正式环境构建、发布或部署。
+- 仓库禁止新增、恢复或修改 `.github/` 下的 workflow、构建配置和发布配置；不得以 GitHub Actions 替代 `qfy-test2` 的构建链路。
+- 正式部署入口唯一为 `scripts/deploy-production.sh`，且必须显式使用 `YUANCE_DEPLOY_MODE=remote`、`YUANCE_DEPLOY_BUILD_MODE=remote` 和 `YUANCE_DEPLOY_HOST=qfy-test2`。
+- 任何其他构建或发布方式只能用于本地验证，不能作为正式环境发布依据。
+
 ## 当前拓扑
 
 ```text
@@ -317,6 +325,7 @@ docker compose --env-file .env -f compose.yaml up -d api
 ## 禁止事项
 
 - 禁止提交、打印或记录真实 `.env`、OSS AccessKey、FRP token。
+- 严禁使用 GitHub Actions 或新增 GitHub 构建配置执行正式环境构建、发布和部署。
 - 禁止在正式环境执行 `seed demo` 或 `seed local-admin`。
 - 禁止修改已经发布的 SQL migration。
 - 禁止新旧两端同时提供写服务。
