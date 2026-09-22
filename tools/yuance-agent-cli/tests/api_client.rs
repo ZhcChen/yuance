@@ -317,6 +317,26 @@ fn signed_attachment_contract_rejects_external_http_and_unsafe_headers() {
 }
 
 #[test]
+fn signed_attachment_headers_accept_server_pair_encoding() {
+    let payload = serde_json::from_value::<AttachmentSignedUrlEnvelope>(json!({
+        "data": {
+            "attachment": {"id": 8, "file_object_id": 9, "filename": "a.svg", "content_type": "image/svg+xml", "byte_size": 3, "status": "pending"},
+            "request": {"method": "PUT", "url": "https://storage.example.test/upload", "headers": [["content-length", "3"], ["content-type", "image/svg+xml"]]},
+            "expires_in_seconds": 60,
+            "expires_at": (Utc::now() + ChronoDuration::seconds(60)).to_rfc3339(),
+            "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "encryption": null
+        }
+    }))
+    .unwrap()
+    .data;
+    let contract =
+        ValidatedUploadContract::parse(payload, "https://yuance.example.test/", Utc::now())
+            .expect("server pair-encoded headers should parse");
+    assert_eq!(contract.headers["content-length"], "3");
+}
+
+#[test]
 fn rejects_missing_token_and_invalid_base_url_before_building_client() {
     let missing = ClientConfig::new("https://example.test", " ", Duration::from_secs(1))
         .expect_err("missing token should fail");

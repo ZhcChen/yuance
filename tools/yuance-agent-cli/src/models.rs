@@ -195,7 +195,7 @@ pub struct AttachmentPayload {
 pub struct SignedObjectRequest {
     pub method: String,
     pub url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_signed_headers")]
     pub headers: BTreeMap<String, String>,
 }
 
@@ -210,6 +210,24 @@ pub struct AttachmentEncryptionPayload {
     pub plaintext_sha256: String,
     pub encrypted_byte_size: i64,
     pub encrypted_checksum_sha256: String,
+}
+
+fn deserialize_signed_headers<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HeaderShape {
+        Map(BTreeMap<String, String>),
+        Pairs(Vec<(String, String)>),
+    }
+
+    Ok(match Option::<HeaderShape>::deserialize(deserializer)? {
+        None => BTreeMap::new(),
+        Some(HeaderShape::Map(headers)) => headers,
+        Some(HeaderShape::Pairs(headers)) => headers.into_iter().collect(),
+    })
 }
 
 #[derive(Debug, Deserialize)]
