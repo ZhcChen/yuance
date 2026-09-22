@@ -35,6 +35,10 @@
 - 用户说“部署正式环境”时，默认按 `docs/runbooks/production-deployment.md` 实际发布，入口为 `./scripts/deploy-production.sh`；只有明确说明“只构建镜像 / 只生成脚本 / 只更新文档”时才缩小范围。
 - 服务器禁止源码编译和镜像构建；具体发布、回滚和健康检查要求以 `docs/runbooks/production-deployment.md` 为准。
 
+## GitHub 构建约束
+- 仓库不使用 GitHub Actions 或其他 GitHub workflow 执行构建、测试、发布或正式环境部署。
+- 禁止新增、恢复或修改 `.github/` 下的 workflow、构建配置和发布配置；正式环境构建与部署统一按 Runbook 在 `qfy-test2` 执行。
+
 ## Review
 - 改动完成后对照 plan 复核结果
 - 至少执行聚焦验证，并检查明显回归或范围漂移
