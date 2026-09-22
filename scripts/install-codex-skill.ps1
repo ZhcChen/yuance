@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$DefaultVersion = "0.1.1"
+$DefaultVersion = "0.1.2"
 $Repository = "ZhcChen/yuance"
 
 if ([string]::IsNullOrWhiteSpace($Version)) {

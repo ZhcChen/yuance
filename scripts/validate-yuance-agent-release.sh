@@ -89,6 +89,10 @@ for target in "${targets[@]}"; do
     cmp "$package/$relative" "$ROOT_DIR/skills/yuance-agent/$relative" >/dev/null || \
       fail "$asset 的 $relative 与标签源码不一致"
   done
+  grep -q 'resources attachments upload' "$package/references/commands.md" || \
+    fail "$asset 缺少资料附件 upload 命令"
+  grep -q 'YUANCE-ENC-v1' "$package/references/commands.md" || \
+    fail "$asset 缺少加密上传说明"
   if [[ "$extension" == "tar.gz" ]]; then
     [[ -x "$package/scripts/$binary_name" ]] || fail "$asset 中的 CLI 不可执行"
   fi

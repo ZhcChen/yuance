@@ -4,18 +4,18 @@
 
 ## 安装
 
-正式安装命令固定到 `yuance-agent-v0.1.1` 标签，避免执行 `main` 上尚未发布的脚本。
+正式安装命令固定到 `yuance-agent-v0.1.2` 标签，避免执行 `main` 上尚未发布的脚本。
 
 macOS / Linux：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.1/scripts/install-codex-skill.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.2/scripts/install-codex-skill.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-RestMethod https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.1/scripts/install-codex-skill.ps1 | Invoke-Expression
+Invoke-RestMethod https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.2/scripts/install-codex-skill.ps1 | Invoke-Expression
 ```
 
 默认安装位置：
@@ -106,11 +106,11 @@ CLI 默认连接 `https://yuance.quanxinfu.com`。只有私有部署或测试环
 安装历史版本时显式指定版本：
 
 ```bash
-YUANCE_AGENT_VERSION=0.1.1 bash install-codex-skill.sh
+YUANCE_AGENT_VERSION=0.1.2 bash install-codex-skill.sh
 ```
 
 ```powershell
-$env:YUANCE_AGENT_VERSION = "0.1.1"
+$env:YUANCE_AGENT_VERSION = "0.1.2"
 ./install-codex-skill.ps1
 ```
 

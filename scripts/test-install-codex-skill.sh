@@ -77,7 +77,7 @@ for mapping in \
   assert_eq "$detected" "$expected"
 done
 
-create_release "0.1.1" "initial"
+create_release "0.1.2" "initial"
 DEFAULT_HOME="$TEMP_DIR/default home"
 HOME="$DEFAULT_HOME" "$INSTALLER" --release-dir "$RELEASE_DIR" >/dev/null 2>&1
 [[ -f "$DEFAULT_HOME/.codex/skills/yuance-agent/SKILL.md" ]] || fail "未安装到 Codex 默认 Skill 目录"
@@ -94,26 +94,26 @@ assert_eq "$(cat "$INSTALL_DIR/fixture-marker.txt")" "initial"
 [[ "$output" == *"检测到旧版元策接入"* ]] || fail "安装输出缺少旧版迁移提示"
 grep -q '^\[mcp_servers.other\]' "$LEGACY_CODEX_HOME/config.toml" || fail "安装器修改了其他旧配置"
 
-create_release "0.1.2" "upgraded"
-YUANCE_AGENT_VERSION="0.1.2" YUANCE_AGENT_RELEASE_DIR="$RELEASE_DIR" \
+create_release "0.1.3" "upgraded"
+YUANCE_AGENT_VERSION="0.1.3" YUANCE_AGENT_RELEASE_DIR="$RELEASE_DIR" \
   YUANCE_AGENT_INSTALL_DIR="$INSTALL_DIR" "$INSTALLER" >/dev/null 2>&1
 assert_eq "$(cat "$INSTALL_DIR/fixture-marker.txt")" "upgraded"
 
-create_release "0.1.2" "checksum-failure"
-printf 'tampered' >>"$RELEASE_DIR/yuance-agent-v0.1.2-$(actual_target).tar.gz"
-if "$INSTALLER" --version 0.1.2 --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" >/dev/null 2>&1; then
+create_release "0.1.3" "checksum-failure"
+printf 'tampered' >>"$RELEASE_DIR/yuance-agent-v0.1.3-$(actual_target).tar.gz"
+if "$INSTALLER" --version 0.1.3 --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "校验和错误时安装器意外成功"
 fi
 assert_eq "$(cat "$INSTALL_DIR/fixture-marker.txt")" "upgraded"
 
-create_release "0.1.2" "missing" "missing-binary"
-if "$INSTALLER" --version 0.1.2 --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" >/dev/null 2>&1; then
+create_release "0.1.3" "missing" "missing-binary"
+if "$INSTALLER" --version 0.1.3 --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "发布包缺文件时安装器意外成功"
 fi
 assert_eq "$(cat "$INSTALL_DIR/fixture-marker.txt")" "upgraded"
 
-create_release "0.1.2" "self-check" "self-check-fails"
-if "$INSTALLER" --version 0.1.2 --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" >/dev/null 2>&1; then
+create_release "0.1.3" "self-check" "self-check-fails"
+if "$INSTALLER" --version 0.1.3 --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" >/dev/null 2>&1; then
   fail "离线自检失败时安装器意外成功"
 fi
 assert_eq "$(cat "$INSTALL_DIR/fixture-marker.txt")" "upgraded"
