@@ -14,6 +14,10 @@ const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', '
 const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'style', 'title'];
 const CONTENT_TAGS = EDITOR_TAGS;
 const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
+const RICH_TEXT_TOC_WIDTH_DEFAULT = 320;
+const RICH_TEXT_TOC_WIDTH_MIN = 220;
+const RICH_TEXT_TOC_WIDTH_MAX = 520;
+const RICH_TEXT_TOC_STORAGE_KEY = 'yuance:project-resource-detail:outline-width';
 const RICH_TEXT_CSS_PROPERTIES = ['color', 'font-size'];
 const RICH_TEXT_COLORS = [
   { label: '深红', value: '#d92d20' },
@@ -49,6 +53,44 @@ const RICH_TEXT_COLORS = [
   { label: '炭灰', value: '#1d2939' },
   { label: '黑色', value: '#101828' },
 ];
+
+export function clampRichTextTableOfContentsWidth(value) {
+  const width = Number(value);
+  if (!Number.isFinite(width)) return RICH_TEXT_TOC_WIDTH_DEFAULT;
+  return Math.round(Math.max(RICH_TEXT_TOC_WIDTH_MIN, Math.min(RICH_TEXT_TOC_WIDTH_MAX, width)));
+}
+
+/** @param {{ getItem: (key: string) => string | null } | null} storage */
+export function readRichTextTableOfContentsWidth(storage, key) {
+  if (!storage || !key) return RICH_TEXT_TOC_WIDTH_DEFAULT;
+  try {
+    const storedWidth = storage.getItem(key);
+    if (storedWidth === null || storedWidth.trim() === '') return RICH_TEXT_TOC_WIDTH_DEFAULT;
+    return clampRichTextTableOfContentsWidth(storedWidth);
+  } catch {
+    return RICH_TEXT_TOC_WIDTH_DEFAULT;
+  }
+}
+
+/** @param {{ setItem: (key: string, value: string) => void } | null} storage */
+export function writeRichTextTableOfContentsWidth(storage, key, width) {
+  if (!storage || !key) return false;
+  try {
+    storage.setItem(key, String(clampRichTextTableOfContentsWidth(width)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** @param {Window | null | undefined} view */
+function localStorageForView(view) {
+  try {
+    return view?.localStorage || null;
+  } catch {
+    return null;
+  }
+}
 const RICH_TEXT_BLOCK_OPTIONS = [
   { value: 'p', label: '正文' },
   { value: 'h1', label: '标题 1' },
@@ -157,25 +199,40 @@ function RichMediaImage({ attachmentId, alt = '', initialSrc = '', resolve = nul
  *   downloadingAttachmentId?: number | null,
  *   onHeadingsChange?: (headings: Array<{ id: string, level: number, label: string }>) => void,
  *   showTableOfContents?: boolean,
+ *   tableOfContentsResizable?: boolean,
+ *   tableOfContentsStorageKey?: string,
  * }} props
  *
  * 附件交互约定：左键附件统一走 onAttachmentActivate（文件附件直接预览）；
  * onFileAttachmentActivate 仅在右键文件附件时触发，用于打开操作菜单。
  */
-export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource, downloadingAttachmentId = null, onHeadingsChange, showTableOfContents = false }) {
+export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, onFileAttachmentActivate, resolveAttachmentSource, downloadingAttachmentId = null, onHeadingsChange, showTableOfContents = false, tableOfContentsResizable = true, tableOfContentsStorageKey = RICH_TEXT_TOC_STORAGE_KEY }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const tocRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const [tableOfContentsWidth, setTableOfContentsWidth] = useState(RICH_TEXT_TOC_WIDTH_DEFAULT);
+  const tableOfContentsWidthRef = useRef(tableOfContentsWidth);
+  const tableOfContentsResizeRef = useRef(/** @type {{ pointerId: number, startX: number, startWidth: number } | null} */ (null));
+  const loadedTableOfContentsStorageKeyRef = useRef(/** @type {string | null} */ (null));
   const activateRef = useRef(onAttachmentActivate);
   const fileActivateRef = useRef(onFileAttachmentActivate);
   const resolveRef = useRef(resolveAttachmentSource);
   const headingsRef = useRef(onHeadingsChange);
   const [headings, setHeadings] = useState(/** @type {Array<{ id: string, level: number, label: string }>} */ ([]));
+  const canResizeTableOfContents = showTableOfContents && tableOfContentsResizable;
   const contentScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: contentRef, label: '正文', refreshKey: `${html}:${format}:${showTableOfContents}:${headings.length}` });
   const tocScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: tocRef, enabled: showTableOfContents && headings.length > 0, label: '正文目录', refreshKey: headings.length });
+  tableOfContentsWidthRef.current = tableOfContentsWidth;
   activateRef.current = onAttachmentActivate;
   fileActivateRef.current = onFileAttachmentActivate;
   resolveRef.current = resolveAttachmentSource;
   headingsRef.current = onHeadingsChange;
+  useEffect(() => {
+    if (!canResizeTableOfContents || !tableOfContentsStorageKey || !html || loadedTableOfContentsStorageKeyRef.current === tableOfContentsStorageKey) return;
+    const view = contentRef.current?.ownerDocument.defaultView;
+    if (!view) return;
+    loadedTableOfContentsStorageKeyRef.current = tableOfContentsStorageKey;
+    setTableOfContentsWidth(readRichTextTableOfContentsWidth(localStorageForView(view), tableOfContentsStorageKey));
+  }, [canResizeTableOfContents, html, tableOfContentsStorageKey]);
   useEffect(() => {
     const content = contentRef.current;
     const view = content?.ownerDocument.defaultView;
@@ -351,10 +408,52 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       toc.scrollLeft = tocScrollLeft;
     }
   };
+  const updateTableOfContentsWidth = (value, persist = false) => {
+    const width = clampRichTextTableOfContentsWidth(value);
+    tableOfContentsWidthRef.current = width;
+    setTableOfContentsWidth(width);
+    if (persist && tableOfContentsStorageKey) {
+      const view = contentRef.current?.ownerDocument.defaultView;
+      writeRichTextTableOfContentsWidth(localStorageForView(view), tableOfContentsStorageKey, width);
+    }
+  };
+  const handleTableOfContentsResizePointerDown = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    tableOfContentsResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: tableOfContentsWidthRef.current };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const handleTableOfContentsResizePointerMove = (event) => {
+    const drag = tableOfContentsResizeRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    updateTableOfContentsWidth(drag.startWidth + event.clientX - drag.startX);
+  };
+  const finishTableOfContentsResize = (event) => {
+    const drag = tableOfContentsResizeRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    tableOfContentsResizeRef.current = null;
+    if (tableOfContentsStorageKey) {
+      const view = event.currentTarget.ownerDocument.defaultView;
+      writeRichTextTableOfContentsWidth(localStorageForView(view), tableOfContentsStorageKey, tableOfContentsWidthRef.current);
+    }
+  };
+  const handleTableOfContentsResizeKeyDown = (event) => {
+    const step = event.shiftKey ? 40 : 16;
+    let nextWidth;
+    if (event.key === 'ArrowLeft') nextWidth = tableOfContentsWidthRef.current - step;
+    else if (event.key === 'ArrowRight') nextWidth = tableOfContentsWidthRef.current + step;
+    else if (event.key === 'Home') nextWidth = RICH_TEXT_TOC_WIDTH_MIN;
+    else if (event.key === 'End') nextWidth = RICH_TEXT_TOC_WIDTH_MAX;
+    else return;
+    event.preventDefault();
+    updateTableOfContentsWidth(nextWidth, true);
+  };
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <><div ref={contentRef} className="yc-rich-text-content yc-rich-text-plain yc-overlay-scroll-target">{html}</div>{contentScrollbar.scrollbar}</>;
   if (!showTableOfContents) return <><div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</>;
-  return <div className="yc-rich-text-with-toc">{headings.length ? <nav ref={tocRef} className="yc-rich-text-toc yc-overlay-scroll-target" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}{tocScrollbar.scrollbar}<div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</div>;
+  /** @type {import('react').CSSProperties & { '--resource-toc-width': string }} */
+  const tableOfContentsStyle = { '--resource-toc-width': `${tableOfContentsWidth}px` };
+  return <div className={`yc-rich-text-with-toc${canResizeTableOfContents ? ' yc-rich-text-with-toc-resizable' : ''}`} style={canResizeTableOfContents ? tableOfContentsStyle : undefined}>{headings.length ? <nav ref={tocRef} className="yc-rich-text-toc yc-overlay-scroll-target" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} title={heading.label} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}{canResizeTableOfContents && headings.length ? <div className="yc-rich-text-toc-resize" role="separator" aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin={RICH_TEXT_TOC_WIDTH_MIN} aria-valuemax={RICH_TEXT_TOC_WIDTH_MAX} aria-valuenow={tableOfContentsWidth} tabIndex={0} onKeyDown={handleTableOfContentsResizeKeyDown} onPointerDown={handleTableOfContentsResizePointerDown} onPointerMove={handleTableOfContentsResizePointerMove} onPointerUp={finishTableOfContentsResize} onPointerCancel={finishTableOfContentsResize} onLostPointerCapture={finishTableOfContentsResize} /> : null}{tocScrollbar.scrollbar}<div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</div>;
 }
 
 /** @param {RichTextResolvedSource} resolved */

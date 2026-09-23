@@ -5,6 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DEFER_RICH_TEXT_PASTE, RichTextContent, RichTextEditor, isPreviewableDocumentFile, plainTextToRichHtml, previewableDocumentFileType, richFileVisualBadge, richFileVisualKind, richTextAttachmentHtml, richTextAttachmentIds, richTextHeadingId, richTextHasContent } from '@yuance/frontend-ui';
+import { clampRichTextTableOfContentsWidth, readRichTextTableOfContentsWidth, writeRichTextTableOfContentsWidth } from '../src/rich-text.jsx';
 
 test('rich text editor exposes the deferred paste sentinel used by pre-upload flows', () => {
   assert.equal(DEFER_RICH_TEXT_PASTE, 'defer');
@@ -31,6 +32,38 @@ test('rich text heading ids remain stable and unique for table of contents ancho
   assert.equal(richTextHeadingId('项目概览', 0), 'resource-heading-1-项目概览');
   assert.equal(richTextHeadingId('项目概览', 1), 'resource-heading-2-项目概览');
   assert.equal(richTextHeadingId('  ', 2), 'resource-heading-3-section');
+});
+
+test('rich text table of contents width is bounded and stored safely', () => {
+  assert.equal(clampRichTextTableOfContentsWidth(180), 220);
+  assert.equal(clampRichTextTableOfContentsWidth(321.6), 322);
+  assert.equal(clampRichTextTableOfContentsWidth(700), 520);
+  assert.equal(clampRichTextTableOfContentsWidth('invalid'), 320);
+
+  const values = new Map([['outline-width', '412']]);
+  const storage = {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, value); },
+  };
+
+  assert.equal(readRichTextTableOfContentsWidth(storage, 'outline-width'), 412);
+  values.set('outline-width', '900');
+  assert.equal(readRichTextTableOfContentsWidth(storage, 'outline-width'), 520);
+  values.set('outline-width', 'invalid');
+  assert.equal(readRichTextTableOfContentsWidth(storage, 'outline-width'), 320);
+  assert.equal(writeRichTextTableOfContentsWidth(storage, 'outline-width', 180), true);
+  assert.equal(values.get('outline-width'), '220');
+  assert.equal(readRichTextTableOfContentsWidth(null, 'outline-width'), 320);
+  assert.equal(writeRichTextTableOfContentsWidth(null, 'outline-width', 400), false);
+});
+
+test('rich text table of contents opts into its resizable split layout', () => {
+  const resizable = renderToStaticMarkup(React.createElement(RichTextContent, { html: '<h2>方案</h2>', format: 'html', showTableOfContents: true }));
+  const fixed = renderToStaticMarkup(React.createElement(RichTextContent, { html: '<h2>方案</h2>', format: 'html', showTableOfContents: true, tableOfContentsResizable: false }));
+
+  assert.match(resizable, /yc-rich-text-with-toc-resizable/u);
+  assert.match(resizable, /--resource-toc-width:320px/u);
+  assert.doesNotMatch(fixed, /yc-rich-text-with-toc-resizable/u);
 });
 
 test('rich text editor exposes the shared formatting toolbar and textbox', async () => {

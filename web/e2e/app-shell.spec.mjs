@@ -3871,7 +3871,8 @@ test('shared project resources filter read and unlock protected details', async 
     expect(geometry.tocScrollbarReservation).toBeLessThanOrEqual(1);
     expect(geometry.contentScrollbarReservation).toBeLessThanOrEqual(1);
     expect(geometry.tocDisplay).toBe(viewport.width <= 960 ? 'flex' : 'block');
-    expect(geometry.contentColumns).toBe(viewport.width <= 960 ? 1 : 2);
+    expect(geometry.contentColumns).toBe(viewport.width <= 1024 ? 1 : 3);
+    await expect(page.locator('.yc-rich-text-toc-resize')).toHaveCSS('display', viewport.width <= 1024 ? 'none' : 'block');
     if (viewport.width > 960) expect(geometry.tocIndentation).toEqual([12, 12, 32, 52, 72]);
   }
   await page.getByRole('link', { name: '返回资料库' }).click();
