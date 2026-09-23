@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fetchPreviewBytes } from '../src/platform/browser/document-viewer.js';
+import { fetchPreviewBytes, resolveBrowserPreviewSource } from '../src/platform/browser/document-viewer.js';
 import { encryptFile, sha256Hex } from '../src/platform/browser/file-crypto.js';
 
 test('browser preview reader returns plain binary responses unchanged', async () => {
@@ -14,6 +14,31 @@ test('browser preview reader returns plain binary responses unchanged', async ()
     const bytes = await fetchPreviewBytes('/attachments/1/preview/content');
     assert.deepEqual(Array.from(bytes), [1, 2, 3]);
   } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('browser preview resolver preserves inline SVG data URLs without fetching them', async () => {
+  const source = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64')}`;
+  const originalFetch = globalThis.fetch;
+  let requestedUrl;
+  let resolvedSource = '';
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return new Response(new Uint8Array([60, 115, 118, 103, 47, 62]), {
+      status: 200,
+      headers: { 'content-type': 'image/svg+xml' },
+    });
+  };
+  try {
+    resolvedSource = await resolveBrowserPreviewSource(source, {
+      filename: '流程图',
+      contentType: 'image/svg+xml',
+    });
+    assert.equal(requestedUrl, undefined);
+    assert.equal(resolvedSource, source);
+  } finally {
+    if (resolvedSource.startsWith('blob:')) URL.revokeObjectURL(resolvedSource);
     globalThis.fetch = originalFetch;
   }
 });

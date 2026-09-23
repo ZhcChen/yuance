@@ -331,6 +331,9 @@ export async function mountBrowserDocumentViewer(host, { source, filename, previ
  * @returns {Promise<string>}
  */
 export async function resolveBrowserPreviewSource(source, options = {}) {
+  if (/^data:/iu.test(source)) {
+    return source;
+  }
   const bytes = await fetchPreviewBytes(source);
   const blob = new Blob([toArrayBuffer(bytes)], {
     type: contentTypeForPreview(options.filename, options.contentType),
