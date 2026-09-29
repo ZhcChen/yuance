@@ -58,6 +58,132 @@ pub fn hash_file(path: &Path) -> io::Result<FileDigest> {
     })
 }
 
+pub fn decrypt_file(
+    ciphertext: &[u8],
+    file_object_id: i64,
+    key: [u8; 32],
+    plaintext_byte_size: u64,
+    plaintext_sha256: &str,
+) -> io::Result<Vec<u8>> {
+    if file_object_id < 1 || plaintext_byte_size > usize::MAX as u64 {
+        return Err(invalid_encrypted_file());
+    }
+    let expected_sha = if plaintext_sha256.is_empty() {
+        None
+    } else {
+        Some(decode_sha256(plaintext_sha256)?)
+    };
+    let expected_encrypted_size = encrypted_total_size(plaintext_byte_size);
+    if ciphertext.len() as u64 != expected_encrypted_size
+        || ciphertext.len() < HEADER_FIXED_LENGTH
+        || &ciphertext[..MAGIC.len()] != MAGIC
+    {
+        return Err(invalid_encrypted_file());
+    }
+
+    let version = read_u32(ciphertext, MAGIC.len())?;
+    let chunk_size = read_u32(ciphertext, MAGIC.len() + 4)? as usize;
+    let header_plaintext_size = read_u64(ciphertext, MAGIC.len() + 8)?;
+    let sha_start = MAGIC.len() + 4 + 4 + 8;
+    let header_sha = &ciphertext[sha_start..sha_start + 32];
+    let count_offset = sha_start + 32;
+    let header_chunk_count = read_u32(ciphertext, count_offset)? as usize;
+    let expected_chunk_count = chunk_count(plaintext_byte_size);
+    let nonce_start = count_offset + 4;
+    let header_size = nonce_start
+        .checked_add(
+            header_chunk_count
+                .checked_mul(NONCE_LENGTH)
+                .ok_or_else(invalid_encrypted_file)?,
+        )
+        .ok_or_else(invalid_encrypted_file)?;
+
+    if version != FORMAT_VERSION
+        || chunk_size != FILE_CHUNK_SIZE
+        || header_plaintext_size != plaintext_byte_size
+        || header_chunk_count != expected_chunk_count
+        || header_size > ciphertext.len()
+        || expected_sha.is_some_and(|expected| header_sha != expected)
+    {
+        return Err(invalid_encrypted_file());
+    }
+
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| invalid_encrypted_file())?;
+    let mut plaintext = Vec::with_capacity(plaintext_byte_size as usize);
+    let mut cursor = header_size;
+    for index in 0..header_chunk_count {
+        let plaintext_length = plaintext_chunk_len(plaintext_byte_size, index);
+        let encrypted_length = plaintext_length + 16;
+        let end = cursor
+            .checked_add(encrypted_length)
+            .filter(|end| *end <= ciphertext.len())
+            .ok_or_else(invalid_encrypted_file)?;
+        let nonce_start = nonce_start + index * NONCE_LENGTH;
+        let nonce: [u8; NONCE_LENGTH] = ciphertext[nonce_start..nonce_start + NONCE_LENGTH]
+            .try_into()
+            .map_err(|_| invalid_encrypted_file())?;
+        let aad = chunk_aad(file_object_id, index as u32);
+        let decrypted = cipher
+            .decrypt(
+                &Nonce::from(nonce),
+                Payload {
+                    msg: &ciphertext[cursor..end],
+                    aad: &aad,
+                },
+            )
+            .or_else(|_| {
+                cipher.decrypt(
+                    &Nonce::from(nonce),
+                    Payload {
+                        msg: &ciphertext[cursor..end],
+                        aad: &legacy_chunk_aad(file_object_id, index as u32),
+                    },
+                )
+            })
+            .map_err(|_| invalid_encrypted_file())?;
+        if decrypted.len() != plaintext_length {
+            return Err(invalid_encrypted_file());
+        }
+        plaintext.extend_from_slice(&decrypted);
+        cursor = end;
+    }
+
+    let actual_sha: [u8; 32] = Sha256::digest(&plaintext).into();
+    if cursor != ciphertext.len()
+        || plaintext.len() as u64 != plaintext_byte_size
+        || actual_sha != header_sha
+        || expected_sha.is_some_and(|expected| actual_sha != expected)
+    {
+        return Err(invalid_encrypted_file());
+    }
+    Ok(plaintext)
+}
+
+fn read_u32(bytes: &[u8], offset: usize) -> io::Result<u32> {
+    bytes
+        .get(offset..offset + 4)
+        .and_then(|value| value.try_into().ok())
+        .map(u32::from_be_bytes)
+        .ok_or_else(invalid_encrypted_file)
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> io::Result<u64> {
+    bytes
+        .get(offset..offset + 8)
+        .and_then(|value| value.try_into().ok())
+        .map(u64::from_be_bytes)
+        .ok_or_else(invalid_encrypted_file)
+}
+
+fn decode_sha256(value: &str) -> io::Result<[u8; 32]> {
+    let bytes = hex::decode(value).map_err(|_| invalid_encrypted_file())?;
+    bytes.try_into().map_err(|_| invalid_encrypted_file())
+}
+
+fn invalid_encrypted_file() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, "加密附件校验失败")
+}
+
 #[derive(Debug, Clone)]
 pub struct EncryptionDigest {
     state: Arc<Mutex<DigestState>>,
@@ -365,6 +491,15 @@ fn chunk_aad(file_object_id: i64, chunk_index: u32) -> Vec<u8> {
     aad.extend_from_slice(b"yuance-file-enc:v1:");
     aad.extend_from_slice(&(file_object_id as u64).to_be_bytes());
     aad.push(b':');
+    aad.extend_from_slice(&chunk_index.to_be_bytes());
+    aad
+}
+
+fn legacy_chunk_aad(file_object_id: i64, chunk_index: u32) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(13 + 8 + 1 + 4);
+    aad.extend_from_slice(b"yuance-file-enc:v1:");
+    aad.extend_from_slice(&(file_object_id as u64).to_be_bytes());
+    aad.push(0);
     aad.extend_from_slice(&chunk_index.to_be_bytes());
     aad
 }

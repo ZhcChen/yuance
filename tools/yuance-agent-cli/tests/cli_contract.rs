@@ -170,6 +170,23 @@ fn resource_and_notification_commands_have_explicit_boundaries() {
         Cli::try_parse_from([
             "yuance-agent",
             "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+            "--output",
+            "attachment.pdf",
+        ])
+        .is_ok()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "yuance-agent",
+            "resources",
             "update",
             "--project-key",
             "YCE",

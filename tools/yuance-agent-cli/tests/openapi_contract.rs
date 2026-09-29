@@ -91,6 +91,54 @@ fn supported_operations_and_request_bodies_exist() {
         }
     }
 
+    let download = &document["paths"]["/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url"]
+        ["get"];
+    let description = download["description"].as_str().unwrap();
+    assert!(description.contains("encrypted_checksum_sha256"));
+    assert!(description.contains("plaintext_sha256"));
+    assert!(description.contains("文件头中的 SHA-256"));
+    assert!(description.contains("encryption 为 null 表示历史明文对象"));
+    assert!(description.contains("字段为空字符串"));
+    assert!(description.contains("plaintext_sha256 可能因创建附件时未登记明文摘要而为空"));
+    assert!(description.contains("不得写日志、stdout 或持久化"));
+    assert_eq!(
+        download["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/AttachmentDownloadSignedUrlEnvelope"
+    );
+    assert_eq!(
+        document["components"]["schemas"]["AttachmentSignedUrl"]["properties"]["checksum_sha256"]["pattern"],
+        "^$|^[0-9a-fA-F]{64}$"
+    );
+    assert_eq!(
+        document["components"]["schemas"]["AttachmentEncryption"]["properties"]["encrypted_checksum_sha256"]
+            ["pattern"],
+        "^$|^[0-9a-fA-F]{64}$"
+    );
+    assert_eq!(
+        document["components"]["schemas"]["AttachmentDownloadEncryption"]["allOf"][1]["properties"]
+            ["encrypted_checksum_sha256"]["pattern"],
+        "^[0-9a-fA-F]{64}$"
+    );
+    assert_eq!(
+        document["components"]["schemas"]["AttachmentEncryption"]["properties"]["plaintext_sha256"]
+            ["pattern"],
+        "^$|^[0-9a-fA-F]{64}$"
+    );
+    assert!(
+        document["components"]["schemas"]["AttachmentEncryption"]["properties"]["plaintext_sha256"]
+            ["description"]
+            .as_str()
+            .unwrap()
+            .contains("upload-url 和 download-url 阶段都可为空")
+    );
+    assert!(
+        document["components"]["schemas"]["AttachmentSignedUrl"]["properties"]["checksum_sha256"]
+            ["description"]
+            .as_str()
+            .unwrap()
+            .contains("加密下载时若为空")
+    );
+
     let request_bodies = [
         ("CreateWorkItem", "CreateWorkItemRequest"),
         ("UpdateWorkItem", "UpdateWorkItemRequest"),

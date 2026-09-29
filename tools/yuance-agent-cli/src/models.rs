@@ -171,7 +171,7 @@ pub struct AttachmentSignedUrlEnvelope {
     pub data: AttachmentSignedUrlPayload,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct AttachmentSignedUrlPayload {
     pub attachment: AttachmentPayload,
     pub request: SignedObjectRequest,
@@ -179,6 +179,20 @@ pub struct AttachmentSignedUrlPayload {
     pub expires_at: String,
     pub checksum_sha256: String,
     pub encryption: Option<AttachmentEncryptionPayload>,
+}
+
+impl std::fmt::Debug for AttachmentSignedUrlPayload {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AttachmentSignedUrlPayload")
+            .field("attachment", &self.attachment)
+            .field("request", &"[REDACTED]")
+            .field("expires_in_seconds", &self.expires_in_seconds)
+            .field("expires_at", &self.expires_at)
+            .field("checksum_sha256", &self.checksum_sha256)
+            .field("encryption", &self.encryption)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,7 +205,7 @@ pub struct AttachmentPayload {
     pub status: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SignedObjectRequest {
     pub method: String,
     pub url: String,
@@ -199,7 +213,7 @@ pub struct SignedObjectRequest {
     pub headers: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct AttachmentEncryptionPayload {
     pub algorithm: String,
     pub format: String,
@@ -210,6 +224,23 @@ pub struct AttachmentEncryptionPayload {
     pub plaintext_sha256: String,
     pub encrypted_byte_size: i64,
     pub encrypted_checksum_sha256: String,
+}
+
+impl std::fmt::Debug for AttachmentEncryptionPayload {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AttachmentEncryptionPayload")
+            .field("algorithm", &self.algorithm)
+            .field("format", &self.format)
+            .field("chunk_size", &self.chunk_size)
+            .field("key", &"[REDACTED]")
+            .field("file_object_id", &self.file_object_id)
+            .field("plaintext_byte_size", &self.plaintext_byte_size)
+            .field("plaintext_sha256", &self.plaintext_sha256)
+            .field("encrypted_byte_size", &self.encrypted_byte_size)
+            .field("encrypted_checksum_sha256", &self.encrypted_checksum_sha256)
+            .finish()
+    }
 }
 
 fn deserialize_signed_headers<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>

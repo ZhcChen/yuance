@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, fmt, time::Duration};
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use chrono::{DateTime, Utc};
@@ -14,6 +14,7 @@ const MAX_URL_LENGTH: usize = 8 * 1024;
 const MAX_HEADER_VALUE_LENGTH: usize = 4 * 1024;
 const MAX_TRANSFER_BYTES: i64 = 128 * 1024 * 1024;
 const MAX_TTL_SECONDS: u64 = 60;
+const MAX_DOWNLOAD_TTL_SECONDS: u64 = 3600;
 const MAX_CLOCK_SKEW: i64 = 5;
 const FILE_CHUNK_SIZE: i64 = 1024 * 1024;
 const ALLOWED_HEADERS: [&str; 7] = [
@@ -26,7 +27,7 @@ const ALLOWED_HEADERS: [&str; 7] = [
     "x-oss-forbid-overwrite",
 ];
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ValidatedUploadContract {
     pub attachment_id: i64,
     pub file_object_id: i64,
@@ -38,13 +39,94 @@ pub struct ValidatedUploadContract {
     pub encryption: Option<ValidatedEncryption>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ValidatedEncryption {
     pub key: [u8; 32],
     pub file_object_id: i64,
     pub plaintext_byte_size: i64,
     pub plaintext_sha256: String,
     pub encrypted_byte_size: i64,
+}
+
+#[derive(Clone)]
+pub struct ValidatedDownloadContract {
+    pub attachment_id: i64,
+    pub filename: String,
+    pub content_type: String,
+    pub url: Url,
+    pub headers: BTreeMap<String, String>,
+    pub expected_bytes: i64,
+    pub checksum_sha256: Option<String>,
+    pub encryption: Option<ValidatedDownloadEncryption>,
+}
+
+#[derive(Clone)]
+pub struct ValidatedDownloadEncryption {
+    pub key: [u8; 32],
+    pub file_object_id: i64,
+    pub plaintext_byte_size: i64,
+    pub plaintext_sha256: String,
+    pub encrypted_byte_size: i64,
+    pub encrypted_checksum_sha256: String,
+}
+
+impl fmt::Debug for ValidatedUploadContract {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ValidatedUploadContract")
+            .field("attachment_id", &self.attachment_id)
+            .field("file_object_id", &self.file_object_id)
+            .field("url", &"[REDACTED]")
+            .field("headers", &"[REDACTED]")
+            .field("expected_bytes", &self.expected_bytes)
+            .field("plaintext_bytes", &self.plaintext_bytes)
+            .field("plaintext_sha256", &self.plaintext_sha256)
+            .field("encryption", &self.encryption)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ValidatedEncryption {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ValidatedEncryption")
+            .field("key", &"[REDACTED]")
+            .field("file_object_id", &self.file_object_id)
+            .field("plaintext_byte_size", &self.plaintext_byte_size)
+            .field("plaintext_sha256", &self.plaintext_sha256)
+            .field("encrypted_byte_size", &self.encrypted_byte_size)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ValidatedDownloadContract {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ValidatedDownloadContract")
+            .field("attachment_id", &self.attachment_id)
+            .field("filename", &self.filename)
+            .field("content_type", &self.content_type)
+            .field("url", &"[REDACTED]")
+            .field("headers", &"[REDACTED]")
+            .field("expected_bytes", &self.expected_bytes)
+            .field("checksum_sha256", &self.checksum_sha256)
+            .field("encryption", &self.encryption)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ValidatedDownloadEncryption {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ValidatedDownloadEncryption")
+            .field("key", &"[REDACTED]")
+            .field("file_object_id", &self.file_object_id)
+            .field("plaintext_byte_size", &self.plaintext_byte_size)
+            .field("plaintext_sha256", &self.plaintext_sha256)
+            .field("encrypted_byte_size", &self.encrypted_byte_size)
+            .field("encrypted_checksum_sha256", &self.encrypted_checksum_sha256)
+            .finish()
+    }
 }
 
 impl ValidatedUploadContract {
@@ -116,6 +198,98 @@ impl ValidatedUploadContract {
     }
 }
 
+impl ValidatedDownloadContract {
+    pub fn parse(
+        payload: AttachmentSignedUrlPayload,
+        api_origin: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Self, AgentError> {
+        let attachment = payload.attachment;
+        if attachment.id < 1 || attachment.file_object_id < 1 || attachment.status != "uploaded" {
+            return Err(download_contract_error("附件状态或标识无效"));
+        }
+        if attachment.filename.trim().is_empty()
+            || attachment.content_type.trim().is_empty()
+            || !(0..=MAX_TRANSFER_BYTES).contains(&attachment.byte_size)
+        {
+            return Err(download_contract_error("附件元数据无效或超出大小限制"));
+        }
+        let origin = parse_api_origin(api_origin).map_err(as_download_contract_error)?;
+        let url =
+            parse_request_url(&payload.request.url, &origin).map_err(as_download_contract_error)?;
+        if payload.request.method != "GET" {
+            return Err(download_contract_error("签名请求方法必须是 GET"));
+        }
+        let headers =
+            validate_headers(payload.request.headers).map_err(as_download_contract_error)?;
+        let expires_at = DateTime::parse_from_rfc3339(&payload.expires_at)
+            .map_err(|_| download_contract_error("签名有效期格式无效"))?
+            .with_timezone(&Utc);
+        if !(1..=MAX_DOWNLOAD_TTL_SECONDS).contains(&payload.expires_in_seconds)
+            || expires_at <= now
+            || expires_at
+                > now
+                    + chrono::Duration::seconds(payload.expires_in_seconds as i64 + MAX_CLOCK_SKEW)
+        {
+            return Err(download_contract_error("签名有效期无效或已过期"));
+        }
+
+        let checksum_sha256 = if payload.checksum_sha256.is_empty() {
+            None
+        } else {
+            Some(validate_sha256(&payload.checksum_sha256).map_err(as_download_contract_error)?)
+        };
+        let encryption = payload
+            .encryption
+            .map(|value| {
+                validate_download_encryption(
+                    value,
+                    &attachment,
+                    checksum_sha256.as_deref().unwrap_or_default(),
+                )
+            })
+            .transpose()?;
+        let expected_bytes = encryption
+            .as_ref()
+            .map(|value| value.encrypted_byte_size)
+            .unwrap_or(attachment.byte_size);
+        let max_encrypted_bytes = encrypted_total_size(MAX_TRANSFER_BYTES as u64);
+        if expected_bytes < 0 || expected_bytes as u64 > max_encrypted_bytes {
+            return Err(download_contract_error("附件下载大小超出安全限制"));
+        }
+        if let Some(value) = headers.get("content-length")
+            && value != &expected_bytes.to_string()
+        {
+            return Err(download_contract_error(
+                "签名请求 Content-Length 与附件大小不匹配",
+            ));
+        }
+        let expected_content_type = if encryption.is_some() {
+            "application/octet-stream"
+        } else {
+            attachment.content_type.as_str()
+        };
+        if let Some(value) = headers.get("content-type")
+            && !value.eq_ignore_ascii_case(expected_content_type)
+        {
+            return Err(download_contract_error(
+                "签名请求 Content-Type 与附件不匹配",
+            ));
+        }
+
+        Ok(Self {
+            attachment_id: attachment.id,
+            filename: attachment.filename,
+            content_type: expected_content_type.to_string(),
+            url,
+            headers,
+            expected_bytes,
+            checksum_sha256,
+            encryption,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SignedObjectTransport {
     client: Client,
@@ -155,6 +329,127 @@ impl SignedObjectTransport {
         }
         Ok(status)
     }
+
+    pub async fn get(&self, contract: &ValidatedDownloadContract) -> Result<Vec<u8>, AgentError> {
+        let mut request = self.client.get(contract.url.clone());
+        for (name, value) in &contract.headers {
+            let header_name = header::HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+                download_error(
+                    "invalid_download_contract",
+                    "签名请求 header 无效",
+                    contract.attachment_id,
+                )
+            })?;
+            let header_value = header::HeaderValue::from_str(value).map_err(|_| {
+                download_error(
+                    "invalid_download_contract",
+                    "签名请求 header 无效",
+                    contract.attachment_id,
+                )
+            })?;
+            request = request.header(header_name, header_value);
+        }
+        let mut response = request.send().await.map_err(|error| {
+            download_error(
+                "download_request_failed",
+                &AgentError::from_reqwest(error).to_string(),
+                contract.attachment_id,
+            )
+        })?;
+        if response.status() != StatusCode::OK || response.url() != &contract.url {
+            return Err(download_error(
+                "download_response_invalid",
+                "对象存储返回了无效响应",
+                contract.attachment_id,
+            ));
+        }
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        if !content_type.is_some_and(|value| value.eq_ignore_ascii_case(&contract.content_type)) {
+            return Err(download_error(
+                "download_response_invalid",
+                "对象存储响应类型与附件不匹配",
+                contract.attachment_id,
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|length| length != contract.expected_bytes as u64)
+        {
+            return Err(download_error(
+                "download_size_mismatch",
+                "附件下载大小不匹配",
+                contract.attachment_id,
+            ));
+        }
+
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            download_error(
+                "download_request_failed",
+                &AgentError::from_reqwest(error).to_string(),
+                contract.attachment_id,
+            )
+        })? {
+            if bytes.len().saturating_add(chunk.len()) > contract.expected_bytes as usize {
+                return Err(download_error(
+                    "download_size_mismatch",
+                    "附件下载超过声明大小",
+                    contract.attachment_id,
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if bytes.len() as i64 != contract.expected_bytes {
+            return Err(download_error(
+                "download_size_mismatch",
+                "附件下载大小不匹配",
+                contract.attachment_id,
+            ));
+        }
+        Ok(bytes)
+    }
+}
+
+fn validate_download_encryption(
+    value: AttachmentEncryptionPayload,
+    attachment: &crate::models::AttachmentPayload,
+    checksum: &str,
+) -> Result<ValidatedDownloadEncryption, AgentError> {
+    if value.algorithm != "AES-256-GCM"
+        || value.format != "YUANCE-ENC-v1"
+        || value.chunk_size != FILE_CHUNK_SIZE
+        || value.file_object_id != attachment.file_object_id
+        || value.plaintext_byte_size != attachment.byte_size
+        || value.plaintext_sha256 != checksum
+        || !(0..=MAX_TRANSFER_BYTES).contains(&value.plaintext_byte_size)
+    {
+        return Err(download_contract_error("附件解密契约无效"));
+    }
+    let calculated_byte_size = encrypted_total_size(value.plaintext_byte_size as u64);
+    if value.encrypted_byte_size < 0
+        || u64::try_from(value.encrypted_byte_size).ok() != Some(calculated_byte_size)
+    {
+        return Err(download_contract_error("附件密文大小无效"));
+    }
+    let encrypted_checksum_sha256 =
+        validate_sha256(&value.encrypted_checksum_sha256).map_err(as_download_contract_error)?;
+    let key = BASE64
+        .decode(value.key)
+        .map_err(|_| download_contract_error("附件解密密钥格式无效"))?;
+    let key: [u8; 32] = key
+        .try_into()
+        .map_err(|_| download_contract_error("附件解密密钥长度无效"))?;
+    Ok(ValidatedDownloadEncryption {
+        key,
+        file_object_id: value.file_object_id,
+        plaintext_byte_size: value.plaintext_byte_size,
+        plaintext_sha256: value.plaintext_sha256,
+        encrypted_byte_size: value.encrypted_byte_size,
+        encrypted_checksum_sha256,
+    })
 }
 
 fn validate_encryption(
@@ -279,5 +574,22 @@ fn contract_error(message: &str) -> AgentError {
         message: message.to_string(),
         attachment_id: None,
         encrypted_sha256: None,
+    }
+}
+
+fn as_download_contract_error(error: AgentError) -> AgentError {
+    download_contract_error(&error.to_string())
+}
+
+fn download_contract_error(message: &str) -> AgentError {
+    download_error("invalid_download_contract", message, 0)
+}
+
+fn download_error(code: &'static str, message: &str, attachment_id: i64) -> AgentError {
+    AgentError::Download {
+        stage: "downloading",
+        code,
+        message: message.to_string(),
+        attachment_id: (attachment_id > 0).then_some(attachment_id),
     }
 }

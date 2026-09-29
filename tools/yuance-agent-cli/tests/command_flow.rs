@@ -3,7 +3,10 @@ use std::{
     fs,
     io::Write,
     process::{Command, Output, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use axum::{
@@ -14,7 +17,11 @@ use axum::{
     response::IntoResponse,
     routing::{any, get, post, put},
 };
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use futures_util::StreamExt;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use yuance_agent::file_crypto::{EncryptedFileStream, hash_file};
 
 #[derive(Clone, Debug)]
 struct CapturedRequest {
@@ -90,6 +97,731 @@ async fn resource_attachment_upload_runs_the_complete_plain_file_flow() {
     );
     let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(payload["data"]["status"], "uploaded");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resource_attachment_download_decrypts_and_keeps_secrets_inside_the_cli() {
+    let plaintext = [vec![b'a'; 1024 * 1024], b"attachment".to_vec()].concat();
+    let key = [19_u8; 32];
+    let ciphertext = encrypt_fixture(&plaintext, key, 9).await;
+    let empty_ciphertext = encrypt_fixture(&[], key, 15).await;
+    let encrypted_without_plaintext_checksum =
+        b"encrypted attachment without registered plaintext digest";
+    let encrypted_without_plaintext_checksum_ciphertext =
+        encrypt_fixture(encrypted_without_plaintext_checksum, key, 17).await;
+    let mut invalid_header_ciphertext = encrypted_without_plaintext_checksum_ciphertext.clone();
+    invalid_header_ciphertext[29] ^= 1;
+    let plain_sha256 = hex::encode(Sha256::digest(&plaintext));
+    let empty_sha256 = hex::encode(Sha256::digest([]));
+    let encrypted_sha256 = hex::encode(Sha256::digest(&ciphertext));
+    let empty_encrypted_sha256 = hex::encode(Sha256::digest(&empty_ciphertext));
+    let encrypted_without_plaintext_checksum_sha256 = hex::encode(Sha256::digest(
+        &encrypted_without_plaintext_checksum_ciphertext,
+    ));
+    let invalid_header_encrypted_sha256 = hex::encode(Sha256::digest(&invalid_header_ciphertext));
+    let mut encrypted_response = signed_download_response(DownloadResponse {
+        attachment_id: 8,
+        file_object_id: 9,
+        filename: "guide.pdf",
+        content_type: "application/pdf",
+        byte_size: plaintext.len() as i64,
+        checksum_sha256: &plain_sha256,
+        encryption: json!({
+            "algorithm": "AES-256-GCM",
+            "format": "YUANCE-ENC-v1",
+            "chunk_size": 1048576,
+            "key": BASE64.encode(key),
+            "file_object_id": 9,
+            "plaintext_byte_size": plaintext.len(),
+            "plaintext_sha256": plain_sha256,
+            "encrypted_byte_size": ciphertext.len(),
+            "encrypted_checksum_sha256": encrypted_sha256
+        }),
+        url: "/signed-encrypted?sig=download-secret",
+    });
+    encrypted_response["data"]["unrecognized_secret"] = json!("future-secret");
+    encrypted_response["data"]["request"]["future_header"] = json!("future-header-secret");
+    let typed_response =
+        serde_json::from_value::<yuance_agent::models::AttachmentSignedUrlEnvelope>(
+            encrypted_response.clone(),
+        )
+        .unwrap();
+    let debug = format!("{typed_response:?}");
+    assert!(!debug.contains(&BASE64.encode(key)));
+    assert!(!debug.contains("download-secret"));
+    let mut invalid_checksum_response = encrypted_response.clone();
+    invalid_checksum_response["data"]["encryption"]["encrypted_checksum_sha256"] =
+        json!("0".repeat(64));
+    let mut invalid_aead_ciphertext = ciphertext.clone();
+    *invalid_aead_ciphertext.last_mut().unwrap() ^= 1;
+    let invalid_aead_sha256 = hex::encode(Sha256::digest(&invalid_aead_ciphertext));
+    let mut invalid_aead_response = encrypted_response.clone();
+    invalid_aead_response["data"]["attachment"]["id"] = json!(14);
+    invalid_aead_response["data"]["request"]["url"] = json!("/signed-invalid-aead");
+    invalid_aead_response["data"]["encryption"]["encrypted_checksum_sha256"] =
+        json!(invalid_aead_sha256);
+    let empty_encrypted_response = signed_download_response(DownloadResponse {
+        attachment_id: 15,
+        file_object_id: 16,
+        filename: "empty.txt",
+        content_type: "text/plain",
+        byte_size: 0,
+        checksum_sha256: &empty_sha256,
+        encryption: json!({
+            "algorithm": "AES-256-GCM",
+            "format": "YUANCE-ENC-v1",
+            "chunk_size": 1048576,
+            "key": BASE64.encode(key),
+            "file_object_id": 16,
+            "plaintext_byte_size": 0,
+            "plaintext_sha256": empty_sha256,
+            "encrypted_byte_size": empty_ciphertext.len(),
+            "encrypted_checksum_sha256": empty_encrypted_sha256
+        }),
+        url: "/signed-empty-encrypted",
+    });
+    let encrypted_without_plaintext_checksum_response =
+        signed_download_response(DownloadResponse {
+            attachment_id: 16,
+            file_object_id: 17,
+            filename: "encrypted-without-registered-digest.txt",
+            content_type: "text/plain",
+            byte_size: encrypted_without_plaintext_checksum.len() as i64,
+            checksum_sha256: "",
+            encryption: json!({
+                "algorithm": "AES-256-GCM",
+                "format": "YUANCE-ENC-v1",
+                "chunk_size": 1048576,
+                "key": BASE64.encode(key),
+                "file_object_id": 17,
+                "plaintext_byte_size": encrypted_without_plaintext_checksum.len(),
+                "plaintext_sha256": "",
+                "encrypted_byte_size": encrypted_without_plaintext_checksum_ciphertext.len(),
+                "encrypted_checksum_sha256": encrypted_without_plaintext_checksum_sha256
+            }),
+            url: "/signed-encrypted-no-plaintext-digest",
+        });
+    let invalid_header_response = signed_download_response(DownloadResponse {
+        attachment_id: 17,
+        file_object_id: 17,
+        filename: "encrypted-with-invalid-header-digest.txt",
+        content_type: "text/plain",
+        byte_size: encrypted_without_plaintext_checksum.len() as i64,
+        checksum_sha256: "",
+        encryption: json!({
+            "algorithm": "AES-256-GCM",
+            "format": "YUANCE-ENC-v1",
+            "chunk_size": 1048576,
+            "key": BASE64.encode(key),
+            "file_object_id": 17,
+            "plaintext_byte_size": encrypted_without_plaintext_checksum.len(),
+            "plaintext_sha256": "",
+            "encrypted_byte_size": invalid_header_ciphertext.len(),
+            "encrypted_checksum_sha256": invalid_header_encrypted_sha256
+        }),
+        url: "/signed-invalid-header-digest",
+    });
+    let plain = b"historical plain attachment".to_vec();
+    let plain_sha = hex::encode(Sha256::digest(&plain));
+    let plain_response = signed_download_response(DownloadResponse {
+        attachment_id: 9,
+        file_object_id: 10,
+        filename: "legacy.txt",
+        content_type: "text/plain",
+        byte_size: plain.len() as i64,
+        checksum_sha256: &plain_sha,
+        encryption: Value::Null,
+        url: "/signed-plain?sig=plain-secret",
+    });
+    let legacy_without_checksum = signed_download_response(DownloadResponse {
+        attachment_id: 13,
+        file_object_id: 14,
+        filename: "legacy-without-checksum.txt",
+        content_type: "text/plain",
+        byte_size: plain.len() as i64,
+        checksum_sha256: "",
+        encryption: Value::Null,
+        url: "/signed-legacy-no-checksum?sig=legacy-secret",
+    });
+    let app = Router::new()
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/8/download-url",
+            get({
+                let response = encrypted_response.clone();
+                move |headers: HeaderMap| async move {
+                    assert_eq!(
+                        headers.get("authorization").unwrap(),
+                        "Bearer yuance_pat_test"
+                    );
+                    axum::Json(response)
+                }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/9/download-url",
+            get({
+                let response = plain_response.clone();
+                move |headers: HeaderMap| async move {
+                    assert_eq!(
+                        headers.get("authorization").unwrap(),
+                        "Bearer yuance_pat_test"
+                    );
+                    axum::Json(response)
+                }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/10/download-url",
+            get({
+                let response = invalid_checksum_response.clone();
+                move |headers: HeaderMap| async move {
+                    assert_eq!(
+                        headers.get("authorization").unwrap(),
+                        "Bearer yuance_pat_test"
+                    );
+                    axum::Json(response)
+                }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/11/download-url",
+            get({
+                let response = plain_response.clone();
+                move |headers: HeaderMap, OriginalUri(uri): OriginalUri| async move {
+                    assert_eq!(
+                        headers.get("authorization").unwrap(),
+                        "Bearer yuance_pat_test"
+                    );
+                    let query = reqwest::Url::parse(&format!("http://localhost{}", uri))
+                        .unwrap()
+                        .query_pairs()
+                        .find(|(name, _)| name == "access")
+                        .map(|(_, value)| value.into_owned());
+                    assert_eq!(query.as_deref(), Some("short-lived-resource-token"));
+                    axum::Json(response)
+                }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/13/download-url",
+            get({
+                let response = legacy_without_checksum.clone();
+                move || async move { axum::Json(response) }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/14/download-url",
+            get({
+                let response = invalid_aead_response.clone();
+                move || async move { axum::Json(response) }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/15/download-url",
+            get({
+                let response = empty_encrypted_response.clone();
+                move || async move { axum::Json(response) }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/16/download-url",
+            get({
+                let response = encrypted_without_plaintext_checksum_response.clone();
+                move || async move { axum::Json(response) }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/17/download-url",
+            get({
+                let response = invalid_header_response.clone();
+                move || async move { axum::Json(response) }
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/12/upload-url",
+            get(|| async {
+                axum::Json(json!({
+                    "data": {
+                        "attachment": {"id": 12, "file_object_id": 13, "filename": "new.txt", "content_type": "text/plain", "byte_size": 4, "status": "pending"},
+                        "request": {"method": "PUT", "url": "/signed-upload?sig=upload-secret", "headers": {"x-oss-signature": "upload-header-secret"}},
+                        "expires_in_seconds": 60,
+                        "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
+                        "checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "encryption": {"algorithm": "AES-256-GCM", "format": "YUANCE-ENC-v1", "chunk_size": 1048576, "key": BASE64.encode([19_u8; 32]), "file_object_id": 13, "plaintext_byte_size": 4, "plaintext_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "encrypted_byte_size": 97, "encrypted_checksum_sha256": ""}
+                    }
+                }))
+            }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/18/download-url",
+            get(|| async {
+                axum::Json(json!({
+                    "data": {
+                        "attachment": {},
+                        "request": {"method": "method-secret", "url": "/signed-secret", "headers": {}},
+                        "expires_in_seconds": 60,
+                        "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
+                        "checksum_sha256": "",
+                        "encryption": null
+                    }
+                }))
+            }),
+        )
+        .route(
+            "/signed-encrypted",
+            get({
+                let ciphertext = ciphertext.clone();
+                move |headers: HeaderMap| async move {
+                    assert!(headers.get("authorization").is_none());
+                    assert!(headers.get("cookie").is_none());
+                    (
+                        [("content-type", "application/octet-stream")],
+                        Bytes::from(ciphertext),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/signed-plain",
+            get({
+                let plain = plain.clone();
+                move |headers: HeaderMap, OriginalUri(uri): OriginalUri| async move {
+                    assert!(headers.get("authorization").is_none());
+                    assert!(headers.get("cookie").is_none());
+                    assert_eq!(
+                        reqwest::Url::parse(&format!("http://localhost{}", uri))
+                            .unwrap()
+                            .query(),
+                        Some("sig=plain-secret")
+                    );
+                    ([("content-type", "text/plain")], Bytes::from(plain))
+                }
+            }),
+        )
+        .route(
+            "/signed-legacy-no-checksum",
+            get({
+                let plain = plain.clone();
+                move || async move {
+                    ([ ("content-type", "text/plain") ], Bytes::from(plain))
+                }
+            }),
+        )
+        .route(
+            "/signed-invalid-aead",
+            get({
+                move || async move {
+                    (
+                        [("content-type", "application/octet-stream")],
+                        Bytes::from(invalid_aead_ciphertext),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/signed-empty-encrypted",
+            get({
+                let ciphertext = empty_ciphertext.clone();
+                move || async move {
+                    (
+                        [("content-type", "application/octet-stream")],
+                        Bytes::from(ciphertext),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/signed-encrypted-no-plaintext-digest",
+            get({
+                let ciphertext = encrypted_without_plaintext_checksum_ciphertext.clone();
+                move || async move {
+                    (
+                        [("content-type", "application/octet-stream")],
+                        Bytes::from(ciphertext),
+                    )
+                }
+            }),
+        )
+        .route(
+            "/signed-invalid-header-digest",
+            get({
+                let ciphertext = invalid_header_ciphertext.clone();
+                move || async move {
+                    (
+                        [("content-type", "application/octet-stream")],
+                        Bytes::from(ciphertext),
+                    )
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let base_url = format!("http://{address}");
+    let encrypted_output = download_path("encrypted");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+            "--output",
+            encrypted_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    assert_eq!(fs::read(&encrypted_output).unwrap(), plaintext);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&encrypted_output)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.contains(&BASE64.encode(key)));
+    assert!(!stdout.contains("download-secret"));
+    assert!(!stdout.contains("future-secret"));
+    assert!(!stdout.contains("future-header-secret"));
+    assert!(serde_json::from_str::<Value>(&stdout).unwrap()["data"]["status"] == "downloaded");
+    fs::remove_file(&encrypted_output).unwrap();
+
+    let plain_output = download_path("plain");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "9",
+            "--output",
+            plain_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&plain_output).unwrap(), plain);
+    fs::remove_file(&plain_output).unwrap();
+
+    let legacy_output = download_path("legacy-without-checksum");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "13",
+            "--output",
+            legacy_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let legacy_payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(legacy_payload["data"]["sha256"], plain_sha);
+    assert_eq!(fs::read(&legacy_output).unwrap(), plain);
+    fs::remove_file(&legacy_output).unwrap();
+
+    let protected_output = download_path("protected");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "11",
+            "--output",
+            protected_output.to_str().unwrap(),
+            "--access-token-stdin",
+        ],
+        Some("short-lived-resource-token"),
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.contains("short-lived-resource-token"));
+    assert_eq!(fs::read(&protected_output).unwrap(), plain);
+    fs::remove_file(&protected_output).unwrap();
+
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download-url",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "10",
+        ],
+        None,
+    );
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.contains(&BASE64.encode(key)));
+    assert!(!stdout.contains("download-secret"));
+    let diagnostic: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(diagnostic["data"]["request"]["url"], "[redacted]");
+    assert_eq!(diagnostic["data"]["encryption"]["key"], "[redacted]");
+
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download-url",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "18",
+        ],
+        None,
+    );
+    assert!(output.status.success());
+    let diagnostic: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(diagnostic["data"]["request"]["method"].is_null());
+    assert!(
+        !output
+            .stdout
+            .windows(b"method-secret".len())
+            .any(|window| window == b"method-secret")
+    );
+    assert!(diagnostic["data"]["attachment"].is_object());
+    assert!(diagnostic["data"].get("unrecognized_secret").is_none());
+    assert!(diagnostic["data"]["request"].get("future_header").is_none());
+
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "upload-url",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "12",
+        ],
+        None,
+    );
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(!stdout.contains(&BASE64.encode(key)));
+    assert!(!stdout.contains("upload-secret"));
+    assert!(!stdout.contains("upload-header-secret"));
+    let diagnostic: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(diagnostic["data"]["request"]["method"], "PUT");
+    assert_eq!(diagnostic["data"]["request"]["url"], "[redacted]");
+    assert_eq!(diagnostic["data"]["encryption"]["key"], "[redacted]");
+
+    let invalid_output = download_path("invalid");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "10",
+            "--output",
+            invalid_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(26));
+    assert_eq!(
+        json_stderr(&output)["error"]["code"],
+        "encrypted_checksum_mismatch"
+    );
+    assert!(!invalid_output.exists());
+
+    let invalid_aead_output = download_path("invalid-aead");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "14",
+            "--output",
+            invalid_aead_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(26));
+    assert_eq!(json_stderr(&output)["error"]["code"], "decryption_failed");
+    assert!(!invalid_aead_output.exists());
+
+    let empty_output = download_path("empty-encrypted");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "15",
+            "--output",
+            empty_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(fs::read(&empty_output).unwrap().is_empty());
+    fs::remove_file(empty_output).unwrap();
+
+    let legacy_encrypted_output = download_path("encrypted-without-registered-digest");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "16",
+            "--output",
+            legacy_encrypted_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        payload["data"]["sha256"],
+        hex::encode(Sha256::digest(encrypted_without_plaintext_checksum))
+    );
+    assert_eq!(
+        fs::read(&legacy_encrypted_output).unwrap(),
+        encrypted_without_plaintext_checksum
+    );
+    fs::remove_file(legacy_encrypted_output).unwrap();
+
+    let invalid_header_output = download_path("invalid-header-digest");
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "17",
+            "--output",
+            invalid_header_output.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(26));
+    assert_eq!(json_stderr(&output)["error"]["code"], "decryption_failed");
+    assert!(!invalid_header_output.exists());
+}
+
+#[tokio::test]
+async fn resource_attachment_download_refuses_to_overwrite_existing_output() {
+    let (base_url, requests) = server().await;
+    let output_path = download_path("existing");
+    fs::write(&output_path, b"keep me").unwrap();
+    let output = command_output(
+        &base_url,
+        &[
+            "resources",
+            "attachments",
+            "download",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+            "--output",
+            output_path.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(26));
+    assert_eq!(
+        json_stderr(&output)["error"]["code"],
+        "output_already_exists"
+    );
+    assert!(requests.lock().unwrap().is_empty());
+    assert_eq!(fs::read(&output_path).unwrap(), b"keep me");
+    fs::remove_file(output_path).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -341,7 +1073,7 @@ async fn resource_and_notification_commands_use_fixed_api_paths() {
             "12",
         ],
     );
-    run(
+    let upload_url_output = command_output(
         &base_url,
         &[
             "resources",
@@ -354,7 +1086,12 @@ async fn resource_and_notification_commands_use_fixed_api_paths() {
             "--attachment-id",
             "8",
         ],
+        None,
     );
+    assert!(upload_url_output.status.success());
+    let redacted: Value = serde_json::from_slice(&upload_url_output.stdout).unwrap();
+    assert_eq!(redacted["data"]["request"]["url"], "[redacted]");
+    assert_eq!(redacted["data"]["request"]["headers"], json!({}));
     run(
         &base_url,
         &[
@@ -597,6 +1334,63 @@ fn command_output(base_url: &str, args: &[&str], stdin: Option<&str>) -> Output 
             .unwrap();
     }
     child.wait_with_output().unwrap()
+}
+
+async fn encrypt_fixture(plaintext: &[u8], key: [u8; 32], file_object_id: i64) -> Vec<u8> {
+    let source = std::env::temp_dir().join(format!(
+        "yuance-agent-download-source-{}.bin",
+        std::process::id()
+    ));
+    fs::write(&source, plaintext).unwrap();
+    let digest = hash_file(&source).unwrap();
+    let mut stream =
+        EncryptedFileStream::open(source.clone(), file_object_id, key, &digest).unwrap();
+    let mut ciphertext = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        ciphertext.extend_from_slice(&chunk.unwrap());
+    }
+    fs::remove_file(source).unwrap();
+    ciphertext
+}
+
+struct DownloadResponse<'a> {
+    attachment_id: i64,
+    file_object_id: i64,
+    filename: &'a str,
+    content_type: &'a str,
+    byte_size: i64,
+    checksum_sha256: &'a str,
+    encryption: Value,
+    url: &'a str,
+}
+
+fn signed_download_response(response: DownloadResponse<'_>) -> Value {
+    json!({
+        "data": {
+            "attachment": {
+                "id": response.attachment_id,
+                "file_object_id": response.file_object_id,
+                "filename": response.filename,
+                "content_type": response.content_type,
+                "byte_size": response.byte_size,
+                "status": "uploaded"
+            },
+            "request": {"method": "GET", "url": response.url, "headers": {}},
+            "expires_in_seconds": 60,
+            "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
+            "checksum_sha256": response.checksum_sha256,
+            "encryption": response.encryption
+        }
+    })
+}
+
+fn download_path(label: &str) -> std::path::PathBuf {
+    static FIXTURE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+    let nonce = FIXTURE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "yuance-agent-download-{}-{label}-{nonce}.bin",
+        std::process::id()
+    ))
 }
 
 async fn server() -> (String, Requests) {

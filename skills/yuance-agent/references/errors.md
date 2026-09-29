@@ -18,6 +18,7 @@ CLI 成功时向 stdout 输出 JSON；失败时向 stderr 输出结构化 JSON�
 `status` 只在 HTTP 错误中出现。不要把 stderr 与 stdout 拼接后再解析。
 
 上传失败会额外返回 `stage`；只有确认阶段结果不确定时，才会返回可用于恢复的 `attachment_id` 和实际 `encrypted_sha256`。错误中不会返回签名 URL、headers 或加密密钥。
+下载失败使用 `kind: "download"` 并附 `stage`；签名不合法、密文/明文校验失败或目标路径不可用时命令失败，不把未验证数据报告为成功。签名 URL、headers、DEK 和 access token 不会进入错误 envelope。
 
 ## 分类与动作
 
@@ -34,6 +35,7 @@ CLI 成功时向 stdout 输出 JSON；失败时向 stderr 输出结构化 JSON�
 | 23 | `connect` | 无法建立连接 | 检查服务可达性 |
 | 24 | `response` | 响应非 JSON、无法解析或过大 | 停止并报告协议异常 |
 | 25 | `upload` | 本地校验、登记、签名、PUT 或完成确认失败 | 按 `stage` 处理；确认不确定时先查状态，只能用同一摘要恢复 `complete` |
+| 26 | `download` | 签名、对象存储传输、解密、摘要校验或本地写入失败 | 不打开、不分析不完整文件；若目标路径已创建，改用新路径并以原附件 ID 重试读操作 |
 | 1 | `internal` | 未分类内部错误 | 保留错误 envelope，停止自动写入 |
 
 ## 重试规则

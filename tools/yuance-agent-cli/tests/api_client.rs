@@ -22,7 +22,7 @@ use yuance_agent::{
     client::{ApiClient, ClientConfig},
     error::AgentError,
     models::AttachmentSignedUrlEnvelope,
-    transfer::{SignedObjectTransport, ValidatedUploadContract},
+    transfer::{SignedObjectTransport, ValidatedDownloadContract, ValidatedUploadContract},
 };
 
 #[test]
@@ -347,6 +347,45 @@ fn signed_attachment_contract_rejects_external_http_and_unsafe_headers() {
             }
         ));
     }
+}
+
+#[test]
+fn download_contract_allows_missing_plaintext_checksums_for_plain_and_encrypted_files() {
+    let now = Utc::now();
+    let expires_at = (now + ChronoDuration::seconds(60)).to_rfc3339();
+    let plain = serde_json::from_value::<AttachmentSignedUrlEnvelope>(json!({
+        "data": {
+            "attachment": {"id": 8, "file_object_id": 9, "filename": "legacy.txt", "content_type": "text/plain", "byte_size": 3, "status": "uploaded"},
+            "request": {"method": "GET", "url": "https://storage.example.test/object", "headers": {}},
+            "expires_in_seconds": 60,
+            "expires_at": expires_at,
+            "checksum_sha256": "",
+            "encryption": null
+        }
+    }))
+    .unwrap()
+    .data;
+    let contract = ValidatedDownloadContract::parse(plain, "https://yuance.example.test/", now)
+        .expect("checksumless historical plaintext should remain downloadable");
+    assert_eq!(contract.checksum_sha256, None);
+
+    let encrypted = serde_json::from_value::<AttachmentSignedUrlEnvelope>(json!({
+        "data": {
+            "attachment": {"id": 8, "file_object_id": 9, "filename": "new.bin", "content_type": "application/octet-stream", "byte_size": 0, "status": "uploaded"},
+            "request": {"method": "GET", "url": "https://storage.example.test/object", "headers": {}},
+            "expires_in_seconds": 60,
+            "expires_at": (Utc::now() + ChronoDuration::seconds(60)).to_rfc3339(),
+            "checksum_sha256": "",
+            "encryption": {"algorithm": "AES-256-GCM", "format": "YUANCE-ENC-v1", "chunk_size": 1048576, "key": BASE64.encode([0_u8; 32]), "file_object_id": 9, "plaintext_byte_size": 0, "plaintext_sha256": "", "encrypted_byte_size": 65, "encrypted_checksum_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        }
+    }))
+    .unwrap()
+    .data;
+    let contract =
+        ValidatedDownloadContract::parse(encrypted, "https://yuance.example.test/", Utc::now())
+            .expect("encrypted container digest can validate the plaintext header");
+    assert_eq!(contract.checksum_sha256, None);
+    assert_eq!(contract.encryption.unwrap().plaintext_sha256, "");
 }
 
 #[test]

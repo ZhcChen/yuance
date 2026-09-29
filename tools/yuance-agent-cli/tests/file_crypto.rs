@@ -12,7 +12,7 @@ use aes_gcm::{
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use yuance_agent::file_crypto::{
-    EncryptedFileStream, FILE_CHUNK_SIZE, encrypted_total_size, hash_file,
+    EncryptedFileStream, FILE_CHUNK_SIZE, decrypt_file, encrypted_total_size, hash_file,
 };
 
 #[tokio::test]
@@ -39,8 +39,33 @@ async fn encrypts_empty_single_and_multi_chunk_files_with_compatible_layout() {
             encrypted_total_size(contents.len() as u64)
         );
         assert_eq!(decrypt_fixture(&encrypted, key, 42), contents);
+        assert_eq!(
+            decrypt_file(&encrypted, 42, key, contents.len() as u64, &digest.sha256,).unwrap(),
+            contents
+        );
+        assert_eq!(
+            decrypt_file(&encrypted, 42, key, contents.len() as u64, "").unwrap(),
+            contents
+        );
         fs::remove_file(path).unwrap();
     }
+}
+
+#[test]
+fn decrypts_early_web_aad_and_rejects_tampered_ciphertext() {
+    let contents = [vec![b'a'; FILE_CHUNK_SIZE], vec![b'b'; 19]].concat();
+    let key = [11_u8; 32];
+    let encrypted = encrypt_legacy_fixture(&contents, key, 17);
+    let digest = hex::encode(Sha256::digest(&contents));
+
+    assert_eq!(
+        decrypt_file(&encrypted, 17, key, contents.len() as u64, &digest).unwrap(),
+        contents
+    );
+
+    let mut tampered = encrypted;
+    *tampered.last_mut().unwrap() ^= 1;
+    assert!(decrypt_file(&tampered, 17, key, contents.len() as u64, &digest).is_err());
 }
 
 #[tokio::test]
@@ -138,6 +163,44 @@ fn decrypt_fixture(ciphertext: &[u8], key: [u8; 32], file_object_id: i64) -> Vec
     let actual_sha = Sha256::digest(&plaintext);
     assert_eq!(&actual_sha[..], expected_sha.as_slice());
     plaintext
+}
+
+fn encrypt_legacy_fixture(plaintext: &[u8], key: [u8; 32], file_object_id: i64) -> Vec<u8> {
+    let chunk_count = plaintext.len().div_ceil(FILE_CHUNK_SIZE);
+    let plaintext_sha = Sha256::digest(plaintext);
+    let mut encrypted = Vec::new();
+    encrypted.extend_from_slice(b"YUANCE-ENC-v1");
+    encrypted.extend_from_slice(&1_u32.to_be_bytes());
+    encrypted.extend_from_slice(&(FILE_CHUNK_SIZE as u32).to_be_bytes());
+    encrypted.extend_from_slice(&(plaintext.len() as u64).to_be_bytes());
+    encrypted.extend_from_slice(&plaintext_sha);
+    encrypted.extend_from_slice(&(chunk_count as u32).to_be_bytes());
+
+    let nonces = (0..chunk_count)
+        .map(|index| [index as u8 + 1; 12])
+        .collect::<Vec<_>>();
+    for nonce in &nonces {
+        encrypted.extend_from_slice(nonce);
+    }
+    let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+    for (index, chunk) in plaintext.chunks(FILE_CHUNK_SIZE).enumerate() {
+        let mut aad = b"yuance-file-enc:v1:".to_vec();
+        aad.extend_from_slice(&(file_object_id as u64).to_be_bytes());
+        aad.push(0);
+        aad.extend_from_slice(&(index as u32).to_be_bytes());
+        encrypted.extend_from_slice(
+            &cipher
+                .encrypt(
+                    &Nonce::from(nonces[index]),
+                    Payload {
+                        msg: chunk,
+                        aad: &aad,
+                    },
+                )
+                .unwrap(),
+        );
+    }
+    encrypted
 }
 
 fn fixture_path(size: usize) -> PathBuf {

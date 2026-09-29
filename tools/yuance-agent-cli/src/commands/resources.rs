@@ -1,14 +1,20 @@
-use std::{path::Path, time::Duration};
+use std::{
+    fs::{self, OpenOptions},
+    io::Write,
+    path::Path,
+    time::Duration,
+};
 
 use chrono::Utc;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::{
     cli::{
         ResourceAttachmentAccessArgs, ResourceAttachmentCompleteArgs, ResourceAttachmentCreateArgs,
-        ResourceAttachmentDeleteArgs, ResourceAttachmentUploadArgs, ResourceAttachmentsCommand,
-        ResourcesCommand, ResourcesCreateArgs, ResourcesListArgs, ResourcesUnlockArgs,
-        ResourcesUpdateArgs,
+        ResourceAttachmentDeleteArgs, ResourceAttachmentDownloadArgs, ResourceAttachmentUploadArgs,
+        ResourceAttachmentsCommand, ResourcesCommand, ResourcesCreateArgs, ResourcesListArgs,
+        ResourcesUnlockArgs, ResourcesUpdateArgs,
     },
     client::ApiClient,
     error::AgentError,
@@ -49,6 +55,222 @@ pub async fn run(client: &ApiClient, command: ResourcesCommand) -> Result<Value,
         ResourcesCommand::Unlock(args) => unlock(client, args).await,
         ResourcesCommand::Update(args) => update(client, args).await,
         ResourcesCommand::Attachments { command } => attachments(client, command).await,
+    }
+}
+
+async fn download_attachment(
+    client: &ApiClient,
+    args: ResourceAttachmentDownloadArgs,
+) -> Result<Value, AgentError> {
+    validate_download_output_path(&args.output)?;
+    let signed = signed_url(
+        client,
+        ResourceAttachmentAccessArgs {
+            project_key: args.project_key,
+            resource_id: args.resource_id,
+            attachment_id: Some(args.attachment_id),
+            access_token_stdin: args.access_token_stdin,
+            expires_in_seconds: Some(60),
+        },
+        "download-url",
+    )
+    .await?;
+    let signed = serde_json::from_value::<crate::models::AttachmentSignedUrlEnvelope>(signed)
+        .map_err(|_| download_error("invalid_download_contract", "下载签名响应格式无效"))?
+        .data;
+    let contract = crate::transfer::ValidatedDownloadContract::parse(
+        signed,
+        &format!("{}/", client.api_origin()),
+        Utc::now(),
+    )?;
+    let transport = crate::transfer::SignedObjectTransport::new(Duration::from_secs(60))
+        .map_err(|_| download_error("download_transport_unavailable", "无法初始化附件下载"))?;
+    let ciphertext = transport.get(&contract).await?;
+    let plaintext = if let Some(encryption) = &contract.encryption {
+        let encrypted_sha256 = hex::encode(Sha256::digest(&ciphertext));
+        if encrypted_sha256 != encryption.encrypted_checksum_sha256 {
+            return Err(download_error(
+                "encrypted_checksum_mismatch",
+                "附件密文校验失败",
+            ));
+        }
+        crate::file_crypto::decrypt_file(
+            &ciphertext,
+            encryption.file_object_id,
+            encryption.key,
+            encryption.plaintext_byte_size as u64,
+            &encryption.plaintext_sha256,
+        )
+        .map_err(|_| download_error("decryption_failed", "附件解密或完整性校验失败"))?
+    } else {
+        ciphertext
+    };
+    let plaintext_sha256 = hex::encode(Sha256::digest(&plaintext));
+    let expected_plaintext_bytes = contract
+        .encryption
+        .as_ref()
+        .map_or(contract.expected_bytes, |value| value.plaintext_byte_size);
+    if i64::try_from(plaintext.len()).ok() != Some(expected_plaintext_bytes)
+        || contract
+            .checksum_sha256
+            .as_ref()
+            .is_some_and(|expected| plaintext_sha256 != *expected)
+    {
+        return Err(download_error(
+            "plaintext_checksum_mismatch",
+            "附件明文校验失败",
+        ));
+    }
+    write_download_output(&args.output, &plaintext)?;
+
+    Ok(serde_json::json!({
+        "data": {
+            "status": "downloaded",
+            "attachment_id": contract.attachment_id,
+            "filename": contract.filename,
+            "content_type": contract.content_type,
+            "byte_size": plaintext.len(),
+            "sha256": plaintext_sha256,
+            "path": args.output.display().to_string()
+        }
+    }))
+}
+
+fn validate_download_output_path(path: &Path) -> Result<(), AgentError> {
+    if path.as_os_str().is_empty() || path == Path::new("-") || path.file_name().is_none() {
+        return Err(download_error(
+            "invalid_output_path",
+            "必须提供有效的本地输出路径，不能写入 stdout",
+        ));
+    }
+    let parent = path
+        .parent()
+        .filter(|value| !value.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if !fs::metadata(parent).is_ok_and(|metadata| metadata.is_dir()) {
+        return Err(download_error(
+            "invalid_output_path",
+            "输出目录不存在或不是目录",
+        ));
+    }
+    match fs::symlink_metadata(path) {
+        Ok(_) => Err(download_error(
+            "output_already_exists",
+            "输出文件已存在；请选择新的路径",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(download_error(
+            "output_path_unavailable",
+            "无法检查输出路径",
+        )),
+    }
+}
+
+fn write_download_output(path: &Path, bytes: &[u8]) -> Result<(), AgentError> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            download_error("output_already_exists", "输出文件已存在；请选择新的路径")
+        } else {
+            download_error("output_write_failed", "无法创建附件输出文件")
+        }
+    })?;
+    if file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .is_err()
+    {
+        return Err(if file.set_len(0).and_then(|()| file.sync_all()).is_ok() {
+            download_error("output_write_failed", "写入附件失败，已清空不完整文件")
+        } else {
+            download_error(
+                "output_cleanup_failed",
+                "写入附件失败，且无法清空不完整文件",
+            )
+        });
+    }
+    Ok(())
+}
+
+fn redact_signed_contract(payload: Value) -> Value {
+    let Some(data) = payload.get("data").and_then(Value::as_object) else {
+        return serde_json::json!({"data": {}});
+    };
+    let attachment = selected_fields(
+        data.get("attachment"),
+        &[
+            "id",
+            "file_object_id",
+            "filename",
+            "content_type",
+            "byte_size",
+            "status",
+        ],
+    );
+    let request_method = data
+        .get("request")
+        .and_then(|request| request.get("method"))
+        .and_then(Value::as_str)
+        .filter(|value| matches!(*value, "GET" | "PUT"))
+        .map(|value| Value::String(value.to_string()))
+        .unwrap_or(Value::Null);
+    let encryption = match data.get("encryption") {
+        Some(Value::Null) => Value::Null,
+        Some(value) if value.is_object() => {
+            let mut safe = selected_fields(
+                Some(value),
+                &[
+                    "algorithm",
+                    "format",
+                    "chunk_size",
+                    "file_object_id",
+                    "plaintext_byte_size",
+                    "plaintext_sha256",
+                    "encrypted_byte_size",
+                    "encrypted_checksum_sha256",
+                ],
+            );
+            safe["key"] = Value::String("[redacted]".to_string());
+            safe
+        }
+        _ => Value::Null,
+    };
+    serde_json::json!({
+        "data": {
+            "attachment": attachment,
+            "request": {"method": request_method, "url": "[redacted]", "headers": {}},
+            "expires_in_seconds": data.get("expires_in_seconds"),
+            "expires_at": data.get("expires_at"),
+            "checksum_sha256": data.get("checksum_sha256"),
+            "encryption": encryption
+        }
+    })
+}
+
+fn selected_fields(value: Option<&Value>, fields: &[&str]) -> Value {
+    let mut selected = serde_json::Map::new();
+    if let Some(object) = value.and_then(Value::as_object) {
+        for field in fields {
+            if let Some(value) = object.get(*field) {
+                selected.insert((*field).to_string(), value.clone());
+            }
+        }
+    }
+    Value::Object(selected)
+}
+
+fn download_error(code: &'static str, message: &str) -> AgentError {
+    AgentError::Download {
+        stage: "downloading",
+        code,
+        message: message.to_string(),
+        attachment_id: None,
     }
 }
 
@@ -178,10 +400,13 @@ async fn attachments(
         ResourceAttachmentsCommand::List(args) => list_attachments(client, args).await,
         ResourceAttachmentsCommand::Create(args) => create_attachment(client, args).await,
         ResourceAttachmentsCommand::Upload(args) => upload_attachment(client, args).await,
-        ResourceAttachmentsCommand::UploadUrl(args) => signed_url(client, args, "upload-url").await,
-        ResourceAttachmentsCommand::DownloadUrl(args) => {
-            signed_url(client, args, "download-url").await
-        }
+        ResourceAttachmentsCommand::Download(args) => download_attachment(client, args).await,
+        ResourceAttachmentsCommand::UploadUrl(args) => signed_url(client, args, "upload-url")
+            .await
+            .map(redact_signed_contract),
+        ResourceAttachmentsCommand::DownloadUrl(args) => signed_url(client, args, "download-url")
+            .await
+            .map(redact_signed_contract),
         ResourceAttachmentsCommand::Complete(args) => complete_attachment(client, args).await,
         ResourceAttachmentsCommand::Delete(args) => delete_attachment(client, args).await,
     }

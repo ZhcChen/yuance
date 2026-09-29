@@ -32,6 +32,13 @@ pub enum AgentError {
         attachment_id: Option<i64>,
         encrypted_sha256: Option<String>,
     },
+    #[error("下载阶段 {stage}: {message}")]
+    Download {
+        stage: &'static str,
+        code: &'static str,
+        message: String,
+        attachment_id: Option<i64>,
+    },
     #[error("内部错误: {0}")]
     Internal(String),
 }
@@ -78,6 +85,7 @@ impl AgentError {
             Self::Connect => 23,
             Self::Response { .. } => 24,
             Self::Upload { .. } => 25,
+            Self::Download { .. } => 26,
             Self::Internal(_) => 1,
         }
     }
@@ -109,6 +117,20 @@ impl AgentError {
                 message,
                 *attachment_id,
                 encrypted_sha256.as_deref(),
+            ),
+            Self::Download {
+                stage,
+                code,
+                message,
+                attachment_id,
+            } => error_envelope_with_context(
+                "download",
+                Some(stage),
+                None,
+                code,
+                message,
+                *attachment_id,
+                None,
             ),
             Self::Internal(message) => error_envelope("internal", None, "internal", message),
         }

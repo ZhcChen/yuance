@@ -155,10 +155,25 @@ pub enum ResourceAttachmentsCommand {
     List(ResourceAttachmentAccessArgs),
     Create(ResourceAttachmentCreateArgs),
     Upload(ResourceAttachmentUploadArgs),
+    Download(ResourceAttachmentDownloadArgs),
     UploadUrl(ResourceAttachmentAccessArgs),
     Complete(ResourceAttachmentCompleteArgs),
     DownloadUrl(ResourceAttachmentAccessArgs),
     Delete(ResourceAttachmentDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentDownloadArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub attachment_id: i64,
+    #[arg(long, value_name = "PATH")]
+    pub output: PathBuf,
+    #[arg(long)]
+    pub access_token_stdin: bool,
 }
 
 #[derive(Debug, Args)]

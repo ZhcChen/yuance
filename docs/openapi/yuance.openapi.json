@@ -1460,7 +1460,7 @@
         "tags": ["resources"],
         "operationId": "getProjectResourceAttachmentDownloadUrl",
         "summary": "获取资料附件下载请求",
-        "description": "受保护资料必须提供短时 access_token。返回的对象存储请求不使用元策 Bearer Token。",
+        "description": "受保护资料必须提供短时 access_token。返回的对象存储 GET 请求不使用元策 Bearer Token。下载响应中的 checksum_sha256 是明文 SHA-256；部分历史明文附件没有登记摘要，此时字段为空字符串，客户端仍须校验 byte_size，并只能报告本地计算出的摘要，不能声称通过了服务端摘要校验。encryption 为对象时表示 OSS 返回 YUANCE-ENC-v1 密文；download-url 必须返回 encrypted_checksum_sha256，客户端先校验密文摘要，再使用短时 key 和 file_object_id 解密。plaintext_sha256 可能因创建附件时未登记明文摘要而为空；为空时客户端必须将解密结果与 YUANCE-ENC-v1 文件头中的 SHA-256 比对，并校验 plaintext_byte_size。encryption 为 null 表示历史明文对象。签名 URL、headers 和 encryption.key 都是敏感短时数据，不得写日志、stdout 或持久化。",
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
@@ -1469,7 +1469,7 @@
           {"$ref": "#/components/parameters/ExpiresInSeconds"}
         ],
         "responses": {
-          "200": {"description": "短时下载请求", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"}}}},
+          "200": {"description": "短时下载请求；encryption 为 null 时是历史明文对象，否则是需客户端解密的 YUANCE-ENC-v1 密文", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentDownloadSignedUrlEnvelope"}}}},
           "401": {"$ref": "#/components/responses/Error"},
           "403": {"$ref": "#/components/responses/Error"}
         }
@@ -3671,9 +3671,9 @@
           "key": {"type": "string", "format": "byte", "description": "短时解密材料，敏感字段，不得记录或持久化。"},
           "file_object_id": {"type": "integer", "format": "int64"},
           "plaintext_byte_size": {"type": "integer", "format": "int64", "minimum": 0},
-          "plaintext_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
+          "plaintext_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$", "description": "未登记明文摘要时 upload-url 和 download-url 阶段都可为空；下载时客户端须校验密文摘要，并将解密后的内容与 YUANCE-ENC-v1 文件头 SHA-256 比对。"},
           "encrypted_byte_size": {"type": "integer", "format": "int64", "minimum": 0},
-          "encrypted_checksum_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+          "encrypted_checksum_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$", "description": "upload-url 阶段可为空；download-url 中必须为 64 位 SHA-256。"}
         }
       },
       "AttachmentSignedUrl": {
@@ -3685,14 +3685,50 @@
           "request": {"$ref": "#/components/schemas/AttachmentSignedUrlRequest"},
           "expires_in_seconds": {"type": "integer", "minimum": 1},
           "expires_at": {"type": "string"},
-          "checksum_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"},
-          "encryption": {"oneOf": [{"$ref": "#/components/schemas/AttachmentEncryption"}, {"type": "null"}]}
+          "checksum_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$", "description": "历史明文附件或创建时未提供明文摘要的附件可能为空；加密下载时若为空，客户端须校验 YUANCE-ENC-v1 文件头 SHA-256。"},
+          "encryption": {"oneOf": [{"$ref": "#/components/schemas/AttachmentEncryption"}, {"type": "null"}], "description": "null 表示历史明文附件；对象表示 YUANCE-ENC-v1 密文，其 key 只允许在当前进程内用于解密。"}
         }
       },
       "AttachmentSignedUrlEnvelope": {
         "type": "object",
         "required": ["data"],
         "properties": {"data": {"$ref": "#/components/schemas/AttachmentSignedUrl"}}
+      },
+      "AttachmentDownloadEncryption": {
+        "allOf": [
+          {"$ref": "#/components/schemas/AttachmentEncryption"},
+          {
+            "type": "object",
+            "properties": {
+              "encrypted_checksum_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-fA-F]{64}$",
+                "description": "下载必须返回密文 SHA-256。"
+              }
+            }
+          }
+        ]
+      },
+      "AttachmentDownloadSignedUrl": {
+        "allOf": [
+          {"$ref": "#/components/schemas/AttachmentSignedUrl"},
+          {
+            "type": "object",
+            "properties": {
+              "encryption": {
+                "oneOf": [
+                  {"$ref": "#/components/schemas/AttachmentDownloadEncryption"},
+                  {"type": "null"}
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "AttachmentDownloadSignedUrlEnvelope": {
+        "type": "object",
+        "required": ["data"],
+        "properties": {"data": {"$ref": "#/components/schemas/AttachmentDownloadSignedUrl"}}
       },
       "AttachmentPreviewCapability": {
         "type": "object",

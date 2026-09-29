@@ -8,7 +8,8 @@ fn skill_has_valid_trigger_metadata_and_core_boundaries() {
     assert!(skill.contains("普通本地代码任务"));
     assert!(skill.contains("写操作前读取目标工作项"));
     assert!(skill.contains("状态变化或处理人变化只使用 `work-items handoff`"));
-    assert!(skill.contains("资料创建/查询/更新、资料附件登记与受控本地文件上传"));
+    assert!(skill.contains("资料附件受控下载与自动解密"));
+    assert!(skill.contains("attachments download --output"));
 }
 
 #[test]
@@ -58,6 +59,7 @@ fn command_reference_covers_supported_surface_and_update_boundary() {
         "resources attachments list",
         "resources attachments create",
         "resources attachments upload",
+        "resources attachments download",
         "resources attachments upload-url",
         "resources attachments complete",
         "resources attachments download-url",
@@ -90,6 +92,8 @@ fn workflows_enforce_read_before_write_and_reject_unsupported_actions() {
     assert!(workflows.contains("先读取详情与评论"));
     assert!(workflows.contains("不尝试猜测命令"));
     assert!(workflows.contains("分析资料与附件"));
+    assert!(workflows.contains("encryption: null"));
+    assert!(workflows.contains("data-yuance-attachment-id"));
     assert!(workflows.contains("分析通知"));
     assert!(workflows.contains("attachments upload --file"));
     assert!(workflows.contains("禁止覆盖重传"));
