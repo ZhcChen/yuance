@@ -1,7 +1,7 @@
 # 本地开发套件任务
 
 输入：`spec.md`、`plan.md`
-状态：验收完成，待交付
+状态：已完成，实现与验收已提交推送（`0f011ef`）
 
 ## 本机 Docker 隔离
 
@@ -19,7 +19,7 @@
 - [x] T006 验证：执行聚焦失败场景测试、shell 语法、Spec Kit 检查和 doctor；依赖 T001-T005。
 - [x] T007 验证：真实本机构建、容器 seed/health/ready/login/restart/down，验证原生 API 和 Web 代理；依赖 T006。
 - [x] T008 独立代码审查、converge、复核证据和 diff 检查；依赖 T007。
-- [ ] T009 按小闭环提交推送；不部署正式环境。
+- [x] T009 按小闭环提交推送；实现提交 `0f011ef` 已推送至 `origin/main`，未部署正式环境。
 
 ## 验收证据
 
