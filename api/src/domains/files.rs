@@ -1161,7 +1161,9 @@ pub async fn archive_resource_attachment_if_match(
 
     let _ = actor_user_id;
     let _ = actor_display_name_snapshot;
-    Ok((attachment_from_row(attachment), object_key))
+    let mut archived = attachment_from_row(attachment);
+    archived.status = "deleted".to_string();
+    Ok((archived, object_key))
 }
 
 pub async fn cleanup_pending_file_objects(

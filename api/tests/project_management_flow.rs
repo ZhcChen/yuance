@@ -4528,6 +4528,71 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
         .expect("attachment should upload");
 
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let delete_uri = format!(
+        "/api/v1/projects/YCE/resources/{}/attachments/{}",
+        resource.id, attachment.id
+    );
+    for (if_match, expected_status) in [
+        (None, StatusCode::BAD_REQUEST),
+        (Some("stale-version"), StatusCode::CONFLICT),
+    ] {
+        let mut request = Request::builder()
+            .method("DELETE")
+            .uri(&delete_uri)
+            .header(header::COOKIE, &initialized.cookie)
+            .header("x-yuance-csrf-token", CSRF_TOKEN);
+        if let Some(version) = if_match {
+            request = request.header(header::IF_MATCH, version);
+        }
+        let response = app
+            .clone()
+            .oneshot(request.body(Body::empty()).expect("request should build"))
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), expected_status);
+    }
+    sqlx::query("UPDATE project_resources SET body = ?1 WHERE id = ?2")
+        .bind(format!(
+            "<img src=\"/api/v1/projects/YCE/resources/{}/attachments/{}/preview/content\">",
+            resource.id, attachment.id
+        ))
+        .bind(resource.id)
+        .execute(&pool)
+        .await
+        .expect("reference fixture should apply");
+    let referenced_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(&delete_uri)
+                .header(header::COOKIE, &initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::IF_MATCH, &resource.updated_at)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(referenced_response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .unwrap()
+            .status,
+        "uploaded"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    sqlx::query("UPDATE project_resources SET body = '' WHERE id = ?1")
+        .bind(resource.id)
+        .execute(&pool)
+        .await
+        .expect("reference fixture should clear");
     let delete_response = app
         .oneshot(
             Request::builder()
@@ -4538,6 +4603,7 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
                 ))
                 .header(header::COOKIE, initialized.cookie)
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::IF_MATCH, &resource.updated_at)
                 .body(Body::empty())
                 .expect("request should build"),
         )
