@@ -3958,7 +3958,9 @@
             "type": "string"
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "description": "HTML 章节引用：h1-h6 使用 data-yuance-section-id，值匹配 ^yuance-section-[A-Za-z0-9_-]{1,80}$；链接使用 href=\"#相同标识\"。合法唯一标识保存后保留，缺失或重复的后续标题自动分配新标识。id/a name 不保留。更新时先回读 body，保留已有标识；删除目标后引用失效。",
+            "example": "<p><a href=\"#yuance-section-sql-310\">见 3.10</a></p><h3 data-yuance-section-id=\"yuance-section-sql-310\">3.10 SQL 对账</h3>"
           },
           "body_format": {
             "type": "string",
@@ -3995,7 +3997,8 @@
             "type": "string"
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "description": "HTML 章节标识与创建相同；改名和重排时保留 h1-h6 上原有 data-yuance-section-id。替换全文前先回读 body，新增标题使用新的唯一标识，删除标题不自动重绑旧链接。保存后 GET 核验 body 中标识与 href；不要依赖 id/a name 或标题文字自动匹配。"
           },
           "body_format": {
             "type": "string"

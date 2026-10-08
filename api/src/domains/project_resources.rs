@@ -1682,7 +1682,11 @@ async fn prepare_resource_body(
                 resource_id,
             )?;
             ensure_body_attachment_references(pool, resource_id, &raw_body).await?;
-            let body = sanitize_resource_html(&raw_body, project_key, resource_id);
+            let body = normalize_resource_sections(&sanitize_resource_html(
+                &raw_body,
+                project_key,
+                resource_id,
+            ));
             let plain_text = html_to_plain_text(&body);
             if !allow_empty && plain_text.is_empty() && !resource_html_has_media_reference(&body) {
                 return Err(AppError::BadRequest("资料正文不能为空".to_string()));
@@ -1984,6 +1988,12 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
         .add_tag_attributes("img", &["src", "alt", "title", "loading", "class"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
+        .add_tag_attributes("h1", &["data-yuance-section-id"])
+        .add_tag_attributes("h2", &["data-yuance-section-id"])
+        .add_tag_attributes("h3", &["data-yuance-section-id"])
+        .add_tag_attributes("h4", &["data-yuance-section-id"])
+        .add_tag_attributes("h5", &["data-yuance-section-id"])
+        .add_tag_attributes("h6", &["data-yuance-section-id"])
         .add_tag_attributes("span", &["style"])
         .add_url_schemes(&["data"])
         .add_generic_attributes(&[
@@ -1997,6 +2007,7 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
         .filter_style_properties(std::collections::HashSet::from(["color", "font-size"]))
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
+                (_, "data-yuance-section-id") if !valid_resource_section_id(value) => None,
                 (_, _) if value.trim_start().starts_with("data:") => {
                     if element == "img" && attribute == "src" && is_safe_inline_svg_data_url(value)
                     {
@@ -2016,6 +2027,97 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
         )
         .clean(&body)
         .to_string()
+}
+
+fn valid_resource_section_id(value: &str) -> bool {
+    value.strip_prefix("yuance-section-").is_some_and(|suffix| {
+        !suffix.is_empty()
+            && suffix.len() <= 80
+            && suffix
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    })
+}
+
+// 输入仅为 ammonia 已序列化的 HTML；XML 事件流只改标题属性，不解释原始不可信 HTML。
+fn normalize_resource_sections(body: &str) -> String {
+    use quick_xml::{Reader, Writer, events::Event};
+    let mut reader = Reader::from_str(body);
+    reader.config_mut().check_end_names = false;
+    let mut reserved = std::collections::HashSet::new();
+    let mut scan = Reader::from_str(body);
+    scan.config_mut().check_end_names = false;
+    while let Ok(event) = scan.read_event() {
+        match event {
+            Event::Eof => break,
+            Event::Start(tag)
+                if matches!(
+                    tag.name().as_ref(),
+                    b"h1" | b"h2" | b"h3" | b"h4" | b"h5" | b"h6"
+                ) =>
+            {
+                for attribute in tag.attributes().flatten() {
+                    if attribute.key.as_ref() == b"data-yuance-section-id" {
+                        if let Ok(value) = std::str::from_utf8(&attribute.value) {
+                            if valid_resource_section_id(value) {
+                                reserved.insert(value.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut writer = Writer::new(Vec::with_capacity(body.len()));
+    let mut used = std::collections::HashSet::new();
+    loop {
+        let event = match reader.read_event() {
+            Ok(Event::Eof) => break,
+            Ok(Event::Start(mut tag))
+                if matches!(
+                    tag.name().as_ref(),
+                    b"h1" | b"h2" | b"h3" | b"h4" | b"h5" | b"h6"
+                ) =>
+            {
+                let attributes = tag
+                    .attributes()
+                    .flatten()
+                    .map(|attr| (attr.key.as_ref().to_vec(), attr.value.to_vec()))
+                    .collect::<Vec<_>>();
+                let existing = attributes
+                    .iter()
+                    .find(|(key, _)| key.as_slice() == b"data-yuance-section-id")
+                    .and_then(|(_, value)| std::str::from_utf8(value).ok());
+                let id = if let Some(id) =
+                    existing.filter(|id| valid_resource_section_id(id) && !used.contains(*id))
+                {
+                    id.to_string()
+                } else {
+                    let mut id = format!("yuance-section-{}", uuid::Uuid::new_v4());
+                    while used.contains(&id) || reserved.contains(&id) {
+                        id = format!("yuance-section-{}", uuid::Uuid::new_v4());
+                    }
+                    id
+                };
+                used.insert(id.clone());
+                tag.clear_attributes();
+                for (key, value) in &attributes {
+                    if key.as_slice() != b"data-yuance-section-id" {
+                        tag.push_attribute((key.as_slice(), value.as_slice()));
+                    }
+                }
+                tag.push_attribute(("data-yuance-section-id", id.as_str()));
+                Event::Start(tag)
+            }
+            Ok(event) => event,
+            Err(_) => return body.to_string(),
+        };
+        if writer.write_event(event).is_err() {
+            return body.to_string();
+        }
+    }
+    String::from_utf8(writer.into_inner()).unwrap_or_else(|_| body.to_string())
 }
 
 fn inline_safe_svg_code_blocks(body: &str) -> String {
@@ -2067,6 +2169,58 @@ fn is_safe_inline_svg_data_url(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{resource_body_html_for_display, resource_body_references_attachment};
+
+    #[test]
+    fn resource_section_persistence_is_unique_stable_and_safe() {
+        let input = r##"<h2 id="location" onclick="alert(1)" data-yuance-section-id="yuance-section-sql-310">同名</h2><h2 data-yuance-section-id="yuance-section-sql-310">同名</h2><h6 data-yuance-section-id="invalid">末章</h6><p data-yuance-section-id="yuance-section-fake">正文<br>下一行</p><a name="sql" href="#yuance-section-sql-310">见 3.10</a><a href="javascript:alert(1)">危险</a><script>alert(1)</script>"##;
+        let saved =
+            super::normalize_resource_sections(&super::sanitize_resource_html(input, "", 0));
+        assert_eq!(saved.matches("data-yuance-section-id=").count(), 3);
+        assert_eq!(
+            saved
+                .matches("data-yuance-section-id=\"yuance-section-sql-310\"")
+                .count(),
+            1
+        );
+        assert!(saved.contains("href=\"#yuance-section-sql-310\""));
+        for unsafe_value in [
+            "onclick",
+            "id=\"location",
+            "name=",
+            "javascript:",
+            "<script",
+            "yuance-section-fake",
+            "\"invalid\"",
+        ] {
+            assert!(!saved.contains(unsafe_value), "{unsafe_value}: {saved}");
+        }
+        assert_eq!(
+            saved,
+            super::normalize_resource_sections(&super::sanitize_resource_html(&saved, "", 0))
+        );
+        assert_eq!(saved, resource_body_html_for_display(&saved, "html"));
+        let renamed = saved.replace("同名", "改名");
+        assert_eq!(
+            renamed,
+            super::normalize_resource_sections(&super::sanitize_resource_html(&renamed, "", 0))
+        );
+    }
+
+    #[test]
+    fn resource_section_legacy_display_does_not_rewrite_body_and_save_preserves_explicit_ids() {
+        let input =
+            r#"<h2>旧资料</h2><h6 data-yuance-section-id="yuance-section-legacy-1">末章</h6>"#;
+        let first = resource_body_html_for_display(input, "html");
+        assert_eq!(first, input);
+        let saved = super::normalize_resource_sections(&first);
+        assert!(saved.contains("data-yuance-section-id=\"yuance-section-legacy-1\""));
+        assert_eq!(saved.matches("data-yuance-section-id=").count(), 2);
+        assert_eq!(saved, resource_body_html_for_display(&saved, "html"));
+        assert_eq!(
+            resource_body_html_for_display("<h2>纯文本</h2>", "plain"),
+            "<p>&lt;h2&gt;纯文本&lt;/h2&gt;</p>"
+        );
+    }
 
     #[test]
     fn resource_attachment_reference_check_matches_only_same_resource_id() {

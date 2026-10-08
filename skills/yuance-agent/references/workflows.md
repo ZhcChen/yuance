@@ -57,6 +57,14 @@
 2. 正文使用 `--body-file` 传入；访问密码只通过 `--access-password-stdin` 传入，不能把密码放在命令参数、环境变量或普通文件中。
 3. 创建成功后从返回 envelope 记录服务端实际 `resource_id`、标题和状态；写入超时先用 `resources list` 或详情确认结果，不使用相同命令盲目重试。
 
+## 维护资料章节引用
+
+1. 写入前执行 `resources get`，以返回的 `body` 编辑，不用展示用的 `body_html` 替换编辑正文。
+2. HTML 标题 h1–h6 使用 `data-yuance-section-id="yuance-section-sql-310"`，正文链接使用 `<a href="#yuance-section-sql-310">见 3.10</a>`。标识须匹配 `^yuance-section-[A-Za-z0-9_-]{1,80}$`，文档内唯一；不要使用 `id` 或 `<a name>`。
+3. 通过 `resources create/update --body-file <PATH|-> --body-format html` 写入。无需新增 CLI 参数；服务端会补齐无标识标题并为重复标识的后者分配新标识，重复引用指向首个。
+4. 标题改名、重排保留原标识；复制标题分配新标识。删除标题时维护对应引用，否则阅读页显示目标不存在。全文重写必须携带应保留的标识，不能按标题重算。
+5. 保存后再次 `resources get`，确认 `body` 中目标标题的标识与 `href` 一致。历史被清洗掉的原 id/name 无法自动恢复，应明确指定新标识并同步链接。旧服务端不支持本协议时会过滤属性，回读核验失败不得宣称成功。
+
 ## 分析通知
 
 1. 只有用户明确要求通知，或明确要求根据某条通知继续处理时执行 `notifications list`。

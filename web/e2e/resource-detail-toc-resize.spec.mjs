@@ -175,3 +175,28 @@ test('project resource outline restores its width when an empty body gains conte
   await expect(separator).toHaveAttribute('aria-valuenow', '412');
   await expect(page.getByRole('navigation', { name: '正文目录' }).getByRole('link', { name: '动态加载章节' })).toBeVisible();
 });
+
+test('legacy chapter aliases migrate on edit and deleted duplicate cannot capture the old reference', async ({ page }) => {
+  await mockResourceDetailApis(page, '<p><a href="#resource-heading-1-同名">旧正文引用</a></p><h2>同名</h2><p>旧正文内容</p><h2>同名</h2>');
+  await login(page, '/web/app/projects/YCE/resources/901');
+  const content = page.locator('.resource-rich-body .yc-rich-text-content');
+  await content.getByRole('link', { name: '旧正文引用' }).click();
+  await expect(content.getByRole('link', { name: '旧正文引用' })).not.toHaveAttribute('aria-disabled', 'true');
+  await page.getByRole('button', { name: '编辑资料' }).click();
+  let dialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  const editor = dialog.getByLabel('资料正文');
+  const firstId = await editor.locator('h2').first().getAttribute('data-yuance-section-id');
+  expect(firstId).toMatch(/^yuance-section-/u);
+  await expect(editor.getByRole('link', { name: '旧正文引用' })).toHaveAttribute('href', `#${firstId}`);
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(content.getByRole('link', { name: '旧正文引用' })).toHaveAttribute('href', `#${firstId}`);
+  await page.getByRole('button', { name: '编辑资料' }).click();
+  dialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await dialog.getByLabel('资料正文').evaluate((node) => {
+    node.querySelector('h2').remove();
+    node.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+  });
+  await dialog.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(content.locator('h2')).toHaveCount(1);
+  await expect(content.getByRole('link', { name: '旧正文引用' })).toHaveAttribute('aria-disabled', 'true');
+});

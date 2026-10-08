@@ -9,9 +9,12 @@ import { createRoot } from 'react-dom/client';
 
 import { AttachmentImage } from './attachment-image.jsx';
 import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
+import { findRichTextSection, isRichTextSectionId, normalizeRichTextSections, richTextSectionFragment, scrollToRichTextSection, SECTION_ATTRIBUTE } from './rich-text-sections.js';
+export { richTextHeadingId } from './rich-text-sections.js';
 
 const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
 const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'style', 'title'];
+EDITOR_ATTRIBUTES.push(SECTION_ATTRIBUTE);
 const CONTENT_TAGS = EDITOR_TAGS;
 const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
 const RICH_TEXT_TOC_WIDTH_DEFAULT = 320;
@@ -218,6 +221,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
   const resolveRef = useRef(resolveAttachmentSource);
   const headingsRef = useRef(onHeadingsChange);
   const [headings, setHeadings] = useState(/** @type {Array<{ id: string, level: number, label: string }>} */ ([]));
+  const [sectionMessage, setSectionMessage] = useState('');
   const canResizeTableOfContents = showTableOfContents && tableOfContentsResizable;
   const contentScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: contentRef, label: '正文', refreshKey: `${html}:${format}:${showTableOfContents}:${headings.length}` });
   const tocScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: tocRef, enabled: showTableOfContents && headings.length > 0, label: '正文目录', refreshKey: headings.length });
@@ -240,12 +244,15 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     const sanitized = filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: CONTENT_TAGS, ALLOWED_ATTR: CONTENT_ATTRIBUTES }), view);
     const staging = content.ownerDocument.createElement('div');
     staging.innerHTML = sanitized;
-    const headings = [...staging.querySelectorAll('h1, h2, h3, h4, h5')].map((heading, index) => {
-      const label = heading.textContent?.trim() || `章节 ${index + 1}`;
-      const id = richTextHeadingId(label, index);
-      heading.id = id;
-      return { id, level: Number(heading.tagName.slice(1)), label };
-    });
+    const headings = normalizeRichTextSections(staging);
+    setSectionMessage('');
+    for (const link of staging.querySelectorAll('a[href^="#"]')) {
+      const id = richTextSectionFragment(link.getAttribute('href') || '');
+      if (!id || !findRichTextSection(staging, id)) {
+        link.setAttribute('aria-disabled', 'true');
+        link.setAttribute('title', '目标章节不存在或已删除');
+      }
+    }
     for (const image of staging.querySelectorAll('img[src^="data:image/svg+xml;base64,"]')) {
       image.setAttribute('tabindex', '0');
       image.setAttribute('role', 'button');
@@ -304,6 +311,12 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       }
     }
     const activate = (event) => {
+      const link = event.target instanceof view.Element ? event.target.closest('a[href^="#"]') : null;
+      if (link && content.contains(link)) {
+        event.preventDefault();
+        navigateSection(richTextSectionFragment(link.getAttribute('href') || '') || '');
+        return;
+      }
       const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
       const inlineSvg = !target && event.target instanceof view.Element
         ? event.target.closest('img[src^="data:image/svg+xml;base64,"]')
@@ -358,6 +371,8 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     content.addEventListener('click', activate);
     content.addEventListener('keydown', activateInlineSvgWithKeyboard);
     content.addEventListener('contextmenu', openFileMenu);
+    const initialSection = richTextSectionFragment(view.location.hash);
+    if (initialSection) scrollToRichTextSection(content, initialSection);
     return () => {
       active = false;
       content.removeEventListener('click', activate);
@@ -391,22 +406,19 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       if (!downloading && overlay) overlay.remove();
     }
   }, [format, html, downloadingAttachmentId]);
+  const navigateSection = (id) => {
+    const content = contentRef.current;
+    if (!content || !scrollToRichTextSection(content, id)) {
+      setSectionMessage('目标章节不存在或已删除。');
+      return;
+    }
+    setSectionMessage('');
+    const view = content.ownerDocument.defaultView;
+    if (view) view.history.replaceState(view.history.state, '', `${view.location.pathname}${view.location.search}#${encodeURIComponent(id)}`);
+  };
   const handleTableOfContentsClick = (event, id) => {
     event.preventDefault();
-    const content = contentRef.current;
-    const target = content ? [...content.querySelectorAll('h1, h2, h3, h4, h5')].find((heading) => heading.id === id) : null;
-    if (!content || !target) return;
-    const toc = event.currentTarget.closest('.yc-rich-text-toc');
-    const tocScrollTop = toc?.scrollTop || 0;
-    const tocScrollLeft = toc?.scrollLeft || 0;
-    const top = target.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop;
-    content.scrollTo({ top, behavior: 'auto' });
-    const view = content.ownerDocument.defaultView;
-    if (view) view.history.replaceState(view.history.state, '', `${view.location.pathname}${view.location.search}#${id}`);
-    if (toc) {
-      toc.scrollTop = tocScrollTop;
-      toc.scrollLeft = tocScrollLeft;
-    }
+    navigateSection(id);
   };
   const updateTableOfContentsWidth = (value, persist = false) => {
     const width = clampRichTextTableOfContentsWidth(value);
@@ -450,10 +462,10 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
   };
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <><div ref={contentRef} className="yc-rich-text-content yc-rich-text-plain yc-overlay-scroll-target">{html}</div>{contentScrollbar.scrollbar}</>;
-  if (!showTableOfContents) return <><div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</>;
+  if (!showTableOfContents) return <><div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}{sectionMessage ? <p role="status">{sectionMessage}</p> : null}</>;
   /** @type {import('react').CSSProperties & { '--resource-toc-width': string }} */
   const tableOfContentsStyle = { '--resource-toc-width': `${tableOfContentsWidth}px` };
-  return <div className={`yc-rich-text-with-toc${canResizeTableOfContents ? ' yc-rich-text-with-toc-resizable' : ''}`} style={canResizeTableOfContents ? tableOfContentsStyle : undefined}>{headings.length ? <nav ref={tocRef} className="yc-rich-text-toc yc-overlay-scroll-target" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} title={heading.label} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}{canResizeTableOfContents && headings.length ? <div className="yc-rich-text-toc-resize" role="separator" aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin={RICH_TEXT_TOC_WIDTH_MIN} aria-valuemax={RICH_TEXT_TOC_WIDTH_MAX} aria-valuenow={tableOfContentsWidth} tabIndex={0} onKeyDown={handleTableOfContentsResizeKeyDown} onPointerDown={handleTableOfContentsResizePointerDown} onPointerMove={handleTableOfContentsResizePointerMove} onPointerUp={finishTableOfContentsResize} onPointerCancel={finishTableOfContentsResize} onLostPointerCapture={finishTableOfContentsResize} /> : null}{tocScrollbar.scrollbar}<div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</div>;
+  return <><div className={`yc-rich-text-with-toc${canResizeTableOfContents ? ' yc-rich-text-with-toc-resizable' : ''}`} style={canResizeTableOfContents ? tableOfContentsStyle : undefined}>{headings.length ? <nav ref={tocRef} className="yc-rich-text-toc yc-overlay-scroll-target" aria-label="正文目录"><ol>{headings.map((heading) => <li className={`yc-rich-text-toc-level-${heading.level}`} key={heading.id}><a href={`#${heading.id}`} title={heading.label} onClick={(event) => handleTableOfContentsClick(event, heading.id)}>{heading.label}</a></li>)}</ol></nav> : null}{canResizeTableOfContents && headings.length ? <div className="yc-rich-text-toc-resize" role="separator" aria-label="调整目录宽度" aria-orientation="vertical" aria-valuemin={RICH_TEXT_TOC_WIDTH_MIN} aria-valuemax={RICH_TEXT_TOC_WIDTH_MAX} aria-valuenow={tableOfContentsWidth} tabIndex={0} onKeyDown={handleTableOfContentsResizeKeyDown} onPointerDown={handleTableOfContentsResizePointerDown} onPointerMove={handleTableOfContentsResizePointerMove} onPointerUp={finishTableOfContentsResize} onPointerCancel={finishTableOfContentsResize} onLostPointerCapture={finishTableOfContentsResize} /> : null}{tocScrollbar.scrollbar}<div ref={contentRef} className="yc-rich-text-content yc-overlay-scroll-target" />{contentScrollbar.scrollbar}</div>{sectionMessage ? <p role="status">{sectionMessage}</p> : null}</>;
 }
 
 /** @param {RichTextResolvedSource} resolved */
@@ -472,17 +484,6 @@ export function plainTextToRichHtml(value) {
     .split(/\r?\n/u)
     .map((line) => `<p>${line || '<br>'}</p>`)
     .join('');
-}
-
-/** @param {string} label @param {number} index */
-export function richTextHeadingId(label, index) {
-  const slug = label
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/gu, '')
-    .slice(0, 64);
-  return `resource-heading-${index + 1}-${slug || 'section'}`;
 }
 
 /** @param {string} value */
@@ -581,8 +582,8 @@ export const DEFER_RICH_TEXT_PASTE = 'defer';
 
 /** @typedef {{ onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, onDeferred?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteOptions */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, sectionLinks?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, sectionLinks = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionPanelRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const onPasteFileRef = useRef(onPasteFile);
@@ -608,6 +609,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', fontSize: /** @type {string | null} */ (null), color: /** @type {string | null} */ (null), align: /** @type {string | null} */ (null) });
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [sectionOptions, setSectionOptions] = useState(/** @type {Array<{ id: string, label: string }>} */ ([]));
   const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const [toolbarMenuRoot, setToolbarMenuRoot] = useState(/** @type {HTMLDivElement | null} */ (null));
   const inputScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: inputRef, label });
@@ -629,7 +631,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       return;
     }
     for (const node of pendingNodes) node.remove();
-    const sanitized = sanitizeEditorHtml(input, value);
+    const sanitized = sanitizeEditorHtml(input, value, sectionLinks);
     if (input.innerHTML !== sanitized) {
       const selection = captureEditorSelection(input);
       input.innerHTML = sanitized;
@@ -637,7 +639,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     }
     for (const node of pendingNodes) input.appendChild(node);
     if (sanitized !== value) onChange(sanitized);
-  }, [value]);
+  }, [value, sectionLinks]);
 
   useEffect(() => () => {
     for (const entry of pendingUploadsRef.current.values()) {
@@ -735,15 +737,25 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const view = input?.ownerDocument.defaultView;
     if (!view) return;
     const raw = view.prompt('输入链接地址', 'https://')?.trim() || '';
+    if (!sectionLinks && raw.startsWith('#')) return;
     if (!raw || !isSafeLink(raw, view.URL)) return;
     execute('createLink', raw);
+  }
+
+  function openSectionLinks() {
+    const input = inputRef.current;
+    if (!input) return;
+    captureToolbarRange();
+    const sections = normalizeRichTextSections(input, true);
+    publish(input);
+    setSectionOptions(sections);
   }
 
   function convertMarkdown() {
     const input = inputRef.current;
     if (!input) return;
     const markdown = input.textContent || '';
-    input.innerHTML = sanitizeEditorHtml(input, String(marked.parse(markdown, { async: false })));
+    input.innerHTML = sanitizeEditorHtml(input, String(marked.parse(markdown, { async: false })), sectionLinks);
     publish(input);
     syncFormatState();
   }
@@ -1215,6 +1227,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
         <div className="yc-rich-toolbar-group" role="group" aria-label="插入">
           <ToolbarButton label="插入链接" title="插入链接" disabled={disabled} onClick={createLink}>链接</ToolbarButton>
+          {sectionLinks ? <ToolbarButton label="插入章节链接" title="选择本文章节" disabled={disabled} onClick={openSectionLinks}>章节链接</ToolbarButton> : null}
+          {sectionOptions.length ? <select aria-label="选择目标章节" value="" onChange={(event) => { execute('createLink', `#${event.target.value}`); setSectionOptions([]); }}><option value="" disabled>选择目标章节</option>{sectionOptions.map((section, index) => <option key={section.id} value={section.id}>{index + 1}. {section.label}</option>)}</select> : null}
           <ToolbarButton label="提及成员" title="提及成员" disabled={disabled || mentionOptions.length === 0} onClick={openMentionPicker}>@</ToolbarButton>
         </div>
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
@@ -1354,9 +1368,10 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
 
   /** @param {HTMLDivElement} input */
   function publish(input) {
+    if (sectionLinks) normalizeRichTextSections(input, true);
     const clone = /** @type {HTMLDivElement} */ (input.cloneNode(true));
     clone.querySelectorAll('[data-rich-pending-upload]').forEach((node) => node.remove());
-    const sanitized = sanitizeEditorHtml(clone, clone.innerHTML);
+    const sanitized = sanitizeEditorHtml(clone, clone.innerHTML, sectionLinks);
     onChange(sanitized);
   }
 }
@@ -1902,10 +1917,12 @@ function splitTextNodeAt(node, offset) {
 
 /** @param {string} html @param {Window} view @returns {string} */
 function filterRichTextStyle(html, view) {
-  if (!html.includes('style=')) return html;
   const doc = view.document.implementation.createHTMLDocument('');
   const container = doc.createElement('div');
   container.innerHTML = html;
+  for (const element of container.querySelectorAll(`[${SECTION_ATTRIBUTE}]`)) {
+    if (!/^H[1-6]$/u.test(element.tagName) || !isRichTextSectionId(element.getAttribute(SECTION_ATTRIBUTE) || '')) element.removeAttribute(SECTION_ATTRIBUTE);
+  }
   for (const element of container.querySelectorAll('[style]')) {
     if (element.tagName.toLowerCase() !== 'span') {
       element.removeAttribute('style');
@@ -1962,19 +1979,22 @@ function normalizeRichTextAttachmentFigures(root) {
   }
 }
 
-/** @param {HTMLDivElement} input @param {string} html */
-function sanitizeEditorHtml(input, html) {
+/** @param {HTMLDivElement} input @param {string} html @param {boolean} [sectionLinks] */
+function sanitizeEditorHtml(input, html, sectionLinks = false) {
   const view = input.ownerDocument.defaultView;
   if (!view) return '';
   const doc = view.document.implementation.createHTMLDocument('');
   const container = doc.createElement('div');
   container.innerHTML = filterRichTextStyle(createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: EDITOR_TAGS, ALLOWED_ATTR: EDITOR_ATTRIBUTES }), view);
   normalizeRichTextAttachmentFigures(container);
+  if (sectionLinks) normalizeRichTextSections(container, true, view.crypto);
+  else for (const heading of container.querySelectorAll(`[${SECTION_ATTRIBUTE}]`)) heading.removeAttribute(SECTION_ATTRIBUTE);
   return container.innerHTML;
 }
 
 /** @param {string} value @param {new (value: string) => { protocol: string }} Url */
 function isSafeLink(value, Url) {
+  if (value.startsWith('#')) return isRichTextSectionId(richTextSectionFragment(value) || '');
   if (value.startsWith('/') && !value.startsWith('//')) return true;
   try { return ['http:', 'https:'].includes(new Url(value).protocol); } catch { return false; }
 }

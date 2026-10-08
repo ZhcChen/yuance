@@ -40,6 +40,7 @@ description: 通过元策 OpenAPI 分析和操作项目、需求、任务、Bug�
 - 不在本地重建状态机；允许的转换以服务端当前校验为准。
 - 回复评论前必须从评论列表确认 `parent_comment_id` 属于同一工作项。
 - 正文较长或包含 HTML 时使用 `--description-file` / `--body-file`；传 `-` 可从 stdin 读取。
+- 资料同文档章节引用使用标题专用 `data-yuance-section-id` 与对应 `href="#yuance-section-..."`；改名/重排保留标识，保存后回读核验。准确写法及删除/重复规则见 `references/workflows.md` 的“维护资料章节引用”。
 - 不重试可能重复创建、评论或流转的写操作，除非先读取并确认前一次未成功。
 - `resources unlock` 的密码只从 stdin 读取；受保护附件的 `access_token` 只从 stdin 读取并仅保留在当前进程。
 - 不把密码、PAT、`access_token`、签名 URL、签名 headers 或 `encryption.key` 放入 argv、环境变量、普通文件、日志或错误文本。
