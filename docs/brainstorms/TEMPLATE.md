@@ -1,5 +1,7 @@
 # Brainstorm 模板
 
+> 本模板仅供历史 brainstorm 记录沿用。新需求的澄清和边界进入 `specs/<feature>/spec.md`，不再按旧 CE 阶段新建 brainstorm 文档。
+
 > `TEMPLATE.md` 只作结构参考。正式 brainstorm 请在当前目录新建具体文件，例如 `YYYY-MM-DD-short-name.md`，不要直接把实际内容写进 `TEMPLATE.md`。
 
 ## 标题信息
@@ -51,4 +53,4 @@
 
 ## 下一步
 
-下一步应该做什么：进入 `docs/plans/`、继续澄清，还是暂停？
+下一步应该做什么：为历史任务续接旧 plan、转入 Spec Kit 唯一需求目录，还是暂停？

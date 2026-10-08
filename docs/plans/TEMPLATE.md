@@ -1,5 +1,7 @@
 # 计划模板
 
+> 本模板仅用于历史 plan 的续接及工作流迁移记录。新中型及以上任务使用 `specs/<feature>/plan.md`。
+
 > `TEMPLATE.md` 只作结构参考。正式计划请在当前目录新建具体文件，例如 `YYYY-MM-DD-short-name.md`，不要直接把实际内容写进 `TEMPLATE.md`。
 
 ## 标题信息

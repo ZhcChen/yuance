@@ -40,7 +40,8 @@
 | [`desktop/`](desktop/) | Electron 桌面客户端及发布工具 |
 | [`skills/yuance-agent/`](skills/yuance-agent/) | 面向 Codex 的元策协作 Skill |
 | [`tools/yuance-agent-cli/`](tools/yuance-agent-cli/) | Skill 内置的 Rust OpenAPI CLI |
-| [`docs/`](docs/) | 需求、计划、复核、运行手册与工程规范 |
+| [`specs/`](specs/) | 新需求的活动 Spec Kit 规格、计划与任务 |
+| [`docs/`](docs/) | 历史需求、复核、运行手册与工程规范 |
 | [`deploy/`](deploy/) | 正式环境部署模板 |
 
 ## 文档入口
@@ -51,6 +52,7 @@
 | 📦 | [正式环境部署](docs/runbooks/production-deployment.md) | 构建、发布、健康检查与回滚流程 |
 | 🔌 | [API v1 契约](docs/runbooks/api-v1-contract.md) | 鉴权、分页、项目上下文与接口约定 |
 | 🤖 | [Codex Skill 安装](docs/runbooks/yuance-agent-codex-installation.md) | 跨平台安装、凭证配置与升级方式 |
+| 🧭 | [Spec Kit 工作流](docs/runbooks/spec-kit-workflow.md) | 新需求规格、计划、任务、验证和旧任务续接 |
 | 🖥️ | [桌面端发布](docs/runbooks/desktop-release-publication.md) | 桌面客户端构建与发布流程 |
 | 📐 | [工程规范](docs/standards/) | Git、数据访问、UI 与运行配置约定 |
 

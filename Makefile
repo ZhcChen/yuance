@@ -1,4 +1,7 @@
-.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review crg.guard cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review crg.guard cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+
+export SPEC_KIT_FEATURE = $(FEATURE)
+export SPEC_KIT_STAGE = $(STAGE)
 
 CRG_VERSION ?= 2.3.7
 CRG := uvx --from code-review-graph==$(CRG_VERSION) code-review-graph
@@ -10,6 +13,9 @@ endef
 
 help:
 	@echo "元策开发命令"
+	@echo "  make spec-kit-init FEATURE=specs/<feature>"
+	@echo "  make spec-kit-check FEATURE=specs/<feature> STAGE=<stage>"
+	@echo "  make spec-kit-verify"
 	@echo "  make frontend-check"
 	@echo "  make web-build"
 	@echo "  make api-run"
@@ -45,6 +51,18 @@ help:
 	@echo "  make clean-node-cache"
 	@echo "  make clean"
 	@echo "  make clean-deep"
+
+spec-kit-init:
+	@test -n "$$SPEC_KIT_FEATURE" || { echo "[make] 必须设置 FEATURE=specs/<feature>"; exit 2; }
+	@node scripts/ops/spec-kit.cjs init --feature "$$SPEC_KIT_FEATURE"
+
+spec-kit-check:
+	@test -n "$$SPEC_KIT_FEATURE" || { echo "[make] 必须设置 FEATURE=specs/<feature>"; exit 2; }
+	@test -n "$$SPEC_KIT_STAGE" || { echo "[make] 必须设置 STAGE=clarify|plan|tasks|analyze|implement|converge"; exit 2; }
+	@node scripts/ops/spec-kit.cjs check --feature "$$SPEC_KIT_FEATURE" --stage "$$SPEC_KIT_STAGE"
+
+spec-kit-verify:
+	@node --test scripts/test/spec-kit.test.cjs
 
 frontend-check:
 	npm run check:frontend
