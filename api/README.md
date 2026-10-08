@@ -2,6 +2,8 @@
 
 `api` 是元策当前唯一业务模块，负责 `/web` 页面、`/api` JSON 接口、静态资源、模板、SQLite 数据访问和命令行入口。
 
+本地开发统一使用 `make dev-doctor`、`make dev-seed` 和 `make dev-api`，使用独立开发目录和 33133 端口；完整说明见 `docs/runbooks/local-development.md`。下面的裸 Cargo 命令是底层排障入口，默认配置可能使用 `api/.env` 和默认数据目录，不应与隔离开发流程混用。
+
 ## 默认端口
 
 ```text
@@ -33,19 +35,23 @@ password: Yuance@2026Dev!
 
 ## 容器镜像
 
-正式环境镜像必须在本地或 CI 构建，服务器只执行 `docker load` 和 `docker compose up`。
+本地容器开发使用本机 Docker 和原生架构镜像，不依赖远程构建主机：
 
 ```bash
-./scripts/build-api-image-amd64.sh
+make dev-docker-build
+make dev-docker-up
+make dev-docker-down
 ```
 
 默认产物：
 
 ```text
-dist/yuance-api-linux-amd64.tar
+.local/images/yuance-api-native.tar
 ```
 
 镜像运行时不需要挂载源码目录；模板、静态资源和 SQL migration 都已编译进二进制。
+
+本机 AMD64 测试构建使用 `make api-image-amd64`。正式发布的唯一规范为 `docs/runbooks/production-deployment.md`；不得以本地测试镜像替代正式发布制品。
 
 ## API 契约
 

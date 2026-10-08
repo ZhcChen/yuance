@@ -11,6 +11,8 @@ API_ORIGIN="${YUANCE_VALIDATION_API_ORIGIN:-http://127.0.0.1:33133}"
 WEB_ORIGIN="${YUANCE_VALIDATION_WEB_ORIGIN:-http://127.0.0.1:33134}"
 DESKTOP_RENDERER_ORIGIN="${YUANCE_VALIDATION_DESKTOP_RENDERER_ORIGIN:-http://127.0.0.1:33135}"
 
+node "$ROOT_DIR/scripts/ops/local-environment.cjs"
+
 fail() {
   printf '错误：%s\n' "$*" >&2
   exit 1
@@ -22,6 +24,7 @@ require_command() {
 
 prepare_state() {
   require_command openssl
+  [ ! -L "$STATE_DIR" ] && [ ! -L "$DATA_DIR" ] && [ ! -L "$RUNTIME_ENV" ] || fail "状态目录和密钥文件不得为符号链接"
   mkdir -p "$DATA_DIR" "$BACKUP_DIR"
   chmod 700 "$STATE_DIR" "$DATA_DIR" "$BACKUP_DIR"
   if [ ! -f "$RUNTIME_ENV" ]; then
@@ -39,6 +42,8 @@ load_runtime() {
   # shellcheck disable=SC1090
   source "$RUNTIME_ENV"
   export YUANCE_SESSION_SECRET YUANCE_SECURITY_MASTER_KEY
+  # 明确覆盖父进程/api/.env；由该数据目录自动生成并持久化独立文件密钥。
+  export YUANCE_FILE_MASTER_KEY=""
   export YUANCE_ENV=development
   export YUANCE_HTTP_ADDR="${API_ORIGIN#http://}"
   export YUANCE_DATABASE_URL="sqlite://$DATABASE_PATH"
@@ -47,9 +52,10 @@ load_runtime() {
 }
 
 assert_api_stopped() {
+  require_command lsof
   local port="${API_ORIGIN##*:}"
   if lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | grep -q .; then
-    fail "本地验收 API 仍在监听 $API_ORIGIN，请先停止后再导入数据库"
+    fail "本地 API 仍在监听 $API_ORIGIN，请先停止该服务再修改数据库"
   fi
 }
 
@@ -92,6 +98,16 @@ run_api() {
   exec cargo run -p yuance-api -- serve
 }
 
+seed_database() {
+  load_runtime
+  require_command lsof
+  assert_api_stopped
+  cd "$ROOT_DIR"
+  cargo run -p yuance-api -- migrate up
+  cargo run -p yuance-api -- seed core
+  cargo run -p yuance-api -- seed local-admin
+}
+
 run_web() {
   prepare_state
   cd "$ROOT_DIR"
@@ -110,7 +126,7 @@ run_desktop() {
 show_status() {
   prepare_state
   printf '状态目录：%s\n' "$STATE_DIR"
-  printf '数据库：%s (%s)\n' "$DATABASE_PATH" "$([ -f "$DATABASE_PATH" ] && printf '已就绪' || printf '未导入')"
+  printf '数据库：%s (%s)\n' "$DATABASE_PATH" "$([ -f "$DATABASE_PATH" ] && printf '已就绪' || printf '未初始化')"
   printf 'API：%s\n' "$API_ORIGIN"
   printf 'Web：%s/web\n' "$WEB_ORIGIN"
   printf 'Desktop renderer：%s\n' "$DESKTOP_RENDERER_ORIGIN"
@@ -133,6 +149,9 @@ case "${1:-}" in
   api)
     run_api
     ;;
+  seed)
+    seed_database
+    ;;
   web)
     run_web
     ;;
@@ -143,7 +162,7 @@ case "${1:-}" in
     show_status
     ;;
   *)
-    printf '用法：%s {prepare|import-db <sqlite快照>|api|web|desktop|status}\n' "$0" >&2
+    printf '用法：%s {prepare|import-db <sqlite快照>|seed|api|web|desktop|status}\n' "$0" >&2
     exit 2
     ;;
 esac

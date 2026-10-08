@@ -1,8 +1,19 @@
 #!/usr/bin/env sh
 set -eu
 
-IMAGE="${YUANCE_API_IMAGE:-yuance-api:latest}"
-OUTPUT="${YUANCE_API_IMAGE_TAR:-dist/yuance-api-linux-amd64.tar}"
+if [ "${YUANCE_LOCAL_DOCKER:-1}" = "1" ]; then
+  ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+  cd "$ROOT_DIR"
+  docker() { node "$ROOT_DIR/scripts/ops/local-docker.cjs" "$@"; }
+  DEFAULT_IMAGE="yuance-api:local-amd64"
+  DEFAULT_OUTPUT=".local/images/yuance-api-linux-amd64.tar"
+else
+  DEFAULT_IMAGE="yuance-api:latest"
+  DEFAULT_OUTPUT="dist/yuance-api-linux-amd64.tar"
+fi
+
+IMAGE="${YUANCE_API_IMAGE:-$DEFAULT_IMAGE}"
+OUTPUT="${YUANCE_API_IMAGE_TAR:-$DEFAULT_OUTPUT}"
 PLATFORM="${YUANCE_API_PLATFORM:-linux/amd64}"
 RELEASE_VERSION="${YUANCE_RELEASE_VERSION:-$(date +%Y%m%d%H%M%S)}"
 

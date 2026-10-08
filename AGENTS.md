@@ -51,6 +51,8 @@
 - 长期操作规则更新到 `docs/standards/` 或 `docs/runbooks/`，不依赖某个工作流 Skill 的隐式行为。
 
 ## 工具使用
+
+- 本地开发唯一入口见 `docs/runbooks/local-development.md`，使用 `make dev-*`。本地 Docker 构建、容器验收和缓存查询必须经过 `scripts/ops/local-docker.cjs`，仅接受本机 Unix socket context 和对应单节点 docker driver builder；不得连接远程引擎或更改全局 context/builder。正式部署独立遵循 production Runbook。
 - 涉及第三方库、框架、SDK 或 API 的当前官方用法时，优先使用 Context7。
 - 排查浏览器端页面、样式、控制台或网络问题时，优先使用 `chrome-devtools`。
 

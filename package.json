@@ -1,7 +1,27 @@
 {
   "name": "yuance",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
+    "dev:doctor": "node scripts/ops/local-dev.cjs doctor",
+    "dev:setup": "node scripts/ops/local-dev.cjs setup",
+    "dev:prepare": "node scripts/ops/local-dev.cjs prepare",
+    "dev:seed": "node scripts/ops/local-dev.cjs seed",
+    "dev:api": "node scripts/ops/local-dev.cjs api",
+    "dev:web": "node scripts/ops/local-dev.cjs web",
+    "dev:desktop": "node scripts/ops/local-dev.cjs desktop",
+    "dev:status": "node scripts/ops/local-dev.cjs status",
+    "dev:check": "node scripts/ops/local-dev.cjs check",
+    "dev:verify": "node --test scripts/test/local-development.test.cjs",
+    "dev:docker:doctor": "node scripts/ops/local-dev.cjs docker-doctor",
+    "dev:docker:build": "node scripts/ops/local-dev.cjs docker-build",
+    "dev:docker:up": "node scripts/ops/local-dev.cjs docker-up",
+    "dev:docker:down": "node scripts/ops/local-dev.cjs docker-down",
+    "dev:docker:logs": "node scripts/ops/local-dev.cjs docker-logs",
+    "dev:docker:status": "node scripts/ops/local-dev.cjs docker-status",
+    "dev:docker:smoke": "node scripts/ops/local-dev.cjs docker-smoke",
     "check:frontend": "npm --prefix web run check && npm --prefix frontend run check && npm --prefix desktop run check:renderer",
     "validation:prepare": "./scripts/local-validation.sh prepare",
     "validation:api": "./scripts/local-validation.sh api",

@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 
 const root = process.cwd();
 const image = process.env.YUANCE_MEASURE_IMAGE || 'yuance-api:optimization-measure';
@@ -41,7 +42,9 @@ const buildArgs = [
 if (process.env.YUANCE_MEASURE_NO_CACHE === '1') buildArgs.push('--no-cache');
 
 buildArgs.push('.');
-const apiImage = run('docker', buildArgs);
+const apiImage = frontend.passed
+  ? run(process.execPath, [fileURLToPath(new URL('./ops/local-docker.cjs', import.meta.url)), ...buildArgs])
+  : { passed: false, seconds: 0 };
 
 console.log(
   JSON.stringify({
@@ -52,3 +55,5 @@ console.log(
     pipeline_seconds: Number((frontend.seconds + apiImage.seconds).toFixed(3)),
   }),
 );
+
+process.exitCode = frontend.passed && apiImage.passed ? 0 : 1;

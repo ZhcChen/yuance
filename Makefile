@@ -3,12 +3,21 @@
 export SPEC_KIT_FEATURE = $(FEATURE)
 export SPEC_KIT_STAGE = $(STAGE)
 
+DEV_COMMANDS := help doctor setup prepare seed api web desktop status check docker-doctor docker-build docker-up docker-down docker-logs docker-status docker-smoke
+DEV_TARGETS := $(addprefix dev-,$(DEV_COMMANDS))
+.PHONY: $(DEV_TARGETS) dev-verify
+
 define require_cmd
 command -v $(1) >/dev/null 2>&1 || { echo "[make] 缺少命令: $(1)"; exit 1; }
 endef
 
 help:
 	@echo "元策开发命令"
+	@echo "  make dev-help（本地开发与本机 Docker 的统一入口）"
+	@echo "  make dev-doctor / dev-setup / dev-seed"
+	@echo "  make dev-api / dev-web / dev-desktop"
+	@echo "  make dev-docker-doctor / dev-docker-build / dev-docker-up / dev-docker-down"
+	@echo "  make dev-verify"
 	@echo "  make spec-kit-init FEATURE=specs/<feature>"
 	@echo "  make spec-kit-check FEATURE=specs/<feature> STAGE=<stage>"
 	@echo "  make spec-kit-verify"
@@ -55,6 +64,12 @@ spec-kit-check:
 spec-kit-verify:
 	@node --test scripts/test/spec-kit.test.cjs
 
+$(DEV_TARGETS): dev-%:
+	node scripts/ops/local-dev.cjs $*
+
+dev-verify:
+	node --test scripts/test/local-development.test.cjs
+
 frontend-check:
 	npm run check:frontend
 
@@ -85,7 +100,7 @@ api-browser-smoke:
 	./scripts/browser-smoke.sh
 
 api-image-smoke:
-	sh ./scripts/smoke-web-app-image.sh
+	node scripts/ops/local-dev.cjs docker-smoke
 
 api-migrate-status:
 	cargo run -p yuance-api -- migrate status
@@ -112,7 +127,7 @@ api-files-audit-objects:
 	cargo run -p yuance-api -- files audit-objects $(if $(INCLUDE_DELETED),--include-deleted,)
 
 api-image-amd64:
-	./scripts/build-api-image-amd64.sh
+	YUANCE_LOCAL_DOCKER=1 YUANCE_API_PLATFORM=linux/amd64 YUANCE_API_IMAGE=yuance-api:local-amd64 YUANCE_API_IMAGE_TAR=.local/images/yuance-api-linux-amd64.tar ./scripts/build-api-image-amd64.sh
 
 validation-prepare:
 	./scripts/local-validation.sh prepare
@@ -163,15 +178,9 @@ cache-status:
 	@echo "[make] 受保护数据仅查看：.local、data、backups；所有清理目标均不会删除它们"
 
 docker-cache-status:
-	@$(call require_cmd,docker)
 	@tmp="$$(mktemp)"; \
 	trap 'rm -f "$$tmp"' EXIT; \
-	if [ -n "$${YUANCE_DOCKER_BUILDER:-}" ]; then \
-		echo "[make] Docker builder: $${YUANCE_DOCKER_BUILDER}"; \
-		docker buildx du --builder "$${YUANCE_DOCKER_BUILDER}" >"$$tmp"; \
-	else \
-		docker buildx du >"$$tmp"; \
-	fi; \
+	node scripts/ops/local-docker.cjs buildx du >"$$tmp" || exit $$?; \
 	tail -4 "$$tmp"
 
 clean-rust:

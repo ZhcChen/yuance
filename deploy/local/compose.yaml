@@ -1,0 +1,25 @@
+services:
+  api:
+    image: ${YUANCE_LOCAL_IMAGE:?使用本地开发入口初始化}
+    pull_policy: never
+    ports:
+      - "127.0.0.1:${YUANCE_LOCAL_API_PORT:?使用本地开发入口初始化}:33033"
+    environment:
+      YUANCE_ENV: development
+      YUANCE_HTTP_ADDR: 0.0.0.0:33033
+      YUANCE_DATABASE_URL: sqlite:///data/yuance.sqlite3
+      YUANCE_DATA_DIR: /data
+      YUANCE_SESSION_SECRET: ${YUANCE_SESSION_SECRET:?缺少本地密钥}
+      YUANCE_SECURITY_MASTER_KEY: ${YUANCE_SECURITY_MASTER_KEY:?缺少本地密钥}
+      YUANCE_FILE_MASTER_KEY: ""
+      YUANCE_SERVER_INSTANCE_ID: yuance-local-development-docker
+    volumes:
+      - type: bind
+        source: ${YUANCE_LOCAL_DATA_DIR:?使用本地开发入口初始化}
+        target: /data
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:33033/api/readyz]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: "no"

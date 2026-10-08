@@ -112,7 +112,7 @@ tar，Docker BuildKit 缓存由 Docker 自己管理，不通过发布脚本误�
 本地构建仍可用于离线验证，但不再是正式 qfy-test2 发布的默认路径：
 
 ```bash
-./scripts/build-api-image-amd64.sh
+YUANCE_LOCAL_DOCKER=0 ./scripts/build-api-image-amd64.sh
 YUANCE_DEPLOY_MODE=remote YUANCE_DEPLOY_BUILD_MODE=local \
 YUANCE_DEPLOY_HOST=qfy-test2 YUANCE_SKIP_LOCAL_BUILD=1 \
 ./scripts/deploy-production.sh
@@ -120,6 +120,8 @@ YUANCE_DEPLOY_HOST=qfy-test2 YUANCE_SKIP_LOCAL_BUILD=1 \
 
 服务器运行目录内禁止执行 `cargo build` 或 `docker build`；只有专用的
 `/srv/yuance/build` 编译工作区允许构建。
+
+共享构建脚本默认用于受控本机开发，使用 local tag 与 `.local/images/`。上述备用正式制品命令显式选择 `YUANCE_LOCAL_DOCKER=0`，保留 `yuance-api:latest` 和 `dist/` 制品口径；日常开发使用 `docs/runbooks/local-development.md`，不得混用测试 tar 与正式发布 tar。
 
 ## 一键发布
 

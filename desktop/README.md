@@ -1,5 +1,7 @@
 # 元策桌面端
 
+本地开发优先执行 `make dev-doctor`、启动 `make dev-api`（或本机开发容器），再执行 `make dev-desktop`，明确连接独立 loopback API。依赖安装、端口和数据边界见 `docs/runbooks/local-development.md`。
+
 ## 运行态隔离
 
 - `npm --prefix desktop run dev` 同时启动 Vite renderer 与 Electron 开发态：应用显示为 `元策 Dev`，持久化数据位于 macOS 的 `~/Library/Application Support/元策 Dev`；`sessionData` 位于其下的 `Session Data`。
