@@ -1,7 +1,7 @@
 # 资料同文档章节引用任务
 
 输入：`spec.md`、`plan.md`
-状态：实施与验收完成，待交付
+状态：已完成，实现与验收已提交推送（`e4fbec0`）
 
 ## 维护与阅读闭环
 
@@ -10,7 +10,7 @@
 - [x] T003 [US1] FR-007 更新 docs/openapi/yuance.openapi.json、skills/yuance-agent/ 文档与 docs/runbooks/resource-chapter-links.md，明确 CLI 透传与生命周期；依赖 T001/T002。
 - [x] T004 验证：执行后端与 UI 聚焦测试、前端类型/lint 检查、真实 API 保存回读和 Playwright 详情/编辑器/目录回归；依赖 T001-T003。
 - [x] T005 独立代码审查、converge 并记录 docs/reviews/ 验收证据；依赖 T004。
-- [ ] T006 检查 diff，分闭环提交推送并记录完成；不部署正式环境。
+- [x] T006 检查 diff，分闭环提交推送并记录完成；实现提交 `e4fbec0` 已推送至 `origin/main`，未部署正式环境。
 
 ## 依赖与并行
 
