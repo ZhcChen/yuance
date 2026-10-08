@@ -17,6 +17,187 @@ use yuance_api::{
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[tokio::test]
+async fn resource_long_body_roundtrips_and_transport_overflow_is_atomic() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .unwrap();
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let prefix = "/api/v1/projects/YCE/resources";
+    let request = |method: &str, uri: &str, payload: serde_json::Value| {
+        Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::COOKIE, admin.cookie.clone())
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("x-yuance-csrf-token", CSRF_TOKEN)
+            .body(Body::from(payload.to_string()))
+            .unwrap()
+    };
+    let expansion_body = "<h2>章节</h2>".repeat(180000);
+    let expansion_payload = serde_json::json!({ "title": "扩容超限不得保存", "body": expansion_body, "body_format": "html" });
+    assert!(expansion_payload.to_string().len() < 16 * 1024 * 1024);
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_resources")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let response = app
+        .clone()
+        .oneshot(request("POST", prefix, expansion_payload))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let error: serde_json::Value = serde_json::from_str(&response_body(response).await).unwrap();
+    assert_eq!(error["error"]["code"], "payload_too_large");
+    assert!(
+        error["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("规范化")
+    );
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_resources")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+    let small_input = format!(
+        "{}<p>{}</p>",
+        "<h2>章节</h2>".repeat(100),
+        "中".repeat(48000)
+    );
+    assert!(small_input.chars().count() < 50000);
+    let sql = "-- 中文 SQL 对账\nSELECT id, COUNT(*) FROM source GROUP BY id;\n";
+    let large_html = format!(
+        "<h2 data-yuance-section-id=\"yuance-section-sql\">SQL</h2>{}<p>结尾完整</p>",
+        format!(
+            "<pre><code>{}</code></pre><p><a href=\"#yuance-section-sql\">见 SQL</a></p>",
+            sql.repeat(100)
+        )
+        .repeat(50)
+    );
+    for (format, input) in [
+        ("html", small_input),
+        ("html", large_html),
+        ("plain", "中文长SQL SELECT 1;\n".repeat(150000)),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(
+                "POST",
+                prefix,
+                serde_json::json!({ "title": "长资料测试", "body": input, "body_format": format }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let created: serde_json::Value =
+            serde_json::from_str(&response_body(response).await).unwrap();
+        let id = created["data"]["id"].as_i64().unwrap();
+        let saved = created["data"]["body"].as_str().unwrap();
+        assert!(saved.chars().count() > 50000);
+        if format == "plain" {
+            assert_eq!(saved, input.trim());
+        } else if input.chars().count() < 50000 {
+            assert_eq!(saved.matches("data-yuance-section-id=").count(), 100);
+            assert!(saved.contains(&"中".repeat(48000)));
+        } else {
+            assert!(saved.contains("结尾完整"));
+            assert_eq!(
+                saved
+                    .matches("SELECT id, COUNT(*) FROM source GROUP BY id;")
+                    .count(),
+                5000
+            );
+            assert_eq!(saved.matches("href=\"#yuance-section-sql\"").count(), 50);
+        }
+        let endpoint = format!("{prefix}/{id}");
+        let updated_body = format!(
+            "{saved}{}",
+            if format == "html" {
+                "<p>新增注释</p>"
+            } else {
+                "\n新增注释"
+            }
+        );
+        let response = app
+            .clone()
+            .oneshot(request(
+                "PATCH",
+                &endpoint,
+                serde_json::json!({ "body": updated_body }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let updated: serde_json::Value =
+            serde_json::from_str(&response_body(response).await).unwrap();
+        assert_eq!(updated["data"]["body"], updated_body);
+        let read = app
+            .clone()
+            .oneshot(request("GET", &endpoint, serde_json::json!({})))
+            .await
+            .unwrap();
+        assert_eq!(read.status(), StatusCode::OK);
+        let read: serde_json::Value = serde_json::from_str(&response_body(read).await).unwrap();
+        assert_eq!(read["data"]["body"], updated_body);
+        // 版本表当前未被保存流程写入，独立核验既有 TEXT 字段容量，不改变业务版本行为。
+        sqlx::query("INSERT INTO project_resource_versions (resource_id, version_number, title, category, body, body_format) VALUES (?, 1, '容量核验', 'other', ?, ?)")
+            .bind(id).bind(&updated_body).bind(format).execute(&pool).await.unwrap();
+        let version: String = sqlx::query_scalar("SELECT body FROM project_resource_versions WHERE resource_id = ? ORDER BY version_number DESC LIMIT 1").bind(id).fetch_one(&pool).await.unwrap();
+        assert_eq!(version, updated_body);
+        // PATCH 不传正文也必须能维护已经保存的长资料。
+        let response = app
+            .clone()
+            .oneshot(request(
+                "PATCH",
+                &endpoint,
+                serde_json::json!({ "title": "仅改标题" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let oversized = serde_json::json!({ "body": "x".repeat(16 * 1024 * 1024) });
+        let response = app
+            .clone()
+            .oneshot(request("PATCH", &endpoint, oversized.clone()))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let error: serde_json::Value =
+            serde_json::from_str(&response_body(response).await).unwrap();
+        assert_eq!(error["error"]["code"], "payload_too_large");
+        assert!(
+            error["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("16777216")
+        );
+        let stored: String = sqlx::query_scalar("SELECT body FROM project_resources WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(stored, updated_body);
+        let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_resources")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let response = app
+            .clone()
+            .oneshot(request("POST", prefix, oversized))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM project_resources")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(before, after);
+    }
+}
+
+#[tokio::test]
 async fn project_resource_password_can_be_set_kept_and_cleared_after_creation() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

@@ -1193,6 +1193,7 @@
         ],
         "operationId": "createProjectResource",
         "summary": "创建项目资料",
+        "description": "正文无固定字符数上限；完整 UTF-8 JSON 请求限 16777216 字节（16 MiB），超限 HTTP 413 / payload_too_large。清洗/补章节属性后按正文 JSON 字节预检可重提交容量，预留64 KiB给元数据；规范化结果超限同样413且不保存。代理需同步容量配置，未部署版本可能仍执行旧限制。",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectKey"
@@ -1202,6 +1203,10 @@
           "$ref": "#/components/requestBodies/CreateProjectResource"
         },
         "responses": {
+          "413": {
+            "description": "完整 UTF-8 JSON 请求超过16 MiB，或清洗/补属性后的正文JSON字节加64 KiB元数据预留超过可重提交容量；未保存，error.code 为 payload_too_large",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}
+          },
           "201": {
             "description": "创建成功",
             "content": {
@@ -1259,6 +1264,7 @@
         ],
         "operationId": "updateProjectResource",
         "summary": "更新项目资料",
+        "description": "正文无固定字符数上限，不截断 SQL 或章节标识。完整 UTF-8 JSON 请求限 16777216 字节（16 MiB），超限 HTTP 413 / payload_too_large；清洗/补属性后按正文 JSON 字节预检可重提交容量并预留64 KiB给元数据，扩容超限413且不保存。重存按实际完整请求字节计算。",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectKey"
@@ -1271,6 +1277,10 @@
           "$ref": "#/components/requestBodies/UpdateProjectResource"
         },
         "responses": {
+          "413": {
+            "description": "完整 UTF-8 JSON 请求超过16 MiB，或清洗/补属性后的正文JSON字节加64 KiB元数据预留超过可重提交容量；未保存，error.code 为 payload_too_large",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}
+          },
           "200": {
             "description": "更新成功",
             "content": {
@@ -3959,7 +3969,7 @@
           },
           "body": {
             "type": "string",
-            "description": "HTML 章节引用：h1-h6 使用 data-yuance-section-id，值匹配 ^yuance-section-[A-Za-z0-9_-]{1,80}$；链接使用 href=\"#相同标识\"。合法唯一标识保存后保留，缺失或重复的后续标题自动分配新标识。id/a name 不保留。更新时先回读 body，保留已有标识；删除目标后引用失效。",
+            "description": "正文无固定字符数上限，plain/HTML 均不截断；完整 UTF-8 JSON 请求限16 MiB。HTML 章节引用：h1-h6 使用 data-yuance-section-id，值匹配 ^yuance-section-[A-Za-z0-9_-]{1,80}$；链接使用 href=\"#相同标识\"。合法唯一标识保存后保留，缺失或重复的后续标题自动分配新标识。id/a name 不保留。更新时先回读 body，保留已有标识；删除目标后引用失效。",
             "example": "<p><a href=\"#yuance-section-sql-310\">见 3.10</a></p><h3 data-yuance-section-id=\"yuance-section-sql-310\">3.10 SQL 对账</h3>"
           },
           "body_format": {
@@ -3998,7 +4008,7 @@
           },
           "body": {
             "type": "string",
-            "description": "HTML 章节标识与创建相同；改名和重排时保留 h1-h6 上原有 data-yuance-section-id。替换全文前先回读 body，新增标题使用新的唯一标识，删除标题不自动重绑旧链接。保存后 GET 核验 body 中标识与 href；不要依赖 id/a name 或标题文字自动匹配。"
+            "description": "正文无固定字符数上限，plain/HTML 均不截断；完整 UTF-8 JSON 请求限16 MiB。HTML 章节标识与创建相同；改名和重排时保留 h1-h6 上原有 data-yuance-section-id。替换全文前先回读 body，新增标题使用新的唯一标识，删除标题不自动重绑旧链接。保存后 GET 核验正文完整及 body 中标识与 href；不要依赖 id/a name 或标题文字自动匹配。"
           },
           "body_format": {
             "type": "string"

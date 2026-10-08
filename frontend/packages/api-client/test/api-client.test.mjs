@@ -156,6 +156,21 @@ test('project resources preserve the safe display body separately from editable 
   assert.equal(result.body_html, resource.body_html);
 });
 
+test('long resource bodies roundtrip without a client character limit and still enforce types', async () => {
+  const body = '<h2 data-yuance-section-id="yuance-section-sql">中文 SQL</h2><pre><code>SELECT 中文;</code></pre>'.repeat(4000);
+  const resource = { id: 9, project_key: 'YCE', title: '长资料', category: 'other', body, body_html: body, body_format: 'html', summary: '摘要', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '', updated_at: '', url: '/web/projects/YCE/resources/9' };
+  const calls = [];
+  const client = createApiClient({ request: async (_url, options) => { if (options?.body) calls.push(JSON.parse(options.body)); return resource; }, prepareWrite: async () => {} });
+  for (const result of [await client.createProjectResource('YCE', { title: resource.title, body, bodyFormat: 'html' }), await client.getProjectResource('YCE', 9), await client.updateProjectResource('YCE', 9, { title: resource.title, body, bodyFormat: 'html' })]) {
+    assert.equal(result.source_body, body);
+    assert.equal(result.body_html, body);
+  }
+  assert.equal(calls[0].body, body);
+  assert.equal(calls[1].body, body);
+  const malformed = createApiClient({ request: async () => ({ ...resource, body: 42 }), prepareWrite: async () => {} });
+  await assert.rejects(malformed.getProjectResource('YCE', 9), /resource body is invalid/u);
+});
+
 test('linked work item posts use a keyword-only list path and preserve the unpaginated DTO', async () => {
   const calls = [];
   const post = {

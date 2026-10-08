@@ -1,7 +1,7 @@
 use axum::{
     Json,
     body::Bytes,
-    extract::{Extension, Path, Query, State},
+    extract::{Extension, Path, Query, State, rejection::JsonRejection},
     http::{HeaderMap, Method, StatusCode, header},
     response::{
         AppendHeaders, IntoResponse, Response,
@@ -5816,12 +5816,28 @@ pub async fn list_project_resource_linked_work_item_posts(
     Ok(json(payload))
 }
 
+pub use project_resources::RESOURCE_JSON_MAX_BYTES;
+
+fn resource_json<T>(payload: Result<Json<T>, JsonRejection>) -> AppResult<T> {
+    match payload {
+        Ok(Json(payload)) => Ok(payload),
+        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            Err(AppError::PayloadTooLarge(format!(
+                "资料请求完整 UTF-8 JSON 超过 {} 字节（16 MiB）传输容量；正文没有固定字符数上限",
+                RESOURCE_JSON_MAX_BYTES
+            )))
+        }
+        Err(rejection) => Err(rejection.into()),
+    }
+}
+
 pub async fn create_project_resource(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(project_key): Path<String>,
-    Json(payload): Json<CreateProjectResourceRequest>,
+    payload: Result<Json<CreateProjectResourceRequest>, JsonRejection>,
 ) -> AppResult<impl IntoResponse> {
+    let payload = resource_json(payload)?;
     let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
@@ -5888,8 +5904,9 @@ pub async fn update_project_resource(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((project_key, resource_id)): Path<(String, i64)>,
-    Json(payload): Json<UpdateProjectResourceRequest>,
+    payload: Result<Json<UpdateProjectResourceRequest>, JsonRejection>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let payload = resource_json(payload)?;
     let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;

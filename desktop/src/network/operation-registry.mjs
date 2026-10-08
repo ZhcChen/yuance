@@ -172,7 +172,8 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
 }
 
 function descriptor(method, path, parse, idempotent = true, dataKind = "object", body, editorContext) {
-  return Object.freeze({ idempotent, method, path, parse, ...(dataKind === "object" ? {} : { dataKind }), ...(body === undefined ? {} : { body, contentType: "application/json" }), ...(editorContext === undefined ? {} : { editorContext }) });
+  const resourceResponse = parse === parseProjectResource || parse === parseProjectResources;
+  return Object.freeze({ idempotent, method, path, parse, ...(resourceResponse ? { maxResponseBytes: 128 * 1024 * 1024 } : {}), ...(dataKind === "object" ? {} : { dataKind }), ...(body === undefined ? {} : { body, contentType: "application/json" }), ...(editorContext === undefined ? {} : { editorContext }) });
 }
 
 function noInputOperation(method, path, parse, idempotent = true, dataKind = "object") {
@@ -332,12 +333,12 @@ function projectResourceUnlockOperation(input) {
 
 function projectResourceCreateOperation(input) {
   exactKeys(input, ["accessPassword", "body", "bodyFormat", "category", "projectKey", "relatedCycleId", "relatedWorkItemKey", "tags", "title"]);
-  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/resources`, parseProjectResource, false, "object", jsonBody(projectResourceBody(input, false)));
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/resources`, parseProjectResource, false, "object", resourceJsonBody(projectResourceBody(input, false)));
 }
 
 function projectResourceUpdateOperation(input) {
   exactKeys(input, ["accessPassword", "accessPasswordAction", "body", "bodyFormat", "category", "projectKey", "relatedCycleId", "relatedWorkItemKey", "resourceId", "tags", "title"]);
-  return descriptor("PATCH", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}`, parseProjectResource, false, "object", jsonBody(projectResourceBody(input, true)));
+  return descriptor("PATCH", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}`, parseProjectResource, false, "object", resourceJsonBody(projectResourceBody(input, true)));
 }
 
 function projectResourceArchiveOperation(input) {
@@ -384,7 +385,7 @@ function projectResourceBody(input, update) {
   return {
     title: boundedRequiredText(input.title, "title", 120),
     category: requiredEnum(input.category, PROJECT_RESOURCE_CATEGORIES, "category", false),
-    body: boundedText(input.body, "body", 120 * 1024),
+    body: resourceBodyString(input.body),
     body_format: requiredEnum(input.bodyFormat, PROJECT_RESOURCE_BODY_FORMATS, "bodyFormat", false),
     ...(update ? { access_password_action: passwordAction } : {}),
     access_password: accessPassword,
@@ -1207,7 +1208,7 @@ function parseProjectResourceLinkedWorkItemPosts(data) {
   })));
 }
 function parseProjectResource(value) { return freezeDto(value, {
-  id: positiveInteger, project_key: shortString, title: textString, category: shortString, body: longString, body_format: shortString,
+  id: positiveInteger, project_key: shortString, title: textString, category: shortString, body: resourceBodyString, body_format: shortString,
   summary: textString, status: shortString, is_protected: boolean, tags: resourceTags,
   related_work_item: nullableResourceWorkItem, related_cycle: nullableResourceCycle,
   created_by: shortString, updated_by: shortString, created_at: shortString, updated_at: shortString, url: webPath,
@@ -1425,6 +1426,16 @@ function commentBody(value) {
     body: boundedRequiredText(payload.body, "body", 20_000), body_format: bodyFormat,
     ...(payload.parentCommentId === undefined ? {} : { parent_comment_id: nullablePositiveInteger(payload.parentCommentId) }),
   };
+}
+function resourceBodyString(value) { if (typeof value !== "string") throw new TypeError("resource body is invalid"); return value; }
+function resourceJsonBody(value) {
+  const body = JSON.stringify(value);
+  if (Buffer.byteLength(body, "utf8") > 16 * 1024 * 1024) {
+    const error = new TypeError("资料请求完整 UTF-8 JSON 超过 16 MiB 传输容量");
+    error.code = "payload_too_large";
+    throw error;
+  }
+  return body;
 }
 function jsonBody(value) { const body = JSON.stringify(value); if (body.length > 128 * 1024) throw new TypeError("request body is invalid"); return body; }
 function appendPagination(query, input) { if (input.page !== undefined) query.set("page", String(integer(input.page, 1, "page", 1_000_000))); if (input.perPage !== undefined) query.set("per_page", String(integer(input.perPage, 1, "perPage", 100))); }

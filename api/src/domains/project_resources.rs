@@ -1663,6 +1663,24 @@ async fn project_key_by_id(pool: &SqlitePool, project_id: i64) -> AppResult<Stri
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))
 }
 
+pub const RESOURCE_JSON_MAX_BYTES: usize = 16 * 1024 * 1024;
+const RESOURCE_JSON_METADATA_RESERVE_BYTES: usize = 64 * 1024;
+
+fn ensure_resource_body_can_be_resubmitted(body: &str) -> AppResult<()> {
+    // 清洗/补标识后的正文必须仍能通过同一请求容量；按 JSON 转义后的字节计量。
+    let encoded = serde_json::to_vec(body).expect("string serialization cannot fail");
+    if encoded
+        .len()
+        .saturating_add(RESOURCE_JSON_METADATA_RESERVE_BYTES)
+        > RESOURCE_JSON_MAX_BYTES
+    {
+        return Err(AppError::PayloadTooLarge(
+            "资料正文规范化后的 JSON 字节超过 16 MiB 请求传输容量（预留 64 KiB 给元数据）；未保存，请勿截断 SQL 或章节引用".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn prepare_resource_body(
     pool: &SqlitePool,
     project_key: &str,
@@ -1674,7 +1692,7 @@ async fn prepare_resource_body(
     let body_format = normalize_body_format(body_format)?;
     match body_format.as_str() {
         RESOURCE_BODY_FORMAT_HTML => {
-            let raw_body = validate_optional_text(body, "资料正文", 50000)?;
+            let raw_body = body.trim().to_string();
             ensure_resource_html_media_sources_are_controlled(&raw_body, project_key, resource_id)?;
             ensure_resource_html_attachment_links_are_controlled(
                 &raw_body,
@@ -1687,6 +1705,7 @@ async fn prepare_resource_body(
                 project_key,
                 resource_id,
             ));
+            ensure_resource_body_can_be_resubmitted(&body)?;
             let plain_text = html_to_plain_text(&body);
             if !allow_empty && plain_text.is_empty() && !resource_html_has_media_reference(&body) {
                 return Err(AppError::BadRequest("资料正文不能为空".to_string()));
@@ -1698,7 +1717,8 @@ async fn prepare_resource_body(
             })
         }
         _ => {
-            let body = validate_optional_text(body, "资料正文", 20000)?;
+            let body = body.trim().to_string();
+            ensure_resource_body_can_be_resubmitted(&body)?;
             if !allow_empty && body.is_empty() {
                 return Err(AppError::BadRequest("资料正文不能为空".to_string()));
             }
@@ -2169,6 +2189,24 @@ fn is_safe_inline_svg_data_url(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{resource_body_html_for_display, resource_body_references_attachment};
+
+    #[test]
+    fn resource_body_capacity_counts_json_bytes_without_a_character_limit() {
+        let capacity = super::RESOURCE_JSON_MAX_BYTES - super::RESOURCE_JSON_METADATA_RESERVE_BYTES;
+        let near_boundary = "x".repeat(capacity - 2);
+        assert!(super::ensure_resource_body_can_be_resubmitted(&near_boundary).is_ok());
+        assert!(
+            super::ensure_resource_body_can_be_resubmitted(&format!("{near_boundary}x")).is_err()
+        );
+        assert!(
+            super::ensure_resource_body_can_be_resubmitted(&"中".repeat((capacity - 2) / 3))
+                .is_ok()
+        );
+        // 每个换行在 JSON 中为两个字节，不能按字符数或原始UTF-8长度判断。
+        assert!(
+            super::ensure_resource_body_can_be_resubmitted(&"\n".repeat(capacity / 2)).is_err()
+        );
+    }
 
     #[test]
     fn resource_section_persistence_is_unique_stable_and_safe() {

@@ -12,6 +12,10 @@ pub type AppResult<T> = Result<T, AppError>;
 
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("请求体过大：{0}")]
+    PayloadTooLarge(String),
+    #[error(transparent)]
+    JsonRejection(#[from] axum::extract::rejection::JsonRejection),
     #[error("请求参数错误：{0}")]
     BadRequest(String),
     #[error("配置错误：{0}")]
@@ -59,7 +63,12 @@ struct ErrorBody<'a> {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        if let Self::JsonRejection(rejection) = self {
+            return rejection.into_response();
+        }
         let (status, code) = match &self {
+            AppError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large"),
+            AppError::JsonRejection(_) => unreachable!(),
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),

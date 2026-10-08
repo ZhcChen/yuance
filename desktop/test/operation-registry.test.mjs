@@ -478,6 +478,22 @@ test("rejects malformed or oversized business responses", () => {
   ]) assert.throws(() => analysisParser(payload), /invalid/i);
 });
 
+test("long resource bodies keep typed contracts and bounded UTF-8 transport", () => {
+  const registry = createOperationRegistry();
+  const body = '中文 SQL\n'.repeat(40000);
+  const input = { projectKey: 'DEMO', title: '长手册', category: 'other', body, bodyFormat: 'html', accessPassword: '', tags: [], relatedWorkItemKey: '', relatedCycleId: null };
+  const create = registry.resolve('project.resourcecreate', input);
+  assert.equal(JSON.parse(create.body).body, body);
+  const update = registry.resolve('project.resourceupdate', { ...input, resourceId: 1, accessPasswordAction: 'keep' });
+  assert.equal(JSON.parse(update.body).body, body);
+  const resource = { id: 1, project_key: 'DEMO', title: '长手册', category: 'other', body, body_format: 'html', summary: '', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '', updated_at: '', url: '/web/projects/DEMO/resources/1' };
+  assert.equal(create.parse(resource).body, body);
+  assert.throws(() => create.parse({ ...resource, body: 42 }), /resource body is invalid/u);
+  assert.throws(() => registry.resolve('project.resourcecreate', { ...input, body: '中'.repeat(6 * 1024 * 1024) }), (error) => error.code === 'payload_too_large');
+  assert.equal(create.maxResponseBytes, 128 * 1024 * 1024);
+  assert.equal(registry.resolve('identity.current', {}).maxResponseBytes, undefined);
+});
+
 test("project resources accept the complete unpaginated server response", () => {
   const registry = createOperationRegistry();
   const resource = {

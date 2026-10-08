@@ -330,7 +330,7 @@ function resolveMutationOperation(parsed, method, options) {
   }
   const projectResource = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)$/u);
   if (method === "PATCH" && projectResource) {
-    const body = parseJsonBody(options, ["access_password", "access_password_action", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"]);
+    const body = parseJsonBody(options, ["access_password", "access_password_action", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"], true);
     return { operation: "project.resourceupdate", input: { projectKey: decodeSegment(projectResource[1]), resourceId: positiveInteger(projectResource[2]), ...renameBody(body, {
       access_password: "accessPassword", access_password_action: "accessPasswordAction", body_format: "bodyFormat", related_cycle_id: "relatedCycleId", related_work_item_key: "relatedWorkItemKey",
     }) } };
@@ -341,7 +341,7 @@ function resolveMutationOperation(parsed, method, options) {
   }
   const projectResources = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources$/u);
   if (method === "POST" && projectResources) {
-    const body = parseJsonBody(options, ["access_password", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"]);
+    const body = parseJsonBody(options, ["access_password", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"], true);
     return { operation: "project.resourcecreate", input: { projectKey: decodeSegment(projectResources[1]), ...renameBody(body, {
       access_password: "accessPassword", body_format: "bodyFormat", related_cycle_id: "relatedCycleId", related_work_item_key: "relatedWorkItemKey",
     }) } };
@@ -480,10 +480,13 @@ function cyclePayload(options) {
   });
 }
 
-function parseJsonBody(options, allowed) {
+function parseJsonBody(options, allowed, resource = false) {
   if (!isPlainObject(options) || !sameKeys(options, ["body", "headers", "method"]) || !isPlainObject(options.headers) ||
-    !sameKeys(options.headers, ["content-type"]) || options.headers["content-type"] !== "application/json" || typeof options.body !== "string" || options.body.length > 128 * 1024) {
+    !sameKeys(options.headers, ["content-type"]) || options.headers["content-type"] !== "application/json" || typeof options.body !== "string" || (!resource && options.body.length > 128 * 1024)) {
     throw apiError("invalid_request", 400);
+  }
+  if (resource && new TextEncoder().encode(options.body).byteLength > 16 * 1024 * 1024) {
+    throw new ApiError({ message: "资料请求完整 UTF-8 JSON 超过 16 MiB 传输容量", code: "payload_too_large", status: 413 });
   }
   let body;
   try { body = JSON.parse(options.body); } catch { throw apiError("invalid_request", 400); }

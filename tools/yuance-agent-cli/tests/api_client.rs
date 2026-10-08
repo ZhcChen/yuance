@@ -234,7 +234,13 @@ async fn rejects_redirects_and_oversized_responses() {
             get(|| async { vec![b'x'; 8 * 1024 * 1024 + 1] }),
         );
     let base_url = spawn(app).await;
-    let client = client(&base_url, Duration::from_secs(2));
+    let client = ApiClient::from_config(
+        ClientConfig::new(&base_url, "yuance_pat_test", Duration::from_secs(2))
+            .unwrap()
+            .with_max_response_bytes(8 * 1024 * 1024)
+            .unwrap(),
+    )
+    .unwrap();
 
     let redirect = client
         .get("/redirect", &[])
@@ -254,6 +260,49 @@ async fn rejects_redirects_and_oversized_responses() {
             ..
         }
     ));
+}
+
+#[tokio::test]
+async fn long_json_response_uses_configured_byte_capacity_without_truncation() {
+    let text = "中文 SQL\n".repeat(900000);
+    assert!(text.len() > 8 * 1024 * 1024);
+    let expected = text.clone();
+    let app = Router::new().route(
+        "/long",
+        get(move || {
+            let text = text.clone();
+            async move { Json(json!({"data": {"body": text}})) }
+        }),
+    );
+    let base_url = spawn(app).await;
+    let config = ClientConfig::new(&base_url, "yuance_pat_test", Duration::from_secs(10)).unwrap();
+    let response = ApiClient::from_config(config)
+        .unwrap()
+        .get("/long", &[])
+        .await
+        .unwrap();
+    assert_eq!(response["data"]["body"], expected);
+    let config = ClientConfig::new(&base_url, "yuance_pat_test", Duration::from_secs(10))
+        .unwrap()
+        .with_max_response_bytes(1024)
+        .unwrap();
+    assert!(matches!(
+        ApiClient::from_config(config)
+            .unwrap()
+            .get("/long", &[])
+            .await
+            .unwrap_err(),
+        AgentError::Response {
+            code: "response_too_large",
+            ..
+        }
+    ));
+    assert!(
+        ClientConfig::new(&base_url, "yuance_pat_test", Duration::from_secs(10))
+            .unwrap()
+            .with_max_response_bytes(0)
+            .is_err()
+    );
 }
 
 #[tokio::test]

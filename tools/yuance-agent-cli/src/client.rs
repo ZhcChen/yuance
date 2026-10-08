@@ -8,12 +8,13 @@ use crate::{error::AgentError, models::ApiErrorEnvelope};
 
 pub const DEFAULT_BASE_URL: &str = "https://yuance.quanxinfu.com";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+const DEFAULT_MAX_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
 
 pub struct ClientConfig {
     base_url: Url,
     api_token: String,
     timeout: Duration,
+    max_response_bytes: usize,
 }
 
 impl std::fmt::Debug for ClientConfig {
@@ -31,7 +32,20 @@ impl ClientConfig {
     pub fn from_env() -> Result<Self, AgentError> {
         let base_url = env::var("YUANCE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
         let api_token = env::var("YUANCE_API_TOKEN").unwrap_or_default();
-        Self::new(&base_url, &api_token, DEFAULT_TIMEOUT)
+        let config = Self::new(&base_url, &api_token, DEFAULT_TIMEOUT)?;
+        match env::var("YUANCE_MAX_RESPONSE_BYTES") {
+            Ok(value) => {
+                config.with_max_response_bytes(value.parse().map_err(|_| AgentError::Config {
+                    code: "invalid_response_limit",
+                    message: "YUANCE_MAX_RESPONSE_BYTES 必须为正整数字节数".to_string(),
+                })?)
+            }
+            Err(env::VarError::NotPresent) => Ok(config),
+            Err(_) => Err(AgentError::Config {
+                code: "invalid_response_limit",
+                message: "YUANCE_MAX_RESPONSE_BYTES 必须为正整数字节数".to_string(),
+            }),
+        }
     }
 
     pub fn new(base_url: &str, api_token: &str, timeout: Duration) -> Result<Self, AgentError> {
@@ -48,7 +62,19 @@ impl ClientConfig {
             base_url,
             api_token: api_token.to_string(),
             timeout,
+            max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
         })
+    }
+
+    pub fn with_max_response_bytes(mut self, bytes: usize) -> Result<Self, AgentError> {
+        if bytes == 0 {
+            return Err(AgentError::Config {
+                code: "invalid_response_limit",
+                message: "响应传输容量必须为正整数字节数".to_string(),
+            });
+        }
+        self.max_response_bytes = bytes;
+        Ok(self)
     }
 
     pub fn base_url(&self) -> &Url {
@@ -60,6 +86,7 @@ impl ClientConfig {
 pub struct ApiClient {
     base_url: Url,
     client: Client,
+    max_response_bytes: usize,
 }
 
 impl ApiClient {
@@ -91,6 +118,7 @@ impl ApiClient {
         Ok(Self {
             base_url: config.base_url,
             client,
+            max_response_bytes: config.max_response_bytes,
         })
     }
 
@@ -144,7 +172,7 @@ impl ApiClient {
             .await
             .map_err(AgentError::from_reqwest)?;
         let status = response.status();
-        let body = read_response_body(response).await?;
+        let body = read_response_body(response, self.max_response_bytes).await?;
         if !status.is_success() {
             let api_error = serde_json::from_slice::<ApiErrorEnvelope>(&body).ok();
             return Err(AgentError::Http {
@@ -187,7 +215,7 @@ impl ApiClient {
 
         let response = request.send().await.map_err(AgentError::from_reqwest)?;
         let status = response.status();
-        let body = read_response_body(response).await?;
+        let body = read_response_body(response, self.max_response_bytes).await?;
 
         if !status.is_success() {
             let api_error = serde_json::from_slice::<ApiErrorEnvelope>(&body).ok();
@@ -238,30 +266,32 @@ impl ApiClient {
     }
 }
 
-async fn read_response_body(mut response: reqwest::Response) -> Result<Vec<u8>, AgentError> {
+async fn read_response_body(
+    mut response: reqwest::Response,
+    max_bytes: usize,
+) -> Result<Vec<u8>, AgentError> {
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        .is_some_and(|length| length > max_bytes as u64)
     {
-        return Err(response_too_large());
+        return Err(response_too_large(max_bytes));
     }
 
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(AgentError::from_reqwest)? {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(response_too_large());
+        if body.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(response_too_large(max_bytes));
         }
         body.extend_from_slice(&chunk);
     }
     Ok(body)
 }
 
-fn response_too_large() -> AgentError {
+fn response_too_large(max_bytes: usize) -> AgentError {
     AgentError::Response {
         code: "response_too_large",
         message: format!(
-            "元策 API 响应超过 {} MiB 限制",
-            MAX_RESPONSE_BYTES / 1024 / 1024
+            "元策 API 完整 JSON 响应超过 {max_bytes} 字节传输容量；可配置 YUANCE_MAX_RESPONSE_BYTES"
         ),
     }
 }

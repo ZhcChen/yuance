@@ -11,6 +11,14 @@ const probe = {
   generation: 0, authorization_version: 1, access_expires_at: "2026-08-02T12:00:00Z", server_instance_id: "server-1",
 };
 
+test("resource response byte capacity permits long bodies while unrelated responses stay bounded", async () => {
+  const body = '中文 SQL'.repeat(60000);
+  const resource = { id: 1, project_key: 'DEMO', title: '长手册', category: 'other', body, body_format: 'html', summary: '', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '', updated_at: '', url: '/web/projects/DEMO/resources/1' };
+  const transport = createRestTransport({ profile, credentialRuntime: runtimeFixture(), fetchImpl: await trustedFetch(async (url) => jsonResponse({ data: resource }, { url })) });
+  assert.equal((await transport.execute('project.resourcedetail', { projectKey: 'DEMO', resourceId: 1 })).body, body);
+  await assert.rejects(transport.execute('identity.current', {}), (error) => error.code === 'response_too_large');
+});
+
 test("uses only a runtime lease and fixed no-ambient request fields", async () => {
   const calls = [];
   const transport = createRestTransport({

@@ -1,7 +1,7 @@
 use axum::{
     Router,
     body::to_bytes,
-    extract::{Path, Request, State},
+    extract::{DefaultBodyLimit, Path, Request, State},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
@@ -704,7 +704,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/projects/{project_key}/resources",
-            get(web::api::list_project_resources).post(web::api::create_project_resource),
+            get(web::api::list_project_resources).merge(
+                post(web::api::create_project_resource)
+                    .layer(DefaultBodyLimit::max(web::api::RESOURCE_JSON_MAX_BYTES)),
+            ),
         )
         .route(
             "/api/v1/projects/{project_key}/resource-library/linked-work-item-posts",
@@ -713,7 +716,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}",
             get(web::api::get_project_resource)
-                .patch(web::api::update_project_resource)
+                .merge(
+                    patch(web::api::update_project_resource)
+                        .layer(DefaultBodyLimit::max(web::api::RESOURCE_JSON_MAX_BYTES)),
+                )
                 .delete(web::api::archive_project_resource),
         )
         .route(

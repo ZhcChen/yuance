@@ -40,6 +40,7 @@ description: 通过元策 OpenAPI 分析和操作项目、需求、任务、Bug�
 - 不在本地重建状态机；允许的转换以服务端当前校验为准。
 - 回复评论前必须从评论列表确认 `parent_comment_id` 属于同一工作项。
 - 正文较长或包含 HTML 时使用 `--description-file` / `--body-file`；传 `-` 可从 stdin 读取。
+- 资料正文无固定字符数上限，完整 UTF-8 JSON 写入请求仍限 16 MiB；CLI JSON 响应默认限 128 MiB，可通过 `YUANCE_MAX_RESPONSE_BYTES` 设置正整数字节容量。长正文保存后回读核验完整性，不截断正文或删除章节来规避容量错误；旧服务端或未同步网关可能仍有限制。
 - 资料同文档章节引用使用标题专用 `data-yuance-section-id` 与对应 `href="#yuance-section-..."`；改名/重排保留标识，保存后回读核验。准确写法及删除/重复规则见 `references/workflows.md` 的“维护资料章节引用”。
 - 不重试可能重复创建、评论或流转的写操作，除非先读取并确认前一次未成功。
 - `resources unlock` 的密码只从 stdin 读取；受保护附件的 `access_token` 只从 stdin 读取并仅保留在当前进程。

@@ -8,6 +8,21 @@ const resourceFixture = { id: 9, project_key: "DEMO", title: "Release", category
 const linkedWorkItemPostFixture = { key: "DEMO-TASK-1", item_type: "task", title: "售后流程", summary: "处理步骤", author: "Alice", updated_at: "2026-08-07T00:00:00Z", linked_at: "2026-08-06T00:00:00Z", url: "/web/work-items/DEMO-TASK-1" };
 const attachmentFixture = { id: 8, filename: "resource.txt", content_type: "text/plain", byte_size: 12, status: "deleted", created_by: "Alice", created_at: "2026-08-07T00:00:00Z" };
 
+test("resource mutations preserve long UTF-8 bodies and reject transport overflow before IPC", async () => {
+  const calls = [];
+  const body = '中文 SQL\n'.repeat(40000);
+  const client = createApiClient(createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: { ...resourceFixture, body: input.body } };
+  } }));
+  const payload = { title: '长手册', body, bodyFormat: 'html' };
+  assert.equal((await client.createProjectResource('DEMO', payload)).source_body, body);
+  assert.equal((await client.updateProjectResource('DEMO', 9, payload)).source_body, body);
+  assert.equal(calls[0][1].body, body);
+  await assert.rejects(client.createProjectResource('DEMO', { ...payload, body: '中'.repeat(6 * 1024 * 1024) }), (error) => error instanceof ApiError && error.code === 'payload_too_large' && error.status === 413);
+  assert.equal(calls.length, 2);
+});
+
 test("desktop API transport maps only known read routes to domain operations", async () => {
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {

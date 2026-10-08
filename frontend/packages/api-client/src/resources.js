@@ -133,9 +133,11 @@ export function projectResourceLinkedWorkItemPostFromPayload(payload) {
 
 export function projectResourceFromPayload(payload) {
   const value = object(payload, 'project resource');
+  const sourceBody = bodyString(value.body, 'resource body');
+  const displayBody = value.body_html === undefined || value.body_html === null ? sourceBody : bodyString(value.body_html, 'resource display body') || sourceBody;
   return Object.freeze({
     id: positiveInteger(value.id, 'resource ID'), project_key: string(value.project_key, 64, 'project key'), title: string(value.title, 512, 'resource title'),
-    category: string(value.category, 64, 'resource category'), body: optionalString(value.body_html, 128 * 1024, 'resource display body') || string(value.body, 128 * 1024, 'resource body'), source_body: string(value.body, 128 * 1024, 'resource body'), body_html: optionalString(value.body_html, 128 * 1024, 'resource display body') || string(value.body, 128 * 1024, 'resource body'), body_format: string(value.body_format, 32, 'resource body format'),
+    category: string(value.category, 64, 'resource category'), body: displayBody, source_body: sourceBody, body_html: displayBody, body_format: string(value.body_format, 32, 'resource body format'),
     summary: string(value.summary, 4096, 'resource summary'), status: string(value.status, 64, 'resource status'), is_protected: boolean(value.is_protected, 'resource protected flag'),
     tags: strings(value.tags, 100, 128, 'resource tags'), related_work_item: nullableRelation(value.related_work_item, workItemRelation), related_cycle: nullableRelation(value.related_cycle, cycleRelation),
     created_by: string(value.created_by, 256, 'resource creator'), updated_by: string(value.updated_by, 256, 'resource updater'),
@@ -148,6 +150,7 @@ function workItemRelation(value) { const item = object(value, 'related work item
 function cycleRelation(value) { const cycle = object(value, 'related cycle'); return Object.freeze({ id: positiveInteger(cycle.id, 'cycle ID'), name: string(cycle.name, 512, 'cycle name'), start_date: string(cycle.start_date, 32, 'cycle start date'), end_date: string(cycle.end_date, 32, 'cycle end date'), url: internalPath(cycle.url, 'cycle URL') }); }
 function nullableRelation(value, parser) { return value === null ? null : parser(value); }
 function object(value, name) { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} is invalid`); return value; }
+function bodyString(value, name) { if (typeof value !== 'string') throw new TypeError(`${name} is invalid`); return value; }
 function string(value, maximum, name) { if (typeof value !== 'string' || value.length > maximum) throw new TypeError(`${name} is invalid`); return value; }
 function optionalString(value, maximum, name) { return value === undefined || value === null ? '' : string(value, maximum, name); }
 function boolean(value, name) { if (typeof value !== 'boolean') throw new TypeError(`${name} is invalid`); return value; }
