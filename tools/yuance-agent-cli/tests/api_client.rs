@@ -1,5 +1,6 @@
 use std::{
     net::SocketAddr,
+    process::Command,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -198,11 +199,29 @@ async fn classifies_timeout_disconnect_and_invalid_json() {
         .expect("port should bind");
     let disconnected_url = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
-    let disconnected = client(&disconnected_url, Duration::from_millis(200))
-        .get("/", &[])
-        .await
-        .expect_err("request should fail to connect");
-    assert!(matches!(disconnected, AgentError::Connect));
+    // 闭端口必须直连；开发机代理可能将连接失败改成 HTTP 502。
+    let mut command = Command::new(env!("CARGO_BIN_EXE_yuance-agent"));
+    command
+        .arg("whoami")
+        .env("YUANCE_BASE_URL", disconnected_url)
+        .env("YUANCE_API_TOKEN", "yuance_pat_test")
+        .env_remove("YUANCE_MAX_RESPONSE_BYTES");
+    for variable in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ] {
+        command.env_remove(variable);
+    }
+    let disconnected = command.output().expect("CLI should run");
+    assert_eq!(disconnected.status.code(), Some(23));
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&disconnected.stderr).expect("connection error should be JSON");
+    assert_eq!(envelope["error"]["kind"], "connect");
+    assert_eq!(envelope["error"]["code"], "connect_failed");
 }
 
 #[tokio::test]
