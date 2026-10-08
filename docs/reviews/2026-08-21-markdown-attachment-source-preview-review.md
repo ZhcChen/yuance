@@ -6,6 +6,8 @@ status: passed
 
 # Markdown 附件原文预览复核
 
+> 历史复核：本文中的 CRG 命令及结论仅反映复核时事实；CRG 已从本项目移除，不是当前操作入口。
+
 ## 结论
 
 通过。共享附件预览已恢复旧版的 Markdown 原文展示结果，不执行 Markdown 到 HTML 的渲染。Web 与 Desktop 共用 `strategy=text` 语义；API 和 Desktop 私有内容流统一使用 `text/plain; charset=utf-8`，避免历史 `application/octet-stream` 登记导致浏览器下载或空白。

@@ -20,7 +20,6 @@ desktop/renderer-dist
 desktop/release
 frontend/packages/*/.cache
 .artifacts
-.code-review-graph
 .context
 .local
 test-results

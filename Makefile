@@ -1,11 +1,7 @@
-.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate crg.build crg.update crg.status crg.review crg.guard cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
 
 export SPEC_KIT_FEATURE = $(FEATURE)
 export SPEC_KIT_STAGE = $(STAGE)
-
-CRG_VERSION ?= 2.3.7
-CRG := uvx --from code-review-graph==$(CRG_VERSION) code-review-graph
-CRG_BASE = $(if $(strip $(BASE)),$(BASE),HEAD~1)
 
 define require_cmd
 command -v $(1) >/dev/null 2>&1 || { echo "[make] 缺少命令: $(1)"; exit 1; }
@@ -38,11 +34,6 @@ help:
 	@echo "  make validation-status"
 	@echo "  make deploy-production"
 	@echo "  make deploy-validate"
-	@echo "  make crg.build"
-	@echo "  make crg.update"
-	@echo "  make crg.status"
-	@echo "  make crg.review BASE=<git-ref>"
-	@echo "  make crg.guard"
 	@echo "  make cache-status"
 	@echo "  make docker-cache-status"
 	@echo "  make clean-rust"
@@ -144,26 +135,6 @@ deploy-production:
 deploy-validate:
 	./scripts/validate-deploy-templates.sh
 
-crg.build: ## 手工完整构建 Code Review Graph 本地图数据
-	@$(call require_cmd,uvx)
-	@$(CRG) build --repo "$(CURDIR)"
-
-crg.update: ## 手工增量更新 Code Review Graph 本地图数据
-	@$(call require_cmd,uvx)
-	@$(CRG) update --repo "$(CURDIR)"
-
-crg.status: ## 手工查看 Code Review Graph 本地图状态
-	@$(call require_cmd,uvx)
-	@$(CRG) status --repo "$(CURDIR)"
-
-crg.review: ## 手工审查当前改动影响（可传 BASE=<git-ref>，默认 HEAD~1）
-	@$(call require_cmd,uvx)
-	@echo "[crg] 审查基线: $(CRG_BASE)"
-	@$(CRG) detect-changes --repo "$(CURDIR)" --base "$(CRG_BASE)" --brief
-
-crg.guard: ## 守护 CRG 受控边界（独立手工目标，不进入默认链）
-	@node scripts/assert-crg-guard.mjs
-
 cache-status:
 	@echo "[make] 仓库构建缓存与生成物占用"
 	@for path in \
@@ -181,7 +152,6 @@ cache-status:
 		desktop/renderer-dist \
 		frontend/packages/*/dist \
 		.artifacts \
-		.code-review-graph \
 		.context \
 		.tmp-docx-harness \
 		test-results \
@@ -230,5 +200,5 @@ clean: clean-rust clean-generated
 	@echo "[make] clean 完成：Rust 构建产物与发布产物已清理"
 
 clean-deep: clean clean-frontend-dist clean-node-cache
-	rm -rf .artifacts .code-review-graph .context desktop/node_modules web/node_modules frontend/node_modules test-results .tmp-docx-harness
-	@echo "[make] clean-deep 完成：依赖与验证产物已清理，需要时执行 npm ci / make crg.build 恢复"
+	rm -rf .artifacts .context desktop/node_modules web/node_modules frontend/node_modules test-results .tmp-docx-harness
+	@echo "[make] clean-deep 完成：依赖与验证产物已清理，需要时执行 npm ci 恢复"

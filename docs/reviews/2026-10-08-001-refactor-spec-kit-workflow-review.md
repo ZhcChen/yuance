@@ -1,5 +1,7 @@
 # Spec Kit 工作流迁移复核
 
+> 历史记录：本文记录迁移时的验证，包括当时执行的 CRG 旁路检查；该工具现已从本项目移除。
+
 > 日期：2026-10-08
 >
 > 对应计划：`docs/plans/2026-10-08-001-refactor-spec-kit-workflow-migration-plan.md`

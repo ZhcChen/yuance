@@ -7,6 +7,8 @@ date: 2026-09-11
 
 # 工作项主发布内容关联资料库复核
 
+> 历史复核：本文中的 CRG 命令及结论仅反映复核时事实；CRG 已从本项目移除，不是当前操作入口。
+
 ## 关联计划
 
 [2026-09-11-1701-feat-link-work-item-posts-to-resource-library-plan.md](../plans/2026-09-11-1701-feat-link-work-item-posts-to-resource-library-plan.md)

@@ -87,7 +87,7 @@ SPECIFY_INIT_DIR="$PWD" SPECIFY_FEATURE_DIRECTORY=specs/001-resource-export SPEC
 
 ## 审查、验证与交付
 
-- 每个完成的小闭环先按风险执行聚焦测试、构建或静态检查；跨模块、公共契约、安全或数据一致性变更按 `AGENTS.md` 检查 CRG 旁路线索和独立复核要求。
+- 每个完成的小闭环先按风险执行聚焦测试、构建或静态检查；跨模块、公共契约、安全或数据一致性变更应扩大验证范围并安排独立复核。
 - 报告实际通过、失败、跳过与未验证事项。analyze 和 converge 不能证明实现通过。
 - 运行、迁移、排障、发布和恢复按对应 Runbook 执行。不得因 plan/tasks 有部署步骤就视为已获授权；正式环境部署仍按 `docs/runbooks/production-deployment.md` 与 `AGENTS.md` 执行。
 - Git 操作服从 `AGENTS.md` 与现有分支约束：只暂存本轮文件，审查 staged diff 后按小闭环提交并推送当前协作分支。不得自动建分支、PR、外部工单或 GitHub workflow。

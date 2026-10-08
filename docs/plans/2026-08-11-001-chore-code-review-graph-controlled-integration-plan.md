@@ -10,6 +10,8 @@ execution_status: completed
 
 # 受控引入 Code Review Graph 增强审查
 
+> 历史计划：本项目已移除 CRG 集成；以下内容仅记录当时的引入方案，不作为当前操作入口。
+
 ## 目标
 
 在保留现有 `brainstorm -> plan -> execute -> review -> compound` 主工作流的前提下，
