@@ -16,8 +16,8 @@
 
 ## 发布要求和现状
 
-本次仅准备代码、OpenAPI、CLI/Skill和网关模板，不自动部署，不改BI项目P260713090179资料19。API镜像发布不会自动合并公网Nginx配置。需要按 `docs/runbooks/production-deployment.md` 发布匹配后端/前端，再按 `deploy/easy-deploy/production/gateway/README.md` 合并模板中仅Yuance资料路由的16m及JSON413配置，检查 `nginx -t` 后reload；不要覆盖其他域名或代理共享snippet。
+2026-10-08经用户明确授权，已将源码 `6b966ea5cb54d995b032b6b18a1d5e9a539aef9c` 按 `docs/runbooks/production-deployment.md` 构建并发布到正式环境，后端/前端及仅Yuance资料路由的16m、JSON413配置均已上线。不改BI项目P260713090179资料19。API镜像发布仍不会自动合并公网Nginx配置，后续发布须单独核对网关；不要覆盖其他域名或代理共享snippet。
 
-2026-10-08只读检查已知正式Yuance server、引用snippet和nginx.conf未发现显式client_max_body_size；不能将仓库16MiB声明视为公网已生效。发布后应核验完整有效配置与公共请求链路，不能仅凭health/ready声称长正文上线。未来代理或SQLite编译配置变更须重新记录有效容量。
+本次发布前只读检查未发现正式网关显式client_max_body_size；发布时最小合并资料专用配置，`nginx -t`及reload成功。公网无凭证POST/PATCH约3MiB请求到达应用鉴权（401），约17MiB请求返回JSON413及`payload_too_large`，health/ready/Web正常。正式环境未写入长正文验收资料，业务保存回读、Web/CLI与章节跳转沿用已完成的本机真实验收。证据见 `docs/reviews/2026-10-08-production-long-body-deployment.md`。未来代理或SQLite编译配置变更须重新记录有效容量。
 
 回滚旧代码会恢复字符限制，长资料可能重新无法维护；不要为回滚截断已有数据。
