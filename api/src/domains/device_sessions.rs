@@ -478,10 +478,12 @@ pub async fn rotate_refresh_token(
         &mut transaction,
         master_key,
         policy,
-        &refresh_token_hash,
-        input.generation,
-        &transaction_id,
-        &input.device_id,
+        RefreshRotationRequest {
+            source_refresh_token_hash: &refresh_token_hash,
+            source_generation: input.generation,
+            transaction_id: &transaction_id,
+            requested_device_id: &input.device_id,
+        },
         now,
     )
     .await;
@@ -948,16 +950,26 @@ async fn prepare_authorization_capacity(
     Ok(())
 }
 
+struct RefreshRotationRequest<'a> {
+    source_refresh_token_hash: &'a str,
+    source_generation: i64,
+    transaction_id: &'a str,
+    requested_device_id: &'a str,
+}
+
 async fn rotate_refresh_in_transaction(
     connection: &mut SqliteConnection,
     master_key: &str,
     policy: &DeviceSessionPolicy,
-    source_refresh_token_hash: &str,
-    source_generation: i64,
-    transaction_id: &str,
-    requested_device_id: &str,
+    request: RefreshRotationRequest<'_>,
     now: DateTime<Utc>,
 ) -> DeviceSessionResult<InitialDeviceCredentials> {
+    let RefreshRotationRequest {
+        source_refresh_token_hash,
+        source_generation,
+        transaction_id,
+        requested_device_id,
+    } = request;
     let row = sqlx::query(
         r#"
         SELECT refresh.family_id, refresh.device_id, refresh.user_id,

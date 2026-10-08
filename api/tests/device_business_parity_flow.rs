@@ -285,7 +285,13 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     let created_resource = json_body(response).await;
     let resource_id = created_resource["data"]["id"].as_i64().unwrap();
     let sanitized_body = created_resource["data"]["body"].as_str().unwrap();
-    assert!(sanitized_body.contains("<h2>device-resource-body</h2>"));
+    let heading = sanitized_body
+        .strip_prefix("<h2 data-yuance-section-id=\"")
+        .expect("resource heading should retain its stable section identifier");
+    let (section_id, heading_body) = heading.split_once("\">").unwrap();
+    Uuid::parse_str(section_id.strip_prefix("yuance-section-").unwrap())
+        .expect("generated section identifier should be valid");
+    assert!(heading_body.starts_with("device-resource-body</h2>"));
     assert!(sanitized_body.contains("<pre><code>cargo test</code></pre>"));
     assert!(!sanitized_body.contains("onclick"));
     assert!(!sanitized_body.contains("<script"));
@@ -379,14 +385,14 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         encryption["encrypted_byte_size"].as_i64().unwrap(),
         expected_encrypted_byte_size as i64
     );
+    let expected_content_length = expected_encrypted_byte_size.to_string();
     assert!(
         signed["data"]["request"]["headers"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|pair| {
-                pair[0] == "content-length" && pair[1] == expected_encrypted_byte_size.to_string()
-            })
+            .any(|pair| pair[0] == "content-length"
+                && pair[1].as_str() == Some(expected_content_length.as_str()))
     );
     let file_object_id = encryption["file_object_id"].as_i64().unwrap();
     let stored_envelope =

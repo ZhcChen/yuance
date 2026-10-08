@@ -109,8 +109,7 @@ async fn device_session_schema_rejects_duplicate_identity_generation_and_transac
         "family-1",
         "device-1",
         user_id,
-        0,
-        "refresh-1-hash",
+        (0, "refresh-1-hash"),
         TRANSACTION_1,
     )
     .await
@@ -121,8 +120,7 @@ async fn device_session_schema_rejects_duplicate_identity_generation_and_transac
         "family-1",
         "device-1",
         user_id,
-        0,
-        "refresh-1-hash",
+        (0, "refresh-1-hash"),
         TRANSACTION_2,
     )
     .await;
@@ -146,8 +144,7 @@ async fn device_session_schema_rejects_duplicate_identity_generation_and_transac
         "family-2",
         "device-2",
         user_id,
-        0,
-        "refresh-2-hash",
+        (0, "refresh-2-hash"),
         TRANSACTION_1,
     )
     .await;
@@ -282,8 +279,7 @@ async fn device_session_schema_rejects_invalid_states_and_cross_family_reference
         "family-1",
         "device-2",
         user_id,
-        0,
-        "refresh-1-hash",
+        (0, "refresh-1-hash"),
         TRANSACTION_1,
     )
     .await;
@@ -298,8 +294,7 @@ async fn device_session_schema_rejects_invalid_states_and_cross_family_reference
         "family-1",
         "device-1",
         user_id,
-        1,
-        "missing-refresh-hash",
+        (1, "missing-refresh-hash"),
         TRANSACTION_2,
     )
     .await;
@@ -314,8 +309,7 @@ async fn device_session_schema_rejects_invalid_states_and_cross_family_reference
         "family-1",
         "device-1",
         user_id,
-        0,
-        "wrong-refresh-hash",
+        (0, "wrong-refresh-hash"),
         TRANSACTION_3,
     )
     .await;
@@ -781,10 +775,10 @@ async fn insert_rotation(
     family_id: &str,
     device_id: &str,
     user_id: i64,
-    source_generation: i64,
-    source_refresh_token_hash: &str,
+    source_credential: (i64, &str),
     transaction_id: &str,
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    let (source_generation, source_refresh_token_hash) = source_credential;
     sqlx::query(
         r#"
         INSERT INTO device_refresh_rotations (

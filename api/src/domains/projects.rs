@@ -2132,7 +2132,7 @@ pub async fn add_project_members(
         )
         .bind(project_id)
         .bind(user_id)
-        .bind(&member_role)
+        .bind(member_role)
         .execute(&mut *tx)
         .await?;
 
@@ -3594,22 +3594,7 @@ pub async fn list_work_item_comments(
     pool: &SqlitePool,
     work_item_id: i64,
 ) -> AppResult<Vec<WorkItemCommentSummary>> {
-    let rows = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            i64,
-            Option<i64>,
-            String,
-            String,
-            String,
-            String,
-            Option<i64>,
-            String,
-        ),
-    >(
+    let rows = sqlx::query_as::<_, WorkItemCommentRow>(
         r#"
         SELECT
             c.id,
@@ -3664,22 +3649,7 @@ pub async fn list_work_item_flow_comments_paginated(
     .fetch_one(pool)
     .await?;
 
-    let rows = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            i64,
-            Option<i64>,
-            String,
-            String,
-            String,
-            String,
-            Option<i64>,
-            String,
-        ),
-    >(
+    let rows = sqlx::query_as::<_, WorkItemCommentRow>(
         r#"
         SELECT
             c.id,
@@ -4889,7 +4859,7 @@ pub async fn update_work_item(
         .bind(actor_user_id)
         .bind(&actor_display_name_snapshot)
         .bind(cycle_action)
-        .bind(&item_key)
+        .bind(item_key)
         .bind(cycle_summary)
         .bind(format!(
             r#"{{"previous_cycle_id":{},"cycle_id":{},"cycle_name":"{}"}}"#,
@@ -5403,10 +5373,10 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
     .await?;
 
     tx.commit().await?;
-    if let Some(recipient_user_id) = reply_recipient {
-        if !mention_target_user_ids.contains(&recipient_user_id) {
-            realtime::publish_topbar_refresh_for_user(recipient_user_id);
-        }
+    if let Some(recipient_user_id) = reply_recipient
+        && !mention_target_user_ids.contains(&recipient_user_id)
+    {
+        realtime::publish_topbar_refresh_for_user(recipient_user_id);
     }
     for target in &mention_targets {
         if target.user_id != actor_user_id {
@@ -5633,10 +5603,10 @@ pub async fn publish_work_item_comment_draft(
     .await?;
 
     tx.commit().await?;
-    if let Some(recipient_user_id) = reply_recipient {
-        if !mention_target_user_ids.contains(&recipient_user_id) {
-            realtime::publish_topbar_refresh_for_user(recipient_user_id);
-        }
+    if let Some(recipient_user_id) = reply_recipient
+        && !mention_target_user_ids.contains(&recipient_user_id)
+    {
+        realtime::publish_topbar_refresh_for_user(recipient_user_id);
     }
     for target in &mention_targets {
         if target.user_id != actor_user_id {
@@ -5823,8 +5793,7 @@ pub async fn update_work_item_comment_with_format(
         actor_is_super_admin,
         item_key,
         comment_id,
-        body,
-        body_format,
+        CommentBodyInput { body, body_format },
         false,
     )
     .await
@@ -5844,11 +5813,15 @@ pub async fn update_work_item_comment_with_format_for_project_editor(
         false,
         item_key,
         comment_id,
-        body,
-        body_format,
+        CommentBodyInput { body, body_format },
         true,
     )
     .await
+}
+
+struct CommentBodyInput<'a> {
+    body: &'a str,
+    body_format: &'a str,
 }
 
 async fn update_work_item_comment_with_format_internal(
@@ -5857,10 +5830,10 @@ async fn update_work_item_comment_with_format_internal(
     actor_is_super_admin: bool,
     item_key: &str,
     comment_id: i64,
-    body: &str,
-    body_format: &str,
+    input: CommentBodyInput<'_>,
     bypass_manage_permission: bool,
 ) -> AppResult<WorkItemCommentSummary> {
+    let CommentBodyInput { body, body_format } = input;
     let prepared = prepare_work_item_comment_body(body, body_format, "评论")?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
@@ -8178,9 +8151,7 @@ fn rich_attachment_tag_range(value: &str, tag: &str) -> Option<(usize, usize)> {
     while let Some(relative_start) = value[search_from..].find(&open) {
         let start = search_from + relative_start;
         let after_start = &value[start..];
-        let Some(relative_tag_end) = after_start.find('>') else {
-            return None;
-        };
+        let relative_tag_end = after_start.find('>')?;
         let tag_end = start + relative_tag_end + 1;
         let open_tag = &value[start..tag_end];
         if !open_tag.contains("data-yuance-attachment-kind=") {
@@ -8188,9 +8159,7 @@ fn rich_attachment_tag_range(value: &str, tag: &str) -> Option<(usize, usize)> {
             continue;
         }
         let after_tag = &value[tag_end..];
-        let Some(relative_close_start) = after_tag.find(&close) else {
-            return None;
-        };
+        let relative_close_start = after_tag.find(&close)?;
         let end = tag_end + relative_close_start + close.len();
         return Some((start, end));
     }
@@ -8566,6 +8535,20 @@ fn format_work_item_flow_summary(
     parts.join("；")
 }
 
+type WorkItemCommentRow = (
+    i64,
+    String,
+    String,
+    i64,
+    Option<i64>,
+    String,
+    String,
+    String,
+    String,
+    Option<i64>,
+    String,
+);
+
 fn work_item_comment_summary_from_row(
     (
         id,
@@ -8579,19 +8562,7 @@ fn work_item_comment_summary_from_row(
         updated_at,
         parent_comment_id,
         parent_author_display_name,
-    ): (
-        i64,
-        String,
-        String,
-        i64,
-        Option<i64>,
-        String,
-        String,
-        String,
-        String,
-        Option<i64>,
-        String,
-    ),
+    ): WorkItemCommentRow,
 ) -> WorkItemCommentSummary {
     let (body, is_flow) = normalize_work_item_comment_body(body);
     WorkItemCommentSummary {
@@ -9277,6 +9248,43 @@ mod tests {
     };
 
     #[test]
+    fn time_allocation_hours_preserve_finite_positive_boundary() {
+        for hours in [
+            f64::NAN,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            -1.0,
+            -0.0,
+            0.0,
+            24.1,
+        ] {
+            assert!(
+                super::validate_time_allocation_input(
+                    "admin",
+                    "2026-10-08",
+                    "2026-10-09",
+                    hours,
+                    "",
+                    ""
+                )
+                .is_err()
+            );
+        }
+        for hours in [0.001, 8.0, 24.0] {
+            let validated = super::validate_time_allocation_input(
+                "admin",
+                "2026-10-08",
+                "2026-10-09",
+                hours,
+                "",
+                "",
+            )
+            .expect("valid hours should be retained");
+            assert_eq!(validated.3, hours);
+        }
+    }
+
+    #[test]
     fn empty_primary_post_reports_subject_specific_message() {
         assert!(matches!(
             prepare_work_item_comment_body("<p><br></p>", "html", "主内容"),
@@ -9632,7 +9640,7 @@ fn validate_time_allocation_input(
         return Err(AppError::BadRequest("结束日期不能为空".to_string()));
     }
     validate_date_range(&start_date, &end_date, "结束日期不能早于开始日期")?;
-    if !(daily_hours > 0.0) || daily_hours > 24.0 {
+    if daily_hours.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) || daily_hours > 24.0 {
         return Err(AppError::BadRequest(
             "每天投入小时数必须在 0 到 24 之间".to_string(),
         ));

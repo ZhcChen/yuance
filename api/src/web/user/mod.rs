@@ -330,17 +330,21 @@ pub async fn project_attachment_preview(
             pool,
             context.user_id,
             attachment,
-            format!("/web/projects/{project_key}"),
-            "返回项目".to_string(),
-            navigation,
-            &format!("/web/projects/{project_key}/attachments/{attachment_id}/preview/content"),
-            "project",
-            &project_key,
-            format!(
-                r#"{{"source":"web","project":"{}","attachment_id":{attachment_id}}}"#,
-                project_key
-            ),
-            &download_url,
+            AttachmentDocumentPreviewInput {
+                source_url: format!("/web/projects/{project_key}"),
+                source_label: "返回项目".to_string(),
+                navigation,
+                preview_content_url: &format!(
+                    "/web/projects/{project_key}/attachments/{attachment_id}/preview/content"
+                ),
+                target_type: "project",
+                target_id: &project_key,
+                metadata: format!(
+                    r#"{{"source":"web","project":"{}","attachment_id":{attachment_id}}}"#,
+                    project_key
+                ),
+                download_url: &download_url,
+            },
         )
         .await;
     }
@@ -531,19 +535,21 @@ pub async fn project_resource_attachment_preview(
             pool,
             context.user_id,
             attachment,
-            format!("/web/projects/{project_key}/resources/{resource_id}{access_suffix}"),
-            "返回资料".to_string(),
-            navigation,
-            &format!(
+            AttachmentDocumentPreviewInput {
+                source_url: format!("/web/projects/{project_key}/resources/{resource_id}{access_suffix}"),
+                source_label: "返回资料".to_string(),
+                navigation,
+                preview_content_url: &format!(
                 "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content{access_suffix}"
-            ),
-            "project_resource",
-            &resource.id.to_string(),
-            format!(
+                ),
+                target_type: "project_resource",
+                target_id: &resource.id.to_string(),
+                metadata: format!(
                 r#"{{"source":"web","project":"{}","resource_id":{},"attachment_id":{attachment_id}}}"#,
                 project_key, resource.id
-            ),
-            &download_url,
+                ),
+                download_url: &download_url,
+            },
         )
         .await;
     }
@@ -745,17 +751,21 @@ pub async fn work_item_attachment_preview(
             pool,
             context.user_id,
             attachment,
-            format!("/web/work-items/{item_key}"),
-            "返回工作项".to_string(),
-            navigation,
-            &format!("/web/work-items/{item_key}/attachments/{attachment_id}/preview/content"),
-            "work_item",
-            &item_key,
-            format!(
-                r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#,
-                item_key
-            ),
-            &download_url,
+            AttachmentDocumentPreviewInput {
+                source_url: format!("/web/work-items/{item_key}"),
+                source_label: "返回工作项".to_string(),
+                navigation,
+                preview_content_url: &format!(
+                    "/web/work-items/{item_key}/attachments/{attachment_id}/preview/content"
+                ),
+                target_type: "work_item",
+                target_id: &item_key,
+                metadata: format!(
+                    r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#,
+                    item_key
+                ),
+                download_url: &download_url,
+            },
         )
         .await;
     }
@@ -894,19 +904,21 @@ pub async fn work_item_comment_attachment_preview(
             pool,
             context.user_id,
             attachment,
-            format!("/web/work-items/{item_key}#comment-{comment_id}"),
-            "返回评论".to_string(),
-            navigation,
-            &format!(
+            AttachmentDocumentPreviewInput {
+                source_url: format!("/web/work-items/{item_key}#comment-{comment_id}"),
+                source_label: "返回评论".to_string(),
+                navigation,
+                preview_content_url: &format!(
                 "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content"
-            ),
-            "comment",
-            &comment_id.to_string(),
-            format!(
+                ),
+                target_type: "comment",
+                target_id: &comment_id.to_string(),
+                metadata: format!(
                 r#"{{"source":"web","work_item":"{}","comment_id":{},"attachment_id":{attachment_id}}}"#,
                 item.item_key, comment.id
-            ),
-            &download_url,
+                ),
+                download_url: &download_url,
+            },
         )
         .await;
     }
@@ -1801,20 +1813,34 @@ async fn read_attachment_plaintext(
     file_crypto::decrypt_ciphertext_full(&data_key, attachment.file_object_id, &ciphertext)
 }
 
+struct AttachmentDocumentPreviewInput<'a> {
+    source_url: String,
+    source_label: String,
+    navigation: DocumentPreviewNavigation,
+    preview_content_url: &'a str,
+    target_type: &'a str,
+    target_id: &'a str,
+    metadata: String,
+    download_url: &'a str,
+}
+
 async fn attachment_document_preview_response(
     state: &AppState,
     pool: &SqlitePool,
     actor_user_id: i64,
     attachment: files::FileAttachmentSummary,
-    source_url: String,
-    source_label: String,
-    navigation: DocumentPreviewNavigation,
-    preview_content_url: &str,
-    target_type: &str,
-    target_id: &str,
-    metadata: String,
-    download_url: &str,
+    input: AttachmentDocumentPreviewInput<'_>,
 ) -> AppResult<Response> {
+    let AttachmentDocumentPreviewInput {
+        source_url,
+        source_label,
+        navigation,
+        preview_content_url,
+        target_type,
+        target_id,
+        metadata,
+        download_url,
+    } = input;
     audit::record(
         pool,
         Some(actor_user_id),

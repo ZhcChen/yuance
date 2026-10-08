@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use std::{
     fs,
     future::Future,
-    sync::{Mutex, OnceLock},
+    sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tower::ServiceExt;
@@ -1112,7 +1112,7 @@ where
     F: FnOnce(std::path::PathBuf) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _guard = env_lock().lock().await;
     let dir = unique_temp_dir("yuance-web-dist");
     let previous = std::env::var("YUANCE_WEB_DIST_DIR").ok();
     unsafe {
@@ -1138,7 +1138,7 @@ fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("{prefix}-{nanos}"))
 }
 
-fn env_lock() -> &'static Mutex<()> {
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    ENV_LOCK.get_or_init(|| Mutex::new(()))
+fn env_lock() -> &'static tokio::sync::Mutex<()> {
+    static ENV_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    ENV_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }

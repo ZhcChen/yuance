@@ -859,7 +859,6 @@ pub async fn create_resource(
         actor_user_id,
         &actor_display_name_snapshot,
         "project_resource.create",
-        "project_resource",
         &resource_id.to_string(),
         &format!("创建资料 {title}"),
     )
@@ -966,7 +965,6 @@ pub async fn update_resource(
         actor_user_id,
         &actor_display_name_snapshot,
         "project_resource.update",
-        "project_resource",
         &resource_id.to_string(),
         &format!("更新资料 {title}"),
     )
@@ -1014,7 +1012,6 @@ pub async fn archive_resource(
         actor_user_id,
         &actor_display_name_snapshot,
         "project_resource.archive",
-        "project_resource",
         &resource_id.to_string(),
         &format!("归档资料 {}", existing.title),
     )
@@ -1087,7 +1084,6 @@ pub async fn reset_resource_access_password(
         actor_user_id,
         &actor_display_name_snapshot,
         "project_resource.password.reset",
-        "project_resource",
         &resource_id.to_string(),
         &summary,
     )
@@ -1948,7 +1944,6 @@ async fn record_project_activity_in_transaction(
     actor_user_id: i64,
     actor_display_name_snapshot: &str,
     action: &str,
-    target_type: &str,
     target_id: &str,
     summary: &str,
 ) -> AppResult<()> {
@@ -1971,7 +1966,7 @@ async fn record_project_activity_in_transaction(
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
     .bind(action)
-    .bind(target_type)
+    .bind("project_resource")
     .bind(target_id)
     .bind(summary)
     .execute(&mut **tx)
@@ -2077,12 +2072,11 @@ fn normalize_resource_sections(body: &str) -> String {
                 ) =>
             {
                 for attribute in tag.attributes().flatten() {
-                    if attribute.key.as_ref() == b"data-yuance-section-id" {
-                        if let Ok(value) = std::str::from_utf8(&attribute.value) {
-                            if valid_resource_section_id(value) {
-                                reserved.insert(value.to_string());
-                            }
-                        }
+                    if attribute.key.as_ref() == b"data-yuance-section-id"
+                        && let Ok(value) = std::str::from_utf8(&attribute.value)
+                        && valid_resource_section_id(value)
+                    {
+                        reserved.insert(value.to_string());
                     }
                 }
             }
@@ -2184,175 +2178,6 @@ fn is_safe_inline_svg_data_url(value: &str) -> bool {
         .decode(encoded)
         .map(|content| files::validate_svg_content(&content).is_ok())
         .unwrap_or(false)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{resource_body_html_for_display, resource_body_references_attachment};
-
-    #[test]
-    fn resource_body_capacity_counts_json_bytes_without_a_character_limit() {
-        let capacity = super::RESOURCE_JSON_MAX_BYTES - super::RESOURCE_JSON_METADATA_RESERVE_BYTES;
-        let near_boundary = "x".repeat(capacity - 2);
-        assert!(super::ensure_resource_body_can_be_resubmitted(&near_boundary).is_ok());
-        assert!(
-            super::ensure_resource_body_can_be_resubmitted(&format!("{near_boundary}x")).is_err()
-        );
-        assert!(
-            super::ensure_resource_body_can_be_resubmitted(&"中".repeat((capacity - 2) / 3))
-                .is_ok()
-        );
-        // 每个换行在 JSON 中为两个字节，不能按字符数或原始UTF-8长度判断。
-        assert!(
-            super::ensure_resource_body_can_be_resubmitted(&"\n".repeat(capacity / 2)).is_err()
-        );
-    }
-
-    #[test]
-    fn resource_section_persistence_is_unique_stable_and_safe() {
-        let input = r##"<h2 id="location" onclick="alert(1)" data-yuance-section-id="yuance-section-sql-310">同名</h2><h2 data-yuance-section-id="yuance-section-sql-310">同名</h2><h6 data-yuance-section-id="invalid">末章</h6><p data-yuance-section-id="yuance-section-fake">正文<br>下一行</p><a name="sql" href="#yuance-section-sql-310">见 3.10</a><a href="javascript:alert(1)">危险</a><script>alert(1)</script>"##;
-        let saved =
-            super::normalize_resource_sections(&super::sanitize_resource_html(input, "", 0));
-        assert_eq!(saved.matches("data-yuance-section-id=").count(), 3);
-        assert_eq!(
-            saved
-                .matches("data-yuance-section-id=\"yuance-section-sql-310\"")
-                .count(),
-            1
-        );
-        assert!(saved.contains("href=\"#yuance-section-sql-310\""));
-        for unsafe_value in [
-            "onclick",
-            "id=\"location",
-            "name=",
-            "javascript:",
-            "<script",
-            "yuance-section-fake",
-            "\"invalid\"",
-        ] {
-            assert!(!saved.contains(unsafe_value), "{unsafe_value}: {saved}");
-        }
-        assert_eq!(
-            saved,
-            super::normalize_resource_sections(&super::sanitize_resource_html(&saved, "", 0))
-        );
-        assert_eq!(saved, resource_body_html_for_display(&saved, "html"));
-        let renamed = saved.replace("同名", "改名");
-        assert_eq!(
-            renamed,
-            super::normalize_resource_sections(&super::sanitize_resource_html(&renamed, "", 0))
-        );
-    }
-
-    #[test]
-    fn resource_section_legacy_display_does_not_rewrite_body_and_save_preserves_explicit_ids() {
-        let input =
-            r#"<h2>旧资料</h2><h6 data-yuance-section-id="yuance-section-legacy-1">末章</h6>"#;
-        let first = resource_body_html_for_display(input, "html");
-        assert_eq!(first, input);
-        let saved = super::normalize_resource_sections(&first);
-        assert!(saved.contains("data-yuance-section-id=\"yuance-section-legacy-1\""));
-        assert_eq!(saved.matches("data-yuance-section-id=").count(), 2);
-        assert_eq!(saved, resource_body_html_for_display(&saved, "html"));
-        assert_eq!(
-            resource_body_html_for_display("<h2>纯文本</h2>", "plain"),
-            "<p>&lt;h2&gt;纯文本&lt;/h2&gt;</p>"
-        );
-    }
-
-    #[test]
-    fn resource_attachment_reference_check_matches_only_same_resource_id() {
-        let html = r#"<a data-yuance-attachment-id="5" href="/web/projects/YCE/resources/7/attachments/5/download">file</a>"#;
-        assert!(resource_body_references_attachment(7, html, "html", 5));
-        assert!(!resource_body_references_attachment(7, html, "html", 6));
-        assert!(!resource_body_references_attachment(8, html, "html", 5));
-    }
-
-    #[test]
-    fn resource_body_preserves_file_card_dataset_attributes() {
-        let html = concat!(
-            "<a data-yuance-attachment-id=\"5\" ",
-            "data-yuance-attachment-kind=\"file\" ",
-            "data-yuance-align=\"left\" ",
-            "data-yuance-file-kind=\"pdf\" ",
-            "data-yuance-file-ext=\"PDF\" ",
-            "href=\"/web/projects/YCE/resources/5/attachments/5/download\" ",
-            "title=\"demo.pdf\">demo.pdf</a>"
-        );
-
-        let rendered = resource_body_html_for_display(html, "html");
-
-        assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
-        assert!(rendered.contains("data-yuance-file-kind=\"pdf\""));
-        assert!(rendered.contains("data-yuance-file-ext=\"PDF\""));
-    }
-
-    #[test]
-    fn resource_body_preserves_span_text_style_properties() {
-        let html =
-            r#"<p><span style="color: red; font-size: large; font-weight: 900">重点</span></p>"#;
-
-        let rendered = resource_body_html_for_display(html, "html");
-
-        assert!(rendered.contains("style=\"color:red"));
-        assert!(rendered.contains("font-size:large"));
-        assert!(!rendered.contains("font-weight"));
-    }
-
-    #[test]
-    fn resource_body_preserves_markdown_html_blocks_and_strips_unsafe_links() {
-        let html = concat!(
-            "<h2>联调说明</h2>",
-            "<blockquote>请先核对环境变量</blockquote>",
-            "<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>",
-            "<hr>",
-            "<p><a href=\"javascript:alert(1)\">bad</a></p>"
-        );
-
-        let rendered = resource_body_html_for_display(html, "html");
-
-        assert!(rendered.contains("<h2>联调说明</h2>"));
-        assert!(rendered.contains("<blockquote>请先核对环境变量</blockquote>"));
-        assert!(rendered.contains("<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>"));
-        assert!(rendered.contains("<hr"));
-        assert!(!rendered.contains("javascript:"));
-    }
-
-    #[test]
-    fn resource_body_renders_safe_escaped_svg_code_block_as_image() {
-        let html = concat!(
-            "<details><summary>打开 SVG 源码</summary><pre><code>",
-            "&lt;svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\">",
-            "&lt;rect width=\"10\" height=\"10\" fill=\"#fff\"/>",
-            "&lt;/svg>",
-            "</code></pre></details>"
-        );
-
-        let rendered = resource_body_html_for_display(html, "html");
-
-        assert!(
-            rendered.contains("class=\"resource-inline-svg\""),
-            "{rendered}"
-        );
-        assert!(rendered.contains("data:image/svg+xml;base64,"));
-        assert!(!rendered.contains("打开 SVG 源码"));
-    }
-
-    #[test]
-    fn resource_body_keeps_unsafe_svg_source_as_text() {
-        let html = concat!(
-            "<details><summary>打开 SVG 源码</summary><pre><code>",
-            "&lt;svg xmlns=\"http://www.w3.org/2000/svg\">",
-            "&lt;script>alert(1)&lt;/script>",
-            "&lt;/svg>",
-            "</code></pre></details>"
-        );
-
-        let rendered = resource_body_html_for_display(html, "html");
-
-        assert!(!rendered.contains("data:image/svg+xml;base64,"));
-        assert!(rendered.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
-    }
 }
 
 fn ensure_resource_html_media_sources_are_controlled(
@@ -2597,5 +2422,174 @@ fn compact_summary(value: &str) -> String {
         "暂无正文摘要".to_string()
     } else {
         output
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resource_body_html_for_display, resource_body_references_attachment};
+
+    #[test]
+    fn resource_body_capacity_counts_json_bytes_without_a_character_limit() {
+        let capacity = super::RESOURCE_JSON_MAX_BYTES - super::RESOURCE_JSON_METADATA_RESERVE_BYTES;
+        let near_boundary = "x".repeat(capacity - 2);
+        assert!(super::ensure_resource_body_can_be_resubmitted(&near_boundary).is_ok());
+        assert!(
+            super::ensure_resource_body_can_be_resubmitted(&format!("{near_boundary}x")).is_err()
+        );
+        assert!(
+            super::ensure_resource_body_can_be_resubmitted(&"中".repeat((capacity - 2) / 3))
+                .is_ok()
+        );
+        // 每个换行在 JSON 中为两个字节，不能按字符数或原始UTF-8长度判断。
+        assert!(
+            super::ensure_resource_body_can_be_resubmitted(&"\n".repeat(capacity / 2)).is_err()
+        );
+    }
+
+    #[test]
+    fn resource_section_persistence_is_unique_stable_and_safe() {
+        let input = r##"<h2 id="location" onclick="alert(1)" data-yuance-section-id="yuance-section-sql-310">同名</h2><h2 data-yuance-section-id="yuance-section-sql-310">同名</h2><h6 data-yuance-section-id="invalid">末章</h6><p data-yuance-section-id="yuance-section-fake">正文<br>下一行</p><a name="sql" href="#yuance-section-sql-310">见 3.10</a><a href="javascript:alert(1)">危险</a><script>alert(1)</script>"##;
+        let saved =
+            super::normalize_resource_sections(&super::sanitize_resource_html(input, "", 0));
+        assert_eq!(saved.matches("data-yuance-section-id=").count(), 3);
+        assert_eq!(
+            saved
+                .matches("data-yuance-section-id=\"yuance-section-sql-310\"")
+                .count(),
+            1
+        );
+        assert!(saved.contains("href=\"#yuance-section-sql-310\""));
+        for unsafe_value in [
+            "onclick",
+            "id=\"location",
+            "name=",
+            "javascript:",
+            "<script",
+            "yuance-section-fake",
+            "\"invalid\"",
+        ] {
+            assert!(!saved.contains(unsafe_value), "{unsafe_value}: {saved}");
+        }
+        assert_eq!(
+            saved,
+            super::normalize_resource_sections(&super::sanitize_resource_html(&saved, "", 0))
+        );
+        assert_eq!(saved, resource_body_html_for_display(&saved, "html"));
+        let renamed = saved.replace("同名", "改名");
+        assert_eq!(
+            renamed,
+            super::normalize_resource_sections(&super::sanitize_resource_html(&renamed, "", 0))
+        );
+    }
+
+    #[test]
+    fn resource_section_legacy_display_does_not_rewrite_body_and_save_preserves_explicit_ids() {
+        let input =
+            r#"<h2>旧资料</h2><h6 data-yuance-section-id="yuance-section-legacy-1">末章</h6>"#;
+        let first = resource_body_html_for_display(input, "html");
+        assert_eq!(first, input);
+        let saved = super::normalize_resource_sections(&first);
+        assert!(saved.contains("data-yuance-section-id=\"yuance-section-legacy-1\""));
+        assert_eq!(saved.matches("data-yuance-section-id=").count(), 2);
+        assert_eq!(saved, resource_body_html_for_display(&saved, "html"));
+        assert_eq!(
+            resource_body_html_for_display("<h2>纯文本</h2>", "plain"),
+            "<p>&lt;h2&gt;纯文本&lt;/h2&gt;</p>"
+        );
+    }
+
+    #[test]
+    fn resource_attachment_reference_check_matches_only_same_resource_id() {
+        let html = r#"<a data-yuance-attachment-id="5" href="/web/projects/YCE/resources/7/attachments/5/download">file</a>"#;
+        assert!(resource_body_references_attachment(7, html, "html", 5));
+        assert!(!resource_body_references_attachment(7, html, "html", 6));
+        assert!(!resource_body_references_attachment(8, html, "html", 5));
+    }
+
+    #[test]
+    fn resource_body_preserves_file_card_dataset_attributes() {
+        let html = concat!(
+            "<a data-yuance-attachment-id=\"5\" ",
+            "data-yuance-attachment-kind=\"file\" ",
+            "data-yuance-align=\"left\" ",
+            "data-yuance-file-kind=\"pdf\" ",
+            "data-yuance-file-ext=\"PDF\" ",
+            "href=\"/web/projects/YCE/resources/5/attachments/5/download\" ",
+            "title=\"demo.pdf\">demo.pdf</a>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
+        assert!(rendered.contains("data-yuance-file-kind=\"pdf\""));
+        assert!(rendered.contains("data-yuance-file-ext=\"PDF\""));
+    }
+
+    #[test]
+    fn resource_body_preserves_span_text_style_properties() {
+        let html =
+            r#"<p><span style="color: red; font-size: large; font-weight: 900">重点</span></p>"#;
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(rendered.contains("style=\"color:red"));
+        assert!(rendered.contains("font-size:large"));
+        assert!(!rendered.contains("font-weight"));
+    }
+
+    #[test]
+    fn resource_body_preserves_markdown_html_blocks_and_strips_unsafe_links() {
+        let html = concat!(
+            "<h2>联调说明</h2>",
+            "<blockquote>请先核对环境变量</blockquote>",
+            "<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>",
+            "<hr>",
+            "<p><a href=\"javascript:alert(1)\">bad</a></p>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(rendered.contains("<h2>联调说明</h2>"));
+        assert!(rendered.contains("<blockquote>请先核对环境变量</blockquote>"));
+        assert!(rendered.contains("<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>"));
+        assert!(rendered.contains("<hr"));
+        assert!(!rendered.contains("javascript:"));
+    }
+
+    #[test]
+    fn resource_body_renders_safe_escaped_svg_code_block_as_image() {
+        let html = concat!(
+            "<details><summary>打开 SVG 源码</summary><pre><code>",
+            "&lt;svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\">",
+            "&lt;rect width=\"10\" height=\"10\" fill=\"#fff\"/>",
+            "&lt;/svg>",
+            "</code></pre></details>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(
+            rendered.contains("class=\"resource-inline-svg\""),
+            "{rendered}"
+        );
+        assert!(rendered.contains("data:image/svg+xml;base64,"));
+        assert!(!rendered.contains("打开 SVG 源码"));
+    }
+
+    #[test]
+    fn resource_body_keeps_unsafe_svg_source_as_text() {
+        let html = concat!(
+            "<details><summary>打开 SVG 源码</summary><pre><code>",
+            "&lt;svg xmlns=\"http://www.w3.org/2000/svg\">",
+            "&lt;script>alert(1)&lt;/script>",
+            "&lt;/svg>",
+            "</code></pre></details>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(!rendered.contains("data:image/svg+xml;base64,"));
+        assert!(rendered.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
     }
 }

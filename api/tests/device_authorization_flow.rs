@@ -734,8 +734,8 @@ async fn bootstrap_admin_session(pool: &SqlitePool) -> String {
             .fetch_optional(pool)
             .await
             .unwrap();
-    if existing_user.is_some() {
-        let session = auth::issue_session(pool, existing_user.unwrap(), 12 * 60 * 60)
+    if let Some(existing_user) = existing_user {
+        let session = auth::issue_session(pool, existing_user, 12 * 60 * 60)
             .await
             .unwrap();
         return cookie_pair(&auth::session_cookie_header(&session.raw_token, false));

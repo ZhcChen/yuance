@@ -858,7 +858,7 @@ pub async fn get_topbar_status(
     let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
     let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
     let can_view_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
     let can_view_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
@@ -965,13 +965,11 @@ async fn topbar_system_links(
     headers: &HeaderMap,
     user_id: i64,
 ) -> AppResult<Vec<SystemDashboardLinkPayload>> {
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
-        if !device_sessions::is_device_access_token(&raw_token)
-            && !api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, "system:admin")
-                .await?
-        {
-            return Ok(Vec::new());
-        }
+    if let Some(raw_token) = api_tokens::bearer_token(headers)
+        && !device_sessions::is_device_access_token(&raw_token)
+        && !api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, "system:admin").await?
+    {
+        return Ok(Vec::new());
     }
     if !rbac::user_has_permission(pool, user_id, "system.dashboard.view").await? {
         return Ok(Vec::new());
@@ -1063,7 +1061,7 @@ pub async fn topbar_events(
         loop {
             match receiver.recv().await {
                 Ok(message) => {
-                    if message.kind == "topbar" && message.user_ids.iter().any(|target_id| *target_id == user_id) {
+                    if message.kind == "topbar" && message.user_ids.contains(&user_id) {
                         yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("refresh"));
                     }
                 }
@@ -2658,7 +2656,7 @@ pub async fn list_projects(
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     let filter = projects::ProjectListFilter {
         status: normalize_api_project_status(&query.status)?,
@@ -2759,7 +2757,7 @@ pub async fn get_current_project(
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
     let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
     let current =
         projects::get_or_select_current_project_for_user(pool, user.id, can_access_all_projects)
@@ -2788,7 +2786,7 @@ pub async fn update_current_project(
             "访问 Token 不允许访问该项目".to_string(),
         ));
     }
-    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
     let current = projects::set_current_project_for_user(
         pool,
         user.id,
@@ -2872,7 +2870,7 @@ pub async fn update_project(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    ensure_api_project_member_manage_access(pool, user, project.id).await?;
     let updated = projects::update_project(
         pool,
         user.id,
@@ -2927,7 +2925,7 @@ pub async fn add_project_member(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    ensure_api_project_member_manage_access(pool, user, project.id).await?;
     let member = projects::add_project_member(
         pool,
         user.id,
@@ -2987,7 +2985,7 @@ pub async fn list_project_member_candidates(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    ensure_api_project_member_manage_access(pool, user, project.id).await?;
 
     let member_usernames = projects::list_project_members(pool, project.id)
         .await?
@@ -3025,7 +3023,7 @@ pub async fn add_project_members(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    ensure_api_project_member_manage_access(pool, user, project.id).await?;
     let members = projects::add_project_members(
         pool,
         user.id,
@@ -3070,7 +3068,7 @@ pub async fn update_project_member_role(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    ensure_api_project_member_manage_access(pool, user, project.id).await?;
     let member = projects::update_project_member_role(
         pool,
         user.id,
@@ -3109,7 +3107,7 @@ pub async fn remove_project_member(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_member_manage_access(pool, &user, project.id).await?;
+    ensure_api_project_member_manage_access(pool, user, project.id).await?;
     projects::remove_project_member(pool, user.id, &project_key, &username).await?;
     audit::record(
         pool,
@@ -3532,14 +3530,14 @@ pub async fn list_work_items(
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
-    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
     let item_type = api_work_item_type(query.item_type.as_deref())?;
     let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
     let explicit_project_key = query.project_key.trim().to_string();
     let project_key = if explicit_project_key.is_empty() && token_project_scope.is_some() {
         String::new()
     } else {
-        default_api_project_key(pool, &user, can_access_all_projects, query.project_key).await?
+        default_api_project_key(pool, user, can_access_all_projects, query.project_key).await?
     };
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     if !project_key.is_empty() && !project_key_in_token_scope(&token_project_scope, &project_key) {
@@ -3893,7 +3891,7 @@ pub async fn create_work_item(
         .await?
         .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let item = projects::create_work_item_with_cycle(
         pool,
         user.id,
@@ -4389,12 +4387,12 @@ pub async fn update_work_item(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let status = payload.status.unwrap_or_else(|| item.status.clone());
     let assignee_username = payload
         .assignee_username
         .unwrap_or_else(|| item.assignee_username.clone());
-    let cycle_id = payload.cycle_id.unwrap_or_else(|| item.cycle_id);
+    let cycle_id = payload.cycle_id.unwrap_or(item.cycle_id);
     let updated = projects::update_work_item(
         pool,
         user.id,
@@ -4511,7 +4509,7 @@ pub async fn handoff_work_item(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let updated = projects::handoff_work_item(
         pool,
         user.id,
@@ -4671,7 +4669,7 @@ pub async fn create_work_item_comment_draft(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let comment = projects::create_work_item_comment_draft(
         pool,
         user.id,
@@ -4704,7 +4702,7 @@ pub async fn publish_work_item_comment_draft(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let comment = projects::publish_work_item_comment_draft(
         pool,
         user.id,
@@ -4747,7 +4745,7 @@ pub async fn cancel_work_item_comment_draft(
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
     ensure_api_work_item_accepts_writes(&item)?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     if !comment.is_draft {
         return Err(AppError::BadRequest("该评论不是草稿".to_string()));
@@ -4760,13 +4758,15 @@ pub async fn cancel_work_item_comment_draft(
         storage::delete_object_if_exists(pool, &state.settings, &attachment.object_key).await?;
         files::archive_attachment(
             pool,
-            attachment.id,
-            "comment",
-            comment.id,
-            user.id,
-            &principal.actor_display_name_snapshot(),
-            None,
-            None,
+            files::ArchiveAttachmentInput {
+                attachment_id: attachment.id,
+                target_type: "comment",
+                target_id: comment.id,
+                actor_user_id: user.id,
+                actor_display_name_snapshot: &principal.actor_display_name_snapshot(),
+                project_id: None,
+                activity_summary: None,
+            },
         )
         .await?;
     }
@@ -4821,7 +4821,7 @@ pub async fn update_work_item_comment(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let comment = projects::update_work_item_comment_with_format(
         pool,
         user.id,
@@ -5115,10 +5115,14 @@ pub async fn work_item_comment_attachment_preview_content(
         &headers,
         method,
         attachment,
-        user.id,
-        "comment",
-        &comment_id.to_string(),
-        &format!(r#"{{"source":"api","work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+        AttachmentPreviewAudit {
+            user_id: user.id,
+            target_type: "comment",
+            target_id: &comment_id.to_string(),
+            detail: &format!(
+                r#"{{"source":"api","work_item":"{item_key}","attachment_id":{attachment_id}}}"#
+            ),
+        },
     )
     .await
 }
@@ -5143,7 +5147,7 @@ pub async fn work_item_comment_attachment_delete(
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_comment_accepts_attachments(&comment)?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     if !comment.is_draft {
         let editor_context = headers
@@ -5216,7 +5220,7 @@ pub async fn create_project_attachment(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let config = storage::active_config(pool)
         .await?
@@ -5290,7 +5294,7 @@ pub async fn project_attachment_upload_url(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
@@ -5322,7 +5326,7 @@ pub async fn project_attachment_mark_uploaded(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
@@ -5489,12 +5493,21 @@ pub async fn project_attachment_preview_content(
         &headers,
         method,
         attachment,
-        user.id,
-        "project",
-        &project_key,
-        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+        AttachmentPreviewAudit {
+            user_id: user.id,
+            target_type: "project",
+            target_id: &project_key,
+            detail: &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+        },
     )
     .await
+}
+
+struct AttachmentPreviewAudit<'a> {
+    user_id: i64,
+    target_type: &'a str,
+    target_id: &'a str,
+    detail: &'a str,
 }
 
 async fn attachment_preview_content_response(
@@ -5503,11 +5516,14 @@ async fn attachment_preview_content_response(
     headers: &HeaderMap,
     method: Method,
     attachment: files::FileAttachmentSummary,
-    user_id: i64,
-    audit_target_type: &str,
-    audit_target_id: &str,
-    audit_detail: &str,
+    audit: AttachmentPreviewAudit<'_>,
 ) -> AppResult<Response> {
+    let AttachmentPreviewAudit {
+        user_id,
+        target_type: audit_target_type,
+        target_id: audit_target_id,
+        detail: audit_detail,
+    } = audit;
     ensure_attachment_preview_content_enabled(
         &attachment,
         state.settings.experimental_legacy_preview_enabled(),
@@ -5530,7 +5546,7 @@ async fn attachment_preview_content_response(
     let range = match headers.get(header::RANGE) {
         Some(value) => match parse_single_byte_range(value.to_str().unwrap_or_default(), total) {
             Some(range) => Some(range),
-            None => return Ok(range_not_satisfiable_response(total)?),
+            None => return range_not_satisfiable_response(total),
         },
         None => None,
     };
@@ -5711,10 +5727,8 @@ async fn read_decrypted_attachment_range(
         attachment.file_object_id,
         &header,
         &body,
-        first_chunk as u32,
-        (last_chunk as u32) + 1,
-        start,
-        end_exclusive,
+        first_chunk as u32..(last_chunk as u32) + 1,
+        start..end_exclusive,
     )
 }
 
@@ -5732,17 +5746,19 @@ pub async fn project_attachment_delete(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment = files::archive_attachment(
         pool,
-        attachment_id,
-        "project",
-        project.id,
-        user.id,
-        &principal.actor_display_name_snapshot(),
-        Some(project.id),
-        Some("归档项目附件"),
+        files::ArchiveAttachmentInput {
+            attachment_id,
+            target_type: "project",
+            target_id: project.id,
+            actor_user_id: user.id,
+            actor_display_name_snapshot: &principal.actor_display_name_snapshot(),
+            project_id: Some(project.id),
+            activity_summary: Some("归档项目附件"),
+        },
     )
     .await?;
     audit::record(
@@ -5848,7 +5864,7 @@ pub async fn create_project_resource(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let resource = project_resources::create_resource(
         pool,
@@ -6495,10 +6511,14 @@ pub async fn project_resource_attachment_preview_content(
         &headers,
         method,
         attachment,
-        user.id,
-        "project_resource",
-        &resource.id.to_string(),
-        &format!(r#"{{"source":"api","project":"{project_key}","attachment_id":{attachment_id}}}"#),
+        AttachmentPreviewAudit {
+            user_id: user.id,
+            target_type: "project_resource",
+            target_id: &resource.id.to_string(),
+            detail: &format!(
+                r#"{{"source":"api","project":"{project_key}","attachment_id":{attachment_id}}}"#
+            ),
+        },
     )
     .await
 }
@@ -6809,10 +6829,12 @@ pub async fn work_item_attachment_preview_content(
         &headers,
         method,
         attachment,
-        user.id,
-        "work_item",
-        &item_key,
-        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+        AttachmentPreviewAudit {
+            user_id: user.id,
+            target_type: "work_item",
+            target_id: &item_key,
+            detail: &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+        },
     )
     .await
 }
@@ -10834,7 +10856,7 @@ pub async fn create_project_folder(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let folder = files::create_folder(
         pool,

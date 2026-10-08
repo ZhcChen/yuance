@@ -813,10 +813,10 @@ fn validate_svg_attributes<'a>(
         {
             return Err(AppError::BadRequest("SVG 属性值不安全".to_string()));
         }
-        if name.eq_ignore_ascii_case("href") || name.eq_ignore_ascii_case("xlink:href") {
-            if !value.starts_with('#') {
-                return Err(AppError::BadRequest("SVG 不允许外部资源引用".to_string()));
-            }
+        if (name.eq_ignore_ascii_case("href") || name.eq_ignore_ascii_case("xlink:href"))
+            && !value.starts_with('#')
+        {
+            return Err(AppError::BadRequest("SVG 不允许外部资源引用".to_string()));
         }
         if name.eq_ignore_ascii_case("id") && value.contains(['<', '>', '"', '\'']) {
             return Err(AppError::BadRequest("SVG ID 无效".to_string()));
@@ -1029,16 +1029,29 @@ pub async fn get_file_object_encryption(
     }))
 }
 
+pub struct ArchiveAttachmentInput<'a> {
+    pub attachment_id: i64,
+    pub target_type: &'a str,
+    pub target_id: i64,
+    pub actor_user_id: i64,
+    pub actor_display_name_snapshot: &'a str,
+    pub project_id: Option<i64>,
+    pub activity_summary: Option<&'a str>,
+}
+
 pub async fn archive_attachment(
     pool: &SqlitePool,
-    attachment_id: i64,
-    target_type: &str,
-    target_id: i64,
-    actor_user_id: i64,
-    actor_display_name_snapshot: &str,
-    project_id: Option<i64>,
-    activity_summary: Option<&str>,
+    input: ArchiveAttachmentInput<'_>,
 ) -> AppResult<FileAttachmentSummary> {
+    let ArchiveAttachmentInput {
+        attachment_id,
+        target_type,
+        target_id,
+        actor_user_id,
+        actor_display_name_snapshot,
+        project_id,
+        activity_summary,
+    } = input;
     let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
     if let Some(project_id) = project_id
         && project_id <= 0

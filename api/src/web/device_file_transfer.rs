@@ -208,25 +208,18 @@ async fn build_transfer_payload(
     let now = Utc::now();
     let mut request = match purpose {
         TransferPurpose::Upload => {
-            let request = storage::presign_upload_url(
+            storage::presign_upload_url(
                 pool,
                 &state.settings,
                 &object_key,
                 CANARY_CONTENT_TYPE,
                 TRANSFER_TTL_SECONDS,
             )
-            .await?;
-            request
+            .await?
         }
         TransferPurpose::Download => {
-            let request = storage::presign_download_url(
-                pool,
-                &state.settings,
-                &object_key,
-                TRANSFER_TTL_SECONDS,
-            )
-            .await?;
-            request
+            storage::presign_download_url(pool, &state.settings, &object_key, TRANSFER_TTL_SECONDS)
+                .await?
         }
     };
     bind_canary_test_request(state, &object_key, purpose, now, &mut request)?;

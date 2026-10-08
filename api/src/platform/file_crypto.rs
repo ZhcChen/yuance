@@ -129,7 +129,7 @@ pub fn decrypt_plaintext_range(
                     data_key,
                     file_object_id,
                     chunk_index as u32,
-                    &header.nonces[chunk_index as usize],
+                    &header.nonces[chunk_index],
                     chunk,
                 )?;
                 output.extend_from_slice(&plaintext[cut_start..cut_end]);
@@ -183,11 +183,17 @@ pub fn decrypt_body_range(
     file_object_id: i64,
     header: &FileEncryptionHeader,
     body: &[u8],
-    body_chunk_start: u32,
-    body_chunk_end_exclusive: u32,
-    plaintext_start: usize,
-    plaintext_end_exclusive: usize,
+    body_chunks: std::ops::Range<u32>,
+    plaintext_range: std::ops::Range<usize>,
 ) -> AppResult<Vec<u8>> {
+    let std::ops::Range {
+        start: body_chunk_start,
+        end: body_chunk_end_exclusive,
+    } = body_chunks;
+    let std::ops::Range {
+        start: plaintext_start,
+        end: plaintext_end_exclusive,
+    } = plaintext_range;
     if body_chunk_start >= body_chunk_end_exclusive || plaintext_start >= plaintext_end_exclusive {
         return Ok(Vec::new());
     }
@@ -568,10 +574,8 @@ mod tests {
                 file_object_id,
                 &header,
                 &body[body_start..body_end],
-                first_chunk,
-                last_chunk + 1,
-                start,
-                end,
+                first_chunk..last_chunk + 1,
+                start..end,
             )
             .expect("body range");
             assert_eq!(actual, plaintext[start..end]);

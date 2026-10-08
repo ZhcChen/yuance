@@ -459,6 +459,10 @@ actor=zhangsan
 ```text
 GET    /api/v1/projects/{project_key}/resources
 POST   /api/v1/projects/{project_key}/resources
+GET    /api/v1/projects/{project_key}/resource-library/linked-work-item-posts
+GET    /api/v1/work-items/{item_key}/resource-library-link
+POST   /api/v1/work-items/{item_key}/resource-library-link
+DELETE /api/v1/work-items/{item_key}/resource-library-link
 GET    /api/v1/projects/{project_key}/resources/{resource_id}
 PATCH  /api/v1/projects/{project_key}/resources/{resource_id}
 DELETE /api/v1/projects/{project_key}/resources/{resource_id}

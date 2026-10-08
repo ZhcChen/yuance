@@ -1650,7 +1650,7 @@ async fn demo_seed_idempotently_creates_projects_and_work_items() {
         .await
         .expect("demo seed should be idempotent");
 
-    assert_eq!(first.project_count, 3);
+    assert_eq!(first.project_count, 12);
     assert_eq!(first.work_item_count, 6);
     assert_eq!(second, first);
 
@@ -1667,7 +1667,7 @@ async fn demo_seed_idempotently_creates_projects_and_work_items() {
         .await
         .expect("comment count should load");
 
-    assert_eq!(project_members, 3);
+    assert_eq!(project_members, 12);
     assert_eq!(activities, 3);
     assert_eq!(comments, 2);
 }
@@ -1684,7 +1684,7 @@ async fn project_summaries_return_counts_and_stable_order() {
         .await
         .expect("project summaries should load");
 
-    assert_eq!(summaries.len(), 3);
+    assert_eq!(summaries.len(), 12);
     let yuance = summaries
         .iter()
         .find(|project| project.project_key == "YCE")
@@ -1714,8 +1714,8 @@ async fn project_summaries_can_paginate_and_filter_by_status() {
     )
     .await
     .expect("project page should load");
-    assert_eq!(second_page.total_items, 3);
-    assert_eq!(second_page.total_pages(), 3);
+    assert_eq!(second_page.total_items, 12);
+    assert_eq!(second_page.total_pages(), 12);
     assert_eq!(second_page.items.len(), 1);
 
     let on_hold_page = projects::list_project_summaries_paginated(
@@ -1730,8 +1730,14 @@ async fn project_summaries_can_paginate_and_filter_by_status() {
     )
     .await
     .expect("filtered project page should load");
-    assert_eq!(on_hold_page.total_items, 1);
-    assert_eq!(on_hold_page.items[0].project_key, "CRM");
+    assert_eq!(on_hold_page.total_items, 3);
+    let mut keys = on_hold_page
+        .items
+        .iter()
+        .map(|project| project.project_key.as_str())
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    assert_eq!(keys, ["CRM", "IOT", "TRAIN"]);
 }
 
 #[tokio::test]
@@ -2204,12 +2210,12 @@ async fn api_v1_projects_returns_pagination_metadata_and_status_filter() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
 
-    assert!(body.contains("\"key\":\"CRM\""));
+    assert!(body.contains("\"key\":\"TRAIN\""));
     assert!(!body.contains("\"key\":\"YCE\""));
     assert!(body.contains("\"page\":1"));
     assert!(body.contains("\"per_page\":1"));
-    assert!(body.contains("\"total_items\":1"));
-    assert!(body.contains("\"total_pages\":1"));
+    assert!(body.contains("\"total_items\":3"));
+    assert!(body.contains("\"total_pages\":3"));
 }
 
 #[tokio::test]
@@ -3488,7 +3494,28 @@ async fn api_v1_current_project_controls_default_work_item_scope() {
         .expect("router should respond");
     assert_eq!(initial_current_response.status(), StatusCode::OK);
     let initial_current_body = response_body(initial_current_response).await;
-    assert!(initial_current_body.contains(r#""key":"YCE""#));
+    assert!(initial_current_body.contains(r#""key":"PAY""#));
+
+    let select_yuance_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/current-project")
+                .header(header::COOKIE, &initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"project_key":"YCE"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(select_yuance_response.status(), StatusCode::OK);
+    assert!(
+        response_body(select_yuance_response)
+            .await
+            .contains(r#""key":"YCE""#)
+    );
 
     let unscoped_response = app
         .clone()
@@ -6941,13 +6968,15 @@ async fn web_work_item_attachment_download_rejects_archived_attachment() {
         .expect("attachment should mark uploaded");
     files::archive_attachment(
         &pool,
-        attachment.id,
-        "work_item",
-        item.id,
-        initialized.user_id,
-        "",
-        Some(project.id),
-        Some("归档工作项附件"),
+        files::ArchiveAttachmentInput {
+            attachment_id: attachment.id,
+            target_type: "work_item",
+            target_id: item.id,
+            actor_user_id: initialized.user_id,
+            actor_display_name_snapshot: "",
+            project_id: Some(project.id),
+            activity_summary: Some("归档工作项附件"),
+        },
     )
     .await
     .expect("attachment should archive");

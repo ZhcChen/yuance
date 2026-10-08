@@ -464,6 +464,78 @@ fn validate_duration_range(name: &str, value: i64, minimum: i64, maximum: i64) -
     Ok(())
 }
 
+fn resolve_file_master_key(
+    data_dir: &str,
+    environment: &str,
+    env_value: &str,
+) -> AppResult<String> {
+    let explicit = env_value.trim();
+    if !explicit.is_empty() {
+        if explicit.len() < FILE_MASTER_KEY_MIN_LEN {
+            return Err(AppError::Config(
+                "YUANCE_FILE_MASTER_KEY 长度不能少于 16 个字符".to_string(),
+            ));
+        }
+        return Ok(explicit.to_string());
+    }
+
+    let secrets_dir = Path::new(data_dir).join("secrets");
+    let key_path = secrets_dir.join(FILE_MASTER_KEY_FILE_NAME);
+    if let Ok(content) = fs::read_to_string(&key_path) {
+        let stored = content.trim();
+        if stored.len() < FILE_MASTER_KEY_MIN_LEN {
+            return Err(AppError::Config(format!(
+                "文件主密钥文件 {} 内容无效，请检查或重新初始化",
+                key_path.display()
+            )));
+        }
+        return Ok(stored.to_string());
+    }
+
+    if environment == "test" {
+        return Ok("test-file-master-key-that-is-long-enough".to_string());
+    }
+
+    let mut key_bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut key_bytes);
+    let generated = BASE64.encode(key_bytes);
+    fs::create_dir_all(&secrets_dir).map_err(|error| {
+        AppError::Config(format!(
+            "创建文件主密钥目录失败（{}）：{error}",
+            secrets_dir.display()
+        ))
+    })?;
+    fs::write(&key_path, generated.as_bytes()).map_err(|error| {
+        AppError::Config(format!(
+            "写入文件主密钥失败（{}）：{error}",
+            key_path.display()
+        ))
+    })?;
+    set_private_file_permissions(&key_path)?;
+    eprintln!(
+        "[yuance] 已生成文件主密钥：{}（请单独备份该文件）",
+        key_path.display()
+    );
+    Ok(generated)
+}
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> AppResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|error| {
+        AppError::Config(format!(
+            "设置文件主密钥权限失败（{}）：{error}",
+            path.display()
+        ))
+    })
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> AppResult<()> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,76 +757,4 @@ mod tests {
             );
         }
     }
-}
-
-fn resolve_file_master_key(
-    data_dir: &str,
-    environment: &str,
-    env_value: &str,
-) -> AppResult<String> {
-    let explicit = env_value.trim();
-    if !explicit.is_empty() {
-        if explicit.len() < FILE_MASTER_KEY_MIN_LEN {
-            return Err(AppError::Config(
-                "YUANCE_FILE_MASTER_KEY 长度不能少于 16 个字符".to_string(),
-            ));
-        }
-        return Ok(explicit.to_string());
-    }
-
-    let secrets_dir = Path::new(data_dir).join("secrets");
-    let key_path = secrets_dir.join(FILE_MASTER_KEY_FILE_NAME);
-    if let Ok(content) = fs::read_to_string(&key_path) {
-        let stored = content.trim();
-        if stored.len() < FILE_MASTER_KEY_MIN_LEN {
-            return Err(AppError::Config(format!(
-                "文件主密钥文件 {} 内容无效，请检查或重新初始化",
-                key_path.display()
-            )));
-        }
-        return Ok(stored.to_string());
-    }
-
-    if environment == "test" {
-        return Ok("test-file-master-key-that-is-long-enough".to_string());
-    }
-
-    let mut key_bytes = [0_u8; 32];
-    OsRng.fill_bytes(&mut key_bytes);
-    let generated = BASE64.encode(key_bytes);
-    fs::create_dir_all(&secrets_dir).map_err(|error| {
-        AppError::Config(format!(
-            "创建文件主密钥目录失败（{}）：{error}",
-            secrets_dir.display()
-        ))
-    })?;
-    fs::write(&key_path, generated.as_bytes()).map_err(|error| {
-        AppError::Config(format!(
-            "写入文件主密钥失败（{}）：{error}",
-            key_path.display()
-        ))
-    })?;
-    set_private_file_permissions(&key_path)?;
-    eprintln!(
-        "[yuance] 已生成文件主密钥：{}（请单独备份该文件）",
-        key_path.display()
-    );
-    Ok(generated)
-}
-
-#[cfg(unix)]
-fn set_private_file_permissions(path: &Path) -> AppResult<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|error| {
-        AppError::Config(format!(
-            "设置文件主密钥权限失败（{}）：{error}",
-            path.display()
-        ))
-    })
-}
-
-#[cfg(not(unix))]
-fn set_private_file_permissions(_path: &Path) -> AppResult<()> {
-    Ok(())
 }
