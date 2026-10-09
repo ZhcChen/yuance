@@ -1,6 +1,6 @@
 # 浏览器登录态与多标签页复核
 
-状态：本机修复与验证通过，正式环境根因尚未确认，未部署。
+状态：本机修复与验证通过，修复已部署至正式环境；生产原始故障根因及真实登录体验仍待确认。
 
 ## 现象与证据
 
@@ -24,8 +24,15 @@
 - `YUANCE_WEB_E2E_ROOT=/tmp/yuance-auth-multitab-e2e-1791526275-68586/db YUANCE_WEB_E2E_PORT=33942 npm --prefix web run test:e2e -- --grep "login page in another tab|login page redirects when its shared browser session" --workers=1 --reporter=list --output=/tmp/yuance-auth-multitab-e2e-1791526275-68586/playwright-output`：2/2 通过。使用隔离测试数据库及同一浏览器上下文验证：已打开登录页在另一标签页登录后回到原目标；已有有效会话打开登录页时也会恢复。
 - 本地 E2E 使用单独 `/tmp` 测试根目录与端口33942，没有复用或删除工作区中已有的 `.artifacts/web-e2e`、Playwright 报告和输出目录。
 
+## 正式环境发布
+
+- 2026-10-09 按 `docs/runbooks/production-deployment.md` 发布提交 `dab071a` 至 `qfy-test2`，远端构建 `linux/amd64` 镜像并完成发布；镜像 tar SHA-256：`931038bb4ee994f3ccc9f51078a002d484b7ff081b679f018d22df373e785cb0`。
+- 发布脚本在重建 API 容器前完成 SQLite 备份及迁移状态检查（35 项迁移均已应用），容器启动后健康检查通过。
+- 公网 `GET /api/healthz` 返回 `status=ok`；`GET /api/readyz` 返回 `status=ready`、`database=sqlite-connected`、`environment=production`；`HEAD /static/auth.css` 返回 `200`。`HEAD /web` 返回 `303` 并跳转 `/web/login?return_to=%2Fweb`，符合未登录访问行为。
+- 以上证明新版本已发布且服务可用；本轮没有生产网页登录态，未在正式环境验证登录、双标签页恢复或用户既有会话是否跨重新部署保持有效。正式环境原始会话失效原因因此仍未定论。
+
 ## 剩余排查
 
 若正式环境仍出现真正的 401/会话失效，需在故障时只读比对：两个标签页是否使用完全相同的 hostname；浏览器是否存在重复同名 Cookie；失败请求的 URL、状态、最终响应地址、Content-Type、是否带两种会话 Cookie（只记存在与否，不导出值）；服务端实际 SQLite URL 是否指向持久挂载、前后部署的 active session/refresh 行数是否稳定，以及 `YUANCE_SECURITY_MASTER_KEY` 发布前后是否相同（只做安全比较，不输出明文）。
 
-本轮没有读取生产环境变量/凭证、没有登录或写入生产数据，也没有部署。修复需独立发布后才能在正式环境观察其效果。
+本轮没有读取生产环境变量/凭证，也没有登录或写入生产业务数据。若正式环境仍出现真正的会话失效，按上述只读检查路径继续取证；不得把本次部署健康检查等同于已验证用户登录体验。
