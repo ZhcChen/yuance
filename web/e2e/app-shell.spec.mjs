@@ -3846,7 +3846,8 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(readerHeader.getByRole('link', { name: '返回资料库' })).toHaveCount(1);
   await expect(readerHeader).toContainText('集成');
   await expect(readerHeader.locator('.resource-reader-meta')).toBeVisible();
-  await expect(readerHeader.locator('.resource-reader-meta time')).toHaveCount(0);
+  await expect(readerHeader.locator('.resource-reader-meta')).toContainText('更新于 2026-08-07 16:00');
+  await expect(readerHeader.getByTitle('北京时间（东八区）')).toBeVisible();
   await expect(page.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: '客户端联调参数' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: '更多资料操作' })).toHaveCount(0);

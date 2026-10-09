@@ -6562,6 +6562,7 @@ export function SharedApp({ services }) {
                       </a>
                       <div className="resource-reader-meta" aria-label="资料元信息">
                         <span>{projectResourceCategoryLabel(projectResourceDetail.category)}</span>
+                        {projectResourceDetail.updated_at ? <span title="北京时间（东八区）">更新于 {formatBusinessTimestamp(projectResourceDetail.updated_at, { seconds: false })}</span> : null}
                         {projectResourceDetail.status === 'archived' ? <Badge tone="neutral">已归档</Badge> : null}
                       </div>
                     </div>
