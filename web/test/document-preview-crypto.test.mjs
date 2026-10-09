@@ -43,6 +43,25 @@ test('browser preview resolver preserves inline SVG data URLs without fetching t
   }
 });
 
+test('plain text preview blobs default to UTF-8 and preserve an explicit charset', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('评论附件原文');
+  try {
+    for (const [contentType, expectedType] of [['text/plain', 'text/plain;charset=utf-8'], ['text/plain;charset=gb18030', 'text/plain;charset=gb18030']]) {
+      const source = await resolveBrowserPreviewSource('/attachments/1/preview/content', { filename: 'notes.txt', contentType });
+      try {
+        const response = await originalFetch(source);
+        assert.equal(response.headers.get('content-type'), expectedType);
+        assert.equal(await response.text(), '评论附件原文');
+      } finally {
+        URL.revokeObjectURL(source);
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('browser preview reader decrypts encrypted preview payloads', async () => {
   const dataKey = globalThis.crypto.getRandomValues(new Uint8Array(32));
   const fileObjectId = 42;

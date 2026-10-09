@@ -81,6 +81,7 @@ function ensureClientDecryptQuery(url) {
 function contentTypeForPreview(filename, contentType) {
   const knownType = String(contentType || "").trim();
   if (knownType && knownType !== "application/octet-stream") {
+    if (/^text\/plain(?:\s*;|$)/iu.test(knownType) && !/;\s*charset\s*=/iu.test(knownType)) return `${knownType};charset=utf-8`;
     return knownType;
   }
   const extension = String(filename || "").trim().toLowerCase().match(/\.([^.]+)$/u)?.[1] || "";
