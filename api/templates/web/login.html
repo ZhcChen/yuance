@@ -144,6 +144,44 @@
 </section>
 <script>
   (function () {
+    var authStateKey = "yuance:browser-authenticated:v1";
+    var returnToInput = document.querySelector('input[name="return_to"]');
+    var checkingSession = false;
+    var retrySessionCheck = false;
+    var redirecting = false;
+
+    function checkExistingSession() {
+      if (redirecting) return;
+      if (checkingSession) {
+        retrySessionCheck = true;
+        return;
+      }
+      checkingSession = true;
+      retrySessionCheck = false;
+      window.fetch("/api/v1/auth/me", {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "accept": "application/json" }
+      }).then(function (response) {
+        if (!response.ok || !(response.headers.get("content-type") || "").toLowerCase().includes("application/json")) return null;
+        return response.json();
+      }).then(function (payload) {
+        if (!payload || !payload.data || !Number.isInteger(payload.data.id)) return;
+        redirecting = true;
+        window.location.replace(returnToInput && returnToInput.value ? returnToInput.value : "/web");
+      }).catch(function () {
+        // A transient check failure leaves the login form available.
+      }).finally(function () {
+        checkingSession = false;
+        if (retrySessionCheck && !redirecting) checkExistingSession();
+      });
+    }
+
+    window.addEventListener("storage", function (event) {
+      if (event.key === authStateKey && event.newValue) checkExistingSession();
+    });
+    checkExistingSession();
+
     var input = document.getElementById("login-password");
     var toggle = document.querySelector(".password-toggle");
     if (!input || !toggle) return;

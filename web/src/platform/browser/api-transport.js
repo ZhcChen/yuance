@@ -11,17 +11,30 @@ const RETURN_TO_HASH_KEY = 'yuance-web-return-to-hash';
  *   location?: Pick<Location, 'pathname' | 'search' | 'hash' | 'assign'>,
  *   history?: Pick<History, 'replaceState'>,
  *   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>,
+ *   sharedStorage?: Pick<Storage, 'setItem'>,
  * }} [dependencies]
  */
 export function createBrowserApiTransport(dependencies = {}) {
   let csrfToken = '';
   /** @type {Promise<string> | null} */
   let csrfRefreshPromise = null;
+  let authStatePublished = false;
 
   const fetchImpl = dependencies.fetchImpl || ((input, init) => globalThis.fetch(input, init));
   const location = () => dependencies.location || globalThis.window.location;
   const history = () => dependencies.history || globalThis.window.history;
   const storage = () => dependencies.storage || globalThis.window.sessionStorage;
+
+  function publishAuthenticatedState() {
+    if (authStatePublished) return;
+    try {
+      const sharedStorage = dependencies.sharedStorage || globalThis.window.localStorage;
+      sharedStorage.setItem('yuance:browser-authenticated:v1', `${Date.now()}-${Math.random()}`);
+      authStatePublished = true;
+    } catch (_error) {
+      // Cross-tab signaling is best-effort; authentication remains server-authoritative.
+    }
+  }
 
   /** @param {Headers} headers @param {unknown} payload */
   function syncCsrfToken(headers, payload) {
@@ -52,8 +65,6 @@ export function createBrowserApiTransport(dependencies = {}) {
 
   /** @param {Response} response */
   function isLoginPageResponse(response) {
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.toLowerCase().includes('text/html')) return true;
     try {
       return new URL(response.url).pathname === '/web/login';
     } catch (_error) {
@@ -66,6 +77,16 @@ export function createBrowserApiTransport(dependencies = {}) {
     if (!isLoginPageResponse(response)) return;
     redirectToLogin();
     throw new ApiError({ code: 'unauthorized', message: '登录已失效。', status: 401 });
+  }
+
+  /** @param {Response} response */
+  function rejectUnexpectedHtmlResponse(response) {
+    if (!(response.headers.get('content-type') || '').toLowerCase().includes('text/html')) return;
+    throw new ApiError({
+      code: 'unexpected_response',
+      message: `服务返回了非 API 页面（HTTP ${response.status}），请稍后重试。`,
+      status: response.ok ? 502 : response.status,
+    });
   }
 
   function restorePendingReturnToHash() {
@@ -102,6 +123,7 @@ export function createBrowserApiTransport(dependencies = {}) {
         headers: NO_STORE_HEADERS,
       });
       rejectLoginPageResponse(response);
+      rejectUnexpectedHtmlResponse(response);
       const payload = await response.json().catch(() => ({}));
       syncCsrfToken(response.headers, payload);
       if (response.status === 401) {
@@ -132,8 +154,15 @@ export function createBrowserApiTransport(dependencies = {}) {
       headers,
     });
     rejectLoginPageResponse(response);
+    rejectUnexpectedHtmlResponse(response);
     const payload = await response.json().catch(() => ({}));
     syncCsrfToken(response.headers, payload);
+    const currentUser = payload && typeof payload === 'object'
+      ? /** @type {{ data?: { id?: unknown } }} */ (payload).data
+      : null;
+    if (response.ok && url === '/api/v1/auth/me' && Number.isInteger(currentUser?.id)) {
+      publishAuthenticatedState();
+    }
     if (response.status === 401) {
       redirectToLogin();
       throw new ApiError({ code: 'unauthorized', message: '登录已失效。', status: 401 });

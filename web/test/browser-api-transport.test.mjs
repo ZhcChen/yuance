@@ -88,11 +88,13 @@ test('browser API transport does not retry business forbidden writes', async () 
 
 test('browser API transport rejects an API redirect resolved as the HTML login page', async () => {
   const assigned = [];
+  const loginPage = new Response('<!doctype html><title>登录</title>', {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+  Object.defineProperty(loginPage, 'url', { value: 'https://yuance.example.test/web/login' });
   const transport = createBrowserApiTransport({
-    fetchImpl: async () => new Response('<!doctype html><title>登录</title>', {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8' },
-    }),
+    fetchImpl: async () => loginPage,
     location: {
       pathname: '/web/projects',
       search: '?status=active',
@@ -108,6 +110,113 @@ test('browser API transport rejects an API redirect resolved as the HTML login p
     (error) => error instanceof ApiError && error.status === 401 && error.message === '登录已失效。',
   );
   assert.deepEqual(assigned, ['/web/login?return_to=%2Fweb%2Fprojects%3Fstatus%3Dactive']);
+});
+
+test('browser API transport reports an HTML gateway error without treating it as logout', async () => {
+  const assigned = [];
+  const transport = createBrowserApiTransport({
+    fetchImpl: async () => new Response('<!doctype html><title>Bad Gateway</title>', {
+      status: 502,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }),
+    location: {
+      pathname: '/web/projects',
+      search: '',
+      hash: '',
+      assign(value) { assigned.push(value); },
+    },
+    storage: new MapStorage(),
+  });
+
+  await assert.rejects(
+    transport.request('/api/v1/me'),
+    (error) => error instanceof ApiError && error.code === 'unexpected_response' && error.status === 502,
+  );
+  assert.deepEqual(assigned, []);
+});
+
+test('browser API transport does not treat an HTML 401 gateway page as a login response', async () => {
+  const assigned = [];
+  const transport = createBrowserApiTransport({
+    fetchImpl: async () => new Response('<!doctype html><title>Unauthorized</title>', {
+      status: 401,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }),
+    location: {
+      pathname: '/web/projects',
+      search: '',
+      hash: '',
+      assign(value) { assigned.push(value); },
+    },
+    storage: new MapStorage(),
+  });
+
+  await assert.rejects(
+    transport.request('/api/v1/me'),
+    (error) => error instanceof ApiError && error.code === 'unexpected_response' && error.status === 401,
+  );
+  assert.deepEqual(assigned, []);
+});
+
+test('browser API transport rejects an HTML fallback on a successful API status without redirecting', async () => {
+  const assigned = [];
+  const transport = createBrowserApiTransport({
+    fetchImpl: async () => new Response('<!doctype html><title>Maintenance</title>', {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }),
+    location: {
+      pathname: '/web/projects',
+      search: '',
+      hash: '',
+      assign(value) { assigned.push(value); },
+    },
+    storage: new MapStorage(),
+  });
+
+  await assert.rejects(
+    transport.request('/api/v1/me'),
+    (error) => error instanceof ApiError && error.code === 'unexpected_response' && error.status === 502,
+  );
+  assert.deepEqual(assigned, []);
+});
+
+test('CSRF preparation reports an HTML gateway error without redirecting to login', async () => {
+  const assigned = [];
+  const transport = createBrowserApiTransport({
+    fetchImpl: async () => new Response('<!doctype html><title>Bad Gateway</title>', {
+      status: 502,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }),
+    location: {
+      pathname: '/web/projects',
+      search: '',
+      hash: '',
+      assign(value) { assigned.push(value); },
+    },
+    storage: new MapStorage(),
+  });
+
+  await assert.rejects(
+    transport.prepareWrite(),
+    (error) => error instanceof ApiError && error.code === 'unexpected_response' && error.status === 502,
+  );
+  assert.deepEqual(assigned, []);
+});
+
+test('successful current-user checks notify other same-origin tabs without sharing credentials', async () => {
+  const sharedStorage = new MapStorage();
+  const transport = createBrowserApiTransport({
+    fetchImpl: async () => jsonResponse({ id: 7, username: 'admin' }),
+    location: { pathname: '/web/app', search: '', hash: '', assign() {} },
+    history: { replaceState() {} },
+    storage: new MapStorage(),
+    sharedStorage,
+  });
+
+  await transport.request('/api/v1/auth/me');
+
+  assert.match(sharedStorage.getItem('yuance:browser-authenticated:v1'), /^\d+-/u);
 });
 
 test('browser API transport preserves and restores an authenticated return hash', () => {
