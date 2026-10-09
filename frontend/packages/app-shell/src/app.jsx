@@ -6583,9 +6583,16 @@ export function SharedApp({ services }) {
               {projectResourceDetail ? <>
                 <header className="resource-reader-header" aria-label="资料信息与操作">
                   <div className="resource-reader-toolbar">
-                    <a className="resource-reader-back" aria-label="返回资料库" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>
-                      <span aria-hidden="true">←</span><span>返回资料库</span>
-                    </a>
+                    <div className="resource-reader-context">
+                      <a className="resource-reader-back" aria-label="返回资料库" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>
+                        <span aria-hidden="true">←</span><span>返回资料库</span>
+                      </a>
+                      <div className="resource-reader-meta" aria-label="资料元信息">
+                        <span>{projectResourceCategoryLabel(projectResourceDetail.category)}</span>
+                        <time dateTime={projectResourceDetail.updated_at}>更新于 {formatTimestamp(projectResourceDetail.updated_at)}</time>
+                        {projectResourceDetail.status === 'archived' ? <Badge tone="neutral">已归档</Badge> : null}
+                      </div>
+                    </div>
                     <div className="resource-reader-actions">
                       {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="primary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}
                       {(user?.is_super_admin && projectResourceDetail.status !== 'archived') || (canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked) ? (
@@ -6610,14 +6617,7 @@ export function SharedApp({ services }) {
                       ) : null}
                     </div>
                   </div>
-                  <div className="resource-reader-titlebar">
-                    {!projectResourceTitleIsInBody ? <h1>{projectResourceDetail.title}</h1> : null}
-                    <div className="resource-reader-meta" aria-label="资料元信息">
-                      <span>{projectResourceCategoryLabel(projectResourceDetail.category)}</span>
-                      <time dateTime={projectResourceDetail.updated_at}>更新于 {formatTimestamp(projectResourceDetail.updated_at)}</time>
-                      {projectResourceDetail.status === 'archived' ? <Badge tone="neutral">已归档</Badge> : null}
-                    </div>
-                  </div>
+                  {!projectResourceTitleIsInBody ? <div className="resource-reader-titlebar"><h1>{projectResourceDetail.title}</h1></div> : null}
                 </header>
                 <section className="project-tabs-card resource-content-card">
                   {projectResourceLocked ? <OverlayScrollTarget axis="vertical" label="资料访问验证" className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></OverlayScrollTarget> : <article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body_html || projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={resolveProjectResourceInlineAttachmentSource} downloadingAttachmentId={projectResourceDownloadingId} showTableOfContents /></article>}

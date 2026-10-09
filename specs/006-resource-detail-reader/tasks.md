@@ -19,6 +19,10 @@
 
 - [x] T006 对照规格和计划复核 diff、权限及已有滚动/目录行为；执行 `make spec-kit-check FEATURE=specs/006-resource-detail-reader STAGE=converge`；不自动部署。依赖 T004/T005。复核未发现权限或布局回归；外部指针点击关闭菜单的问题已修复并通过定向 E2E 复测。
 
+## 视觉反馈跟进
+
+- [x] T007 [US1] 将类别与更新时间并入返回入口所在的页头行；正文首标题与资料名相同时不保留空标题栏，并在桌面/窄屏验证元信息和操作区不重叠。依赖 T001/T002。Playwright 覆盖 390/768/1280/1440px，无横向溢出；1280px 及以上元信息与返回入口同行；临时桌面截图已人工检查。
+
 ## 验收证据
 
-自动验证结果：`npm --prefix frontend run check` 通过；`npm --prefix web run check` 通过；资料详情 Playwright 4 项通过，菜单指针关闭补丁合入后核心详情测试再次通过；目录缩放/章节链接/SVG/长正文 Playwright 11 项通过；本机详情 SPA 路由和代理 `/api/healthz` 均返回 200。实际目标资料登录后渲染与人工视觉验收尚未执行；用户登录后仅作只读预览。
+自动验证结果：`npm --prefix frontend run check` 通过；`npm --prefix web run check` 通过；资料详情 Playwright 4 项通过；目录缩放/章节链接/SVG/长正文 Playwright 11 项通过；本机详情 SPA 路由和代理 `/api/healthz` 均返回 200。隔离测试截图已检查页头和正文布局；实际目标资料登录后渲染与人工视觉验收尚未执行，用户登录后仅作只读预览。
