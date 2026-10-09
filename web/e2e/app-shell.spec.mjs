@@ -3846,16 +3846,13 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(readerHeader.getByRole('link', { name: '返回资料库' })).toHaveCount(1);
   await expect(readerHeader).toContainText('集成');
   await expect(readerHeader.locator('.resource-reader-meta')).toBeVisible();
+  await expect(readerHeader.locator('.resource-reader-meta time')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: '客户端联调参数' })).toHaveCount(1);
-  await page.getByRole('button', { name: '更多资料操作' }).click();
+  await expect(page.getByRole('button', { name: '更多资料操作' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '重置保险箱密码' })).toBeVisible();
   await expect(page.getByRole('button', { name: '归档资料' })).toBeVisible();
-  await page.locator('.resource-reader-meta').click();
-  await expect(page.getByRole('button', { name: '归档资料' })).not.toBeVisible();
-  await page.getByRole('button', { name: '更多资料操作' }).click();
-  await page.getByRole('button', { name: '更多资料操作' }).press('Escape');
-  await expect(page.getByRole('button', { name: '归档资料' })).not.toBeVisible();
+  await expect(page.locator('.resource-reader-actions button')).toHaveText(['编辑资料', '归档资料', '重置保险箱密码']);
   await expect(page.getByText('正文概览')).toBeVisible();
   const tableOfContents = page.getByRole('navigation', { name: '正文目录' });
   await expect(tableOfContents).toBeVisible();
@@ -3871,12 +3868,16 @@ test('shared project resources filter read and unlock protected details', async 
   expect(publicDetailRequests).toBe(1);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const toolbar = element.querySelector('.resource-reader-toolbar'); const context = element.querySelector('.resource-reader-context'); const back = element.querySelector('.resource-reader-back'); const meta = element.querySelector('.resource-reader-meta'); const actions = element.querySelector('.resource-reader-actions'); const backRect = back.getBoundingClientRect(); const metaRect = meta.getBoundingClientRect(); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, toolbarWidth: toolbar.clientWidth, toolbarScrollWidth: toolbar.scrollWidth, contextWidth: context.clientWidth, contextScrollWidth: context.scrollWidth, backRight: backRect.right, backCenterY: (backRect.top + backRect.bottom) / 2, metaLeft: metaRect.left, metaRight: metaRect.right, metaWidth: meta.clientWidth, metaScrollWidth: meta.scrollWidth, metaCenterY: (metaRect.top + metaRect.bottom) / 2, actionsLeft: actions.getBoundingClientRect().left, actionsWidth: actions.clientWidth, actionsScrollWidth: actions.scrollWidth, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocScrollbarReservation: toc.offsetWidth - toc.clientWidth, contentScrollbarReservation: content.offsetWidth - content.clientWidth, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const toolbar = element.querySelector('.resource-reader-toolbar'); const context = element.querySelector('.resource-reader-context'); const back = element.querySelector('.resource-reader-back'); const meta = element.querySelector('.resource-reader-meta'); const actions = element.querySelector('.resource-reader-actions'); const backRect = back.getBoundingClientRect(); const metaRect = meta.getBoundingClientRect(); const contextRect = context.getBoundingClientRect(); const actionsRect = actions.getBoundingClientRect(); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, toolbarWidth: toolbar.clientWidth, toolbarScrollWidth: toolbar.scrollWidth, contextWidth: context.clientWidth, contextScrollWidth: context.scrollWidth, backRight: backRect.right, backCenterY: (backRect.top + backRect.bottom) / 2, metaLeft: metaRect.left, metaRight: metaRect.right, metaWidth: meta.clientWidth, metaScrollWidth: meta.scrollWidth, metaCenterY: (metaRect.top + metaRect.bottom) / 2, contextBottom: contextRect.bottom, actionsTop: actionsRect.top, actionsLeft: actionsRect.left, actionsWidth: actions.clientWidth, actionsScrollWidth: actions.scrollWidth, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocScrollbarReservation: toc.offsetWidth - toc.clientWidth, contentScrollbarReservation: content.offsetWidth - content.clientWidth, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainHeight);
     expect(geometry.toolbarScrollWidth, JSON.stringify({ viewport, geometry })).toBeLessThanOrEqual(geometry.toolbarWidth);
-    expect(geometry.backRight).toBeLessThanOrEqual(geometry.actionsLeft);
-    expect(geometry.metaRight).toBeLessThanOrEqual(geometry.actionsLeft);
+    if (viewport.width <= 640) {
+      expect(geometry.actionsTop).toBeGreaterThanOrEqual(geometry.contextBottom);
+    } else {
+      expect(geometry.backRight).toBeLessThanOrEqual(geometry.actionsLeft);
+      expect(geometry.metaRight).toBeLessThanOrEqual(geometry.actionsLeft);
+    }
     if (viewport.width >= 1280) {
       expect(geometry.metaLeft).toBeGreaterThanOrEqual(geometry.backRight);
       expect(Math.abs(geometry.metaCenterY - geometry.backCenterY)).toBeLessThanOrEqual(1);
@@ -4208,7 +4209,6 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[0][1].body).toMatch(/^<h2 data-yuance-section-id="yuance-section-[^"]+">发布方案<\/h2><pre><code>release=v1<\/code><\/pre>$/u);
 
   await page.getByRole('link', { name: '部署手册' }).click();
-  await page.getByRole('button', { name: '更多资料操作' }).click();
   await page.getByRole('button', { name: '重置保险箱密码' }).click();
   let resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.getByLabel('新访问密码').fill('reset-pass');
@@ -4217,7 +4217,6 @@ test('shared project resources create edit password actions and archive', async 
   await expect(page.getByText('资料访问密码已重置。')).toBeVisible();
   await expect(page.getByRole('button', { name: '验证并查看' })).toBeVisible();
   expect(mutations[1]).toEqual(['reset', { access_password_action: 'set', access_password: 'reset-pass' }]);
-  await page.getByRole('button', { name: '更多资料操作' }).click();
   await page.getByRole('button', { name: '重置保险箱密码' }).click();
   resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.locator('#project-resource-password-reset-action-native').selectOption('clear');
@@ -4251,7 +4250,6 @@ test('shared project resources create edit password actions and archive', async 
   await clearDialog.getByRole('button', { name: '保存' }).click();
   await expect(clearDialog).not.toBeVisible();
   expect(mutations[4][1]).toMatchObject({ access_password_action: 'clear', access_password: '' });
-  await page.getByRole('button', { name: '更多资料操作' }).click();
   await page.getByRole('button', { name: '归档' }).click();
   await page.getByRole('dialog', { name: '归档项目资料' }).getByRole('button', { name: '确认归档' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources$/);
@@ -4448,7 +4446,6 @@ test('shared project resources expose content mutations to member role', async (
   expect(mutations[0]).toEqual(['create', { title: '成员新建资料', category: 'other', body: '<p>member body</p>', body_format: 'html', access_password: '', tags: [], related_work_item_key: '', related_cycle_id: null }]);
   await page.getByRole('link', { name: '成员新建资料' }).click();
   await expect(page.getByRole('button', { name: '编辑资料' })).toBeVisible();
-  await page.getByRole('button', { name: '更多资料操作' }).click();
   await expect(page.getByRole('button', { name: '归档资料' })).toBeVisible();
   await page.getByRole('button', { name: '编辑资料' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });

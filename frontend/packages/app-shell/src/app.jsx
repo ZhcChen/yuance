@@ -1,5 +1,5 @@
 // @ts-check
-/* global DOMParser, FormData, Node, URL, clearInterval, clearTimeout, setInterval, setTimeout */
+/* global DOMParser, FormData, URL, clearInterval, clearTimeout, setInterval, setTimeout */
 
 import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -6570,14 +6570,7 @@ export function SharedApp({ services }) {
               </> : null}
             </section>
           ) : route.id === 'project-resource-detail' ? (
-            <section
-              className="page-stack resource-detail-page"
-              aria-label="资料详情"
-              onPointerDown={(event) => {
-                const openMenu = /** @type {HTMLDetailsElement | null} */ (event.currentTarget.querySelector('.resource-reader-more[open]'));
-                if (openMenu && event.target instanceof Node && !openMenu.contains(event.target)) openMenu.open = false;
-              }}
-            >
+            <section className="page-stack resource-detail-page" aria-label="资料详情">
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
@@ -6589,32 +6582,13 @@ export function SharedApp({ services }) {
                       </a>
                       <div className="resource-reader-meta" aria-label="资料元信息">
                         <span>{projectResourceCategoryLabel(projectResourceDetail.category)}</span>
-                        <time dateTime={projectResourceDetail.updated_at}>更新于 {formatTimestamp(projectResourceDetail.updated_at)}</time>
                         {projectResourceDetail.status === 'archived' ? <Badge tone="neutral">已归档</Badge> : null}
                       </div>
                     </div>
                     <div className="resource-reader-actions">
                       {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="primary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}
-                      {(user?.is_super_admin && projectResourceDetail.status !== 'archived') || (canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked) ? (
-                        <details
-                          className="resource-reader-more"
-                          onBlur={(event) => {
-                            if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key !== 'Escape') return;
-                            event.preventDefault();
-                            event.currentTarget.open = false;
-                            event.currentTarget.querySelector('summary')?.focus();
-                          }}
-                        >
-                          <summary role="button" aria-label="更多资料操作" title="更多资料操作"><span aria-hidden="true">…</span></summary>
-                          <div className="resource-reader-menu" aria-label="更多资料操作">
-                            {user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <button className="resource-reader-menu-item" type="button" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</button> : null}
-                            {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <button className="resource-reader-menu-item resource-reader-menu-item-danger" type="button" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档资料</button> : null}
-                          </div>
-                        </details>
-                      ) : null}
+                      {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档资料</Button> : null}
+                      {user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}
                     </div>
                   </div>
                   {!projectResourceTitleIsInBody ? <div className="resource-reader-titlebar"><h1>{projectResourceDetail.title}</h1></div> : null}
