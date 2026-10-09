@@ -1,6 +1,6 @@
 # 资料正文 SVG 展示复核
 
-状态：本机修复与验收通过，正式发布及目标页面登录验收待完成。
+状态：本机修复与验收通过，已正式发布，目标页面登录验收待完成。
 规格：`specs/005-resource-inline-svg/`。
 
 ## 对象与根因
@@ -41,4 +41,17 @@
 
 正式浏览器隔离chrome-devtools访问目标地址重定向登录页；未取得正式Web凭证，PAT不能作为Web cookie使用。按用户提到的agent-browser查询可用会话，相关newlink-docs会话get url未响应，停止客户端命令；未连接日常Chrome、未读取其他账号凭证、未关闭其他任务的浏览器。正式页面四图、响应头及控制台尚未验收。
 
-需按 `docs/runbooks/production-deployment.md` 获得授权发布包含此修复的镜像，并在授权登录态下打开同一正式资料验收。无需重写原正文或重建附件：修复兼容现有四个裸img。只有实际四图显示、网络及控制台通过后，才能完成T007；本机结果不能替代该项。
+修复已按用户授权正式发布，仍需在授权登录态下打开同一正式资料验收。无需重写原正文或重建附件：修复兼容现有四个裸img。只有实际四图显示、网络及控制台通过后，才能完成T007；本机结果不能替代该项。
+
+## 正式发布记录
+
+2026-10-09，用户明确授权后，通过 `YUANCE_DEPLOY_MODE=remote YUANCE_DEPLOY_BUILD_MODE=remote YUANCE_DEPLOY_HOST=qfy-test2 ./scripts/deploy-production.sh` 发布修复提交586deff。构建在qfy-test2进行，未在正式服务器编译；日志为 `.artifacts/production-svg-deploy-2026-10-09.log`。
+
+- 制品tar SHA256：`fd6c1b6fc56ebbe130ca7897ba0d4a55bced494d9a1205c21d2053aa277b4eb3`；运行镜像：`sha256:299bffbdefe132feeff0284de9f6966b0b9886485563971e7b21bedb47d206bf`，容器running/healthy。
+- 旧制品备份：`qfy-test2:/srv/yuance/releases/yuance-api-linux-amd64.before-20261009111153.tar`；SQLite备份：`/srv/yuance/backend/backups/20261009031157`，包含主库、WAL和SHM。
+- migrate status/up、seed core、重建与内网健康检查通过；SQLite integrity_check为ok。附件审计total=161、attached=161，全部orphan类别为0。
+- 独立公网只读核验发布版本20261009111117。`/web/app/assets/index-CYRcq22q.js` 返回200/application/javascript、784830字节，SHA256为 `ecfbff90a39b9b2a51bf067e03957b64201be5ab7f3a38ac83aea99c4a731845`，与本机Web构建逐字节一致，包含本轮两处修复。
+- 公网healthz/readyz均200，SQLite connected、production；Web和auth.css均200，无维护页。传输保护回归：无凭证约3MiB资料POST/PATCH返回401，约17MiB返回标准JSON 413/payload_too_large，原16MiB网关限制仍生效。本轮未修改Nginx。日志为 `.artifacts/production-svg-public-health-2026-10-09.log`。
+- 发布后CLI回读目标正文2306字符、updated_at仍为 `2026-10-09 02:40:20`，四个引用ID仍为189、193、194、192。本轮未执行业务写操作；与此前2301字符读数存在差异，未验证正文逐字节一致，因此不作该断言。
+
+目标页面无Web登录态仍303跳转登录页，候选agent-browser会话20秒内未响应。公网健康和静态制品核验不等于正式四图展示验收，T007继续保持未完成。本次仅补充发布记录，不需重新构建部署。
