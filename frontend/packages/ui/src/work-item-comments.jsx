@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
+import { attachmentIsUploaded, attachmentStatusLabel, formatBusinessTimestamp, formatByteSize } from './formatters.js';
 import { AttachmentImage } from './attachment-image.jsx';
 import { Button, Select } from './primitives.jsx';
 import { AttachmentList } from './work-item-attachments.jsx';
@@ -88,7 +88,7 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
             )}
             <div>
               <strong>{attachment.filename || '未命名附件'}</strong>
-              <span>{formatByteSize(attachment.byte_size)} · {attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}</span>
+              <span>{formatByteSize(attachment.byte_size)} · {attachment.created_by || '未知用户'} · {formatBusinessTimestamp(attachment.created_at) || '未知时间'}</span>
             </div>
             <div className="work-item-attachment-actions">
               {uploaded ? (
@@ -329,8 +329,8 @@ export function WorkItemComments(props) {
                         ) : null}
                       </div>
                       <div className="discussion-post-time">
-                        <span>发表于 {comment.created_at || '未知'}</span>
-                        {comment.updated_at && comment.updated_at !== comment.created_at ? <span>编辑于 {comment.updated_at}</span> : null}
+                        <span>发表于 {formatBusinessTimestamp(comment.created_at) || '未知'}</span>
+                        {comment.updated_at && comment.updated_at !== comment.created_at ? <span>编辑于 {formatBusinessTimestamp(comment.updated_at)}</span> : null}
                       </div>
                     </footer>
                     {replyingToCommentId === comment.id ? (

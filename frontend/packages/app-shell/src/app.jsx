@@ -74,6 +74,7 @@ import {
   WorkItemComments,
   WorkItemDetail,
   attachmentIsUploaded,
+  formatBusinessTimestamp,
   isPreviewableDocumentFile,
   plainTextToRichHtml,
   richTextAttachmentHtml,
@@ -387,32 +388,11 @@ import { AppShellSkeleton } from './app-skeleton.jsx';
  */
 
 function formatTimestamp(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+  return formatBusinessTimestamp(value, { compact: true });
 }
 
 function formatChangeTimestamp(value) {
-  const normalized = String(value || '').replace(' ', 'T');
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date);
+  return formatBusinessTimestamp(value);
 }
 
 function timeAllocationActionLabel(action) {
@@ -572,7 +552,7 @@ function dashboardProjectStatus(status) {
 }
 
 function dashboardTimestamp(value) {
-  return String(value || '').replace('T', ' ').replace(/(?:\.\d+)?Z$/u, '');
+  return formatBusinessTimestamp(value);
 }
 
 function projectMemberRoleLabel(role) {
@@ -5653,7 +5633,7 @@ export function SharedApp({ services }) {
               key: 'updated',
               label: '最近更新',
               className: 'resource-table-updated-cell',
-              render: (resource) => <div className="resource-table-updated" title={`${resource.updated_by} · ${resource.updated_at}`}><span>{resource.updated_by}</span><small>{formatTimestamp(resource.updated_at)}</small></div>,
+              render: (resource) => <div className="resource-table-updated" title={`${resource.updated_by} · ${dashboardTimestamp(resource.updated_at)}（东八区）`}><span>{resource.updated_by}</span><small>{formatTimestamp(resource.updated_at)}</small></div>,
             },
             {
               key: 'actions',
@@ -6540,7 +6520,7 @@ export function SharedApp({ services }) {
                 ].map(([label, value, tone, icon]) => <article className={`metric metric-${tone}`} key={label}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section>
 
                 <section className="analysis-section" aria-labelledby="personal-analysis-efficiency-title">
-                  <div className="section-heading"><div><p className="shell-eyebrow">处理效率</p><h2 id="personal-analysis-efficiency-title">自然周期效率</h2></div><span>统计起点：{projectPersonalAnalysis.joined_at}</span></div>
+                  <div className="section-heading"><div><p className="shell-eyebrow">处理效率</p><h2 id="personal-analysis-efficiency-title">自然周期效率</h2></div><span>统计起点：{dashboardTimestamp(projectPersonalAnalysis.joined_at)}</span></div>
                   <div className="metric-grid compact-metrics">
                     {[
                       ['日平均处理', formatAnalysisAverage(projectPersonalAnalysis.daily_average), 'info'],

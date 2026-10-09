@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
+import { attachmentIsUploaded, attachmentStatusLabel, formatBusinessTimestamp, formatByteSize } from './formatters.js';
 import { Button } from './primitives.jsx';
 
 /**
@@ -29,7 +29,7 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
             <span className="yuance-ui-meta">
               {formatByteSize(attachment.byte_size)} · {attachment.content_type || 'application/octet-stream'} · {attachmentStatusLabel(attachment.status)}
             </span>
-            {showCreator ? <span className="yuance-ui-muted">{attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}</span> : null}
+            {showCreator ? <span className="yuance-ui-muted">{attachment.created_by || '未知用户'} · {formatBusinessTimestamp(attachment.created_at) || '未知时间'}</span> : null}
           </div>
           <div className="work-item-attachment-actions">
             {attachmentIsUploaded(attachment) ? (

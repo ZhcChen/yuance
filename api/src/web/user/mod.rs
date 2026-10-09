@@ -2312,7 +2312,23 @@ fn display_byte_size(value: i64) -> String {
 }
 
 fn display_timestamp(value: String) -> String {
-    value.replace('T', " ")
+    let parsed = chrono::DateTime::parse_from_rfc3339(&value)
+        .map(|date| date.with_timezone(&chrono::Utc))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f")
+                .or_else(|_| chrono::NaiveDateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f"))
+                .map(|date| date.and_utc())
+        });
+    let Some(offset) = chrono::FixedOffset::east_opt(8 * 3600) else {
+        return value;
+    };
+    match parsed {
+        Ok(date) => date
+            .with_timezone(&offset)
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string(),
+        Err(_) => value,
+    }
 }
 
 fn format_byte_size(byte_size: i64) -> String {
@@ -2327,6 +2343,24 @@ fn format_byte_size(byte_size: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn display_timestamp_uses_east_eight_without_double_conversion() {
+        for value in [
+            "2026-10-09 02:30:00",
+            "2026-10-09T02:30:00Z",
+            "2026-10-09T10:30:00+08:00",
+        ] {
+            assert_eq!(display_timestamp(value.to_owned()), "2026-10-09 10:30:00");
+        }
+        assert_eq!(
+            display_timestamp("2026-12-31 20:30:01.123".to_owned()),
+            "2027-01-01 04:30:01"
+        );
+        for value in ["", "invalid", "2026-10-09"] {
+            assert_eq!(display_timestamp(value.to_owned()), value);
+        }
+    }
 
     #[test]
     fn attachment_preview_strategy_supports_frontend_document_types() {

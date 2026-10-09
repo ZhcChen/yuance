@@ -68,6 +68,14 @@ function renderDetail(overrides = {}) {
   }));
 }
 
+test('work item detail converts UTC metadata but leaves deadline dates unchanged', () => {
+  const html = renderDetail({ item: { ...item, created_at: '2026-10-09 02:30:01', updated_at: '2026-10-09T10:30:01+08:00', deleted_at: '2026-10-09 03:30:01', due_date: '2026-10-09' } });
+  assert.match(html, /更新于 2026-10-09 10:30:01/);
+  assert.match(html, /<dt>创建时间<\/dt><dd>2026-10-09 10:30:01<\/dd>/);
+  assert.match(html, /<dt>截止日期<\/dt><dd>2026-10-09<\/dd>/);
+  assert.match(html, /已于 2026-10-09 11:30:01 删除/);
+});
+
 test('work item detail renders metadata and both mutation forms', () => {
   const html = renderDetail();
 

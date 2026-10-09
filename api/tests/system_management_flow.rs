@@ -1539,6 +1539,14 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
     )
     .await;
 
+    sqlx::query(
+        "UPDATE system_release_versions SET published_at = '2026-12-31 20:30:01' WHERE id = ?",
+    )
+    .bind(release_id)
+    .execute(&pool)
+    .await
+    .expect("download timestamp fixture should update");
+
     let downloads_response = app
         .clone()
         .oneshot(
@@ -1552,6 +1560,7 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
     assert_eq!(downloads_response.status(), StatusCode::OK);
     let downloads_body = response_body(downloads_response).await;
     assert!(downloads_body.contains("元策桌面端 0.1.0"));
+    assert!(downloads_body.contains("2027-01-01 04:30:01（东八区）"));
     assert!(downloads_body.contains("Yuance-0.1.0-mac-arm64.dmg"));
     assert!(downloads_body.contains(&format!(
         "/web/downloads/{release_id}/assets/{macos_arm64_asset_id}"

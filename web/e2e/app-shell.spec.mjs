@@ -2150,7 +2150,7 @@ test('work item attachments can list download and upload for item and comments',
       } }),
     });
   });
-  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/preview/content', async (route) => {
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/preview/content*', async (route) => {
     await route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: '评论附件原文' });
   });
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
@@ -4611,6 +4611,7 @@ test('shared project personal analysis preserves metrics, filters and completion
   await expect(page.getByLabel('个人处理产出')).toContainText('累计处理12');
   await expect(page.getByLabel('个人处理产出')).toContainText('当前待处理4');
   await expect(page.getByText('日平均处理').locator('../..')).toContainText('0.50');
+  await expect(page.getByText('统计起点：2026-08-01 08:00:00', { exact: true })).toBeVisible();
   await expect(page.getByText('月平均处理').locator('../..')).toContainText('6.00');
   await expect(page.getByRole('heading', { level: 2, name: '沟通与推进' }).locator('../../..')).toContainText('活跃天数8');
   const pending = page.getByRole('heading', { level: 2, name: '我的待处理' }).locator('../../..');

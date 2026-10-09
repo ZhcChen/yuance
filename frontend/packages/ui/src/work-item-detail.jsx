@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
 import { Button, Modal, PriorityBadge, Select, TextArea, TextInput } from './primitives.jsx';
 import { UserAvatar } from './user-avatar.jsx';
+import { formatBusinessTimestamp } from './formatters.js';
 
 /**
  * @typedef {object} WorkItemDetail
@@ -133,11 +134,11 @@ export function WorkItemDetail({
           <div className="work-item-title-tags"><PriorityBadge priority={item.priority} /><span className={`status status-${item.status}`}>{statusLabel(item.status)}</span></div>
         </div>
       </header>
-      {isDeleted ? <section className="work-item-deleted-panel"><div><strong>历史工作项</strong><span>该工作项已于 {item.deleted_at} 删除，当前仅供审计查看。</span></div>{canRestoreWorkItem ? <Button onClick={() => onRequestLifecycleAction('restore')}>恢复工作项</Button> : null}</section> : null}
+      {isDeleted ? <section className="work-item-deleted-panel"><div><strong>历史工作项</strong><span>该工作项已于 {formatBusinessTimestamp(item.deleted_at)} 删除，当前仅供审计查看。</span></div>{canRestoreWorkItem ? <Button onClick={() => onRequestLifecycleAction('restore')}>恢复工作项</Button> : null}</section> : null}
       <div className="work-item-layout">
         <main className="work-item-content">
         <section className="work-item-description" aria-label="详情说明">
-          <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><UserAvatar name={item.reporter || ''} fallback="?" className="work-item-publisher-avatar" /><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {item.updated_at || '未知'}</span></div>
+          <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><UserAvatar name={item.reporter || ''} fallback="?" className="work-item-publisher-avatar" /><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {formatBusinessTimestamp(item.updated_at) || '未知'}</span></div>
           <div className="work-item-description-body">
           <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" resolveAttachmentSource={resolveAttachmentSource} onAttachmentActivate={onAttachmentActivate} />
           </div>
@@ -162,7 +163,7 @@ export function WorkItemDetail({
             {canCloseWorkItem ? <Button variant="danger" onClick={() => onRequestLifecycleAction('close')}>关闭工作项</Button> : null}
             {canReopenWorkItem ? <Button variant="secondary" onClick={() => onRequestLifecycleAction('reopen')}>重新打开</Button> : null}
           </div>
-          <dl className="action-panel-context"><div><dt>报告人</dt><dd>{item.reporter || '未知'}</dd></div>{item.parent_item_key ? <div><dt>父级需求</dt><dd><a href={parentHref} onClick={onOpenParent}>{item.parent_item_key} · {item.parent_title}</a></dd></div> : null}{cycleLabel ? <div><dt>所属周期</dt><dd>{cycleLabel}</dd></div> : null}<div><dt>创建时间</dt><dd>{item.created_at || '未知'}</dd></div><div><dt>截止日期</dt><dd>{item.due_date || '未设置'}</dd></div></dl>
+          <dl className="action-panel-context"><div><dt>报告人</dt><dd>{item.reporter || '未知'}</dd></div>{item.parent_item_key ? <div><dt>父级需求</dt><dd><a href={parentHref} onClick={onOpenParent}>{item.parent_item_key} · {item.parent_title}</a></dd></div> : null}{cycleLabel ? <div><dt>所属周期</dt><dd>{cycleLabel}</dd></div> : null}<div><dt>创建时间</dt><dd>{formatBusinessTimestamp(item.created_at) || '未知'}</dd></div><div><dt>截止日期</dt><dd>{item.due_date || '未设置'}</dd></div></dl>
         </section></aside>
       </div>
 
@@ -198,7 +199,7 @@ export function WorkItemDetail({
       <Modal open={activePanel === 'history'} title="操作记录" onClose={closePanel} footer={<Button variant="secondary" onClick={closePanel}>关闭</Button>}>
       <section className="work-item-detail-panel work-item-flow-panel" aria-labelledby="work-item-flow-history-title">
         <h3 id="work-item-flow-history-title">流转历史</h3>
-        {flowHistory.items.length ? <ol className="work-item-flow-history">{flowHistory.items.map((record, index) => <li key={`${record.created_at}-${index}`}><strong>{record.actor}</strong><span>{record.summary}</span><time>{record.created_at}</time></li>)}</ol> : <p className="shell-muted">暂无流转记录。</p>}
+        {flowHistory.items.length ? <ol className="work-item-flow-history">{flowHistory.items.map((record, index) => <li key={`${record.created_at}-${index}`}><strong>{record.actor}</strong><span>{record.summary}</span><time>{formatBusinessTimestamp(record.created_at)}</time></li>)}</ol> : <p className="shell-muted">暂无流转记录。</p>}
         {flowHistory.pagination.total_items > flowHistory.items.length ? <p className="shell-muted">共 {flowHistory.pagination.total_items} 条，当前显示最近 {flowHistory.items.length} 条。</p> : null}
       </section>
       </Modal>
