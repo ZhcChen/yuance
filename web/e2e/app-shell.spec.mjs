@@ -3842,28 +3842,39 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(resourceContentCard).toBeVisible();
   await expect(page.locator('.resource-summary-card')).toHaveCount(0);
   await expect(page.locator('.resource-hero')).toHaveCount(0);
-  await expect(resourceContentCard.getByRole('link', { name: '返回资料库' })).toHaveCount(1);
-  await expect(resourceContentCard.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
-  await expect(resourceContentCard.getByRole('button', { name: '重置保险箱密码' })).toHaveCount(1);
-  await expect(resourceContentCard.getByRole('button', { name: '归档' })).toHaveCount(1);
+  const readerHeader = page.locator('.resource-reader-header');
+  await expect(readerHeader.getByRole('link', { name: '返回资料库' })).toHaveCount(1);
+  await expect(readerHeader).toContainText('集成');
+  await expect(page.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
+  await expect(page.getByRole('heading', { level: 1, name: '客户端联调参数' })).toHaveCount(1);
+  await page.getByRole('button', { name: '更多资料操作' }).click();
+  await expect(page.getByRole('button', { name: '重置保险箱密码' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '归档资料' })).toBeVisible();
+  await page.locator('.resource-reader-meta').click();
+  await expect(page.getByRole('button', { name: '归档资料' })).not.toBeVisible();
+  await page.getByRole('button', { name: '更多资料操作' }).click();
+  await page.getByRole('button', { name: '更多资料操作' }).press('Escape');
+  await expect(page.getByRole('button', { name: '归档资料' })).not.toBeVisible();
   await expect(page.getByText('正文概览')).toBeVisible();
   const tableOfContents = page.getByRole('navigation', { name: '正文目录' });
   await expect(tableOfContents).toBeVisible();
   await expect(tableOfContents.locator('strong')).toHaveCount(0);
   await expect(tableOfContents.getByRole('link')).toHaveText(['客户端联调参数', '接入准备', '凭证配置', '环境变量', '本地验证']);
-  await expect(tableOfContents.getByRole('link', { name: '本地验证' })).toHaveAttribute('href', '#resource-heading-5-本地验证');
+  await expect(tableOfContents.getByRole('link', { name: '本地验证' })).toHaveAttribute('href', '#yuance-section-legacy-5');
   const tocScrollState = await tableOfContents.evaluate((element) => { element.style.maxHeight = '96px'; element.style.overflowY = 'auto'; element.scrollTop = element.scrollHeight; return element.scrollTop; });
   await tableOfContents.getByRole('link', { name: '本地验证' }).click();
-  await expect.poll(() => page.evaluate(() => decodeURIComponent(window.location.hash))).toBe('#resource-heading-5-本地验证');
+  await expect.poll(() => page.evaluate(() => decodeURIComponent(window.location.hash))).toBe('#yuance-section-legacy-5');
   await expect.poll(() => page.locator('.yc-rich-text-content').evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   await expect.poll(() => tableOfContents.evaluate((element) => element.scrollTop)).toBe(tocScrollState);
   await tableOfContents.evaluate((element) => { element.style.maxHeight = ''; element.style.overflowY = ''; });
   expect(publicDetailRequests).toBe(1);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocScrollbarReservation: toc.offsetWidth - toc.clientWidth, contentScrollbarReservation: content.offsetWidth - content.clientWidth, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const toolbar = element.querySelector('.resource-reader-toolbar'); const back = element.querySelector('.resource-reader-back'); const actions = element.querySelector('.resource-reader-actions'); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, toolbarWidth: toolbar.clientWidth, toolbarScrollWidth: toolbar.scrollWidth, backRight: back.getBoundingClientRect().right, actionsLeft: actions.getBoundingClientRect().left, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocScrollbarReservation: toc.offsetWidth - toc.clientWidth, contentScrollbarReservation: content.offsetWidth - content.clientWidth, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainHeight);
+    expect(geometry.toolbarScrollWidth).toBeLessThanOrEqual(geometry.toolbarWidth);
+    expect(geometry.backRight).toBeLessThanOrEqual(geometry.actionsLeft);
     expect(geometry.cardHeight).toBeGreaterThan(0);
     expect(geometry.cardBottom).toBeLessThanOrEqual(geometry.mainBottom + 1);
     expect(geometry.tocOverflowY).toBe('auto');
@@ -3878,6 +3889,7 @@ test('shared project resources filter read and unlock protected details', async 
   await page.getByRole('link', { name: '返回资料库' }).click();
   await page.getByRole('region', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
 
+  await expect(page.getByRole('heading', { level: 1, name: '正式环境密钥' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: '这条资料已设置访问密码' })).toBeVisible();
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
@@ -4185,9 +4197,12 @@ test('shared project resources create edit password actions and archive', async 
   await createDialog.getByLabel('初始访问密码').fill('safe-pass');
   await createDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByRole('region', { name: '项目资料列表' })).toContainText('部署手册');
-  expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: '<h2>发布方案</h2><pre><code>release=v1</code></pre>', body_format: 'html', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: '', related_cycle_id: null }]);
+  expect(mutations[0][0]).toBe('create');
+  expect(mutations[0][1]).toMatchObject({ title: '部署手册', category: 'implementation', body_format: 'html', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: '', related_cycle_id: null });
+  expect(mutations[0][1].body).toMatch(/^<h2 data-yuance-section-id="yuance-section-[^"]+">发布方案<\/h2><pre><code>release=v1<\/code><\/pre>$/u);
 
   await page.getByRole('link', { name: '部署手册' }).click();
+  await page.getByRole('button', { name: '更多资料操作' }).click();
   await page.getByRole('button', { name: '重置保险箱密码' }).click();
   let resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.getByLabel('新访问密码').fill('reset-pass');
@@ -4196,6 +4211,7 @@ test('shared project resources create edit password actions and archive', async 
   await expect(page.getByText('资料访问密码已重置。')).toBeVisible();
   await expect(page.getByRole('button', { name: '验证并查看' })).toBeVisible();
   expect(mutations[1]).toEqual(['reset', { access_password_action: 'set', access_password: 'reset-pass' }]);
+  await page.getByRole('button', { name: '更多资料操作' }).click();
   await page.getByRole('button', { name: '重置保险箱密码' }).click();
   resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.locator('#project-resource-password-reset-action-native').selectOption('clear');
@@ -4220,7 +4236,7 @@ test('shared project resources create edit password actions and archive', async 
   await editDialog.locator('#project-resource-password-action-native').selectOption('set');
   await editDialog.getByLabel('新访问密码').fill('next-pass');
   await editDialog.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByRole('heading', { level: 2, name: '部署手册 2.0' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '部署手册 2.0' })).toBeVisible();
   expect(mutations[3][1]).toMatchObject({ access_password_action: 'set', access_password: 'next-pass' });
 
   await page.getByRole('button', { name: '编辑' }).click();
@@ -4229,6 +4245,7 @@ test('shared project resources create edit password actions and archive', async 
   await clearDialog.getByRole('button', { name: '保存' }).click();
   await expect(clearDialog).not.toBeVisible();
   expect(mutations[4][1]).toMatchObject({ access_password_action: 'clear', access_password: '' });
+  await page.getByRole('button', { name: '更多资料操作' }).click();
   await page.getByRole('button', { name: '归档' }).click();
   await page.getByRole('dialog', { name: '归档项目资料' }).getByRole('button', { name: '确认归档' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources$/);
@@ -4368,6 +4385,8 @@ test('shared project resources hide mutations from viewers', async ({ page }) =>
   await page.goto('/web/app/projects/YCE/resources');
   await expect(page.getByRole('button', { name: '新建资料' })).toHaveCount(0);
   await page.getByRole('link', { name: '只读资料' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: '只读资料' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '更多资料操作' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '归档' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '重置保险箱密码' })).toHaveCount(0);
@@ -4423,12 +4442,13 @@ test('shared project resources expose content mutations to member role', async (
   expect(mutations[0]).toEqual(['create', { title: '成员新建资料', category: 'other', body: '<p>member body</p>', body_format: 'html', access_password: '', tags: [], related_work_item_key: '', related_cycle_id: null }]);
   await page.getByRole('link', { name: '成员新建资料' }).click();
   await expect(page.getByRole('button', { name: '编辑资料' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '归档' })).toBeVisible();
+  await page.getByRole('button', { name: '更多资料操作' }).click();
+  await expect(page.getByRole('button', { name: '归档资料' })).toBeVisible();
   await page.getByRole('button', { name: '编辑资料' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
   await editDialog.getByLabel('资料标题').fill('成员编辑资料');
   await editDialog.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByRole('heading', { level: 2, name: '成员编辑资料' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '成员编辑资料' })).toBeVisible();
   expect(mutations[1][1]).toMatchObject({ title: '成员编辑资料' });
 });
 

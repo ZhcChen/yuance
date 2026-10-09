@@ -1,5 +1,5 @@
 // @ts-check
-/* global FormData, URL, clearInterval, clearTimeout, setInterval, setTimeout */
+/* global DOMParser, FormData, Node, URL, clearInterval, clearTimeout, setInterval, setTimeout */
 
 import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -495,6 +495,16 @@ function workItemCommentAttachmentOption(itemKey, commentId, attachment) {
     contentType: attachment.content_type,
     url: `/web/work-items/${encodeURIComponent(itemKey)}/comments/${commentId}/attachments/${attachment.id}/download`,
   };
+}
+
+/** @param {string} body @param {string} title */
+function resourceBodyHasTitleHeading(body, title) {
+  const normalize = (value) => String(value || '').replace(/\s+/gu, ' ').trim();
+  const normalizedTitle = normalize(title);
+  if (!body || !normalizedTitle || typeof DOMParser === 'undefined') return false;
+  const parsed = new DOMParser().parseFromString(body, 'text/html');
+  const firstHeading = parsed.querySelector('h1, h2, h3, h4, h5, h6');
+  return normalize(firstHeading?.textContent) === normalizedTitle;
 }
 
 /** @param {string} projectKey @param {number} resourceId @param {AppAttachment} attachment @returns {AppRichTextAttachmentOption} */
@@ -1333,6 +1343,13 @@ export function SharedApp({ services }) {
   const projectRoute = route.id === 'projects' ? route : null;
   const projectDetailRoute = route.id === 'project-detail' ? route : null;
   const projectResourceDetailRoute = route.id === 'project-resource-detail' ? route : null;
+  const projectResourceTitleIsInBody = useMemo(
+    () => Boolean(projectResourceDetail && !projectResourceLocked && resourceBodyHasTitleHeading(
+      projectResourceDetail.body_html || projectResourceDetail.body,
+      projectResourceDetail.title,
+    )),
+    [projectResourceDetail, projectResourceLocked],
+  );
   const projectPersonalAnalysisRoute = route.id === 'project-personal-analysis' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemSelectionScope = workItemListRoute
@@ -6553,11 +6570,60 @@ export function SharedApp({ services }) {
               </> : null}
             </section>
           ) : route.id === 'project-resource-detail' ? (
-            <section className="page-stack resource-detail-page" aria-label="资料详情">
+            <section
+              className="page-stack resource-detail-page"
+              aria-label="资料详情"
+              onPointerDown={(event) => {
+                const openMenu = /** @type {HTMLDetailsElement | null} */ (event.currentTarget.querySelector('.resource-reader-more[open]'));
+                if (openMenu && event.target instanceof Node && !openMenu.contains(event.target)) openMenu.open = false;
+              }}
+            >
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
-                <section className="project-tabs-card resource-content-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">资料正文</p><h2>{projectResourceDetail.title}</h2></div><div className="resource-content-actions"><div className="resource-detail-side"><span>{projectResourceDetail.category || '未分类'}</span><span>{formatTimestamp(projectResourceDetail.updated_at)}</span></div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a>{canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}{user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}{canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}</div></div></div>{projectResourceLocked ? <OverlayScrollTarget axis="vertical" label="资料访问验证" className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></OverlayScrollTarget> : <article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body_html || projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={resolveProjectResourceInlineAttachmentSource} downloadingAttachmentId={projectResourceDownloadingId} showTableOfContents /></article>}</section><AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} contentType={projectAttachmentPreview?.attachment?.content_type || ''} loading={projectAttachmentPreview?.loading} downloading={projectResourceDownloadingId !== null && projectAttachmentPreview?.attachment?.id === projectResourceDownloadingId} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} /><RichAttachmentMenu open={Boolean(projectResourceFileMenu)} title={projectResourceFileMenu?.title || '附件'} x={projectResourceFileMenu?.x || 0} y={projectResourceFileMenu?.y || 0} downloadUrl={projectResourceFileMenu ? appendProjectResourceAccess(projectResourceFileMenu.href) : ''} canPreview={projectResourceFileMenuCanPreview()} onClose={closeProjectResourceFileMenu} onDownload={projectResourceFileMenuDownloadHandler()} onStatus={({ tone, text }) => { if (tone === 'error') setProjectResourceError(text); else setStatusMessage(text); }} />
+                <header className="resource-reader-header" aria-label="资料信息与操作">
+                  <div className="resource-reader-toolbar">
+                    <a className="resource-reader-back" aria-label="返回资料库" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>
+                      <span aria-hidden="true">←</span><span>返回资料库</span>
+                    </a>
+                    <div className="resource-reader-actions">
+                      {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="primary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}
+                      {(user?.is_super_admin && projectResourceDetail.status !== 'archived') || (canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked) ? (
+                        <details
+                          className="resource-reader-more"
+                          onBlur={(event) => {
+                            if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false;
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Escape') return;
+                            event.preventDefault();
+                            event.currentTarget.open = false;
+                            event.currentTarget.querySelector('summary')?.focus();
+                          }}
+                        >
+                          <summary role="button" aria-label="更多资料操作" title="更多资料操作"><span aria-hidden="true">…</span></summary>
+                          <div className="resource-reader-menu" aria-label="更多资料操作">
+                            {user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <button className="resource-reader-menu-item" type="button" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</button> : null}
+                            {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <button className="resource-reader-menu-item resource-reader-menu-item-danger" type="button" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档资料</button> : null}
+                          </div>
+                        </details>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="resource-reader-titlebar">
+                    {!projectResourceTitleIsInBody ? <h1>{projectResourceDetail.title}</h1> : null}
+                    <div className="resource-reader-meta" aria-label="资料元信息">
+                      <span>{projectResourceCategoryLabel(projectResourceDetail.category)}</span>
+                      <time dateTime={projectResourceDetail.updated_at}>更新于 {formatTimestamp(projectResourceDetail.updated_at)}</time>
+                      {projectResourceDetail.status === 'archived' ? <Badge tone="neutral">已归档</Badge> : null}
+                    </div>
+                  </div>
+                </header>
+                <section className="project-tabs-card resource-content-card">
+                  {projectResourceLocked ? <OverlayScrollTarget axis="vertical" label="资料访问验证" className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></OverlayScrollTarget> : <article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body_html || projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={resolveProjectResourceInlineAttachmentSource} downloadingAttachmentId={projectResourceDownloadingId} showTableOfContents /></article>}
+                </section>
+                <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} contentType={projectAttachmentPreview?.attachment?.content_type || ''} loading={projectAttachmentPreview?.loading} downloading={projectResourceDownloadingId !== null && projectAttachmentPreview?.attachment?.id === projectResourceDownloadingId} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
+                <RichAttachmentMenu open={Boolean(projectResourceFileMenu)} title={projectResourceFileMenu?.title || '附件'} x={projectResourceFileMenu?.x || 0} y={projectResourceFileMenu?.y || 0} downloadUrl={projectResourceFileMenu ? appendProjectResourceAccess(projectResourceFileMenu.href) : ''} canPreview={projectResourceFileMenuCanPreview()} onClose={closeProjectResourceFileMenu} onDownload={projectResourceFileMenuDownloadHandler()} onStatus={({ tone, text }) => { if (tone === 'error') setProjectResourceError(text); else setStatusMessage(text); }} />
               </> : null}
             </section>
           ) : route.id === 'project-cycle-detail' ? (
