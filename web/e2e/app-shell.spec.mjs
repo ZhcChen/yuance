@@ -3789,7 +3789,7 @@ test('shared project detail manages project information and member lifecycle', a
   expect(mutations[1][1]).toEqual({ usernames: ['collaborator', 'reviewer'], member_role: 'member' });
 });
 
-test('shared project resources filter read and unlock protected details', async ({ page }) => {
+test('shared project resources filter read and unlock protected details', async ({ page }, testInfo) => {
   await routeEmptyProjectResourceAttachments(page);
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
@@ -3798,6 +3798,10 @@ test('shared project resources filter read and unlock protected details', async 
   const resourceQueries = [];
   const unlockPasswords = [];
   let publicDetailRequests = 0;
+  let signalPublicDetailStarted;
+  let releasePublicDetail;
+  const publicDetailStarted = new Promise((resolve) => { signalPublicDetailStarted = resolve; });
+  const publicDetailGate = new Promise((resolve) => { releasePublicDetail = resolve; });
   let releaseDelayedUnlock;
   const delayedUnlockStarted = new Promise((resolve) => {
     releaseDelayedUnlock = resolve;
@@ -3809,7 +3813,12 @@ test('shared project resources filter read and unlock protected details', async 
     const filtered = url.searchParams.get('q') === '客户端' ? [publicResource] : [publicResource, protectedSummary];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: filtered }) });
   });
-  await page.route('**/api/v1/projects/YCE/resources/901', (route) => { publicDetailRequests += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: publicResource }) }); });
+  await page.route('**/api/v1/projects/YCE/resources/901', async (route) => {
+    publicDetailRequests += 1;
+    signalPublicDetailStarted();
+    await publicDetailGate;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: publicResource }) });
+  });
   await page.route('**/api/v1/projects/YCE/resources/902/unlock', async (route) => {
     const password = route.request().postDataJSON().access_password;
     unlockPasswords.push(password);
@@ -3838,6 +3847,11 @@ test('shared project resources filter read and unlock protected details', async 
 
   await list.getByRole('link', { name: '客户端联调参数' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources\/901$/);
+  await publicDetailStarted;
+  await expect(page.getByRole('region', { name: '正在加载资料详情' })).toBeVisible();
+  expect(await page.locator('.resource-detail-skeleton-toc').count()).toBe(1);
+  await page.locator('.resource-detail-skeleton').screenshot({ path: testInfo.outputPath('resource-detail-skeleton.png') });
+  releasePublicDetail();
   const resourceContentCard = page.locator('.resource-content-card');
   await expect(resourceContentCard).toBeVisible();
   await expect(page.locator('.resource-summary-card')).toHaveCount(0);

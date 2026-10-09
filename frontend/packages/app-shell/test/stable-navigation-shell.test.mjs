@@ -6,7 +6,7 @@ test('route loading preserves the mounted navigation shell after initial recover
   const source = await readFile(new URL('../src/app.jsx', import.meta.url), 'utf8');
   const styles = await readFile(new URL('../src/application.css', import.meta.url), 'utf8');
   const navigationIndex = source.indexOf('<GlobalNavigation');
-  const routeLoadingIndex = source.indexOf('{loading ? (', navigationIndex);
+  const routeLoadingIndex = source.indexOf("{loading && route.id !== 'project-resource-detail' ? (", navigationIndex);
   const routeContentIndex = source.indexOf('{error ? (', routeLoadingIndex);
 
   assert.match(source, /if \(loading && !shellReady\)/u);
@@ -14,6 +14,7 @@ test('route loading preserves the mounted navigation shell after initial recover
   assert.ok(routeLoadingIndex > navigationIndex);
   assert.ok(routeContentIndex > routeLoadingIndex);
   assert.match(source, /className="shell-route-loading"/u);
+  assert.match(source, /ProjectResourceDetailSkeleton/u);
   assert.match(styles, /\.shell-route-loading \{[\s\S]*min-height: 420px;/u);
   assert.doesNotMatch(styles, /\.shell-route-loading[^}]*animation:/u);
 });
@@ -24,7 +25,7 @@ test('shared shell keeps the 58px navigation outside the only business scroll co
   const uiStyles = await readFile(new URL('../../ui/src/styles.css', import.meta.url), 'utf8');
   const navigationIndex = source.indexOf('<GlobalNavigation');
   const mainIndex = source.indexOf('<main ref={mainScrollbar.ref} className="main yc-overlay-scroll-target">', navigationIndex);
-  const routeLoadingIndex = source.indexOf('{loading ? (', navigationIndex);
+  const routeLoadingIndex = source.indexOf("{loading && route.id !== 'project-resource-detail' ? (", navigationIndex);
 
   assert.match(source, /return \(\s*<div className="app-shell"/u);
   assert.ok(mainIndex > navigationIndex, '业务滚动容器必须位于稳定导航之后');

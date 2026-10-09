@@ -85,7 +85,7 @@ import {
 } from '@yuance/frontend-ui';
 import { errorMessage, globalApiErrorMessage } from './errors.js';
 import { createApiErrorWrappingProxy } from './api-proxy.js';
-import { AppShellSkeleton } from './app-skeleton.jsx';
+import { AppShellSkeleton, ProjectResourceDetailSkeleton } from './app-skeleton.jsx';
 
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 /** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
@@ -1960,6 +1960,9 @@ export function SharedApp({ services }) {
     } catch (caught) {
       if (requestRef.current !== requestId) {
         return;
+      }
+      if (targetRoute.id === 'project-resource-detail') {
+        setProjectResourceError(globalApiErrorMessage(caught));
       }
       setError(new Error(globalApiErrorMessage(caught)));
     } finally {
@@ -5715,7 +5718,7 @@ export function SharedApp({ services }) {
       <main ref={mainScrollbar.ref} className="main yc-overlay-scroll-target">
       <div className="main-content">
 
-      {loading ? (
+      {loading && route.id !== 'project-resource-detail' ? (
         <section className="shell-route-loading" role="status" aria-live="polite" aria-label={`正在加载${route.title}`}>
           <p className="shell-eyebrow">{routeEyebrow(route)}</p>
           <h1>{route.title}</h1>
@@ -6553,6 +6556,7 @@ export function SharedApp({ services }) {
             <section className="page-stack resource-detail-page" aria-label="资料详情">
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
+              {!projectResourceDetail && !projectResourceError ? <ProjectResourceDetailSkeleton /> : null}
               {projectResourceDetail ? <>
                 <header className="resource-reader-header" aria-label="资料信息与操作">
                   <div className="resource-reader-toolbar">

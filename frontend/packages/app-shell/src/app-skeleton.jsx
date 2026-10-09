@@ -66,3 +66,45 @@ export function AppShellSkeleton() {
     </div>
   );
 }
+
+export function ProjectResourceDetailSkeleton() {
+  return (
+    <div className="resource-detail-skeleton" role="region" aria-busy="true" aria-label="正在加载资料详情">
+      <p className="shell-live-region" role="status" aria-live="polite">正在加载资料详情。</p>
+      <div className="resource-detail-skeleton-header" aria-hidden="true">
+        <div className="resource-detail-skeleton-context">
+          <span className="app-skeleton-block resource-detail-skeleton-back" />
+          <span className="app-skeleton-block resource-detail-skeleton-meta" />
+        </div>
+        <div className="resource-detail-skeleton-actions">
+          <span className="app-skeleton-block resource-detail-skeleton-action" />
+          <span className="app-skeleton-block resource-detail-skeleton-action" />
+        </div>
+      </div>
+      <span className="app-skeleton-block resource-detail-skeleton-title" aria-hidden="true" />
+      <div className="project-tabs-card resource-content-card resource-detail-skeleton-content" aria-hidden="true">
+        <div className="resource-detail-skeleton-toc">
+          <span className="app-skeleton-block resource-detail-skeleton-toc-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-toc-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-toc-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-toc-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-toc-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-toc-line" />
+        </div>
+        <div className="resource-detail-skeleton-body">
+          <span className="app-skeleton-block resource-detail-skeleton-heading" />
+          <span className="app-skeleton-block resource-detail-skeleton-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-line resource-detail-skeleton-line-short" />
+          <span className="app-skeleton-block resource-detail-skeleton-subheading" />
+          <span className="app-skeleton-block resource-detail-skeleton-table" />
+          <span className="app-skeleton-block resource-detail-skeleton-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-line resource-detail-skeleton-line-medium" />
+          <span className="app-skeleton-block resource-detail-skeleton-subheading" />
+          <span className="app-skeleton-block resource-detail-skeleton-line" />
+          <span className="app-skeleton-block resource-detail-skeleton-line resource-detail-skeleton-line-short" />
+        </div>
+      </div>
+    </div>
+  );
+}
