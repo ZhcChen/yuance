@@ -86,6 +86,8 @@ CLI 默认连接 `https://yuance.quanxinfu.com`。只有私有部署或测试环
 
 上传附件前必须确认用户明确授权的本地路径、项目和资料。使用 `resources attachments upload --file <PATH>`；`.svg` 会默认登记为 `image/svg+xml`。CLI 会自行完成签名请求、`YUANCE-ENC-v1` 加密传输和完成确认，不要手工 PUT 签名 URL。
 
+正文图片使用 `skills/yuance-agent/references/workflows.md` 中“维护资料正文图片”的标准figure：附件ID/kind写在外层容器，img写当前资料download引用。该地址是保存契约，Web阅读器应转换为受控解密预览源；不要直接把SVG下载响应当图片显示，也不要写data/base64、OSS或临时预览地址。CLI 0.1.4无需新增参数；本次需要同步Skill说明与Web修复版本，包版本号本身不能证明正文展示链路已上线。保存后回读和实际登录页面显示须分别验收。
+
 使用 `CODEX_HOME` 或 Windows 时，替换为实际安装目录及 `yuance-agent.exe`。
 
 ## 从旧接入迁移

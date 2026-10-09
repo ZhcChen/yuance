@@ -456,6 +456,16 @@ actor=zhangsan
 资料库用于保存项目级开发资料、客户资料、会议纪要和实施文档。资料正文为富文本 HTML，
 正文内附件绑定到 `project_resource` 目标。
 
+正文图片（含SVG）标准HTML为附件figure容器：
+
+```html
+<figure data-yuance-attachment-id="189" data-yuance-attachment-kind="image" data-yuance-align="left">
+  <img src="/web/projects/P260713139801/resources/30/attachments/189/download" alt="加油业务流程图" loading="lazy">
+</figure>
+```
+
+ID须是当前资料已uploaded的图片附件；示例ID不适用于其他资料。完整HTML以`body_format=html`写入body。src使用当前资料受控download引用而非API preview地址，阅读器按ID获取预览能力、鉴权及解密，并转换为正确MIME的临时图片源；download可返回安全下载响应，不保证适合直接作为SVG img源。禁止写入data/base64、OSS签名URL、blob或密钥，不扩大SVG/HTML白名单。历史媒体节点自身携带附件ID由兼容阅读器处理，新增引用仍推荐figure。接口写入、下载完整性及登录页面显示分别验收。CLI/Skill准确流程见 `skills/yuance-agent/references/workflows.md`。
+
 ```text
 GET    /api/v1/projects/{project_key}/resources
 POST   /api/v1/projects/{project_key}/resources

@@ -17,6 +17,7 @@ const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-al
 EDITOR_ATTRIBUTES.push(SECTION_ATTRIBUTE);
 const CONTENT_TAGS = EDITOR_TAGS;
 const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
+const ATTACHMENT_MEDIA_SELECTOR = '[data-yuance-attachment-id] img, [data-yuance-attachment-id] video, img[data-yuance-attachment-id], video[data-yuance-attachment-id]';
 const RICH_TEXT_TOC_WIDTH_DEFAULT = 320;
 const RICH_TEXT_TOC_WIDTH_MIN = 220;
 const RICH_TEXT_TOC_WIDTH_MAX = 520;
@@ -258,7 +259,7 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
       image.setAttribute('role', 'button');
       image.setAttribute('aria-label', '预览 SVG 流程图');
     }
-    const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
+    const mediaReferences = [...staging.querySelectorAll(ATTACHMENT_MEDIA_SELECTOR)];
     if (resolveRef.current) for (const media of mediaReferences) media.removeAttribute('src');
     content.replaceChildren(...staging.childNodes);
     setHeadings(headings);
@@ -274,12 +275,16 @@ export function RichTextContent({ html, format = 'html', emptyText = '暂无正�
     let active = true;
     const releases = [];
     const roots = [];
-    for (const media of [...content.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')]) {
+    for (const media of [...content.querySelectorAll(ATTACHMENT_MEDIA_SELECTOR)]) {
       const owner = media.closest('[data-yuance-attachment-id]');
       const attachmentId = Number(owner?.getAttribute('data-yuance-attachment-id'));
       if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) continue;
       if (media.matches('img')) {
         const rootContainer = content.ownerDocument.createElement('span');
+        if (owner === media) {
+          rootContainer.setAttribute('data-yuance-attachment-id', String(attachmentId));
+          rootContainer.setAttribute('data-yuance-attachment-kind', 'image');
+        }
         media.replaceWith(rootContainer);
         const root = createRoot(rootContainer);
         roots.push(root);

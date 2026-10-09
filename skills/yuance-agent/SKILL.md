@@ -42,6 +42,7 @@ description: 通过元策 OpenAPI 分析和操作项目、需求、任务、Bug�
 - 正文较长或包含 HTML 时使用 `--description-file` / `--body-file`；传 `-` 可从 stdin 读取。
 - 资料正文无固定字符数上限，完整 UTF-8 JSON 写入请求仍限 16 MiB；CLI JSON 响应默认限 128 MiB，可通过 `YUANCE_MAX_RESPONSE_BYTES` 设置正整数字节容量。长正文保存后回读核验完整性，不截断正文或删除章节来规避容量错误；旧服务端或未同步网关可能仍有限制。
 - 资料同文档章节引用使用标题专用 `data-yuance-section-id` 与对应 `href="#yuance-section-..."`；改名/重排保留标识，保存后回读核验。准确写法及删除/重复规则见 `references/workflows.md` 的“维护资料章节引用”。
+- 资料正文图片（含SVG）用附件容器 `<figure data-yuance-attachment-id="附件ID" data-yuance-attachment-kind="image" data-yuance-align="left"><img src="当前资料的 /web/.../attachments/附件ID/download" alt="说明" loading="lazy"></figure>`。ID放在figure上；完整示例及展示验收见 `references/workflows.md` 的“维护资料正文图片”。不写data图片、签名URL、预览临时地址或解密密钥；上传/下载/保存成功不等于页面显示成功。
 - 不重试可能重复创建、评论或流转的写操作，除非先读取并确认前一次未成功。
 - `resources unlock` 的密码只从 stdin 读取；受保护附件的 `access_token` 只从 stdin 读取并仅保留在当前进程。
 - 不把密码、PAT、`access_token`、签名 URL、签名 headers 或 `encryption.key` 放入 argv、环境变量、普通文件、日志或错误文本。

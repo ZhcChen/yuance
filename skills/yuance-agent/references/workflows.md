@@ -51,6 +51,22 @@
 9. 替换附件时先完成新附件，再用 `resources update --body-file` 更新正文引用；重新读取资料确认引用后，才可用 `attachments delete --if-match <updated_at>` 删除旧附件。
 10. `409` 表示资料版本变化或正文仍引用目标附件，停止删除并重新读取，不重试绕过。
 
+## 维护资料正文图片
+
+先读取资料和附件列表，确认附件属于当前资料、状态为`uploaded`且类型为图片。SVG上传使用`image/svg+xml`。编辑器的标准HTML把附件ID和媒体类型放在外层figure，img保留当前资料受控download地址：
+
+```html
+<figure data-yuance-attachment-id="189" data-yuance-attachment-kind="image" data-yuance-align="left">
+  <img src="/web/projects/P260713139801/resources/30/attachments/189/download" alt="加油业务流程图" loading="lazy">
+</figure>
+```
+
+这是项目P260713139801资料30附件189的准确示例；其他资料须换为已确认的项目/资料/附件ID，不复制示例ID。用`resources update --project-key <KEY> --resource-id <ID> --body-file <PATH|-> --body-format html`保存包含图片的完整正文，保留原章节标识及其他内容，再用`resources get`核验引用。
+
+`src`是正文保存契约中的受控引用，不代表直接打开download就能显示图片。阅读器按figure的附件ID取得专用预览元数据，完成当前用户/资料权限检查、密文校验与解密，再把正确媒体类型的临时图片源交给img；历史明文兼容同一流程。SVG download可能返回`application/octet-stream`与`Content-Disposition: attachment`，不能以此判定文件损坏，也不要手工改为preview/content地址来绕过正文校验。兼容修复后的阅读器也支持img自身携带附件ID的历史正文，新增内容仍用标准figure；旧部署可能不具备Web正文解密能力，单改HTML不能保证修复。
+
+禁止在正文写入data/base64图片、OSS原始或签名地址、blob地址、密钥、预览协议JSON；data媒体被拒绝时不要删掉附件ID或改成任意外部src来绕过。SVG仍作为img图片，不写inline svg/object/iframe。上传成功、CLI校验下载成功和HTML回读成功分别只证明各自环节；页面验收须在有权限的实际登录详情页确认每张图自然宽高大于零，并检查预览网络请求与控制台。CLI本身不提供浏览器显示验收，缺登录态或未部署修复须如实报告。
+
 ## 创建资料
 
 1. 先确认目标项目和资料标题；已有同主题资料时先读取详情，避免重复创建或覆盖无关资料。
