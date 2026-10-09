@@ -3,39 +3,11 @@ set -eu
 
 ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
-DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-local-wsl}"
-BUILD_MODE="${YUANCE_DEPLOY_BUILD_MODE:-local}"
+DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-}"
+BUILD_MODE="${YUANCE_DEPLOY_BUILD_MODE:-}"
 LOCAL_WSL_ROOT="${YUANCE_LOCAL_WSL_ROOT:-/srv/yuance}"
 LOCAL_BACKEND_DIR="$LOCAL_WSL_ROOT/backend"
 LOCAL_RELEASE_DIR="$LOCAL_WSL_ROOT/releases"
-
-case "$DEPLOY_MODE" in
-  local-wsl)
-    if [ "${YUANCE_DEPLOY_HOST+x}" = "x" ]; then
-      echo "local-wsl 模式不接受 YUANCE_DEPLOY_HOST，请移除该变量。" >&2
-      exit 1
-    fi
-    ;;
-  remote)
-    if [ -z "${YUANCE_DEPLOY_HOST:-}" ]; then
-      echo "remote 模式必须显式设置 YUANCE_DEPLOY_HOST。" >&2
-      exit 1
-    fi
-    ;;
-  *)
-    echo "YUANCE_DEPLOY_MODE 仅支持 local-wsl 或 remote：$DEPLOY_MODE" >&2
-    exit 1
-    ;;
-esac
-
-case "$BUILD_MODE" in
-  local|remote)
-    ;;
-  *)
-    echo "YUANCE_DEPLOY_BUILD_MODE 仅支持 local 或 remote：$BUILD_MODE" >&2
-    exit 1
-    ;;
-esac
 
 REMOTE_HOST="${YUANCE_DEPLOY_HOST:-}"
 REMOTE_ROOT="${YUANCE_DEPLOY_ROOT:-/srv/yuance}"
@@ -47,7 +19,7 @@ REMOTE_BUILD_ROOT="${YUANCE_BUILD_ROOT:-$REMOTE_ROOT/build}"
 
 IMAGE="${YUANCE_API_IMAGE:-yuance-api:latest}"
 IMAGE_TAR="${YUANCE_API_IMAGE_TAR:-dist/yuance-api-linux-amd64.tar}"
-REMOTE_IMAGE_TAR="$REMOTE_RELEASE_DIR/$(basename "$IMAGE_TAR")"
+REMOTE_IMAGE_TAR=""
 KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
 SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
@@ -58,6 +30,264 @@ SOURCE_COMMIT=""
 REMOTE_BUILD_DIR=""
 REMOTE_BUILD_TAR=""
 SOURCE_ARCHIVE=""
+
+fail() {
+  echo "$1" >&2
+  exit 1
+}
+
+validate_absolute_path() {
+  name="$1"
+  value="$2"
+  case "$value" in
+    /*) ;;
+    *) fail "$name 必须是绝对路径：$value" ;;
+  esac
+  case "$value" in
+    *[!A-Za-z0-9._/-]*) fail "$name 含有不支持的字符：$value" ;;
+  esac
+  case "$value" in
+    *//*) fail "$name 不得包含重复斜杠：$value" ;;
+  esac
+  case "/$value/" in
+    */../*|*/./*) fail "$name 不得包含 . 或 .. 路径段：$value" ;;
+  esac
+  case "$value" in
+    /|*/) fail "$name 不得是根目录或以斜杠结尾：$value" ;;
+  esac
+}
+
+validate_docker_image_reference() {
+  if ! printf '%s\n' "$IMAGE" | awk '
+    function valid_component(value) {
+      return value ~ /^[a-z0-9]+(([._]|__|-+)[a-z0-9]+)*$/
+    }
+    function valid_domain(value, parts, count, host, port, suffix, closing, i) {
+      if (substr(value, 1, 1) == "[") {
+        closing = index(value, "]")
+        if (!closing) return 0
+        host = substr(value, 2, closing - 2)
+        if (host !~ /^[[:xdigit:]:]+$/ || index(host, ":") == 0) return 0
+        suffix = substr(value, closing + 1)
+        if (suffix == "") return 1
+        if (substr(suffix, 1, 1) != ":") return 0
+        port = substr(suffix, 2)
+        return port ~ /^[0-9]+$/
+      }
+      count = split(value, parts, ":")
+      if (count > 2) return 0
+      host = parts[1]
+      if (count == 2) {
+        port = parts[2]
+        if (port !~ /^[0-9]+$/) return 0
+      }
+      if (host !~ /^[A-Za-z0-9.-]+$/ || host ~ /\.\.|^-|-$|\.-|\.\-/) return 0
+      count = split(host, parts, ".")
+      for (i = 1; i <= count; i++) {
+        if (parts[i] !~ /^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$/) return 0
+      }
+      return 1
+    }
+    function valid_reference(reference, i, last_slash, last_colon, name, tag, component_count, components, first, first_path_component, path) {
+      if (length(reference) == 0 || reference ~ /@/) return 0
+
+      last_slash = 0
+      for (i = 1; i <= length(reference); i++) {
+        if (substr(reference, i, 1) == "/") last_slash = i
+      }
+      last_colon = 0
+      for (i = last_slash + 1; i <= length(reference); i++) {
+        if (substr(reference, i, 1) == ":") last_colon = i
+      }
+      name = reference
+      if (last_colon) {
+        name = substr(reference, 1, last_colon - 1)
+        tag = substr(reference, last_colon + 1)
+        if (length(tag) > 128 || tag !~ /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/) return 0
+      }
+      if (name == "" || name ~ /^\// || name ~ /\/$/ || name ~ /\/\//) return 0
+      if (length(name) > 255) return 0
+
+      component_count = split(name, components, "/")
+      if (component_count > 1) {
+        first = components[1]
+        if (first ~ /[.:]/ || first == "localhost" || first ~ /^\[/) {
+          if (!valid_domain(first)) return 0
+          first_path_component = 2
+        } else {
+          first_path_component = 1
+        }
+      } else {
+        first_path_component = 1
+      }
+      if (first_path_component > component_count) return 0
+      path = name
+      if (first_path_component == 2) path = substr(name, index(name, "/") + 1)
+      if (length(path) > 255) return 0
+      for (i = first_path_component; i <= component_count; i++) {
+        if (!valid_component(components[i])) return 0
+      }
+      return 1
+    }
+    {
+      if (NR > 1 || !valid_reference($0)) invalid = 1
+    }
+    END {
+      if (NR != 1 || invalid) exit 1
+      exit 0
+    }
+  '; then
+    fail "YUANCE_API_IMAGE 不是有效的 Docker 镜像名称与标签：$IMAGE"
+  fi
+}
+
+validate_duration() {
+  name="$1"
+  value="$2"
+  case "$value" in
+    *s) amount="${value%s}"; maximum=86400 ;;
+    *m) amount="${value%m}"; maximum=1440 ;;
+    *h) amount="${value%h}"; maximum=24 ;;
+    *) fail "$name 必须使用正整数加 s、m 或 h，且不超过 24 小时：$value" ;;
+  esac
+  case "$amount" in
+    ''|0|0*|*[!0-9]*) fail "$name 必须使用规范的正整数时长：$value" ;;
+  esac
+  if [ "${#amount}" -gt 5 ] || [ "$amount" -gt "$maximum" ]; then
+    fail "$name 不得超过 24 小时：$value"
+  fi
+}
+
+validate_image_tar_path() {
+  case "$IMAGE_TAR" in
+    /*|*[!A-Za-z0-9._/-]*) fail "YUANCE_API_IMAGE_TAR 必须是仓库内的 .tar 相对路径：$IMAGE_TAR" ;;
+  esac
+  case "/$IMAGE_TAR/" in
+    */../*|*/./*) fail "YUANCE_API_IMAGE_TAR 不得包含 . 或 .. 路径段：$IMAGE_TAR" ;;
+  esac
+  case "$IMAGE_TAR" in
+    *.tar) ;;
+    *) fail "YUANCE_API_IMAGE_TAR 必须以 .tar 结尾：$IMAGE_TAR" ;;
+  esac
+
+  candidate="$ROOT_DIR"
+  remaining="$IMAGE_TAR"
+  while [ -n "$remaining" ]; do
+    component="${remaining%%/*}"
+    if [ "$component" = "$remaining" ]; then
+      remaining=""
+    else
+      remaining="${remaining#*/}"
+    fi
+    candidate="$candidate/$component"
+    if [ -L "$candidate" ]; then
+      fail "YUANCE_API_IMAGE_TAR 路径不得包含符号链接：$IMAGE_TAR"
+    fi
+  done
+}
+
+validate_release_parameters() {
+  if [ -z "$DEPLOY_MODE" ]; then
+    fail "必须显式设置 YUANCE_DEPLOY_MODE=remote 或 YUANCE_DEPLOY_MODE=local-wsl。"
+  fi
+  if [ -z "$BUILD_MODE" ]; then
+    fail "必须显式设置 YUANCE_DEPLOY_BUILD_MODE=remote 或 YUANCE_DEPLOY_BUILD_MODE=local。"
+  fi
+
+  case "$DEPLOY_MODE" in
+    local-wsl)
+      if [ "${YUANCE_DEPLOY_HOST+x}" = "x" ]; then
+        fail "local-wsl 模式不接受 YUANCE_DEPLOY_HOST，请移除该变量。"
+      fi
+      if [ "$BUILD_MODE" = "remote" ]; then
+        fail "local-wsl 模式只支持 YUANCE_DEPLOY_BUILD_MODE=local。"
+      fi
+      ;;
+    remote)
+      if [ -z "$REMOTE_HOST" ]; then
+        fail "remote 模式必须显式设置 YUANCE_DEPLOY_HOST。"
+      fi
+      case "$REMOTE_HOST" in
+        -*|*[!A-Za-z0-9._@-]*) fail "YUANCE_DEPLOY_HOST 含有不支持的字符：$REMOTE_HOST" ;;
+      esac
+      ;;
+    *) fail "YUANCE_DEPLOY_MODE 仅支持 local-wsl 或 remote：$DEPLOY_MODE" ;;
+  esac
+
+  case "$BUILD_MODE" in
+    local|remote) ;;
+    *) fail "YUANCE_DEPLOY_BUILD_MODE 仅支持 local 或 remote：$BUILD_MODE" ;;
+  esac
+
+  for setting in "$SKIP_BUILD" "$PRUNE_DANGLING_IMAGES" "${YUANCE_ALLOW_DIRTY_LOCAL_CONFIG:-0}"; do
+    case "$setting" in
+      0|1) ;;
+      *) fail "YUANCE_SKIP_LOCAL_BUILD、YUANCE_PRUNE_DANGLING_IMAGES 和 YUANCE_ALLOW_DIRTY_LOCAL_CONFIG 只支持 0 或 1。" ;;
+    esac
+  done
+  if [ "$BUILD_MODE" = "remote" ] && [ "$SKIP_BUILD" = "1" ]; then
+    fail "remote 构建模式不支持 YUANCE_SKIP_LOCAL_BUILD=1，请让目标机从源码构建。"
+  fi
+
+  case "$KEEP_RELEASE_BACKUPS" in
+    ''|*[!0-9]*|0[0-9]*) fail "YUANCE_KEEP_RELEASE_BACKUPS 必须是 0 到 100 的规范非负整数：$KEEP_RELEASE_BACKUPS" ;;
+  esac
+  if [ "${#KEEP_RELEASE_BACKUPS}" -gt 3 ] || [ "$KEEP_RELEASE_BACKUPS" -gt 100 ]; then
+    fail "YUANCE_KEEP_RELEASE_BACKUPS 不得超过 100：$KEEP_RELEASE_BACKUPS"
+  fi
+
+  validate_duration YUANCE_SSE_DRAIN_TIMEOUT "$SSE_DRAIN_TIMEOUT"
+  validate_duration YUANCE_STOP_GRACE_PERIOD "$STOP_GRACE_PERIOD"
+  validate_duration YUANCE_MAX_RELEASE_WINDOW "$MAX_RELEASE_WINDOW"
+  validate_absolute_path YUANCE_LOCAL_WSL_ROOT "$LOCAL_WSL_ROOT"
+  validate_absolute_path YUANCE_DEPLOY_ROOT "$REMOTE_ROOT"
+  validate_absolute_path YUANCE_DEPLOY_BACKEND_DIR "$REMOTE_BACKEND_DIR"
+  validate_absolute_path YUANCE_DEPLOY_GATEWAY_DIR "$REMOTE_GATEWAY_DIR"
+  validate_absolute_path YUANCE_BUILD_ROOT "$REMOTE_BUILD_ROOT"
+  case "$REMOTE_BUILD_ROOT" in
+    "$REMOTE_BACKEND_DIR"|"$REMOTE_BACKEND_DIR"/*)
+      fail "YUANCE_BUILD_ROOT 不得位于正式运行目录：$REMOTE_BUILD_ROOT"
+      ;;
+  esac
+
+  validate_docker_image_reference
+  validate_image_tar_path
+  case "${YUANCE_RELEASE_VERSION:-}" in
+    *[!A-Za-z0-9._+-]*) fail "YUANCE_RELEASE_VERSION 含有不支持的字符。" ;;
+  esac
+
+  REMOTE_IMAGE_TAR="$REMOTE_RELEASE_DIR/$(basename "$IMAGE_TAR")"
+}
+
+validate_release_parameters
+
+validate_local_wsl_target() {
+  if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+    fail "local-wsl 模式只能在 WSL 内执行。"
+  fi
+  if [ "$(command -v docker 2>/dev/null || true)" != "/usr/bin/docker" ]; then
+    fail "local-wsl 模式必须使用 WSL 原生 /usr/bin/docker。"
+  fi
+  for command_name in docker timeout sha256sum install sqlite3; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      fail "WSL 缺少命令：$command_name"
+    fi
+  done
+  if ! docker compose version >/dev/null 2>&1; then
+    fail "WSL 缺少 Docker Compose 插件。"
+  fi
+  if [ ! -s "$LOCAL_BACKEND_DIR/.env" ]; then
+    fail "WSL 缺少 $LOCAL_BACKEND_DIR/.env，拒绝部署。"
+  fi
+}
+
+preflight_remote_target() {
+  target_check="set -eu; for command_name in docker timeout sha256sum sqlite3; do command -v \"\$command_name\" >/dev/null 2>&1 || { echo \"服务器缺少命令：\$command_name\" >&2; exit 1; }; done; docker compose version >/dev/null 2>&1 || { echo '服务器缺少 Docker Compose 插件。' >&2; exit 1; }; test -s '$REMOTE_BACKEND_DIR/.env' || { echo '服务器缺少后端 .env，拒绝部署。' >&2; exit 1; }"
+  if [ "$BUILD_MODE" = "remote" ]; then
+    target_check="$target_check; for command_name in node npm tar; do command -v \"\$command_name\" >/dev/null 2>&1 || { echo \"服务器缺少构建命令：\$command_name\" >&2; exit 1; }; done; canonicalize_missing() { candidate=\"\$1\"; suffix=\"\"; while [ ! -d \"\$candidate\" ]; do if [ -L \"\$candidate\" ] || [ -e \"\$candidate\" ]; then return 1; fi; component=\"\${candidate##*/}\"; candidate=\"\${candidate%/*}\"; [ -n \"\$candidate\" ] || candidate=/; suffix=\"/\$component\$suffix\"; done; canonical=\$(CDPATH= cd -P \"\$candidate\" && pwd -P) || return 1; [ \"\$canonical\" != / ] || canonical=\"\"; printf '%s%s\\n' \"\$canonical\" \"\$suffix\"; }; backend_real=\$(CDPATH= cd -P '$REMOTE_BACKEND_DIR' && pwd -P) || { echo '无法解析后端运行目录。' >&2; exit 1; }; build_real=\$(canonicalize_missing '$REMOTE_BUILD_ROOT') || { echo '无法解析远程构建目录。' >&2; exit 1; }; case \"\$build_real\" in \"\$backend_real\"|\"\$backend_real\"/*) echo '构建目录真实路径落入后端运行目录。' >&2; exit 1 ;; esac; docker buildx version >/dev/null 2>&1; docker buildx inspect --bootstrap >/dev/null 2>&1 || { echo '服务器 Buildx builder 无法初始化。' >&2; exit 1; }"
+  fi
+  run ssh "$REMOTE_HOST" "$target_check"
+}
 
 require_file() {
   if [ ! -f "$ROOT_DIR/$1" ]; then
@@ -119,21 +349,19 @@ require_file "deploy/easy-deploy/production/backend/compose.yaml.example"
 require_file "deploy/easy-deploy/production/backend/.env.example"
 require_file "deploy/easy-deploy/production/gateway/Caddyfile.yuance.example"
 
+if [ "$DEPLOY_MODE" = "local-wsl" ]; then
+  validate_local_wsl_target
+fi
+
 require_clean_main
 
 SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 
+if [ "$DEPLOY_MODE" = "remote" ]; then
+  preflight_remote_target
+fi
+
 if [ "$DEPLOY_MODE" = "remote" ] && [ "$BUILD_MODE" = "remote" ]; then
-  if [ "$SKIP_BUILD" = "1" ]; then
-    echo "remote 构建模式不支持 YUANCE_SKIP_LOCAL_BUILD=1，请让 qfy-test2 从源码构建。" >&2
-    exit 1
-  fi
-  case "$REMOTE_BUILD_ROOT" in
-    "$REMOTE_BACKEND_DIR"|"$REMOTE_BACKEND_DIR"/*|"$REMOTE_BACKEND_DIR/data"|"$REMOTE_BACKEND_DIR/data"/*)
-      echo "YUANCE_BUILD_ROOT 不得位于正式运行目录或数据目录：$REMOTE_BUILD_ROOT" >&2
-      exit 1
-      ;;
-  esac
   SOURCE_ARCHIVE="$(mktemp "${TMPDIR:-/tmp}/yuance-source.XXXXXX")"
   trap 'rm -f "$SOURCE_ARCHIVE"' EXIT HUP INT TERM
   run git -C "$ROOT_DIR" archive --format=tar.gz --output="$SOURCE_ARCHIVE" HEAD
@@ -158,29 +386,6 @@ else
 fi
 
 if [ "$DEPLOY_MODE" = "local-wsl" ]; then
-  if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
-    echo "local-wsl 模式只能在 WSL 内执行。" >&2
-    exit 1
-  fi
-  if [ "$(command -v docker 2>/dev/null || true)" != "/usr/bin/docker" ]; then
-    echo "local-wsl 模式必须使用 WSL 原生 /usr/bin/docker。" >&2
-    exit 1
-  fi
-  for command_name in docker timeout sha256sum install; do
-    if ! command -v "$command_name" >/dev/null 2>&1; then
-      echo "WSL 缺少命令：$command_name" >&2
-      exit 1
-    fi
-  done
-  if ! docker compose version >/dev/null 2>&1; then
-    echo "WSL 缺少 Docker Compose 插件。" >&2
-    exit 1
-  fi
-  if [ ! -s "$LOCAL_BACKEND_DIR/.env" ]; then
-    echo "WSL 缺少 $LOCAL_BACKEND_DIR/.env，拒绝部署。" >&2
-    exit 1
-  fi
-
   run install -d -m 0750 "$LOCAL_BACKEND_DIR" "$LOCAL_BACKEND_DIR/backups" "$LOCAL_RELEASE_DIR"
   run install -m 0644 "$ROOT_DIR/deploy/easy-deploy/production/backend/app.yaml.example" "$LOCAL_BACKEND_DIR/app.yaml"
   run install -m 0644 "$ROOT_DIR/deploy/easy-deploy/production/backend/compose.yaml.example" "$LOCAL_BACKEND_DIR/compose.yaml"
@@ -225,12 +430,6 @@ if [ "$DEPLOY_MODE" = "local-wsl" ]; then
     exit 1
   fi
 
-  case "$KEEP_RELEASE_BACKUPS" in
-    ''|*[!0-9]*)
-      echo "YUANCE_KEEP_RELEASE_BACKUPS 必须是非负整数：$KEEP_RELEASE_BACKUPS" >&2
-      exit 1
-      ;;
-  esac
   image_file="$(basename "$LOCAL_IMAGE_TAR")"
   image_backup_prefix="${image_file%.tar}.before-"
   old_backups="$(
@@ -293,7 +492,7 @@ MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 
 cd "$BACKEND_DIR"
 
-for command_name in docker timeout sha256sum; do
+for command_name in docker timeout sha256sum sqlite3; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "服务器缺少命令：$command_name" >&2
     exit 1
@@ -370,13 +569,6 @@ if [ "$latest" != "$running" ]; then
   echo "运行容器镜像不是最新镜像：latest=$latest running=$running" >&2
   exit 1
 fi
-
-case "$KEEP_RELEASE_BACKUPS" in
-  ''|*[!0-9]*)
-    echo "YUANCE_KEEP_RELEASE_BACKUPS 必须是非负整数：$KEEP_RELEASE_BACKUPS" >&2
-    exit 1
-    ;;
-esac
 
 release_dir="$(dirname "$IMAGE_TAR")"
 image_file="$(basename "$IMAGE_TAR")"

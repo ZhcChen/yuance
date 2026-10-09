@@ -1,4 +1,4 @@
-.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
 
 export SPEC_KIT_FEATURE = $(FEATURE)
 export SPEC_KIT_STAGE = $(STAGE)
@@ -43,6 +43,7 @@ help:
 	@echo "  make validation-status"
 	@echo "  make deploy-production"
 	@echo "  make deploy-validate"
+	@echo "  make deploy-safety-test"
 	@echo "  make cache-status"
 	@echo "  make docker-cache-status"
 	@echo "  make clean-rust"
@@ -149,6 +150,9 @@ deploy-production:
 
 deploy-validate:
 	./scripts/validate-deploy-templates.sh
+
+deploy-safety-test:
+	node --test scripts/test/production-release-safety.test.cjs
 
 cache-status:
 	@echo "[make] 仓库构建缓存与生成物占用"

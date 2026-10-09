@@ -19,9 +19,9 @@ api：Rust 单体服务，启动命令 ./yuance-api serve
 
 ## 关键边界
 
-- WSL 只运行 Compose，不在 `/srv/yuance` 内构建源码镜像。
+- `/srv/yuance/backend` 只运行 Compose，不在运行目录内构建；正式远程构建只允许使用独立的 `/srv/yuance/build`。
 - Compose 模板不得包含 `build:`。
-- SQLite 数据、WAL、SHM、后续本地运行数据挂载在 `./data`。
+- SQLite 数据和后续本地运行数据挂载在 `./data`；活动数据库的 WAL/SHM 由 SQLite 在线备份机制读取，不作为独立备份文件。
 - 备份文件挂载在 `./backups`。
 - OSS 在后台 `/web/system/storage` 动态配置，不写入部署 `.env`。
 - 首次超级管理员由用户访问 `/web` 初始化，不执行固定账号 seed。
@@ -91,7 +91,12 @@ curl -fsS http://127.0.0.1:33033/api/readyz
 SQLite 迁移只支持向前执行。需要回滚时：
 
 1. 停止服务。
-2. 恢复发布前 `backups/` 里的 `yuance.sqlite3`、`yuance.sqlite3-wal`、`yuance.sqlite3-shm`。
-3. `docker load` 旧镜像 tar。
-4. `docker compose --env-file .env -f compose.yaml up -d`。
-5. 检查 `/api/healthz` 和 `/api/readyz`。
+2. 从 `backups/<时间戳>.<随机后缀>/manifest.txt` 确认数据库快照和文件主密钥来源。
+3. 恢复同一备份目录中的 `yuance.sqlite3`；删除当前数据库留下的 `data/yuance.sqlite3-wal` 和 `data/yuance.sqlite3-shm`。
+4. 若 manifest 的 `file_master_key_source=data-file`，将备份中的 `secrets/file_master_key` 恢复到 `data/secrets/file_master_key` 并执行 `chmod 600 data/secrets/file_master_key`；同时确认 `.env` 中 `YUANCE_FILE_MASTER_KEY` 为空且调用 Compose 的 shell 没有提供非空值覆盖。若标记 `environment`，从受控密钥配置恢复相同的 `YUANCE_FILE_MASTER_KEY`，该值不会放入普通备份。
+5. 执行 `sqlite3 data/yuance.sqlite3 'PRAGMA integrity_check;'` 并确认输出 `ok`。
+6. `docker load` 旧镜像 tar 并启动服务；随后检查迁移状态、文件对象关系、`/api/healthz`、`/api/readyz` 和加密附件读取。
+
+不含 `manifest.txt` 的历史备份不能用于推断密钥来源。需先从受控备份确认数据库快照与文件主密钥匹配；无法确认时不要恢复覆盖。
+
+备份脚本使用 SQLite `.backup` 生成一致的单文件快照，不复制活动数据库的 WAL/SHM。目标机需安装 `sqlite3`；快照完整性校验失败或自动文件主密钥缺失时，脚本会失败并清理不完整备份。

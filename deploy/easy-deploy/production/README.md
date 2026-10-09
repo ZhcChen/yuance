@@ -16,8 +16,9 @@ yuance.quanxinfu.com
 
 正式运行目录固定为 `qfy-test2:/srv/yuance/backend`，镜像保存在
 `qfy-test2:/srv/yuance/releases`。SQLite 数据必须位于目标机 Linux 文件系统。
-镜像在发布机完成构建后通过 SSH/SCP 传输；目标机和 `/srv/yuance` 内禁止源码
-编译或镜像构建。公网服务器上的旧 Compose 和
+当前正式流程将提交归档传至 `qfy-test2:/srv/yuance/build/<commit>`，在独立编译目录
+安装依赖并构建镜像；运行目录 `/srv/yuance/backend` 不参与源码编译或镜像构建。
+公网服务器上的旧 Compose 和
 `gateway/Caddyfile.yuance.example` 只用于冷回滚；
 `gateway/nginx-yuance.example.conf` 用于维护当前 Nginx 入口，不接收后端日常发布。
 
@@ -44,13 +45,14 @@ gateway/
 
 ```bash
 YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_BUILD_MODE=remote \
 YUANCE_DEPLOY_HOST=qfy-test2 \
 ./scripts/deploy-production.sh
 ```
 
-脚本要求干净且与 `origin/main` 一致的 `main` 分支。它会在发布机构建
-`linux/amd64` 镜像、备份目标机 SQLite
-和旧镜像、同步模板、执行迁移与基础 seed、重建容器并验证健康状态和文件对象。
+脚本要求干净且与 `origin/main` 一致的 `main` 分支，并要求显式选择部署和构建模式。
+它会在目标机预检 Docker Compose、`sqlite3` 与 Buildx builder，在目标机独立编译目录构建
+`linux/amd64` 镜像，备份目标机 SQLite 和旧镜像、同步模板、执行迁移与基础 seed、重建容器并验证健康状态和文件对象。
 
 只构建镜像时执行：
 
@@ -62,13 +64,14 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 
 ```bash
 YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_BUILD_MODE=remote \
 YUANCE_DEPLOY_HOST=qfy-test \
 ./scripts/deploy-production.sh
 ```
 
 ## 运行边界
 
-- WSL `/srv/yuance` 和公网服务器都禁止源码编译或镜像构建。
+- 正式运行目录 `/srv/yuance/backend` 和公网服务器都禁止源码编译或镜像构建；远程构建只允许使用独立的 `/srv/yuance/build`。
 - `.env`、SQLite、OSS AccessKey、FRP token 和签名私钥不得提交或输出。
 - `YUANCE_SECURITY_MASTER_KEY` 与 `YUANCE_SERVER_INSTANCE_ID` 必须长期稳定。
 - 正式环境不执行 `seed demo` 或 `seed local-admin`。

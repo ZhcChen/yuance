@@ -97,7 +97,10 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 ```
 
 `qfy-test2` 必须预先安装并可用 `npm`、Node.js、Docker Buildx/BuildKit、
-Docker Compose、`ssh` 传输所需的系统工具。脚本会在
+Docker Compose、`ssh` 传输所需的系统工具。源码归档传输前，目标预检会解析构建目录和
+后端运行目录的物理路径，拒绝符号链接别名进入运行目录；随后执行
+`docker buildx inspect --bootstrap`，确认 builder 可初始化后才建立远程源码工作区。
+脚本会在
 `/srv/yuance/build/<commit>` 中解压提交归档，先按三个 lockfile 执行 `npm ci`，
 再执行 `npm run check:frontend`、`docker buildx build --platform linux/amd64`
 和 `docker save`。这样归档工作区自包含，不依赖发布机的 `node_modules`；构建产物先写入
@@ -137,10 +140,10 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 
 脚本要求 `main` 工作区干净并与 `origin/main` 一致，然后执行：
 
-1. 构建并校验 `linux/amd64` 镜像 tar。
+1. 预检目标机 Docker、Docker Compose、`sqlite3` 和 `.env`，再构建并校验 `linux/amd64` 镜像 tar。
 2. 备份 `/srv/yuance/releases` 中当前镜像 tar。
 3. 同步 Compose、app 元数据和运维脚本，但不覆盖 `.env` 或数据。
-4. 加载镜像并备份 SQLite 主库、WAL、SHM。
+4. 加载镜像并以 SQLite `.backup` 生成一致性单文件快照；通过完整性检查后才进入迁移。
 5. 在单次维护容器内执行 `migrate status`、`migrate up`、`seed core`。
 6. 重建 `yuance-api`，检查 health、ready、文件对象审计和镜像 ID。
 
@@ -148,6 +151,7 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 
 ```bash
 YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_BUILD_MODE=remote \
 YUANCE_DEPLOY_HOST=qfy-test \
 ./scripts/deploy-production.sh
 ```
@@ -155,7 +159,9 @@ YUANCE_DEPLOY_HOST=qfy-test \
 可选参数：
 
 ```bash
+YUANCE_DEPLOY_MODE=remote YUANCE_DEPLOY_BUILD_MODE=remote YUANCE_DEPLOY_HOST=qfy-test2 \
 YUANCE_KEEP_RELEASE_BACKUPS=2 ./scripts/deploy-production.sh
+YUANCE_DEPLOY_MODE=remote YUANCE_DEPLOY_BUILD_MODE=remote YUANCE_DEPLOY_HOST=qfy-test2 \
 YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
 ```
 
@@ -167,13 +173,20 @@ YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
 
 ```bash
 YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_BUILD_MODE=remote \
 YUANCE_DEPLOY_HOST=<明确目标主机> \
 ./scripts/deploy-production.sh
 ```
 
-`local-wsl` 是历史兼容模式，设置 `YUANCE_DEPLOY_HOST` 会被拒绝；`remote`
-模式缺少目标主机也会被拒绝。当前发布默认不使用 `local-wsl`，应显式指定
-`YUANCE_DEPLOY_MODE=remote` 和目标主机。
+部署模式和构建模式均无默认值，必须显式选择；`remote` 模式缺少目标主机会在 Git
+fetch、构建和传输前拒绝。`local-wsl` 是历史兼容模式，只能显式选择且只支持本地构建。
+发布脚本会在任何发布副作用前校验模式、目标、布尔开关、时长、镜像路径和保留数量。
+参数边界：`YUANCE_KEEP_RELEASE_BACKUPS` 为 `0` 到 `100` 的规范整数；
+`YUANCE_PRUNE_DANGLING_IMAGES`、`YUANCE_SKIP_LOCAL_BUILD` 和
+`YUANCE_ALLOW_DIRTY_LOCAL_CONFIG` 只接受 `0` 或 `1`；三个超时参数使用正整数加 `s`、`m`
+或 `h`，每项不超过 24 小时。`YUANCE_API_IMAGE` 必须是有效的 Docker 镜像名及可选标签，
+不接受 digest；镜像 tar 必须是仓库内以 `.tar` 结尾的相对路径。自定义远程目录必须是无空格、
+不含重复斜杠和 shell 特殊字符的绝对路径，构建目录不能落入后端运行目录。
 
 ## 手工检查
 
@@ -272,8 +285,21 @@ cd /srv/yuance/backend
 ./scripts/00-backup-sqlite.sh
 ```
 
-SQLite 主库、`-wal`、`-shm` 是一个恢复单元。复制前必须停止唯一写入进程，
-恢复后必须重新执行 integrity、migration status 和文件对象审计。
+备份脚本使用 SQLite `.backup` 在活动数据库上生成同一时点的单文件快照，不要求为备份停止 API，
+也不会将活动数据库的主库、`-wal`、`-shm` 分别复制后误称为一致快照。目标机需预装 `sqlite3`；
+快照必须通过 `PRAGMA integrity_check` 才会生成 manifest 并报告成功。备份目录为 `0700`，
+数据库快照、manifest 和密钥为 `0600`。
+
+每个备份目录包含 `yuance.sqlite3` 和 `manifest.txt`。当文件主密钥来自自动生成的数据文件时，
+还包含 `secrets/file_master_key`；当 `YUANCE_FILE_MASTER_KEY` 由环境配置提供时，manifest
+只记录 `file_master_key_source=environment` 及外部配置依赖，不包含密钥值。环境变量密钥必须
+从独立受控配置恢复。备份根目录本身不会被脚本改写权限；每份随机备份目录固定为 `0700`，
+快照、manifest 和密钥文件固定为 `0600`。拒绝把 `/`、`/tmp`、`/var/tmp` 及其下级目录或应用数据目录作为备份根目录。
+备份路径中任一现存目录组件若为符号链接也会被拒绝，避免路径别名绕过数据目录隔离。
+
+没有 `manifest.txt` 的历史备份属于旧格式，不能按新格式推断文件主密钥来源。恢复前必须从
+受控的旧数据副本或密钥配置确认数据库快照与同一主密钥；无法确认匹配关系时，不应启动服务或
+覆盖现有数据。恢复后应实际读取一份已加密附件验证密钥匹配。
 
 ## 文件维护
 
@@ -294,9 +320,14 @@ docker compose --env-file .env -f compose.yaml exec -T api \
 
 确认后去掉 `--dry-run`。当前命令只做数据库软删除，不删除 OSS 物理对象。
 
-资料库新附件加密主密钥文件 `/data/secrets/file_master_key` 属于数据目录持久化内容，
-发布脚本不会覆盖 `.env` 或数据卷；备份 SQLite 时应同时备份该文件，否则后续新附件
-加密记录无法解密。
+资料库新附件加密主密钥文件 `/data/secrets/file_master_key` 属于数据目录持久化内容。
+正式回滚时必须根据备份 manifest，将数据库快照与对应密钥作为一个恢复单元。恢复数据库前
+停止 API；替换 `data/yuance.sqlite3` 后删除旧 `data/yuance.sqlite3-wal` 和
+`data/yuance.sqlite3-shm`，若来源为 `data-file` 则同时恢复该备份中的主密钥，并确认 `.env` 中
+`YUANCE_FILE_MASTER_KEY` 为空且调用 Compose 的 shell 没有提供非空值覆盖。
+若来源为 `environment`，必须从受控配置恢复相同 `YUANCE_FILE_MASTER_KEY`，不得将密钥
+写入普通备份。先确认 `PRAGMA integrity_check` 为 `ok`，再加载匹配版本的镜像并启动 API；
+随后检查迁移状态、文件对象关系、健康状态和测试附件解密。
 
 ## 回滚到公网旧环境
 
@@ -322,7 +353,8 @@ docker compose --env-file .env -f compose.yaml up -d api
 ```
 
 如只回滚 qfy-test2 应用版本，加载 `/srv/yuance/releases` 中上一版 tar 后重建
-容器。若还需回滚数据库，必须先停服务，再成组恢复主库、WAL 和 SHM。
+容器。若还需回滚数据库，必须按对应备份的 manifest 停服务并恢复单文件快照、自动主密钥
+或受控环境密钥，不能将其他时间点的 WAL/SHM 与快照混用。
 
 ## 禁止事项
 

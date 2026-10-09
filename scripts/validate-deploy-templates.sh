@@ -106,8 +106,13 @@ if ! grep -q 'server_name yuance.quanxinfu.com' "$GATEWAY_DIR/nginx-yuance.examp
   exit 1
 fi
 
-if ! grep -q 'DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-local-wsl}"' "$ROOT_DIR/scripts/deploy-production.sh"; then
-  echo "正式部署必须默认使用 local-wsl 模式。" >&2
+if ! grep -q 'DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-}"' "$ROOT_DIR/scripts/deploy-production.sh"; then
+  echo "正式部署模式必须由调用者显式指定。" >&2
+  exit 1
+fi
+
+if ! grep -q 'BUILD_MODE="${YUANCE_DEPLOY_BUILD_MODE:-}"' "$ROOT_DIR/scripts/deploy-production.sh"; then
+  echo "正式构建模式必须由调用者显式指定。" >&2
   exit 1
 fi
 
@@ -134,9 +139,19 @@ if ! grep -q 'remote 模式必须显式设置 YUANCE_DEPLOY_HOST' "$ROOT_DIR/scr
 fi
 
 for contract in \
-  'BUILD_MODE="${YUANCE_DEPLOY_BUILD_MODE:-local}"' \
+  '必须显式设置 YUANCE_DEPLOY_MODE' \
+  '必须显式设置 YUANCE_DEPLOY_BUILD_MODE' \
+  'validate_release_parameters' \
+  'preflight_remote_target' \
+  'canonicalize_missing' \
+  '构建目录真实路径落入后端运行目录' \
+  'sqlite3' \
   'YUANCE_BUILD_ROOT' \
-  'YUANCE_BUILD_ROOT 不得位于正式运行目录或数据目录' \
+  'YUANCE_BUILD_ROOT 不得位于正式运行目录' \
+  'validate_docker_image_reference' \
+  'if (length(name) > 255)' \
+  'for command_name in node npm tar' \
+  'docker buildx inspect --bootstrap' \
   'YUANCE_ALLOW_DIRTY_LOCAL_CONFIG' \
   'YUANCE_REMOTE_BUILD_DIR' \
   'npm --prefix frontend ci' \
@@ -149,13 +164,58 @@ do
   fi
 done
 
+for contract in \
+  '.backup' \
+  'PRAGMA integrity_check;' \
+  'file_master_key_source=%s' \
+  'required_external_configuration=YUANCE_FILE_MASTER_KEY' \
+  'trap cleanup EXIT' \
+  "trap 'exit 1' HUP INT TERM" \
+  'backup_path_cursor=' \
+  '拒绝通过符号链接路径使用备份目录' \
+  'BACKUP_REAL_ROOT=' \
+  'TEMPORARY_REAL_ROOT=' \
+  'canonicalize_missing_path()' \
+  'DATA_REAL_DIR=' \
+  '"$backup_path_cursor" -ef "$DATA_REAL_DIR"' \
+  'chmod 700 "$DEST"' \
+  'chmod 600 "$SNAPSHOT"'
+do
+  if ! grep -Fq "$contract" "$BACKEND_DIR/scripts/00-backup-sqlite.sh"; then
+    echo "SQLite 备份脚本缺少一致性或密钥恢复契约: $contract" >&2
+    exit 1
+  fi
+done
+
+if grep -Fq 'chmod 700 "$BACKUP_ROOT"' "$BACKEND_DIR/scripts/00-backup-sqlite.sh"; then
+  echo "SQLite 备份脚本不得改写任意备份根目录权限。" >&2
+  exit 1
+fi
+
+if grep -q '\$DB_BASE-wal\|\$DB_BASE-shm' "$BACKEND_DIR/scripts/00-backup-sqlite.sh"; then
+  echo "SQLite 备份必须生成单文件一致性快照，禁止并发复制 WAL/SHM。" >&2
+  exit 1
+fi
+
 if ! grep -q 'archive --format=tar.gz' "$ROOT_DIR/scripts/deploy-production.sh"; then
   echo "远程编译必须从提交归档同步源码，禁止直接同步工作区。" >&2
   exit 1
 fi
 
-if ! grep -q 'YUANCE_DEPLOY_BUILD_MODE=remote' "$ROOT_DIR/docs/runbooks/production-deployment.md"; then
-  echo "正式部署手册缺少 qfy-test2 同机编译命令。" >&2
+for file in "$PRODUCTION_README" "$ROOT_DIR/docs/runbooks/production-deployment.md"; do
+  if ! grep -q 'YUANCE_DEPLOY_BUILD_MODE=remote' "$file"; then
+    echo "正式部署说明缺少显式远程构建模式：$file" >&2
+    exit 1
+  fi
+done
+
+if ! grep -q 'file_master_key_source' "$ROOT_DIR/docs/runbooks/production-deployment.md"; then
+  echo "正式部署手册缺少备份 manifest 和密钥来源说明。" >&2
+  exit 1
+fi
+
+if ! grep -q 'PRAGMA integrity_check' "$ROOT_DIR/docs/runbooks/api-migrations.md"; then
+  echo "迁移手册缺少 SQLite 快照完整性检查。" >&2
   exit 1
 fi
 
