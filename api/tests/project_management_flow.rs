@@ -4,6 +4,7 @@ use axum::{
 };
 use base64::Engine as _;
 use http_body_util::BodyExt;
+use sha2::{Digest, Sha256};
 use std::str;
 use tower::ServiceExt;
 use yuance_api::{
@@ -3764,6 +3765,312 @@ async fn api_v1_can_follow_project_status_lifecycle_to_archive_and_restore() {
 }
 
 #[tokio::test]
+async fn deleted_work_item_attachment_protects_a_shared_file_object_from_cleanup() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "restorable-shared.txt",
+        "text/plain",
+        4,
+    )
+    .await;
+    projects::archive_work_item(&pool, initialized.user_id, "YCE-TASK-2")
+        .await
+        .expect("work item should archive");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "共享对象引用保护".to_string(),
+            category: "other".to_string(),
+            body: String::new(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("resource should create");
+    let resource_attachment_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO file_attachments (file_object_id, target_type, target_id, created_by_user_id) VALUES (?1, 'project_resource', ?2, ?3) RETURNING id",
+    )
+    .bind(attachment.file_object_id)
+    .bind(resource.id)
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared resource attachment should create");
+
+    let delete_result = files::archive_resource_attachment_if_match(
+        &pool,
+        resource_attachment_id,
+        resource.id,
+        &resource.updated_at,
+        initialized.user_id,
+        "管理员",
+    )
+    .await;
+    assert!(delete_result.is_err());
+    assert!(
+        delete_result
+            .err()
+            .expect("shared object deletion should be rejected")
+            .to_string()
+            .contains("仍被其他受保护的附件关系引用")
+    );
+    let job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("cleanup job count should load");
+    assert_eq!(job_count, 0);
+    let object_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("file object status should load");
+    assert_eq!(object_status, "uploaded");
+}
+
+#[tokio::test]
+async fn restoring_work_item_serializes_with_deletion_of_a_shared_attachment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "restore-race.txt",
+        "text/plain",
+        4,
+    )
+    .await;
+    projects::archive_work_item(&pool, initialized.user_id, "YCE-TASK-2")
+        .await
+        .expect("work item should archive");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "恢复并发保护".to_string(),
+            category: "other".to_string(),
+            body: String::new(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("resource should create");
+    let resource_attachment_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO file_attachments (file_object_id, target_type, target_id, created_by_user_id) VALUES (?1, 'project_resource', ?2, ?3) RETURNING id",
+    )
+    .bind(attachment.file_object_id)
+    .bind(resource.id)
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared resource attachment should create");
+
+    let (restore_result, delete_result) = tokio::join!(
+        projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2"),
+        files::archive_resource_attachment_if_match(
+            &pool,
+            resource_attachment_id,
+            resource.id,
+            &resource.updated_at,
+            initialized.user_id,
+            "管理员",
+        ),
+    );
+    assert!(restore_result.is_ok());
+    assert!(
+        delete_result
+            .expect_err("protected shared attachment must reject resource deletion")
+            .to_string()
+            .contains("文件对象仍被其他受保护的附件关系引用")
+    );
+    let deleted_at = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT deleted_at FROM work_items WHERE item_key = 'YCE-TASK-2'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("work item state should load");
+    assert!(deleted_at.is_none());
+    let job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("cleanup job count should load");
+    assert_eq!(job_count, 0);
+    let object_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("file object status should load");
+    assert_eq!(object_status, "uploaded");
+}
+
+#[tokio::test]
+async fn restoring_work_item_with_uploaded_attachments_still_succeeds() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "restore-normal.txt",
+        "text/plain",
+        4,
+    )
+    .await;
+    projects::archive_work_item(&pool, initialized.user_id, "YCE-TASK-2")
+        .await
+        .expect("work item should archive");
+
+    projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2")
+        .await
+        .expect("work item with a healthy attachment should restore");
+    let deleted_at = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT deleted_at FROM work_items WHERE item_key = 'YCE-TASK-2'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("work item state should load");
+    assert!(deleted_at.is_none());
+    let object_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("file object status should load");
+    assert_eq!(object_status, "uploaded");
+}
+
+#[tokio::test]
+async fn restoring_work_item_is_rejected_when_attachment_cleanup_has_started() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "restore-cleanup.txt",
+        "text/plain",
+        4,
+    )
+    .await;
+    projects::archive_work_item(&pool, initialized.user_id, "YCE-TASK-2")
+        .await
+        .expect("work item should archive");
+
+    let mut tx = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .expect("deletion task transaction should begin");
+    files::enqueue_deleted_file_object_in_tx(&mut tx, attachment.file_object_id)
+        .await
+        .expect("deletion task should be queued");
+    tx.commit().await.expect("deletion task should persist");
+
+    sqlx::query("UPDATE file_objects SET status = 'uploaded' WHERE id = ?1")
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("object status should be isolated from the pending job");
+    let restore_result =
+        projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2").await;
+    match restore_result {
+        Err(error) => assert!(error.to_string().contains("附件已进入删除流程")),
+        Ok(_) => panic!("restore must reject an attachment already scheduled for deletion"),
+    }
+    sqlx::query("UPDATE file_objects SET status = 'deleted' WHERE id = ?1")
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("object status should mark the deleted-object branch");
+    sqlx::query(
+        "UPDATE file_object_deletion_jobs SET status = 'completed', storage_config_id = NULL, completed_at = datetime('now') WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .execute(&pool)
+    .await
+    .expect("completed cleanup job should update");
+    let completed_job_restore =
+        projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2").await;
+    assert!(
+        completed_job_restore
+            .expect_err("deleted object must not restore even after its job is completed")
+            .to_string()
+            .contains("附件已进入删除流程")
+    );
+    sqlx::query("DELETE FROM file_object_deletion_jobs WHERE file_object_id = ?1")
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("completed cleanup record should remove");
+    let deleted_object_restore =
+        projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2").await;
+    assert!(
+        deleted_object_restore
+            .expect_err("deleted object must not be restored after its cleanup record is removed")
+            .to_string()
+            .contains("附件已进入删除流程")
+    );
+    let deleted_at = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT deleted_at FROM work_items WHERE item_key = 'YCE-TASK-2'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("work item state should load");
+    assert!(deleted_at.is_some());
+    let object_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("file object status should load");
+    assert_eq!(object_status, "deleted");
+}
+
+#[tokio::test]
 async fn api_v1_rejects_invalid_project_status_transition() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -4120,6 +4427,73 @@ async fn api_v1_can_register_comment_attachment() {
     )
     .await
     .expect("inline attachment reference should persist");
+    let shared_draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("shared reference draft should create");
+    sqlx::query(
+        "INSERT INTO file_attachments (file_object_id, target_type, target_id, created_by_user_id) VALUES (?1, 'comment', ?2, ?3)",
+    )
+    .bind(attachments[0].file_object_id)
+    .bind(shared_draft.id)
+    .bind(initialized.user_id)
+    .execute(&pool)
+    .await
+    .expect("shared comment attachment reference should insert");
+
+    let shared_delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{}/attachments/{}",
+                    comment.id, attachment_id
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header("x-yuance-editor-context", "work-item-comment-edit")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(shared_delete_response.status(), StatusCode::CONFLICT);
+    let unchanged_comment = projects::get_work_item_comment(&pool, item.id, comment.id)
+        .await
+        .expect("comment should remain unchanged after shared-reference conflict");
+    assert!(
+        unchanged_comment
+            .body
+            .contains(&format!("data-yuance-attachment-id=\"{attachment_id}\""))
+    );
+    let shared_deletion_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachments[0].file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared object deletion job count should load");
+    assert_eq!(shared_deletion_job_count, 0);
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachments[0].object_key)
+            .await
+            .expect("shared object should remain readable")
+            .is_some()
+    );
+    sqlx::query(
+        "DELETE FROM file_attachments WHERE target_type = 'comment' AND target_id = ?1 AND file_object_id = ?2",
+    )
+    .bind(shared_draft.id)
+    .bind(attachments[0].file_object_id)
+    .execute(&pool)
+    .await
+    .expect("shared comment reference should remove");
 
     let delete_response = app
         .clone()
@@ -4144,6 +4518,7 @@ async fn api_v1_can_register_comment_attachment() {
     assert_eq!(preserved.status, "uploaded");
 
     let delete_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
@@ -4151,7 +4526,7 @@ async fn api_v1_can_register_comment_attachment() {
                     "/api/v1/work-items/YCE-TASK-2/comments/{}/attachments/{}",
                     comment.id, attachment_id
                 ))
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .header("x-yuance-editor-context", "work-item-comment-edit")
                 .body(Body::empty())
@@ -4176,7 +4551,7 @@ async fn api_v1_can_register_comment_attachment() {
         storage::read_test_memory_object(&pool, &test_settings(), &attachments[0].object_key)
             .await
             .expect("test object should read")
-            .is_none()
+            .is_some()
     );
     let updated_comment = projects::get_work_item_comment(&pool, item.id, comment.id)
         .await
@@ -4187,6 +4562,143 @@ async fn api_v1_can_register_comment_attachment() {
             .body
             .contains(&format!("data-yuance-attachment-id=\"{attachment_id}\""))
     );
+}
+
+#[tokio::test]
+async fn deleting_primary_post_attachment_keeps_work_item_summary_in_sync() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let primary_post = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>主帖保留摘要</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(primary_post.status(), StatusCode::OK);
+    let primary_post: serde_json::Value =
+        serde_json::from_str(&response_body(primary_post).await).expect("response should be json");
+    let comment_id = primary_post["data"]["id"]
+        .as_i64()
+        .expect("primary post id should be numeric");
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "comment".to_string(),
+            target_id: comment_id,
+            project_id: Some(project.id),
+            original_filename: "primary-post.txt".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_size: 32,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("attachment should create");
+    write_test_object(&pool, &attachment)
+        .await
+        .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", comment_id)
+        .await
+        .expect("attachment should upload");
+    let body = format!(
+        r#"<p>主帖保留摘要</p><a data-yuance-attachment-id="{}" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/{}/attachments/{}/download" title="primary-post.txt">primary-post.txt</a>"#,
+        attachment.id, comment_id, attachment.id
+    );
+    let update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    serde_json::json!({ "body": body, "body_format": "html" }).to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(update.status(), StatusCode::OK);
+
+    let deleted = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments/{}",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header("x-yuance-editor-context", "work-item-primary-post")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(deleted.status(), StatusCode::OK);
+
+    let updated_comment = projects::get_work_item_comment(&pool, item.id, comment_id)
+        .await
+        .expect("primary post should remain");
+    assert!(updated_comment.body.contains("主帖保留摘要"));
+    assert!(
+        !updated_comment
+            .body
+            .contains(&format!("data-yuance-attachment-id=\"{}\"", attachment.id))
+    );
+    let updated_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should reload")
+        .expect("work item should exist");
+    assert_eq!(
+        updated_item.description,
+        projects::work_item_primary_post_summary(
+            &updated_comment.body,
+            &updated_comment.body_format,
+        )
+    );
+    let deletion_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("deletion job should load");
+    assert_eq!(deletion_job_count, 1);
 }
 
 #[tokio::test]
@@ -4398,7 +4910,148 @@ async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
         storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
             .await
             .expect("test object should read")
+            .is_some()
+    );
+    let deletion_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("comment attachment deletion job should load");
+    assert_eq!(deletion_job_count, 1);
+    sqlx::query(
+        "UPDATE file_object_deletion_jobs SET next_attempt_at = datetime('now') WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .execute(&pool)
+    .await
+    .expect("comment attachment job should become due");
+    let cleanup = files::cleanup_deleted_file_objects(&pool, &test_settings(), false, 10)
+        .await
+        .expect("comment attachment cleanup should succeed");
+    assert_eq!(cleanup.completed_count, 1);
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("cleaned comment object lookup should succeed")
             .is_none()
+    );
+}
+
+#[tokio::test]
+async fn comment_attachment_delete_rejects_stale_draft_state() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("draft should create");
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            original_filename: "draft-race.txt".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_size: 32,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("attachment should create");
+    write_test_object(&pool, &attachment)
+        .await
+        .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+        .await
+        .expect("attachment should upload");
+    let body = format!(
+        r#"<p>保留正文</p><a data-yuance-attachment-id="{}" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/{}/attachments/{}/download" title="draft-race.txt">draft-race.txt</a>"#,
+        attachment.id, draft.id, attachment.id
+    );
+    projects::publish_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        &item.item_key,
+        draft.id,
+        &body,
+        "html",
+        "管理员",
+    )
+    .await
+    .expect("draft should publish after stale snapshot");
+
+    let result = projects::archive_work_item_comment_inline_attachment(
+        &pool,
+        item.id,
+        draft.id,
+        attachment.id,
+        true,
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(yuance_api::platform::error::AppError::Conflict(message))
+            if message.contains("评论状态已变化")
+    ));
+    let published_comment = projects::get_work_item_comment(&pool, item.id, draft.id)
+        .await
+        .expect("published comment should remain");
+    assert!(!published_comment.is_draft);
+    assert!(published_comment.body.contains("保留正文"));
+    assert!(
+        published_comment
+            .body
+            .contains(&format!("data-yuance-attachment-id=\"{}\"", attachment.id))
+    );
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("attachment should remain")
+            .status,
+        "uploaded"
+    );
+    let deletion_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("deletion jobs should load");
+    assert_eq!(deletion_job_count, 0);
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("test object should read")
+            .is_some()
     );
 }
 
@@ -4427,30 +5080,34 @@ async fn api_v1_can_cancel_own_comment_draft_and_cleanup_all_attachments() {
         .await
         .expect("storage config should load")
         .expect("storage config should exist");
-    let attachment = files::create_attachment(
-        &pool,
-        &config,
-        files::CreateAttachmentInput {
-            folder_id: None,
-            target_type: "comment".to_string(),
-            target_id: draft.id,
-            project_id: Some(project.id),
-            original_filename: "cancelled-draft.png".to_string(),
-            content_type: "image/png".to_string(),
-            byte_size: 1024,
-            created_by_user_id: initialized.user_id,
-            created_by_display_name_snapshot: String::new(),
-            activity_summary: None,
-        },
-    )
-    .await
-    .expect("attachment should create");
-    write_test_object(&pool, &attachment)
+    let mut attachments = Vec::new();
+    for filename in ["cancelled-draft-a.png", "cancelled-draft-b.png"] {
+        let attachment = files::create_attachment(
+            &pool,
+            &config,
+            files::CreateAttachmentInput {
+                folder_id: None,
+                target_type: "comment".to_string(),
+                target_id: draft.id,
+                project_id: Some(project.id),
+                original_filename: filename.to_string(),
+                content_type: "image/png".to_string(),
+                byte_size: 1024,
+                created_by_user_id: initialized.user_id,
+                created_by_display_name_snapshot: String::new(),
+                activity_summary: None,
+            },
+        )
         .await
-        .expect("test object should write");
-    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
-        .await
-        .expect("attachment should upload");
+        .expect("attachment should create");
+        write_test_object(&pool, &attachment)
+            .await
+            .expect("test object should write");
+        files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+            .await
+            .expect("attachment should upload");
+        attachments.push(attachment);
+    }
 
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
     let response = app
@@ -4480,23 +5137,331 @@ async fn api_v1_can_cancel_own_comment_draft_and_cleanup_all_attachments() {
             .await
             .is_err()
     );
-    assert_eq!(
-        files::get_attachment(&pool, attachment.id)
+    for attachment in &attachments {
+        assert_eq!(
+            files::get_attachment(&pool, attachment.id)
+                .await
+                .expect("attachment should load")
+                .status,
+            "deleted"
+        );
+        assert!(
+            storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+                .await
+                .expect("test object should read")
+                .is_some()
+        );
+        let deletion_job_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+        )
+        .bind(attachment.file_object_id)
+        .fetch_one(&pool)
+        .await
+        .expect("draft attachment deletion job should load");
+        assert_eq!(deletion_job_count, 1);
+        sqlx::query(
+            "UPDATE file_object_deletion_jobs SET next_attempt_at = datetime('now') WHERE file_object_id = ?1",
+        )
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("draft attachment job should become due");
+    }
+    let cleanup = files::cleanup_deleted_file_objects(&pool, &test_settings(), false, 10)
+        .await
+        .expect("draft attachment cleanup should succeed");
+    assert_eq!(cleanup.completed_count, attachments.len() as i64);
+    for attachment in &attachments {
+        assert!(
+            storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+                .await
+                .expect("cleaned draft object lookup should succeed")
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn cancelling_comment_draft_preserves_shared_objects_and_rolls_back_on_enqueue_failure() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("draft should create");
+    let other_draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("second draft should create");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+
+    let mut attachments = Vec::new();
+    for filename in [
+        "shared-draft.png",
+        "enqueue-before-failure-draft.png",
+        "enqueue-failure-draft.png",
+    ] {
+        let attachment = files::create_attachment(
+            &pool,
+            &config,
+            files::CreateAttachmentInput {
+                folder_id: None,
+                target_type: "comment".to_string(),
+                target_id: draft.id,
+                project_id: Some(project.id),
+                original_filename: filename.to_string(),
+                content_type: "image/png".to_string(),
+                byte_size: 1024,
+                created_by_user_id: initialized.user_id,
+                created_by_display_name_snapshot: String::new(),
+                activity_summary: None,
+            },
+        )
+        .await
+        .expect("attachment should create");
+        write_test_object(&pool, &attachment)
             .await
-            .expect("attachment should load")
-            .status,
-        "deleted"
-    );
+            .expect("test object should write");
+        files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+            .await
+            .expect("attachment should upload");
+        attachments.push(attachment);
+    }
+    sqlx::query(
+        "INSERT INTO file_attachments (file_object_id, target_type, target_id, created_by_user_id) VALUES (?1, 'comment', ?2, ?3)",
+    )
+    .bind(attachments[0].file_object_id)
+    .bind(other_draft.id)
+    .bind(initialized.user_id)
+    .execute(&pool)
+    .await
+    .expect("shared comment attachment reference should insert");
+
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        r#"
+        CREATE TRIGGER fail_late_deletion_job_insert
+        BEFORE INSERT ON file_object_deletion_jobs
+        WHEN NEW.file_object_id = {}
+        BEGIN
+            SELECT RAISE(ABORT, 'injected deletion queue failure');
+        END
+        "#,
+        attachments[2].file_object_id
+    )))
+    .execute(&pool)
+    .await
+    .expect("deletion job failure trigger should create");
+    let failed = projects::cancel_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        draft.id,
+    )
+    .await;
+    assert!(matches!(
+        failed,
+        Err(yuance_api::platform::error::AppError::Database(_))
+    ));
+    let deleted_at = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT deleted_at FROM work_item_comments WHERE id = ?1",
+    )
+    .bind(draft.id)
+    .fetch_one(&pool)
+    .await
+    .expect("draft status should load after failed cancellation");
+    assert!(deleted_at.is_none());
+    for attachment in &attachments {
+        assert_eq!(
+            files::get_attachment(&pool, attachment.id)
+                .await
+                .expect("attachment should load after failed cancellation")
+                .status,
+            "uploaded"
+        );
+        let job_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+        )
+        .bind(attachment.file_object_id)
+        .fetch_one(&pool)
+        .await
+        .expect("deletion job count should load after failed cancellation");
+        assert_eq!(job_count, 0);
+    }
+
+    sqlx::query("DROP TRIGGER fail_late_deletion_job_insert")
+        .execute(&pool)
+        .await
+        .expect("deletion job failure trigger should drop");
+    projects::cancel_work_item_comment_draft(&pool, initialized.user_id, "YCE-TASK-2", draft.id)
+        .await
+        .expect("draft cancellation should succeed after restoring configuration");
+
+    let shared_status = files::get_attachment(&pool, attachments[0].id)
+        .await
+        .expect("shared attachment should remain");
+    assert_eq!(shared_status.status, "uploaded");
     assert!(
-        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+        storage::read_test_memory_object(&pool, &test_settings(), &attachments[0].object_key)
             .await
-            .expect("test object should read")
-            .is_none()
+            .expect("shared test object should read")
+            .is_some()
+    );
+    let shared_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachments[0].file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared deletion job count should load");
+    assert_eq!(shared_job_count, 0);
+    for attachment in &attachments[1..] {
+        assert_eq!(
+            files::get_attachment(&pool, attachment.id)
+                .await
+                .expect("unshared attachment should load")
+                .status,
+            "deleted"
+        );
+        let unshared_job_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+        )
+        .bind(attachment.file_object_id)
+        .fetch_one(&pool)
+        .await
+        .expect("unshared deletion job count should load");
+        assert_eq!(unshared_job_count, 1);
+    }
+}
+
+#[tokio::test]
+async fn pending_attachment_deletion_waits_for_upload_request_completion_window() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let pending_resource = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "上传签名安全窗口".to_string(),
+            category: "other".to_string(),
+            body: String::new(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("pending test resource should create");
+    let pending_attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "project_resource".to_string(),
+            target_id: pending_resource.id,
+            project_id: Some(project.id),
+            original_filename: "pending-upload.txt".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_size: 5,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("pending test attachment should create");
+    let upload_expires_at = chrono::Utc::now() + chrono::Duration::minutes(120);
+    let upload_expires_at_db = upload_expires_at.format("%Y-%m-%d %H:%M:%S").to_string();
+    files::extend_file_object_upload_url_expiration(
+        &pool,
+        pending_attachment.file_object_id,
+        &upload_expires_at_db,
+    )
+    .await
+    .expect("pending upload URL expiry should record");
+    files::archive_resource_attachment_if_match(
+        &pool,
+        pending_attachment.id,
+        pending_resource.id,
+        &pending_resource.updated_at,
+        initialized.user_id,
+        "管理员",
+    )
+    .await
+    .expect("pending attachment should archive");
+    assert!(
+        sqlx::query("DELETE FROM storage_configs WHERE id = ?1")
+            .bind(config.id)
+            .execute(&pool)
+            .await
+            .is_err(),
+        "storage configuration must remain until its pending deletion task completes"
+    );
+    let scheduled = sqlx::query_scalar::<_, String>(
+        "SELECT next_attempt_at FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(pending_attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("extended cleanup window should load");
+    let scheduled = chrono::NaiveDateTime::parse_from_str(&scheduled, "%Y-%m-%d %H:%M:%S")
+        .expect("cleanup time should parse");
+    let recorded_expiry =
+        chrono::NaiveDateTime::parse_from_str(&upload_expires_at_db, "%Y-%m-%d %H:%M:%S")
+            .expect("recorded upload expiry should parse");
+    let required_cleanup_time =
+        recorded_expiry + chrono::Duration::hours(4) + chrono::Duration::minutes(5);
+    assert!(scheduled >= required_cleanup_time);
+    assert!(
+        files::extend_file_object_upload_url_expiration(
+            &pool,
+            pending_attachment.file_object_id,
+            &upload_expires_at_db,
+        )
+        .await
+        .is_err(),
+        "stale signing request must not return a URL after deletion"
     );
 }
 
 #[tokio::test]
-async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
+async fn api_v1_can_delete_project_resource_attachment_and_queue_object_cleanup() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -4553,6 +5518,44 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
     files::mark_attachment_uploaded(&pool, attachment.id, "project_resource", resource.id)
         .await
         .expect("attachment should upload");
+    let second_config = storage::save_config(
+        &pool,
+        &test_settings(),
+        initialized.user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+            region: "test".to_string(),
+            bucket: "yuance-files-next".to_string(),
+            access_key_id: "AKIAUNIT5SECONDID".to_string(),
+            access_key_secret: "SecondUnit5SecretValue2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .expect("second memory storage config should save");
+    sqlx::query("UPDATE file_objects SET storage_config_id = ?1, bucket = ?2 WHERE id = ?3")
+        .bind(second_config.id)
+        .bind(&second_config.bucket)
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("object should be rebound to second bucket for fixture");
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &attachment.object_key,
+        &attachment.content_type,
+        vec![b'b'; attachment.byte_size as usize],
+    )
+    .await
+    .expect("same object key should be written to second bucket");
+    sqlx::query("UPDATE file_objects SET storage_config_id = ?1, bucket = ?2 WHERE id = ?3")
+        .bind(config.id)
+        .bind(&config.bucket)
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("object should be restored to its original bucket");
 
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
     let delete_uri = format!(
@@ -4620,7 +5623,107 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
         .execute(&pool)
         .await
         .expect("reference fixture should clear");
+
+    let shared_resource_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO project_resources (project_id, title, category)
+        VALUES (?1, '共享附件引用', 'other')
+        RETURNING id
+        "#,
+    )
+    .bind(project.id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared resource should create");
+    sqlx::query(
+        "INSERT INTO file_attachments (file_object_id, target_type, target_id, created_by_user_id) VALUES (?1, 'project_resource', ?2, ?3)",
+    )
+    .bind(attachment.file_object_id)
+    .bind(shared_resource_id)
+    .bind(initialized.user_id)
+    .execute(&pool)
+    .await
+    .expect("shared attachment reference should insert");
+    let shared_reference_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(&delete_uri)
+                .header(header::COOKIE, &initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::IF_MATCH, &resource.updated_at)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(shared_reference_response.status(), StatusCode::CONFLICT);
+    sqlx::query(
+        "DELETE FROM file_attachments WHERE file_object_id = ?1 AND target_type = 'project_resource' AND target_id = ?2",
+    )
+    .bind(attachment.file_object_id)
+    .bind(shared_resource_id)
+    .execute(&pool)
+    .await
+    .expect("shared fixture reference should remove");
+    let release_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO system_release_versions (version_name, title, status) VALUES ('shared-file-test', '共享文件测试', 'draft') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("system release should create");
+    sqlx::query(
+        "INSERT INTO system_release_assets (release_id, file_object_id, platform) VALUES (?1, ?2, 'linux')",
+    )
+    .bind(release_id)
+    .bind(attachment.file_object_id)
+    .execute(&pool)
+    .await
+    .expect("system release should reference the same file object");
+    let release_reference_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(&delete_uri)
+                .header(header::COOKIE, &initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::IF_MATCH, &resource.updated_at)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(release_reference_response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("shared attachment should remain readable")
+            .status,
+        "uploaded"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("shared release object should remain readable")
+            .is_some()
+    );
+    sqlx::query("DELETE FROM system_release_assets WHERE release_id = ?1")
+        .bind(release_id)
+        .execute(&pool)
+        .await
+        .expect("shared release fixture should remove");
+    let rejected_delete_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("rejected deletion job count should load");
+    assert_eq!(rejected_delete_job_count, 0);
     let delete_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
@@ -4628,7 +5731,7 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
                     "/api/v1/projects/YCE/resources/{}/attachments/{}",
                     resource.id, attachment.id
                 ))
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .header(header::IF_MATCH, &resource.updated_at)
                 .body(Body::empty())
@@ -4649,6 +5752,131 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
             .status,
         "deleted"
     );
+    let job = sqlx::query_as::<_, (String, Option<String>, Option<String>, String)>(
+        "SELECT status, lease_until, lease_token, next_attempt_at FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("deletion job should exist");
+    assert_eq!(job.0, "pending");
+    assert!(job.1.is_none());
+    assert!(job.2.is_none());
+    let repeated_delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(&delete_uri)
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::IF_MATCH, &resource.updated_at)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(repeated_delete_response.status(), StatusCode::NOT_FOUND);
+    let job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("deletion job count should load");
+    assert_eq!(job_count, 1);
+    assert!(
+        sqlx::query_scalar::<_, bool>("SELECT julianday(?1) > julianday('now')",)
+            .bind(job.3)
+            .fetch_one(&pool)
+            .await
+            .expect("safety window should be queryable")
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("test object should read")
+            .is_some()
+    );
+
+    let dry_run = files::cleanup_deleted_file_objects(&pool, &test_settings(), true, 10)
+        .await
+        .expect("dry run should succeed");
+    assert_eq!(dry_run.due_count, 0);
+    assert_eq!(dry_run.pending_count, 1);
+
+    sqlx::query(
+        "UPDATE file_object_deletion_jobs SET status = 'processing', lease_until = datetime('now', '-1 minute'), lease_token = 'expired-worker', attempt_count = 0, next_attempt_at = datetime('now', '-1 minute') WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .execute(&pool)
+    .await
+    .expect("test task should be due");
+    storage::fail_next_test_delete(&test_settings(), &attachment.object_key)
+        .expect("test storage delete failure should be injected");
+    let failed = files::cleanup_deleted_file_objects(&pool, &test_settings(), false, 10)
+        .await
+        .expect("storage failure should be recorded for retry");
+    assert_eq!(failed.failed_count, 1);
+    assert_eq!(failed.pending_count, 1);
+    let failed_job = sqlx::query_as::<_, (String, i64, String)>(
+        "SELECT status, attempt_count, last_error FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("failed task should remain available");
+    assert_eq!(failed_job.0, "pending");
+    assert_eq!(failed_job.1, 1);
+    assert!(failed_job.2.contains("测试对象存储注入了删除失败"));
+    let stale_completion = sqlx::query(
+        "UPDATE file_object_deletion_jobs SET status = 'completed', lease_until = NULL, lease_token = NULL WHERE file_object_id = ?1 AND status = 'processing' AND lease_token = 'expired-worker'",
+    )
+    .bind(attachment.file_object_id)
+    .execute(&pool)
+    .await
+    .expect("stale worker completion should be rejected");
+    assert_eq!(stale_completion.rows_affected(), 0);
+
+    sqlx::query(
+        "UPDATE file_object_deletion_jobs SET next_attempt_at = datetime('now', '-1 minute') WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .execute(&pool)
+    .await
+    .expect("retry task should be due");
+    let completed = files::cleanup_deleted_file_objects(&pool, &test_settings(), false, 10)
+        .await
+        .expect("retry should complete");
+    assert_eq!(completed.completed_count, 1);
+    assert_eq!(completed.pending_count, 0);
+    let released_storage_config = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT storage_config_id FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("completed task storage reference should load");
+    assert!(released_storage_config.is_none());
+    sqlx::query("UPDATE file_objects SET storage_config_id = ?1, bucket = ?2 WHERE id = ?3")
+        .bind(second_config.id)
+        .bind(&second_config.bucket)
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("object should be rebound to second bucket for verification");
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("second bucket object should read")
+            .is_some()
+    );
+    sqlx::query("UPDATE file_objects SET storage_config_id = ?1, bucket = ?2 WHERE id = ?3")
+        .bind(config.id)
+        .bind(&config.bucket)
+        .bind(attachment.file_object_id)
+        .execute(&pool)
+        .await
+        .expect("object should be restored to its original bucket");
     assert!(
         storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
             .await
@@ -5137,6 +6365,21 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
     )
     .await
     .expect("attachment should create");
+    storage::save_config(
+        &pool,
+        &test_settings(),
+        initialized.user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+            region: "test".to_string(),
+            bucket: "yuance-files-next".to_string(),
+            access_key_id: "AKIAUNIT5SECRETID".to_string(),
+            access_key_secret: "Unit5SecretValue2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .expect("second memory storage config should save");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let upload_url_response = app
@@ -5199,30 +6442,111 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
         .expect("router should respond");
     assert_eq!(pending_download_response.status(), StatusCode::BAD_REQUEST);
 
-    let uploaded_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!(
-                    "/api/v1/projects/YCE/attachments/{}/uploaded",
-                    attachment.id
-                ))
-                .header(header::COOKIE, initialized.cookie.clone())
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(uploaded_response.status(), StatusCode::OK);
-    let uploaded_body = response_body(uploaded_response).await;
+    let uploaded_request_one = app.clone().oneshot(
+        Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/api/v1/projects/YCE/attachments/{}/uploaded",
+                attachment.id
+            ))
+            .header(header::COOKIE, initialized.cookie.clone())
+            .header("x-yuance-csrf-token", CSRF_TOKEN)
+            .body(Body::empty())
+            .expect("request should build"),
+    );
+    let uploaded_request_two = app.clone().oneshot(
+        Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/api/v1/projects/YCE/attachments/{}/uploaded",
+                attachment.id
+            ))
+            .header(header::COOKIE, initialized.cookie.clone())
+            .header("x-yuance-csrf-token", CSRF_TOKEN)
+            .body(Body::empty())
+            .expect("request should build"),
+    );
+    let (uploaded_response_one, uploaded_response_two) =
+        tokio::join!(uploaded_request_one, uploaded_request_two);
+    let uploaded_response_one = uploaded_response_one.expect("first router should respond");
+    let uploaded_response_two = uploaded_response_two.expect("second router should respond");
+    assert_eq!(uploaded_response_one.status(), StatusCode::OK);
+    assert_eq!(uploaded_response_two.status(), StatusCode::OK);
+    let uploaded_body = response_body(uploaded_response_one).await;
     assert!(uploaded_body.contains("\"status\":\"uploaded\""));
+    assert!(
+        response_body(uploaded_response_two)
+            .await
+            .contains("\"status\":\"uploaded\"")
+    );
 
     let refreshed = files::get_attachment(&pool, attachment.id)
         .await
         .expect("attachment should load");
     assert_eq!(refreshed.status, "uploaded");
+    let stored_checksum =
+        sqlx::query_scalar::<_, String>("SELECT checksum_sha256 FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("stored checksum should load");
+    assert_eq!(
+        stored_checksum,
+        hex::encode(Sha256::digest(vec![b'a'; 2048]))
+    );
+    files::mark_file_uploaded_with_checksum(&pool, attachment.file_object_id, &stored_checksum)
+        .await
+        .expect("same checksum completion retry should be idempotent");
+    assert!(
+        files::mark_file_uploaded_with_checksum(&pool, attachment.file_object_id, &"0".repeat(64),)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("attachment should remain uploaded")
+            .status,
+        "uploaded"
+    );
+
+    let repeated_upload_url_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/projects/YCE/attachments/{}/upload-url",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(repeated_upload_url_response.status(), StatusCode::CONFLICT);
+
+    let replayed_upload_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(upload_url)
+                .header(header::CONTENT_TYPE, "application/pdf")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(vec![b'b'; 2048]))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(replayed_upload_response.status(), StatusCode::BAD_REQUEST);
+    let (_, stored_bytes) =
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("object should read")
+            .expect("original object should remain");
+    assert_eq!(stored_bytes, vec![b'a'; 2048]);
 
     let download_url_response = app
         .clone()
@@ -5295,6 +6619,78 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
     assert_eq!(upload_url_response.status(), StatusCode::BAD_REQUEST);
     let body = response_body(upload_url_response).await;
     assert!(body.contains("签名有效期必须在 60-3600 秒之间"));
+}
+
+#[tokio::test]
+async fn api_v1_attachment_mark_uploaded_rejects_declared_checksum_mismatch() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let content = b"actual attachment bytes";
+    let attachment = files::create_attachment_with_checksum(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "project".to_string(),
+            target_id: project.id,
+            project_id: Some(project.id),
+            original_filename: "wrong-checksum.txt".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_size: content.len() as i64,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: Some("登记项目附件 wrong-checksum.txt".to_string()),
+        },
+        &"0".repeat(64),
+    )
+    .await
+    .expect("attachment should create");
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &attachment.object_key,
+        &attachment.content_type,
+        content.to_vec(),
+    )
+    .await
+    .expect("object should upload");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/projects/YCE/attachments/{}/uploaded",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(response_body(response).await.contains("登记摘要不一致"));
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("attachment should load")
+            .status,
+        "pending"
+    );
 }
 
 #[tokio::test]
@@ -5504,13 +6900,14 @@ async fn api_v1_attachment_upload_url_returns_signed_put_request() {
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri(format!(
                     "/api/v1/projects/YCE/attachments/{}/upload-url?expires_in_seconds=600",
                     attachment.id
                 ))
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -5524,6 +6921,21 @@ async fn api_v1_attachment_upload_url_returns_signed_put_request() {
     assert!(body.contains(r#""url":"https://"#));
     assert!(body.contains("oss-cn-hangzhou.aliyuncs.com"));
     assert!(body.contains(r#""filename":"signed-upload.pdf""#));
+
+    let access_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/projects/YCE/attachments/{}/upload-url?access=unused&expires_in_seconds=600",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(access_response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -6228,7 +7640,7 @@ async fn api_v1_project_attachment_archive_blocks_later_signed_urls() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(download_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(download_response.status(), StatusCode::NOT_FOUND);
     let download_body = response_body(download_response).await;
     assert!(download_body.contains("附件已归档，不能生成签名"));
 
@@ -6245,7 +7657,7 @@ async fn api_v1_project_attachment_archive_blocks_later_signed_urls() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(upload_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(upload_response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -7543,13 +8955,14 @@ async fn api_v1_work_item_comment_allows_edit_but_not_delete() {
     assert_eq!(edited.body, "API 已编辑评论");
 
     let delete_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
                 .uri(format!(
                     "/api/v1/work-items/YCE-TASK-2/comments/{comment_id}"
                 ))
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::empty())
                 .expect("request should build"),

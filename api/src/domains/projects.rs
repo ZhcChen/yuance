@@ -5111,6 +5111,7 @@ pub async fn restore_work_item(
     actor_user_id: i64,
     item_key: &str,
 ) -> AppResult<WorkItemDetail> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let Some((work_item_id, project_id, project_status, deleted_at, assignee_user_id)) =
         sqlx::query_as::<_, (i64, i64, String, String, Option<i64>)>(
             r#"
@@ -5126,19 +5127,48 @@ pub async fn restore_work_item(
             "#,
         )
         .bind(item_key)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *tx)
         .await?
     else {
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
     ensure_project_accepts_writes(&project_status)?;
     if deleted_at.is_empty() {
+        tx.rollback().await?;
         return get_work_item_detail(pool, item_key)
             .await?
             .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()));
     }
 
-    let mut tx = pool.begin().await?;
+    let has_unavailable_attachment = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM file_attachments fa
+            JOIN file_objects fo ON fo.id = fa.file_object_id
+            WHERE fa.target_type = 'work_item'
+              AND fa.target_id = ?1
+              AND (
+                  fo.status = 'deleted'
+                  OR EXISTS (
+                      SELECT 1
+                      FROM file_object_deletion_jobs j
+                      WHERE j.file_object_id = fo.id
+                        AND j.status <> 'completed'
+                  )
+              )
+        )
+        "#,
+    )
+    .bind(work_item_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if has_unavailable_attachment {
+        return Err(AppError::Conflict(
+            "工作项关联的附件已进入删除流程，不能恢复该工作项".to_string(),
+        ));
+    }
+
     sqlx::query(
         r#"
         UPDATE work_items
@@ -5651,6 +5681,7 @@ pub async fn cancel_work_item_comment_draft(
         return Err(AppError::Forbidden("只能取消自己的草稿评论".to_string()));
     }
 
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let affected = sqlx::query(
         r#"
         UPDATE work_item_comments
@@ -5658,18 +5689,47 @@ pub async fn cancel_work_item_comment_draft(
             updated_at = datetime('now')
         WHERE id = ?1
           AND work_item_id = ?2
+          AND author_user_id = ?3
           AND is_draft = 1
           AND deleted_at IS NULL
         "#,
     )
     .bind(comment_id)
     .bind(work_item_id)
-    .execute(pool)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
     if affected == 0 {
         return Err(AppError::NotFound("草稿评论不存在".to_string()));
     }
+    let file_object_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT DISTINCT fa.file_object_id
+        FROM file_attachments fa
+        JOIN file_objects fo ON fo.id = fa.file_object_id
+        WHERE fa.target_type = 'comment'
+          AND fa.target_id = ?1
+          AND fo.status <> 'deleted'
+        ORDER BY fa.file_object_id
+        "#,
+    )
+    .bind(comment_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    for file_object_id in file_object_ids {
+        if !crate::domains::files::file_object_has_protecting_references_in_tx(
+            &mut tx,
+            file_object_id,
+            None,
+        )
+        .await?
+        {
+            crate::domains::files::enqueue_deleted_file_object_in_tx(&mut tx, file_object_id)
+                .await?;
+        }
+    }
+    tx.commit().await?;
     Ok(draft)
 }
 
@@ -7582,12 +7642,12 @@ pub async fn archive_work_item_comment_inline_attachment(
     work_item_id: i64,
     comment_id: i64,
     attachment_id: i64,
-    file_object_id: i64,
+    expected_is_draft: bool,
 ) -> AppResult<()> {
-    let mut tx = pool.begin().await?;
-    let Some((body, body_format)) = sqlx::query_as::<_, (String, String)>(
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let Some((body, body_format, is_draft)) = sqlx::query_as::<_, (String, String, i64)>(
         r#"
-        SELECT body, body_format
+        SELECT body, body_format, is_draft
         FROM work_item_comments
         WHERE id = ?1
           AND work_item_id = ?2
@@ -7601,6 +7661,28 @@ pub async fn archive_work_item_comment_inline_attachment(
     else {
         return Err(AppError::NotFound("评论不存在".to_string()));
     };
+    if (is_draft != 0) != expected_is_draft {
+        return Err(AppError::Conflict(
+            "评论状态已变化，请刷新后重试".to_string(),
+        ));
+    }
+
+    let file_object_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT fa.file_object_id
+        FROM file_attachments fa
+        JOIN file_objects fo ON fo.id = fa.file_object_id
+        WHERE fa.id = ?1
+          AND fa.target_type = 'comment'
+          AND fa.target_id = ?2
+          AND fo.status <> 'deleted'
+        "#,
+    )
+    .bind(attachment_id)
+    .bind(comment_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("附件不存在".to_string()))?;
     let prepared = prepare_work_item_comment_body_without_attachment(
         &body,
         &body_format,
@@ -7624,18 +7706,18 @@ pub async fn archive_work_item_comment_inline_attachment(
         .execute(&mut *tx)
         .await?;
     }
-    sqlx::query(
-        r#"
-        UPDATE file_objects
-        SET status = 'deleted',
-            updated_at = datetime('now')
-        WHERE id = ?1
-          AND status <> 'deleted'
-        "#,
+    let has_other_reference = crate::domains::files::file_object_has_protecting_references_in_tx(
+        &mut tx,
+        file_object_id,
+        Some(attachment_id),
     )
-    .bind(file_object_id)
-    .execute(&mut *tx)
     .await?;
+    if has_other_reference {
+        return Err(AppError::Conflict(
+            "文件对象仍被其他受保护的附件关系引用，不能删除".to_string(),
+        ));
+    }
+    crate::domains::files::enqueue_deleted_file_object_in_tx(&mut tx, file_object_id).await?;
     let primary_post_summary = prepared
         .as_ref()
         .map(|prepared| work_item_primary_post_summary(&prepared.body, &prepared.body_format));

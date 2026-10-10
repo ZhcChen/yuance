@@ -1430,18 +1430,20 @@
         "tags": ["resources"],
         "operationId": "getProjectResourceAttachmentUploadUrl",
         "summary": "获取资料附件上传请求",
-        "description": "返回短时对象存储请求。支持 image/svg+xml 资料附件；request、签名 headers、encryption.key 和 access_token 均属于敏感数据，只能按机器可读结果在当前进程内使用。SVG 会在上传完成确认时进行 XML 和静态内容安全校验。",
+        "description": "仅为 pending 状态附件返回短时 PUT 请求；已 uploaded 或 deleted 的附件不能重新取得上传签名。支持 image/svg+xml 资料附件；服务端按附件绑定的原存储配置签发。上传请求不接受也不需要资料 access_token，带 access 参数返回 400。request、签名 headers 和 encryption.key 均属于敏感数据，只能按机器可读结果在当前进程内使用。SVG 会在上传完成确认时进行 XML 和静态内容安全校验。",
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
           {"$ref": "#/components/parameters/AttachmentId"},
-          {"$ref": "#/components/parameters/ResourceAccess"},
           {"$ref": "#/components/parameters/ExpiresInSeconds"}
         ],
         "responses": {
           "200": {"description": "短时上传请求", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
           "401": {"$ref": "#/components/responses/Error"},
-          "403": {"$ref": "#/components/responses/Error"}
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -1450,18 +1452,18 @@
         "tags": ["resources"],
         "operationId": "completeProjectResourceAttachmentUpload",
         "summary": "确认资料附件上传完成",
-        "description": "明文附件可使用空请求体；加密附件必须提交 encrypted_sha256。服务端会重新校验对象大小和 checksum，并对 image/svg+xml 附件读取原文执行静态 SVG 安全校验；危险元素、事件属性、外部资源和不安全 CSS 会被拒绝。",
+        "description": "明文附件可使用空请求体；加密资料附件必须提交 64 位小写十六进制 encrypted_sha256。服务端按附件绑定的原存储配置流式读取对象，校验实际字节数、Content-Type 和 SHA-256；明文附件与创建时非空 checksum_sha256 比较，加密附件与实算密文摘要比较。摘要错误时保持 pending。成功响应必须满足 data.status=uploaded；相同摘要的重复确认幂等成功，不同摘要返回 409。此接口不要求 If-Match。加密附件的 checksum_sha256 表示明文摘要，客户端下载解密后继续校验明文大小和 YUANCE-ENC-v1 文件头摘要。对 image/svg+xml 附件还会读取原文执行静态 SVG 安全校验；危险元素、事件属性、外部资源和不安全 CSS 会被拒绝。",
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
-          {"$ref": "#/components/parameters/AttachmentId"},
-          {"$ref": "#/components/parameters/ResourceIfMatch"}
+          {"$ref": "#/components/parameters/AttachmentId"}
         ],
         "requestBody": {"$ref": "#/components/requestBodies/CompleteAttachmentUpload"},
         "responses": {
-          "200": {"description": "上传完成", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
+          "200": {"description": "上传完成，data.status 必须为 uploaded", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
           "400": {"$ref": "#/components/responses/Error"},
-          "403": {"$ref": "#/components/responses/Error"}
+          "403": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -1490,7 +1492,7 @@
         "tags": ["resources"],
         "operationId": "deleteProjectResourceAttachment",
         "summary": "归档资料附件",
-        "description": "当前服务端动作会归档附件；CLI 删除能力须等待服务端 If-Match 并发引用保护完成。",
+        "description": "服务端按 If-Match、正文引用和其他有效附件关系检查逻辑删除资料附件，并将物理清理登记为延迟任务。任务至少延迟 65 分钟，且不早于删除前最后一张上传签名 URL 到期后 4 小时 5 分钟，以覆盖 OSS 已接收且仍在途的 PUT 请求；删除提交后的并发签名不会返回有效 URL。清理失败由 yuance-api files cleanup-deleted 显式维护命令重试。正文仍引用附件、文件对象被其他有效关系或系统发布资产共享、资料版本冲突时返回 409。重复 DELETE 可返回 404，不会创建重复清理任务。",
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
@@ -1498,7 +1500,7 @@
           {"$ref": "#/components/parameters/ResourceIfMatch"}
         ],
         "responses": {
-          "200": {"description": "附件已归档", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
+          "200": {"description": "附件已逻辑删除；物理对象至少 65 分钟、且最后上传 URL 到期后 4 小时 5 分钟后由维护任务清理", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentEnvelope"}}}},
           "400": {"$ref": "#/components/responses/Error"},
           "403": {"$ref": "#/components/responses/Error"},
           "409": {"$ref": "#/components/responses/Error"}
@@ -2444,8 +2446,8 @@
         "name": "expires_in_seconds",
         "in": "query",
         "required": false,
-        "description": "短时签名请求有效期，服务端会限制最大值。",
-        "schema": {"type": "integer", "minimum": 1, "maximum": 86400}
+        "description": "短时签名请求有效期。上传和资料附件下载的服务端范围为 60–3600 秒；其他专用下载路径按其接口约束执行。",
+        "schema": {"type": "integer", "minimum": 60, "maximum": 3600}
       },
       "Range": {
         "name": "Range",
@@ -3640,8 +3642,8 @@
           "object_key": {"type": "string", "description": "内部对象键，仅用于服务端返回的受控契约，不得作为任意对象存储输入。"},
           "filename": {"type": "string"},
           "content_type": {"type": "string"},
-          "byte_size": {"type": "integer", "format": "int64", "minimum": 0},
-          "status": {"type": "string"},
+          "byte_size": {"type": "integer", "format": "int64", "minimum": 0, "maximum": 1073741824, "description": "明文文件大小，服务端最大 1 GiB；加密对象传输会包含 YUANCE-ENC-v1 头部及分块认证开销。"},
+          "status": {"type": "string", "enum": ["pending", "uploaded", "deleted"]},
           "created_by": {"type": "string"},
           "created_at": {"type": "string"}
         }
@@ -3681,9 +3683,9 @@
           "key": {"type": "string", "format": "byte", "description": "短时解密材料，敏感字段，不得记录或持久化。"},
           "file_object_id": {"type": "integer", "format": "int64"},
           "plaintext_byte_size": {"type": "integer", "format": "int64", "minimum": 0},
-          "plaintext_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$", "description": "未登记明文摘要时 upload-url 和 download-url 阶段都可为空；下载时客户端须校验密文摘要，并将解密后的内容与 YUANCE-ENC-v1 文件头 SHA-256 比对。"},
+          "plaintext_sha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$", "description": "未登记明文摘要时 upload-url 和 download-url 阶段都可为空；下载时客户端须校验密文摘要，并将解密后的内容与 YUANCE-ENC-v1 文件头 SHA-256 比对。"},
           "encrypted_byte_size": {"type": "integer", "format": "int64", "minimum": 0},
-          "encrypted_checksum_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$", "description": "upload-url 阶段可为空；download-url 中必须为 64 位 SHA-256。"}
+          "encrypted_checksum_sha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$", "description": "upload-url 阶段可为空；download-url 中必须为 64 位小写 SHA-256。"}
         }
       },
       "AttachmentSignedUrl": {
@@ -3693,9 +3695,9 @@
         "properties": {
           "attachment": {"$ref": "#/components/schemas/Attachment"},
           "request": {"$ref": "#/components/schemas/AttachmentSignedUrlRequest"},
-          "expires_in_seconds": {"type": "integer", "minimum": 1},
+          "expires_in_seconds": {"type": "integer", "minimum": 60, "maximum": 3600},
           "expires_at": {"type": "string"},
-          "checksum_sha256": {"type": "string", "pattern": "^$|^[0-9a-fA-F]{64}$", "description": "历史明文附件或创建时未提供明文摘要的附件可能为空；加密下载时若为空，客户端须校验 YUANCE-ENC-v1 文件头 SHA-256。"},
+          "checksum_sha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$", "description": "历史明文附件或创建时未提供明文摘要的附件可能为空；加密下载时若为空，客户端须校验 YUANCE-ENC-v1 文件头 SHA-256。"},
           "encryption": {"oneOf": [{"$ref": "#/components/schemas/AttachmentEncryption"}, {"type": "null"}], "description": "null 表示历史明文附件；对象表示 YUANCE-ENC-v1 密文，其 key 只允许在当前进程内用于解密。"}
         }
       },
@@ -3712,8 +3714,8 @@
             "properties": {
               "encrypted_checksum_sha256": {
                 "type": "string",
-                "pattern": "^[0-9a-fA-F]{64}$",
-                "description": "下载必须返回密文 SHA-256。"
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "下载必须返回 64 位小写密文 SHA-256。"
               }
             }
           }
@@ -4041,8 +4043,8 @@
         "properties": {
           "original_filename": {"type": "string", "minLength": 1},
           "content_type": {"type": "string", "minLength": 1},
-          "byte_size": {"type": "integer", "format": "int64", "minimum": 0},
-          "checksum_sha256": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}
+          "byte_size": {"type": "integer", "format": "int64", "minimum": 0, "maximum": 1073741824},
+          "checksum_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "可选的明文 SHA-256，必须为 64 位小写十六进制；非空时服务端完成上传时比对实算摘要。"}
         }
       },
       "CompleteAttachmentUploadRequest": {
@@ -4051,8 +4053,8 @@
         "properties": {
           "encrypted_sha256": {
             "type": "string",
-            "pattern": "^[0-9a-fA-F]{64}$",
-            "description": "加密附件对象的密文 SHA-256；明文附件不得伪造该字段。"
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "加密资料附件对象的密文 SHA-256，必须为 64 位小写十六进制；服务端会与实算密文 SHA-256 比较。明文附件不得提供此字段。"
           }
         }
       },

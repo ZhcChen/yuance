@@ -1,7 +1,8 @@
 use std::{
+    ffi::OsString,
     fs::{self, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -29,16 +30,24 @@ pub async fn run(command: MigrateCommand) -> AppResult<()> {
             }
         }
         MigrateCommand::Up => {
+            let migration_started_marker = parse_migration_started_marker(std::env::var_os(
+                "YUANCE_MIGRATION_STARTED_MARKER",
+            ))?;
             let settings = Settings::from_env()?;
             let pool = db::connect_pool(&settings).await?;
             validate_migration_state(&pool).await?;
+            write_migration_started_marker(migration_started_marker.as_deref())?;
             db::run_migrations(&pool).await?;
             println!("migrations applied");
         }
         MigrateCommand::UpTo { version } => {
+            let migration_started_marker = parse_migration_started_marker(std::env::var_os(
+                "YUANCE_MIGRATION_STARTED_MARKER",
+            ))?;
             let settings = Settings::from_env()?;
             let pool = db::connect_pool(&settings).await?;
             validate_migration_state(&pool).await?;
+            write_migration_started_marker(migration_started_marker.as_deref())?;
             db::MIGRATOR.run_to(version, &pool).await?;
             println!("migrations applied to {version}");
         }
@@ -48,6 +57,43 @@ pub async fn run(command: MigrateCommand) -> AppResult<()> {
         }
     }
 
+    Ok(())
+}
+
+fn parse_migration_started_marker(value: Option<OsString>) -> AppResult<Option<PathBuf>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value
+        .into_string()
+        .map_err(|_| AppError::Config("迁移开始标记路径无效".to_string()))?;
+    let path = PathBuf::from(value);
+    let name = path.file_name().and_then(|name| name.to_str());
+    let valid_name = name
+        .and_then(|name| {
+            name.strip_prefix(".yuance-api-maintenance-")
+                .and_then(|name| name.strip_suffix(".migration-started"))
+        })
+        .is_some_and(|name| {
+            !name.is_empty()
+                && name.bytes().any(|byte| byte.is_ascii_digit())
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'-')
+        });
+    if path.parent() != Some(Path::new("/data")) || !valid_name {
+        return Err(AppError::Config("迁移开始标记路径无效".to_string()));
+    }
+    Ok(Some(path))
+}
+
+fn write_migration_started_marker(path: Option<&Path>) -> AppResult<()> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    file.write_all(b"started\n")?;
+    file.sync_all()?;
     Ok(())
 }
 
@@ -164,5 +210,49 @@ fn normalize_name(name: &str) -> String {
         "migration".to_string()
     } else {
         normalized.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_started_marker_requires_a_safe_data_path() {
+        let valid = parse_migration_started_marker(Some(OsString::from(
+            "/data/.yuance-api-maintenance-20261010123456-12345.migration-started",
+        )))
+        .expect("valid marker path should be accepted");
+        assert_eq!(
+            valid,
+            Some(PathBuf::from(
+                "/data/.yuance-api-maintenance-20261010123456-12345.migration-started"
+            ))
+        );
+        assert!(
+            parse_migration_started_marker(None)
+                .expect("missing marker should be allowed")
+                .is_none()
+        );
+        for path in [
+            "/tmp/.yuance-api-maintenance-20261010123456.migration-started",
+            "/data/../tmp/.yuance-api-maintenance-20261010123456.migration-started",
+            "/data/.yuance-api-maintenance-anything.migration-started",
+        ] {
+            assert!(parse_migration_started_marker(Some(OsString::from(path))).is_err());
+        }
+    }
+
+    #[test]
+    fn migration_started_marker_is_created_exclusively() {
+        let path = std::env::temp_dir().join(format!(
+            "yuance-migration-started-test-{}.marker",
+            uuid::Uuid::new_v4()
+        ));
+        write_migration_started_marker(Some(&path)).expect("marker should be created");
+        assert_eq!(fs::read(&path).expect("marker should read"), b"started\n");
+        assert!(write_migration_started_marker(Some(&path)).is_err());
+        fs::remove_file(path).expect("marker should be removed");
+        write_migration_started_marker(None).expect("disabled marker should be a no-op");
     }
 }

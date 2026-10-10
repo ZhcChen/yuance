@@ -107,22 +107,22 @@ fn supported_operations_and_request_bodies_exist() {
     );
     assert_eq!(
         document["components"]["schemas"]["AttachmentSignedUrl"]["properties"]["checksum_sha256"]["pattern"],
-        "^$|^[0-9a-fA-F]{64}$"
+        "^$|^[0-9a-f]{64}$"
     );
     assert_eq!(
         document["components"]["schemas"]["AttachmentEncryption"]["properties"]["encrypted_checksum_sha256"]
             ["pattern"],
-        "^$|^[0-9a-fA-F]{64}$"
+        "^$|^[0-9a-f]{64}$"
     );
     assert_eq!(
         document["components"]["schemas"]["AttachmentDownloadEncryption"]["allOf"][1]["properties"]
             ["encrypted_checksum_sha256"]["pattern"],
-        "^[0-9a-fA-F]{64}$"
+        "^[0-9a-f]{64}$"
     );
     assert_eq!(
         document["components"]["schemas"]["AttachmentEncryption"]["properties"]["plaintext_sha256"]
             ["pattern"],
-        "^$|^[0-9a-fA-F]{64}$"
+        "^$|^[0-9a-f]{64}$"
     );
     assert!(
         document["components"]["schemas"]["AttachmentEncryption"]["properties"]["plaintext_sha256"]
@@ -137,6 +137,65 @@ fn supported_operations_and_request_bodies_exist() {
             .as_str()
             .unwrap()
             .contains("加密下载时若为空")
+    );
+
+    let upload_url = &document["paths"]["/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url"]
+        ["get"];
+    assert!(
+        upload_url["description"]
+            .as_str()
+            .unwrap()
+            .contains("不接受也不需要资料 access_token")
+    );
+    assert!(
+        !upload_url["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|parameter| { parameter["$ref"] == "#/components/parameters/ResourceAccess" })
+    );
+    for status in ["400", "401", "403", "404", "409"] {
+        assert_eq!(
+            upload_url["responses"][status]["$ref"],
+            "#/components/responses/Error"
+        );
+    }
+    let complete = &document["paths"]["/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded"]
+        ["post"];
+    assert!(
+        complete["description"]
+            .as_str()
+            .unwrap()
+            .contains("相同摘要的重复确认幂等成功")
+    );
+    assert!(
+        complete["description"]
+            .as_str()
+            .unwrap()
+            .contains("data.status=uploaded")
+    );
+    assert_eq!(
+        complete["responses"]["409"]["$ref"],
+        "#/components/responses/Error"
+    );
+    assert!(
+        !complete["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|parameter| { parameter["$ref"] == "#/components/parameters/ResourceIfMatch" })
+    );
+    assert_eq!(
+        document["components"]["parameters"]["ExpiresInSeconds"]["schema"]["minimum"],
+        60
+    );
+    assert_eq!(
+        document["components"]["parameters"]["ExpiresInSeconds"]["schema"]["maximum"],
+        3600
+    );
+    assert_eq!(
+        document["components"]["schemas"]["CreateAttachmentRequest"]["properties"]["byte_size"]["maximum"],
+        1_073_741_824_i64
     );
 
     let request_bodies = [

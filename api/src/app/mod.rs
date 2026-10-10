@@ -82,6 +82,21 @@ pub enum FilesCommand {
         #[arg(long)]
         include_deleted: bool,
     },
+    /// 查看未完成资料附件物理清理任务及最近错误。
+    DeletionJobs {
+        /// 最多显示的任务数，范围为 1 到 1000。
+        #[arg(long, default_value_t = 100)]
+        limit: i64,
+    },
+    /// 清理已逻辑删除且超过安全窗口的资料附件对象。
+    CleanupDeleted {
+        /// 只统计，不访问或删除对象存储文件。
+        #[arg(long)]
+        dry_run: bool,
+        /// 本次最多处理的到期任务，范围为 1 到 1000。
+        #[arg(long, default_value_t = 100)]
+        limit: i64,
+    },
 }
 
 pub async fn run_cli() -> AppResult<()> {

@@ -4754,22 +4754,6 @@ pub async fn cancel_work_item_comment_draft(
         return Err(AppError::Forbidden("只能取消自己的草稿评论".to_string()));
     }
 
-    for attachment in files::list_attachments(pool, "comment", comment.id).await? {
-        storage::delete_object_if_exists(pool, &state.settings, &attachment.object_key).await?;
-        files::archive_attachment(
-            pool,
-            files::ArchiveAttachmentInput {
-                attachment_id: attachment.id,
-                target_type: "comment",
-                target_id: comment.id,
-                actor_user_id: user.id,
-                actor_display_name_snapshot: &principal.actor_display_name_snapshot(),
-                project_id: None,
-                activity_summary: None,
-            },
-        )
-        .await?;
-    }
     let cancelled =
         projects::cancel_work_item_comment_draft(pool, user.id, &item_key, comment_id).await?;
     audit::record(
@@ -4967,7 +4951,7 @@ pub async fn work_item_comment_attachment_mark_uploaded(
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-    storage::verify_uploaded_object(
+    let actual_checksum_sha256 = storage::verify_uploaded_object(
         pool,
         &state.settings,
         &attachment.object_key,
@@ -4975,8 +4959,14 @@ pub async fn work_item_comment_attachment_mark_uploaded(
         &attachment.content_type,
     )
     .await?;
-    let attachment =
-        files::mark_attachment_uploaded(pool, attachment_id, "comment", comment.id).await?;
+    let attachment = files::mark_attachment_uploaded_with_checksum(
+        pool,
+        attachment_id,
+        "comment",
+        comment.id,
+        &actual_checksum_sha256,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -5173,8 +5163,6 @@ pub async fn work_item_comment_attachment_delete(
             }
         }
     }
-    let existing =
-        files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
     projects::ensure_work_item_comment_inline_attachment_can_be_removed(
         pool,
         item.id,
@@ -5182,13 +5170,12 @@ pub async fn work_item_comment_attachment_delete(
         attachment_id,
     )
     .await?;
-    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
     projects::archive_work_item_comment_inline_attachment(
         pool,
         item.id,
         comment.id,
         attachment_id,
-        existing.file_object_id,
+        comment.is_draft,
     )
     .await?;
     let attachment = files::get_attachment(pool, attachment_id).await?;
@@ -5330,7 +5317,7 @@ pub async fn project_attachment_mark_uploaded(
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
-    storage::verify_uploaded_object(
+    let actual_checksum_sha256 = storage::verify_uploaded_object(
         pool,
         &state.settings,
         &attachment.object_key,
@@ -5338,8 +5325,14 @@ pub async fn project_attachment_mark_uploaded(
         &attachment.content_type,
     )
     .await?;
-    let attachment =
-        files::mark_attachment_uploaded(pool, attachment_id, "project", project.id).await?;
+    let attachment = files::mark_attachment_uploaded_with_checksum(
+        pool,
+        attachment_id,
+        "project",
+        project.id,
+        &actual_checksum_sha256,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -6270,7 +6263,7 @@ pub async fn project_resource_attachment_mark_uploaded(
             attachment.byte_size as u64,
         ))
         .map_err(|_| AppError::BadRequest("加密文件大小超出系统支持范围".to_string()))?;
-        storage::verify_uploaded_object(
+        let actual_checksum_sha256 = storage::verify_uploaded_object(
             pool,
             &state.settings,
             &attachment.object_key,
@@ -6278,6 +6271,11 @@ pub async fn project_resource_attachment_mark_uploaded(
             "application/octet-stream",
         )
         .await?;
+        if actual_checksum_sha256 != encrypted_checksum_sha256 {
+            return Err(AppError::BadRequest(
+                "上传对象 SHA-256 与提交的密文摘要不一致".to_string(),
+            ));
+        }
         validate_svg_attachment_content(&state, pool, &attachment).await?;
         files::mark_attachment_uploaded_encrypted(
             pool,
@@ -6285,11 +6283,11 @@ pub async fn project_resource_attachment_mark_uploaded(
             "project_resource",
             resource.id,
             encrypted_byte_size,
-            &encrypted_checksum_sha256,
+            &actual_checksum_sha256,
         )
         .await?
     } else {
-        storage::verify_uploaded_object(
+        let actual_checksum_sha256 = storage::verify_uploaded_object(
             pool,
             &state.settings,
             &attachment.object_key,
@@ -6298,8 +6296,14 @@ pub async fn project_resource_attachment_mark_uploaded(
         )
         .await?;
         validate_svg_attachment_content(&state, pool, &attachment).await?;
-        files::mark_attachment_uploaded(pool, attachment_id, "project_resource", resource.id)
-            .await?
+        files::mark_attachment_uploaded_with_checksum(
+            pool,
+            attachment_id,
+            "project_resource",
+            resource.id,
+            &actual_checksum_sha256,
+        )
+        .await?
     };
     audit::record(
         pool,
@@ -6549,7 +6553,7 @@ pub async fn project_resource_attachment_delete(
         .ok_or_else(|| {
             AppError::BadRequest("删除附件必须提供 If-Match: resource.updated_at".to_string())
         })?;
-    let (attachment, object_key) = files::archive_resource_attachment_if_match(
+    let attachment = files::archive_resource_attachment_if_match(
         pool,
         attachment_id,
         resource.id,
@@ -6558,7 +6562,6 @@ pub async fn project_resource_attachment_delete(
         &principal.actor_display_name_snapshot(),
     )
     .await?;
-    storage::delete_object_if_exists(pool, &state.settings, &object_key).await?;
     audit::record(
         pool,
         Some(user.id),
@@ -6684,7 +6687,7 @@ pub async fn work_item_attachment_mark_uploaded(
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
-    storage::verify_uploaded_object(
+    let actual_checksum_sha256 = storage::verify_uploaded_object(
         pool,
         &state.settings,
         &attachment.object_key,
@@ -6692,8 +6695,14 @@ pub async fn work_item_attachment_mark_uploaded(
         &attachment.content_type,
     )
     .await?;
-    let attachment =
-        files::mark_attachment_uploaded(pool, attachment_id, "work_item", item.id).await?;
+    let attachment = files::mark_attachment_uploaded_with_checksum(
+        pool,
+        attachment_id,
+        "work_item",
+        item.id,
+        &actual_checksum_sha256,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -8035,16 +8044,26 @@ pub async fn system_release_asset_upload_url(
     Path((release_id, asset_id)): Path<(i64, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    if !query.access.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "上传签名请求不接受资料访问凭证".to_string(),
+        ));
+    }
     let principal = require_system_release_api_principal(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
         .await?;
     system_releases::ensure_release_is_mutable(pool, release_id).await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
+    if asset.status != "pending" {
+        return Err(AppError::Conflict(
+            "只有 pending 状态的版本资产可以生成上传签名".to_string(),
+        ));
+    }
     let expires_in_seconds =
         normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
-    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let expiration = chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64);
+    let expires_at = expiration.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request = storage::presign_upload_url(
         pool,
         &state.settings,
@@ -8060,6 +8079,12 @@ pub async fn system_release_asset_upload_url(
         expires_in_seconds,
         &mut request,
     )?;
+    files::extend_file_object_upload_url_expiration(
+        pool,
+        asset.file_object_id,
+        &expiration.format("%Y-%m-%d %H:%M:%S").to_string(),
+    )
+    .await?;
     Ok(json(AttachmentSignedUrlPayload {
         attachment: AttachmentPayload {
             id: asset.id,
@@ -8143,7 +8168,12 @@ pub async fn system_release_asset_mark_uploaded(
     ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
         .await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
-    storage::verify_uploaded_object(
+    if asset.status != "pending" {
+        return Err(AppError::Conflict(
+            "只有 pending 状态的版本资产可以确认上传".to_string(),
+        ));
+    }
+    let actual_checksum_sha256 = storage::verify_uploaded_object(
         pool,
         &state.settings,
         &asset.object_key,
@@ -8151,7 +8181,13 @@ pub async fn system_release_asset_mark_uploaded(
         &asset.content_type,
     )
     .await?;
-    let asset = system_releases::mark_release_asset_uploaded(pool, release_id, asset_id).await?;
+    let asset = system_releases::mark_release_asset_uploaded(
+        pool,
+        release_id,
+        asset_id,
+        &actual_checksum_sha256,
+    )
+    .await?;
     Ok(json(system_release_asset_payload(asset)))
 }
 
@@ -9263,8 +9299,19 @@ async fn signed_attachment_url_payload(
     kind: SignedUrlKind,
     query: SignedUrlQuery,
 ) -> AppResult<AttachmentSignedUrlPayload> {
+    if matches!(kind, SignedUrlKind::Upload) && !query.access.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "上传签名请求不接受资料访问凭证".to_string(),
+        ));
+    }
     if attachment.status == "deleted" {
-        return Err(AppError::BadRequest("附件已归档，不能生成签名".to_string()));
+        return Err(AppError::NotFound("附件已归档，不能生成签名".to_string()));
+    }
+    let expires_in_seconds = normalize_signed_url_expiration(kind, query.expires_in_seconds)?;
+    if matches!(kind, SignedUrlKind::Upload) && attachment.status != "pending" {
+        return Err(AppError::Conflict(
+            "只有 pending 状态的附件可以生成上传签名".to_string(),
+        ));
     }
     if matches!(kind, SignedUrlKind::Download) && attachment.status != "uploaded" {
         return Err(AppError::BadRequest(
@@ -9272,15 +9319,14 @@ async fn signed_attachment_url_payload(
         ));
     }
 
-    let expires_in_seconds = normalize_signed_url_expiration(kind, query.expires_in_seconds)?;
-    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let encryption = files::get_file_object_encryption(pool, attachment.file_object_id).await?;
     let transfer_content_type = if encryption.is_some() {
         "application/octet-stream"
     } else {
         attachment.content_type.as_str()
     };
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request = match kind {
         SignedUrlKind::Upload => {
             storage::presign_upload_url(
@@ -9317,6 +9363,15 @@ async fn signed_attachment_url_payload(
             expires_in_seconds,
             &mut request,
         )?;
+        let upload_expires_at =
+            chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64);
+        let upload_expires_at_db = upload_expires_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        files::extend_file_object_upload_url_expiration(
+            pool,
+            attachment.file_object_id,
+            &upload_expires_at_db,
+        )
+        .await?;
     } else {
         bind_test_storage_download_grant(
             state,

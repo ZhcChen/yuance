@@ -17,7 +17,9 @@ CLI 成功时向 stdout 输出 JSON；失败时向 stderr 输出结构化 JSON�
 
 `status` 只在 HTTP 错误中出现。不要把 stderr 与 stdout 拼接后再解析。
 
-上传失败会额外返回 `stage`；只有确认阶段结果不确定时，才会返回可用于恢复的 `attachment_id` 和实际 `encrypted_sha256`。错误中不会返回签名 URL、headers 或加密密钥。
+上传失败会额外返回 `stage`。PUT 发生网络错误或非成功响应时标记为 `uploading-uncertain`，附 `attachment_id`；加密流已完整生成时同时附本次 `encrypted_sha256`，该摘要可用于完成确认。PUT 结果不确定时先查询附件状态，不要重发 PUT；没有密文摘要时停止自动恢复并转人工处理，不得猜测摘要。
+
+完成确认请求收到已知 4xx 属于确定拒绝（`confirming-rejected`），不附 `attachment_id` 或恢复摘要；3xx、5xx、超时、连接中断或成功响应无法确认 `status=uploaded` 属于结果不确定（`confirming-uncertain`），会附可用于核对的 `attachment_id` 和本次 `encrypted_sha256`（若适用）。错误中不会返回签名 URL、headers 或加密密钥。
 下载失败使用 `kind: "download"` 并附 `stage`；签名不合法、密文/明文校验失败或目标路径不可用时命令失败，不把未验证数据报告为成功。签名 URL、headers、DEK 和 access token 不会进入错误 envelope。
 
 ## 分类与动作
@@ -46,6 +48,9 @@ CLI 成功时向 stdout 输出 JSON；失败时向 stderr 输出结构化 JSON�
 - 创建、评论、更新和 handoff 发生超时后，先重新读取目标确认服务端状态。
 - `401`、`403`、`404`、参数错误和状态机拒绝不自动重试。
 - 不修改 `YUANCE_BASE_URL`、Token、项目范围或目标标识来规避服务端拒绝。
-- `uploading` 阶段明确失败可以重新取得签名并重试；PUT 已返回成功后不得覆盖重传。
+- `uploading-uncertain` 先检查附件状态；若 PUT 已到达对象存储，使用原 `attachment_id` 和错误中的同一 `encrypted_sha256` 执行 `complete`，不得重发 PUT。若缺少加密摘要，不要猜测或重新加密后复用旧附件。
+- `uploading` 的本地加密/打开文件失败表示尚未发出 PUT；可读取附件状态后重新执行上传。PUT 已返回成功后不得覆盖重传。
+- `confirming-rejected` 表示服务端确定拒绝完成，不要盲目重试或重新 PUT；读取附件状态并报告实际错误。摘要不匹配时对象可能已不可覆盖，需停止并按平台维护流程处理。
+- `confirming-uncertain` 先读取附件状态；若 `uploaded` 则结束，若仍为 `pending` 只可使用同一摘要重试 `complete`，不得重新 PUT。
 - 错误输出中若意外出现疑似 Token，不在回复中复述，立即停止并仅报告泄露风险。
 - 资料密码、短时 `access_token`、签名 URL、签名 headers 和 `encryption.key` 不得进入错误文本；若服务端返回这些内容，先脱敏再报告。

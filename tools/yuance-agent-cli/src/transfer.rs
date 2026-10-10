@@ -12,7 +12,7 @@ use crate::{
 
 const MAX_URL_LENGTH: usize = 8 * 1024;
 const MAX_HEADER_VALUE_LENGTH: usize = 4 * 1024;
-const MAX_TRANSFER_BYTES: i64 = 128 * 1024 * 1024;
+pub const MAX_TRANSFER_BYTES: i64 = 128 * 1024 * 1024;
 const MAX_TTL_SECONDS: u64 = 60;
 const MAX_DOWNLOAD_TTL_SECONDS: u64 = 3600;
 const MAX_CLOCK_SKEW: i64 = 5;

@@ -156,7 +156,7 @@ pub enum ResourceAttachmentsCommand {
     Create(ResourceAttachmentCreateArgs),
     Upload(ResourceAttachmentUploadArgs),
     Download(ResourceAttachmentDownloadArgs),
-    UploadUrl(ResourceAttachmentAccessArgs),
+    UploadUrl(ResourceAttachmentUploadUrlArgs),
     Complete(ResourceAttachmentCompleteArgs),
     DownloadUrl(ResourceAttachmentAccessArgs),
     Delete(ResourceAttachmentDeleteArgs),
@@ -186,6 +186,18 @@ pub struct ResourceAttachmentAccessArgs {
     pub attachment_id: Option<i64>,
     #[arg(long)]
     pub access_token_stdin: bool,
+    #[arg(long)]
+    pub expires_in_seconds: Option<u64>,
+}
+
+#[derive(Debug, Args)]
+pub struct ResourceAttachmentUploadUrlArgs {
+    #[arg(long)]
+    pub project_key: String,
+    #[arg(long)]
+    pub resource_id: i64,
+    #[arg(long)]
+    pub attachment_id: i64,
     #[arg(long)]
     pub expires_in_seconds: Option<u64>,
 }

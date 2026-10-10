@@ -1,10 +1,11 @@
 use quick_xml::{Reader, events::Event};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    domains::storage::StorageConfig,
+    domains::storage::{self, StorageConfig},
     platform::{
+        config::Settings,
         error::{AppError, AppResult},
         file_crypto,
     },
@@ -131,6 +132,40 @@ pub struct PendingFileCleanupSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedFileCleanupSummary {
+    pub due_count: i64,
+    pub not_due_count: i64,
+    pub processed_count: i64,
+    pub completed_count: i64,
+    pub failed_count: i64,
+    pub lease_lost_count: i64,
+    pub pending_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct FileObjectDeletionJobDiagnostic {
+    pub id: i64,
+    pub file_object_id: i64,
+    pub status: String,
+    pub attempt_count: i64,
+    pub next_attempt_at: String,
+    pub last_error: String,
+}
+
+#[derive(Debug, Clone)]
+struct FileObjectDeletionJob {
+    id: i64,
+    storage_config_id: Option<i64>,
+    provider: String,
+    endpoint: String,
+    region: String,
+    bucket: String,
+    object_key: String,
+    lease_token: String,
+    attempt_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileObjectAuditSummary {
     pub total_count: i64,
     pub attached_count: i64,
@@ -139,6 +174,191 @@ pub struct FileObjectAuditSummary {
     pub uploaded_orphan_count: i64,
     pub deleted_orphan_count: i64,
     pub include_deleted: bool,
+}
+
+pub async fn extend_file_object_upload_url_expiration(
+    pool: &SqlitePool,
+    file_object_id: i64,
+    expires_at: &str,
+) -> AppResult<()> {
+    let rows_affected = sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET upload_url_expires_at = CASE
+            WHEN upload_url_expires_at < ?1 THEN ?1
+            ELSE upload_url_expires_at
+        END
+        WHERE id = ?2 AND status = 'pending'
+        "#,
+    )
+    .bind(expires_at)
+    .bind(file_object_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if rows_affected != 1 {
+        return Err(AppError::Conflict(
+            "附件状态已变化，不能生成上传签名".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+pub async fn file_object_has_protecting_references_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    file_object_id: i64,
+    excluded_attachment_id: Option<i64>,
+) -> AppResult<bool> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM file_attachments fa
+            WHERE fa.file_object_id = ?1
+              AND (?2 IS NULL OR fa.id <> ?2)
+              AND (
+                  (fa.target_type = 'project' AND EXISTS (
+                      SELECT 1 FROM projects p WHERE p.id = fa.target_id AND p.status <> 'archived'
+                  ))
+                  OR (fa.target_type = 'project_resource' AND EXISTS (
+                      SELECT 1 FROM project_resources r WHERE r.id = fa.target_id AND r.status <> 'archived'
+                  ))
+                  OR (fa.target_type = 'work_item' AND EXISTS (
+                      SELECT 1 FROM work_items w WHERE w.id = fa.target_id
+                  ))
+                  OR (fa.target_type = 'comment' AND EXISTS (
+                      SELECT 1 FROM work_item_comments c WHERE c.id = fa.target_id AND c.deleted_at IS NULL
+                  ))
+              )
+        ) OR EXISTS (
+            SELECT 1 FROM system_release_assets sra WHERE sra.file_object_id = ?1
+        )
+        "#,
+    )
+    .bind(file_object_id)
+    .bind(excluded_attachment_id)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+pub async fn enqueue_deleted_file_object_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    file_object_id: i64,
+) -> AppResult<()> {
+    let object = sqlx::query_as::<_, (Option<i64>, String, String, String, String)>(
+        r#"
+        SELECT storage_config_id, provider, bucket, object_key, upload_url_expires_at
+        FROM file_objects
+        WHERE id = ?1
+        "#,
+    )
+    .bind(file_object_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("文件对象不存在".to_string()))?;
+
+    let Some(storage_config_id) = object.0 else {
+        return Err(AppError::Conflict(
+            "文件对象未绑定原存储配置，不能安全删除".to_string(),
+        ));
+    };
+    let storage_config = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT provider, endpoint, region, bucket FROM storage_configs WHERE id = ?1",
+    )
+    .bind(storage_config_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::Conflict("文件对象的原存储配置不存在，不能安全删除".to_string()))?;
+    if storage_config.0 != object.1 || storage_config.3 != object.2 {
+        return Err(AppError::Conflict(
+            "文件对象与原存储配置不一致，不能安全删除".to_string(),
+        ));
+    }
+
+    let existing_job = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM file_object_deletion_jobs WHERE file_object_id = ?1)",
+    )
+    .bind(file_object_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    if existing_job {
+        sqlx::query(
+            "UPDATE file_objects SET status = 'deleted', updated_at = datetime('now') WHERE id = ?1",
+        )
+        .bind(file_object_id)
+        .execute(&mut **tx)
+        .await?;
+        return Ok(());
+    }
+
+    let minimum_safe_after = chrono::Utc::now().naive_utc() + chrono::Duration::minutes(65);
+    let url_safe_after = if object.4.is_empty() {
+        minimum_safe_after
+    } else {
+        let expiry = chrono::NaiveDateTime::parse_from_str(&object.4, "%Y-%m-%d %H:%M:%S")
+            .map_err(|_| {
+                AppError::Conflict("文件对象上传签名有效期记录无效，不能安全删除".to_string())
+            })?;
+        std::cmp::max(
+            minimum_safe_after,
+            expiry + chrono::Duration::hours(4) + chrono::Duration::minutes(5),
+        )
+    };
+    let next_attempt_at = url_safe_after.format("%Y-%m-%d %H:%M:%S").to_string();
+
+    sqlx::query(
+        "UPDATE file_objects SET status = 'deleted', updated_at = datetime('now') WHERE id = ?1",
+    )
+    .bind(file_object_id)
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO file_object_deletion_jobs (
+            file_object_id, storage_config_id, provider, endpoint, region, bucket,
+            object_key, next_attempt_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        ON CONFLICT(file_object_id) DO NOTHING
+        "#,
+    )
+    .bind(file_object_id)
+    .bind(storage_config_id)
+    .bind(&storage_config.0)
+    .bind(&storage_config.1)
+    .bind(&storage_config.2)
+    .bind(&storage_config.3)
+    .bind(&object.3)
+    .bind(next_attempt_at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_open_file_object_deletion_jobs(
+    pool: &SqlitePool,
+    limit: i64,
+) -> AppResult<Vec<FileObjectDeletionJobDiagnostic>> {
+    if !(1..=1000).contains(&limit) {
+        return Err(AppError::BadRequest(
+            "删除任务诊断 limit 必须在 1 到 1000 之间".to_string(),
+        ));
+    }
+    sqlx::query_as::<_, FileObjectDeletionJobDiagnostic>(
+        r#"
+        SELECT id, file_object_id, status, attempt_count, next_attempt_at,
+               substr(last_error, 1, 500) AS last_error
+        FROM file_object_deletion_jobs
+        WHERE status <> 'completed'
+        ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+                 next_attempt_at, id
+        LIMIT ?1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(Into::into)
 }
 
 type AttachmentRow = (
@@ -657,6 +877,80 @@ pub async fn mark_file_uploaded(pool: &SqlitePool, file_object_id: i64) -> AppRe
     get_file_object(pool, file_object_id).await
 }
 
+pub async fn mark_file_uploaded_with_checksum(
+    pool: &SqlitePool,
+    file_object_id: i64,
+    actual_checksum_sha256: &str,
+) -> AppResult<FileObject> {
+    if file_object_id <= 0 {
+        return Err(AppError::BadRequest("文件对象 ID 无效".to_string()));
+    }
+    let actual_checksum_sha256 = validate_checksum_sha256(actual_checksum_sha256)?;
+    if actual_checksum_sha256.is_empty() {
+        return Err(AppError::BadRequest(
+            "文件 SHA-256 校验值不能为空".to_string(),
+        ));
+    }
+
+    let state = sqlx::query_as::<_, (String, String)>(
+        "SELECT status, checksum_sha256 FROM file_objects WHERE id = ?1",
+    )
+    .bind(file_object_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("文件对象不存在".to_string()))?;
+
+    if state.0 == "uploaded" {
+        if state.1 == actual_checksum_sha256 {
+            return get_file_object(pool, file_object_id).await;
+        }
+        return Err(AppError::Conflict(
+            "附件已上传，但对象摘要与本次确认不一致".to_string(),
+        ));
+    }
+    if state.0 == "deleted" {
+        return Err(AppError::NotFound("附件已归档".to_string()));
+    }
+    if !state.1.is_empty() && state.1 != actual_checksum_sha256 {
+        return Err(AppError::BadRequest(
+            "上传对象 SHA-256 与登记摘要不一致".to_string(),
+        ));
+    }
+
+    let result = sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'uploaded',
+            checksum_sha256 = ?1,
+            updated_at = datetime('now')
+        WHERE id = ?2
+          AND status = 'pending'
+          AND (checksum_sha256 = '' OR checksum_sha256 = ?1)
+        "#,
+    )
+    .bind(&actual_checksum_sha256)
+    .bind(file_object_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 1 {
+        return get_file_object(pool, file_object_id).await;
+    }
+
+    let current = sqlx::query_as::<_, (String, String)>(
+        "SELECT status, checksum_sha256 FROM file_objects WHERE id = ?1",
+    )
+    .bind(file_object_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("文件对象不存在".to_string()))?;
+    if current.0 == "uploaded" && current.1 == actual_checksum_sha256 {
+        return get_file_object(pool, file_object_id).await;
+    }
+    Err(AppError::Conflict(
+        "附件状态已变化，请重新读取附件后再确认".to_string(),
+    ))
+}
+
 pub async fn mark_attachment_uploaded(
     pool: &SqlitePool,
     attachment_id: i64,
@@ -665,6 +959,19 @@ pub async fn mark_attachment_uploaded(
 ) -> AppResult<FileAttachmentSummary> {
     let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
     mark_file_uploaded(pool, attachment.file_object_id).await?;
+    get_attachment(pool, attachment.id).await
+}
+
+pub async fn mark_attachment_uploaded_with_checksum(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    target_type: &str,
+    target_id: i64,
+    actual_checksum_sha256: &str,
+) -> AppResult<FileAttachmentSummary> {
+    let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
+    mark_file_uploaded_with_checksum(pool, attachment.file_object_id, actual_checksum_sha256)
+        .await?;
     get_attachment(pool, attachment.id).await
 }
 
@@ -966,7 +1273,7 @@ pub async fn mark_attachment_uploaded_encrypted(
         ));
     }
 
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         UPDATE file_objects
         SET status = 'uploaded',
@@ -983,6 +1290,28 @@ pub async fn mark_attachment_uploaded_encrypted(
     .bind(attachment.file_object_id)
     .execute(pool)
     .await?;
+
+    if result.rows_affected() == 0 {
+        let state = sqlx::query_as::<_, (String, i64, String)>(
+            r#"
+            SELECT status, encrypted_byte_size, encrypted_checksum_sha256
+            FROM file_objects
+            WHERE id = ?1
+            "#,
+        )
+        .bind(attachment.file_object_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("文件对象不存在".to_string()))?;
+        if state.0 != "uploaded"
+            || state.1 != encrypted_byte_size
+            || state.2 != encrypted_checksum_sha256
+        {
+            return Err(AppError::Conflict(
+                "附件状态已变化或密文摘要与已登记内容不一致".to_string(),
+            ));
+        }
+    }
 
     get_attachment(pool, attachment.id).await
 }
@@ -1120,8 +1449,8 @@ pub async fn archive_resource_attachment_if_match(
     expected_updated_at: &str,
     actor_user_id: i64,
     actor_display_name_snapshot: &str,
-) -> AppResult<(FileAttachmentSummary, String)> {
-    let mut tx = pool.begin().await?;
+) -> AppResult<FileAttachmentSummary> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let resource = sqlx::query_as::<_, (String, String, String)>(
         "SELECT body, body_format, updated_at FROM project_resources WHERE id = ?1 AND status <> 'archived'",
     )
@@ -1162,21 +1491,253 @@ pub async fn archive_resource_attachment_if_match(
     .fetch_optional(&mut *tx)
     .await?
     .ok_or_else(|| AppError::NotFound("附件不存在".to_string()))?;
-    let object_key = attachment.2.clone();
+
+    let has_other_reference =
+        file_object_has_protecting_references_in_tx(&mut tx, attachment.1, Some(attachment.0))
+            .await?;
+    if has_other_reference {
+        return Err(AppError::Conflict(
+            "文件对象仍被其他受保护的附件关系引用，不能删除".to_string(),
+        ));
+    }
+
     let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
-    sqlx::query(
-        "UPDATE file_objects SET status = 'deleted', updated_at = datetime('now') WHERE id = ?1 AND status <> 'deleted'",
-    )
-    .bind(attachment.1)
-    .execute(&mut *tx)
-    .await?;
+    enqueue_deleted_file_object_in_tx(&mut tx, attachment.1).await?;
     tx.commit().await?;
 
     let _ = actor_user_id;
     let _ = actor_display_name_snapshot;
     let mut archived = attachment_from_row(attachment);
     archived.status = "deleted".to_string();
-    Ok((archived, object_key))
+    Ok(archived)
+}
+
+pub async fn cleanup_deleted_file_objects(
+    pool: &SqlitePool,
+    settings: &Settings,
+    dry_run: bool,
+    limit: i64,
+) -> AppResult<DeletedFileCleanupSummary> {
+    if !(1..=1000).contains(&limit) {
+        return Err(AppError::BadRequest(
+            "删除对象清理 limit 必须在 1 到 1000 之间".to_string(),
+        ));
+    }
+
+    let due_count = count_due_file_object_deletion_jobs(pool).await?;
+    let pending_count = count_open_file_object_deletion_jobs(pool).await?;
+    let mut summary = DeletedFileCleanupSummary {
+        due_count,
+        not_due_count: pending_count.saturating_sub(due_count),
+        processed_count: 0,
+        completed_count: 0,
+        failed_count: 0,
+        lease_lost_count: 0,
+        pending_count,
+    };
+    if dry_run {
+        return Ok(summary);
+    }
+
+    while summary.processed_count < limit {
+        let Some(job) = claim_file_object_deletion_job(pool).await? else {
+            break;
+        };
+        summary.processed_count += 1;
+
+        let deleted = storage::delete_object_at_location(
+            pool,
+            settings,
+            job.storage_config_id,
+            &job.provider,
+            &job.endpoint,
+            &job.region,
+            &job.bucket,
+            &job.object_key,
+        )
+        .await;
+        match deleted {
+            Ok(()) => {
+                if complete_file_object_deletion_job(pool, &job).await? {
+                    summary.completed_count += 1;
+                } else {
+                    summary.lease_lost_count += 1;
+                }
+            }
+            Err(error) => {
+                if retry_file_object_deletion_job(pool, &job, &error.to_string()).await? {
+                    summary.failed_count += 1;
+                } else {
+                    summary.lease_lost_count += 1;
+                }
+            }
+        }
+    }
+    summary.pending_count = count_open_file_object_deletion_jobs(pool).await?;
+    Ok(summary)
+}
+
+async fn count_due_file_object_deletion_jobs(pool: &SqlitePool) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM file_object_deletion_jobs
+        WHERE (status = 'pending' AND next_attempt_at <= datetime('now'))
+           OR (status = 'processing' AND lease_until <= datetime('now'))
+        "#,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+async fn count_open_file_object_deletion_jobs(pool: &SqlitePool) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE status <> 'completed'",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+async fn claim_file_object_deletion_job(
+    pool: &SqlitePool,
+) -> AppResult<Option<FileObjectDeletionJob>> {
+    let lease_token = Uuid::new_v4().to_string();
+    sqlx::query_as::<
+        _,
+        (
+            i64,
+            Option<i64>,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+        ),
+    >(
+        r#"
+        UPDATE file_object_deletion_jobs
+        SET status = 'processing',
+            lease_until = datetime('now', '+5 minutes'),
+            lease_token = ?1,
+            attempt_count = attempt_count + 1,
+            updated_at = datetime('now')
+        WHERE id = (
+            SELECT id
+            FROM file_object_deletion_jobs
+            WHERE (status = 'pending' AND next_attempt_at <= datetime('now'))
+               OR (status = 'processing' AND lease_until <= datetime('now'))
+            ORDER BY next_attempt_at, id
+            LIMIT 1
+        )
+          AND ((status = 'pending' AND next_attempt_at <= datetime('now'))
+               OR (status = 'processing' AND lease_until <= datetime('now')))
+        RETURNING id, storage_config_id, provider, endpoint, region,
+                  bucket, object_key, lease_token, attempt_count
+        "#,
+    )
+    .bind(&lease_token)
+    .fetch_optional(pool)
+    .await
+    .map(|row| {
+        row.map(
+            |(
+                id,
+                storage_config_id,
+                provider,
+                endpoint,
+                region,
+                bucket,
+                object_key,
+                lease_token,
+                attempt_count,
+            )| FileObjectDeletionJob {
+                id,
+                storage_config_id,
+                provider,
+                endpoint,
+                region,
+                bucket,
+                object_key,
+                lease_token,
+                attempt_count,
+            },
+        )
+    })
+    .map_err(Into::into)
+}
+
+async fn complete_file_object_deletion_job(
+    pool: &SqlitePool,
+    job: &FileObjectDeletionJob,
+) -> AppResult<bool> {
+    let rows_affected = sqlx::query(
+        r#"
+        UPDATE file_object_deletion_jobs
+        SET status = 'completed', storage_config_id = NULL,
+            lease_until = NULL, lease_token = NULL,
+            last_error = '', completed_at = datetime('now'), updated_at = datetime('now')
+        WHERE id = ?1 AND status = 'processing' AND lease_token = ?2
+        "#,
+    )
+    .bind(job.id)
+    .bind(&job.lease_token)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected == 1)
+}
+
+async fn retry_file_object_deletion_job(
+    pool: &SqlitePool,
+    job: &FileObjectDeletionJob,
+    error: &str,
+) -> AppResult<bool> {
+    let retry_minutes = 1_i64
+        .checked_shl(job.attempt_count.saturating_sub(1).clamp(0, 9) as u32)
+        .unwrap_or(360)
+        .min(360);
+    let safe_error = sanitize_deletion_job_error(error, job);
+    let rows_affected = sqlx::query(
+        r#"
+        UPDATE file_object_deletion_jobs
+        SET status = 'pending', lease_until = NULL, lease_token = NULL,
+            next_attempt_at = datetime('now', ?1), last_error = ?2,
+            updated_at = datetime('now')
+        WHERE id = ?3 AND status = 'processing' AND lease_token = ?4
+        "#,
+    )
+    .bind(format!("+{retry_minutes} minutes"))
+    .bind(safe_error)
+    .bind(job.id)
+    .bind(&job.lease_token)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    Ok(rows_affected == 1)
+}
+
+fn sanitize_deletion_job_error(error: &str, job: &FileObjectDeletionJob) -> String {
+    let mut message = error.to_string();
+    for value in [&job.object_key, &job.bucket, &job.endpoint] {
+        if !value.is_empty() {
+            message = message.replace(value, "[redacted]");
+        }
+    }
+    message
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        })
+        .take(500)
+        .collect()
 }
 
 pub async fn cleanup_pending_file_objects(
@@ -1192,6 +1753,10 @@ pub async fn cleanup_pending_file_objects(
         FROM file_objects
         WHERE status = 'pending'
           AND created_at <= datetime('now', ?1)
+          AND (
+              upload_url_expires_at = ''
+              OR datetime(upload_url_expires_at, '+4 hours', '+5 minutes') <= datetime('now')
+          )
         "#,
     )
     .bind(format!("-{older_than_hours} hours"))
@@ -1212,6 +1777,10 @@ pub async fn cleanup_pending_file_objects(
             updated_at = datetime('now')
         WHERE status = 'pending'
           AND created_at <= datetime('now', ?1)
+          AND (
+              upload_url_expires_at = ''
+              OR datetime(upload_url_expires_at, '+4 hours', '+5 minutes') <= datetime('now')
+          )
         "#,
     )
     .bind(format!("-{older_than_hours} hours"))
@@ -1229,15 +1798,38 @@ pub async fn audit_file_objects(
     pool: &SqlitePool,
     include_deleted: bool,
 ) -> AppResult<FileObjectAuditSummary> {
-    let total_count = count_file_objects(pool, include_deleted).await?;
-    let attached_count = count_attached_file_objects(pool, include_deleted).await?;
-    let orphan_count = count_orphan_file_objects(pool, include_deleted, None).await?;
-    let pending_orphan_count =
-        count_orphan_file_objects(pool, include_deleted, Some("pending")).await?;
-    let uploaded_orphan_count =
-        count_orphan_file_objects(pool, include_deleted, Some("uploaded")).await?;
-    let deleted_orphan_count =
-        count_orphan_file_objects(pool, include_deleted, Some("deleted")).await?;
+    let (
+        total_count,
+        attached_count,
+        orphan_count,
+        pending_orphan_count,
+        uploaded_orphan_count,
+        deleted_orphan_count,
+    ) = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64)>(
+        r#"
+        WITH owned_file_objects AS (
+            SELECT
+                fo.status,
+                (
+                    EXISTS (SELECT 1 FROM file_attachments fa WHERE fa.file_object_id = fo.id)
+                    OR EXISTS (SELECT 1 FROM system_release_assets sra WHERE sra.file_object_id = fo.id)
+                ) AS is_attached
+            FROM file_objects fo
+            WHERE (?1 OR fo.status <> 'deleted')
+        )
+        SELECT
+            COUNT(*),
+            COALESCE(SUM(CASE WHEN is_attached THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN NOT is_attached THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN NOT is_attached AND status = 'pending' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN NOT is_attached AND status = 'uploaded' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN NOT is_attached AND status = 'deleted' THEN 1 ELSE 0 END), 0)
+        FROM owned_file_objects
+        "#,
+    )
+    .bind(include_deleted)
+    .fetch_one(pool)
+    .await?;
 
     Ok(FileObjectAuditSummary {
         total_count,
@@ -1248,57 +1840,6 @@ pub async fn audit_file_objects(
         deleted_orphan_count,
         include_deleted,
     })
-}
-
-async fn count_file_objects(pool: &SqlitePool, include_deleted: bool) -> AppResult<i64> {
-    sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(*)
-        FROM file_objects
-        WHERE (?1 OR status <> 'deleted')
-        "#,
-    )
-    .bind(include_deleted)
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
-}
-
-async fn count_attached_file_objects(pool: &SqlitePool, include_deleted: bool) -> AppResult<i64> {
-    sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(DISTINCT fo.id)
-        FROM file_objects fo
-        JOIN file_attachments fa ON fa.file_object_id = fo.id
-        WHERE (?1 OR fo.status <> 'deleted')
-        "#,
-    )
-    .bind(include_deleted)
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
-}
-
-async fn count_orphan_file_objects(
-    pool: &SqlitePool,
-    include_deleted: bool,
-    status: Option<&str>,
-) -> AppResult<i64> {
-    sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(*)
-        FROM file_objects fo
-        LEFT JOIN file_attachments fa ON fa.file_object_id = fo.id
-        WHERE fa.id IS NULL
-          AND (?1 OR fo.status <> 'deleted')
-          AND (?2 IS NULL OR fo.status = ?2)
-        "#,
-    )
-    .bind(include_deleted)
-    .bind(status)
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
 }
 
 fn attachment_query() -> sqlx::QueryBuilder<sqlx::Sqlite> {
@@ -1903,6 +2444,35 @@ fn build_folder_tree(parent_id: Option<i64>, items: &[FolderTreeItem]) -> Vec<Fo
             children: build_folder_tree(Some(item.id), items),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod deletion_job_error_tests {
+    use super::{FileObjectDeletionJob, sanitize_deletion_job_error};
+
+    #[test]
+    fn cleanup_error_diagnostics_redact_location_and_control_characters() {
+        let job = FileObjectDeletionJob {
+            id: 1,
+            storage_config_id: Some(2),
+            provider: "aliyun_oss".to_string(),
+            endpoint: "https://oss.example.test".to_string(),
+            region: "test".to_string(),
+            bucket: "private-bucket".to_string(),
+            object_key: "uploads/private/object".to_string(),
+            lease_token: "lease".to_string(),
+            attempt_count: 1,
+        };
+        let message = sanitize_deletion_job_error(
+            "failed at https://oss.example.test/private-bucket/uploads/private/object\nretry",
+            &job,
+        );
+        assert!(!message.contains(&job.endpoint));
+        assert!(!message.contains(&job.bucket));
+        assert!(!message.contains(&job.object_key));
+        assert!(!message.contains('\n'));
+        assert!(message.contains("[redacted]"));
+    }
 }
 
 #[cfg(test)]

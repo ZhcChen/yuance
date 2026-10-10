@@ -1144,6 +1144,7 @@ async fn resource_and_notification_commands_use_fixed_api_paths() {
         Method::GET,
         "/api/v1/projects/YCE/resources/7/attachments/8/upload-url",
     );
+    assert!(!query(&requests[4].uri).contains_key("access"));
     assert_request(
         &requests[5],
         Method::POST,
@@ -1155,6 +1156,183 @@ async fn resource_and_notification_commands_use_fixed_api_paths() {
     );
     assert_eq!(requests[6].headers.get("if-match").unwrap(), "v1");
     assert_eq!(query(&requests[7].uri)["filter"], "unread");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resource_attachment_upload_reports_checksum_rejection_as_deterministic() {
+    let file = std::env::temp_dir().join(format!(
+        "yuance-agent-upload-rejected-{}.txt",
+        std::process::id()
+    ));
+    fs::write(&file, b"hello").unwrap();
+    let app = Router::new()
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments",
+            post(|| async { axum::Json(json!({"data": {"id": 81}})) }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/81/upload-url",
+            get(|| async {
+                axum::Json(json!({
+                    "data": {
+                        "attachment": {"id": 81, "file_object_id": 91, "filename": "rejected.txt", "content_type": "text/plain", "byte_size": 5, "status": "pending"},
+                        "request": {"method": "PUT", "url": "/signed-upload", "headers": {"content-length": "5", "content-type": "text/plain"}},
+                        "expires_in_seconds": 60,
+                        "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
+                        "checksum_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+                        "encryption": null
+                    }
+                }))
+            }),
+        )
+        .route("/signed-upload", put(|| async { StatusCode::NO_CONTENT }))
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/81/uploaded",
+            post(|| async {
+                (
+                    StatusCode::BAD_REQUEST,
+                    axum::Json(json!({
+                        "error": {
+                            "code": "checksum_mismatch",
+                            "message": "附件对象摘要与登记值不一致"
+                        }
+                    })),
+                )
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let output = command_output(
+        &format!("http://{address}"),
+        &[
+            "resources",
+            "attachments",
+            "upload",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--file",
+            file.to_str().unwrap(),
+        ],
+        None,
+    );
+    fs::remove_file(&file).unwrap();
+    assert!(!output.status.success());
+    let error = json_stderr(&output)["error"].clone();
+    assert_eq!(error["stage"], "confirming-rejected");
+    assert_eq!(error["code"], "upload_failed");
+    assert!(error.get("attachment_id").is_none());
+    assert!(error.get("encrypted_sha256").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn encrypted_upload_put_error_returns_recovery_digest_when_object_store_received_body() {
+    let file = std::env::temp_dir().join(format!(
+        "yuance-agent-upload-put-uncertain-{}.txt",
+        std::process::id()
+    ));
+    fs::write(&file, b"hello").unwrap();
+    let observed_digest = Arc::new(Mutex::new(None::<String>));
+    let app = Router::new()
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments",
+            post(|| async { axum::Json(json!({"data": {"id": 81}})) }),
+        )
+        .route(
+            "/api/v1/projects/YCE/resources/7/attachments/81/upload-url",
+            get(|| async {
+                axum::Json(json!({
+                    "data": {
+                        "attachment": {"id": 81, "file_object_id": 91, "filename": "encrypted.txt", "content_type": "text/plain", "byte_size": 5, "status": "pending"},
+                        "request": {"method": "PUT", "url": "/signed-upload", "headers": {"content-length": "98", "content-type": "application/octet-stream"}},
+                        "expires_in_seconds": 60,
+                        "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(60)).to_rfc3339(),
+                        "checksum_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+                        "encryption": {"algorithm": "AES-256-GCM", "format": "YUANCE-ENC-v1", "chunk_size": 1048576, "key": BASE64.encode([19_u8; 32]), "file_object_id": 91, "plaintext_byte_size": 5, "plaintext_sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824", "encrypted_byte_size": 98, "encrypted_checksum_sha256": ""}
+                    }
+                }))
+            }),
+        )
+        .route(
+            "/signed-upload",
+            put({
+                let observed_digest = Arc::clone(&observed_digest);
+                move |body: Bytes| {
+                    let observed_digest = Arc::clone(&observed_digest);
+                    async move {
+                        assert_eq!(body.len(), 98);
+                        *observed_digest.lock().unwrap() =
+                            Some(hex::encode(Sha256::digest(body.as_ref())));
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+    let output = command_output(
+        &format!("http://{address}"),
+        &[
+            "resources",
+            "attachments",
+            "upload",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--file",
+            file.to_str().unwrap(),
+        ],
+        None,
+    );
+    fs::remove_file(&file).unwrap();
+    assert!(!output.status.success());
+    let error = json_stderr(&output)["error"].clone();
+    assert_eq!(error["stage"], "uploading-uncertain");
+    assert_eq!(error["attachment_id"], 81);
+    let observed_digest = observed_digest.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        error["encrypted_sha256"].as_str(),
+        Some(observed_digest.as_str())
+    );
+    assert!(error["message"].as_str().unwrap().contains("不要重复上传"));
+}
+
+#[test]
+fn resource_attachment_upload_rejects_over_cli_limit_before_registering() {
+    let file = std::env::temp_dir().join(format!(
+        "yuance-agent-upload-over-limit-{}.bin",
+        std::process::id()
+    ));
+    std::fs::File::create(&file)
+        .unwrap()
+        .set_len((128 * 1024 * 1024 + 1) as u64)
+        .unwrap();
+    let output = command_output(
+        "http://127.0.0.1:1",
+        &[
+            "resources",
+            "attachments",
+            "upload",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--file",
+            file.to_str().unwrap(),
+        ],
+        None,
+    );
+    fs::remove_file(&file).unwrap();
+    assert_eq!(output.status.code(), Some(25));
+    let error = json_stderr(&output)["error"].clone();
+    assert_eq!(error["stage"], "local-validation");
+    assert!(error["message"].as_str().unwrap().contains("128 MiB"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

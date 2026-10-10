@@ -4,16 +4,53 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tower::ServiceExt;
 use yuance_api::{
     domains::{
-        auth, bootstrap, projects, rbac, storage, system_api_tokens, system_releases, users,
+        auth, bootstrap, files, projects, rbac, storage, system_api_tokens, system_releases, users,
     },
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
 
 const CSRF_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[tokio::test]
+async fn legacy_file_objects_receive_conservative_upload_expiry_backfill() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("migration fixture database should connect");
+    sqlx::query("CREATE TABLE file_objects (id INTEGER PRIMARY KEY, object_key TEXT NOT NULL)")
+        .execute(&pool)
+        .await
+        .expect("legacy file object table should create");
+    sqlx::query("INSERT INTO file_objects (id, object_key) VALUES (1, 'legacy/object')")
+        .execute(&pool)
+        .await
+        .expect("legacy file object should insert");
+
+    sqlx::raw_sql(include_str!(
+        "../migrations/202610100002_track_file_upload_url_expiration.sql"
+    ))
+    .execute(&pool)
+    .await
+    .expect("upload expiry migration should run");
+
+    let expiry = sqlx::query_scalar::<_, String>(
+        "SELECT upload_url_expires_at FROM file_objects WHERE id = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("backfilled expiry should load");
+    let expiry = chrono::NaiveDateTime::parse_from_str(&expiry, "%Y-%m-%d %H:%M:%S")
+        .expect("backfilled expiry should parse");
+    let now = chrono::Utc::now().naive_utc();
+    assert!(expiry >= now + chrono::Duration::minutes(59));
+    assert!(expiry <= now + chrono::Duration::minutes(61));
+}
 
 #[tokio::test]
 async fn api_system_dashboard_returns_only_fixed_authorized_links() {
@@ -616,6 +653,7 @@ async fn api_system_docs_requires_permission_and_returns_embedded_contract() {
         "/api/v1/system/releases/{release_id}/withdraw",
         "/api/v1/system/releases/{release_id}/withdrawal",
         "/api/v1/system/releases/{release_id}/assets",
+        "/api/v1/system/releases/{release_id}/assets/{asset_id}",
         "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url",
         "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded",
         "/api/v1/system/releases/{release_id}/assets/{asset_id}/download-url",
@@ -1404,6 +1442,7 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
             filename,
             content_type,
             11,
+            sha256_hex(b"desktop-app"),
         )
         .await;
         let asset_id = json_i64(&asset, &["data", "id"]);
@@ -1453,6 +1492,7 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
         "Yuance-0.2.0-android-universal.apk",
         "application/vnd.android.package-archive",
         10,
+        sha256_hex(b"mobile-app"),
     )
     .await;
     let mobile_asset_id = json_i64(&mobile_asset, &["data", "id"]);
@@ -1502,6 +1542,7 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
         "Yuance-0.3.0-win-x64.exe",
         "application/x-msdownload",
         12,
+        sha256_hex(b"incomplete!!"),
     )
     .await;
     let incomplete_asset_id = json_i64(&incomplete_asset, &["data", "id"]);
@@ -1599,6 +1640,63 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
 }
 
 #[tokio::test]
+async fn system_release_asset_rejects_manifest_checksum_mismatch() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+    let release = create_system_release_api(
+        &app,
+        &admin_cookie,
+        "v1.0.0",
+        "摘要校验测试",
+        "上传摘要错误时不得确认",
+    )
+    .await;
+    let release_id = json_i64(&release, &["data", "release", "id"]);
+    let asset = create_system_release_asset_api(
+        &app,
+        &admin_cookie,
+        release_id,
+        "windows",
+        "checksum-test.exe",
+        "application/octet-stream",
+        11,
+        "0".repeat(64),
+    )
+    .await;
+    let asset_id = json_i64(&asset, &["data", "id"]);
+    let upload =
+        get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id).await;
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &json_string(&upload, &["data", "request", "url"]),
+        b"actual-byte",
+        "application/octet-stream",
+    )
+    .await;
+
+    let completion = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(completion.0, StatusCode::BAD_REQUEST, "{}", completion.1);
+    assert_eq!(
+        system_releases::get_release_asset(&pool, release_id, asset_id)
+            .await
+            .expect("asset should load")
+            .status,
+        "pending"
+    );
+}
+
+#[tokio::test]
 async fn api_system_release_flow_supports_publish_and_retention_prune() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -1620,6 +1718,7 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
         "yuance-setup-v1.0.0.exe",
         "application/octet-stream",
         7,
+        sha256_hex(b"first-v"),
     )
     .await;
     let first_asset_id = json_i64(&first_asset, &["data", "id"]);
@@ -1643,6 +1742,16 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
     .await;
     mark_system_release_asset_uploaded_api(&app, &admin_cookie, first_release_id, first_asset_id)
         .await;
+
+    let repeated_upload_url = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!("/api/v1/system/releases/{first_release_id}/assets/{first_asset_id}/upload-url"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(repeated_upload_url.0, StatusCode::CONFLICT);
 
     let first_published = update_system_release_api(
         &app,
@@ -1694,6 +1803,7 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
         "yuance-app-v1.1.0.apk",
         "application/vnd.android.package-archive",
         8,
+        sha256_hex(b"second-v"),
     )
     .await;
     let second_asset_id = json_i64(&second_asset, &["data", "id"]);
@@ -1771,7 +1881,40 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
         storage::read_test_memory_object(&pool, &test_settings(), &first_object_key)
             .await
             .expect("pruned object lookup should succeed");
-    assert!(pruned_object.is_none());
+    assert!(pruned_object.is_some());
+    let first_file_object_id = json_i64(&first_asset, &["data", "file_object_id"]);
+    let deletion_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(first_file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("pruned release deletion job should load");
+    assert_eq!(deletion_job_count, 1);
+    let pruned_file_object_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM file_objects WHERE id = ?1")
+            .bind(first_file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("pruned file object status should load");
+    assert_eq!(pruned_file_object_status, "deleted");
+    sqlx::query(
+        "UPDATE file_object_deletion_jobs SET next_attempt_at = datetime('now') WHERE file_object_id = ?1",
+    )
+    .bind(first_file_object_id)
+    .execute(&pool)
+    .await
+    .expect("pruned release job should become due");
+    let cleanup = files::cleanup_deleted_file_objects(&pool, &test_settings(), false, 10)
+        .await
+        .expect("pruned release asset cleanup should succeed");
+    assert_eq!(cleanup.completed_count, 1);
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &first_object_key)
+            .await
+            .expect("cleaned release object lookup should succeed")
+            .is_none()
+    );
 
     let release_count =
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_release_versions")
@@ -1788,7 +1931,224 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
         .expect("file object count should load");
     assert_eq!(release_count, 1);
     assert_eq!(asset_count, 1);
-    assert_eq!(file_object_count, 1);
+    assert_eq!(file_object_count, 2);
+}
+
+#[tokio::test]
+async fn api_system_release_asset_delete_queues_cleanup_and_preserves_shared_objects() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo data should seed");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+    let release =
+        create_system_release_api(&app, &admin_cookie, "v2.0.0", "删除测试", "测试说明").await;
+    let release_id = json_i64(&release, &["data", "release", "id"]);
+    let asset = create_system_release_asset_api(
+        &app,
+        &admin_cookie,
+        release_id,
+        "linux",
+        "yuance-v2.0.0.tar.gz",
+        "application/octet-stream",
+        15,
+        sha256_hex(b"asset-to-delete"),
+    )
+    .await;
+    let asset_id = json_i64(&asset, &["data", "id"]);
+    let file_object_id = json_i64(&asset, &["data", "file_object_id"]);
+    let object_key = json_string(&asset, &["data", "object_key"]);
+    let upload =
+        get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id).await;
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &json_string(&upload, &["data", "request", "url"]),
+        b"asset-to-delete",
+        "application/octet-stream",
+    )
+    .await;
+    let recorded_expiry = sqlx::query_scalar::<_, String>(
+        "SELECT upload_url_expires_at FROM file_objects WHERE id = ?1",
+    )
+    .bind(file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("release upload expiry should load");
+    assert!(!recorded_expiry.is_empty());
+    let original_storage = sqlx::query_as::<_, (i64, String)>(
+        r#"
+        SELECT sc.id, sc.bucket
+        FROM file_objects fo
+        JOIN storage_configs sc ON sc.id = fo.storage_config_id
+        WHERE fo.id = ?1
+        "#,
+    )
+    .bind(file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("original storage location should load");
+    storage::save_config(
+        &pool,
+        &test_settings(),
+        initialized.user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+            region: "test".to_string(),
+            bucket: "yuance-files-next".to_string(),
+            access_key_id: "AKIAUNIT5SECONDID".to_string(),
+            access_key_secret: "SecondUnit5SecretValue2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .expect("next storage config should activate");
+
+    let deleted = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "DELETE",
+        &format!("/api/v1/system/releases/{release_id}/assets/{asset_id}"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(deleted.0, StatusCode::OK);
+    assert_eq!(json_string(&deleted.1, &["data", "status"]), "deleted");
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &object_key)
+            .await
+            .expect("object should still exist during the safety window")
+            .is_some()
+    );
+    let scheduled = sqlx::query_scalar::<_, String>(
+        "SELECT next_attempt_at FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("release deletion task should load");
+    let scheduled = chrono::NaiveDateTime::parse_from_str(&scheduled, "%Y-%m-%d %H:%M:%S")
+        .expect("scheduled time should parse");
+    let recorded_expiry =
+        chrono::NaiveDateTime::parse_from_str(&recorded_expiry, "%Y-%m-%d %H:%M:%S")
+            .expect("recorded expiry should parse");
+    assert!(
+        scheduled >= recorded_expiry + chrono::Duration::hours(4) + chrono::Duration::minutes(5)
+    );
+    let queued_storage = sqlx::query_as::<_, (Option<i64>, String)>(
+        "SELECT storage_config_id, bucket FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("queued storage snapshot should load");
+    assert_eq!(queued_storage.0, Some(original_storage.0));
+    assert_eq!(queued_storage.1, original_storage.1);
+    sqlx::query(
+        "UPDATE file_object_deletion_jobs SET next_attempt_at = datetime('now') WHERE file_object_id = ?1",
+    )
+    .bind(file_object_id)
+    .execute(&pool)
+    .await
+    .expect("release deletion task should become due");
+    let cleanup = files::cleanup_deleted_file_objects(&pool, &test_settings(), false, 10)
+        .await
+        .expect("release asset cleanup should succeed");
+    assert_eq!(cleanup.completed_count, 1);
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &object_key)
+            .await
+            .expect("cleaned object lookup should succeed")
+            .is_none()
+    );
+
+    let shared_release = create_system_release_api(
+        &app,
+        &admin_cookie,
+        "v2.0.1",
+        "共享对象删除测试",
+        "共享说明",
+    )
+    .await;
+    let shared_release_id = json_i64(&shared_release, &["data", "release", "id"]);
+    let shared_asset = create_system_release_asset_api(
+        &app,
+        &admin_cookie,
+        shared_release_id,
+        "linux",
+        "shared.tar.gz",
+        "application/octet-stream",
+        13,
+        sha256_hex(b"shared-object"),
+    )
+    .await;
+    let shared_asset_id = json_i64(&shared_asset, &["data", "id"]);
+    let shared_file_object_id = json_i64(&shared_asset, &["data", "file_object_id"]);
+    let shared_object_key = json_string(&shared_asset, &["data", "object_key"]);
+    let shared_upload = get_system_release_asset_upload_url_api(
+        &app,
+        &admin_cookie,
+        shared_release_id,
+        shared_asset_id,
+    )
+    .await;
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &json_string(&shared_upload, &["data", "request", "url"]),
+        b"shared-object",
+        "application/octet-stream",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(&app, &admin_cookie, shared_release_id, shared_asset_id)
+        .await;
+    let project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .expect("project should load");
+    sqlx::query(
+        "INSERT INTO file_attachments (file_object_id, target_type, target_id, created_by_user_id) VALUES (?1, 'project', ?2, ?3)",
+    )
+    .bind(shared_file_object_id)
+    .bind(project_id)
+    .bind(initialized.user_id)
+    .execute(&pool)
+    .await
+    .expect("shared project reference should create");
+    let shared_delete = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "DELETE",
+        &format!("/api/v1/system/releases/{shared_release_id}/assets/{shared_asset_id}"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(shared_delete.0, StatusCode::OK);
+    let shared_status =
+        sqlx::query_scalar::<_, String>("SELECT status FROM file_objects WHERE id = ?1")
+            .bind(shared_file_object_id)
+            .fetch_one(&pool)
+            .await
+            .expect("shared object status should load");
+    assert_eq!(shared_status, "uploaded");
+    let shared_job_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE file_object_id = ?1",
+    )
+    .bind(shared_file_object_id)
+    .fetch_one(&pool)
+    .await
+    .expect("shared object task count should load");
+    assert_eq!(shared_job_count, 0);
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &shared_object_key)
+            .await
+            .expect("shared object should remain present")
+            .is_some()
+    );
 }
 
 #[tokio::test]
@@ -1987,7 +2347,7 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
             "title": "内部桌面版",
             "notes": "仅供内部验证",
             "channel": "internal",
-            "manifest_sha256": "a".repeat(64),
+            "manifest_sha256": sha256_hex(b"evidence"),
             "signing_key_id": "ABCDEF0123456789",
             "source_commit": "b".repeat(40),
             "source_tag": "desktop-v3.0.0"
@@ -2042,6 +2402,7 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
             filename,
             "application/octet-stream",
             8,
+            sha256_hex(b"internal"),
         )
         .await;
         let asset_id = json_i64(&asset, &["data", "id"]);
@@ -2062,6 +2423,7 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
         mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
     }
 
+    let evidence_checksum = sha256_hex(b"evidence");
     for (platform, architecture, filename) in targets {
         create_and_upload_system_release_evidence_asset(
             &app,
@@ -2070,7 +2432,7 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
             (platform, architecture),
             "signature",
             &format!("{filename}.minisig"),
-            "c".repeat(64),
+            evidence_checksum.clone(),
         )
         .await;
         create_and_upload_system_release_evidence_asset(
@@ -2080,16 +2442,16 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
             (platform, architecture),
             "sbom",
             &format!("{filename}.cdx.json"),
-            "d".repeat(64),
+            evidence_checksum.clone(),
         )
         .await;
     }
     let mut manifest_asset_id = 0;
-    for (kind, filename, checksum) in [
-        ("manifest", "release-manifest.json", "a".repeat(64)),
-        ("signature", "release-manifest.json.minisig", "e".repeat(64)),
-        ("checksums", "SHA256SUMS", "f".repeat(64)),
-        ("signature", "SHA256SUMS.minisig", "1".repeat(64)),
+    for (kind, filename) in [
+        ("manifest", "release-manifest.json"),
+        ("signature", "release-manifest.json.minisig"),
+        ("checksums", "SHA256SUMS"),
+        ("signature", "SHA256SUMS.minisig"),
     ] {
         let evidence_asset_id = create_and_upload_system_release_evidence_asset(
             &app,
@@ -2098,7 +2460,7 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
             ("linux", "universal"),
             kind,
             filename,
-            checksum,
+            evidence_checksum.clone(),
         )
         .await;
         if filename == "release-manifest.json" {
@@ -2117,7 +2479,7 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
     assert_eq!(json_i64(&readback.1, &["data", "expires_in_seconds"]), 300);
     assert_eq!(
         json_string(&readback.1, &["data", "checksum_sha256"]),
-        "a".repeat(64)
+        evidence_checksum
     );
     let old_readback_url = json_string(&readback.1, &["data", "request", "url"]);
     let excessive_ttl = system_release_json_request(
@@ -2435,6 +2797,7 @@ async fn create_system_release_asset_api(
     filename: &str,
     content_type: &str,
     byte_size: i64,
+    checksum_sha256: String,
 ) -> Value {
     create_system_release_asset_api_with_architecture(
         app,
@@ -2444,6 +2807,7 @@ async fn create_system_release_asset_api(
         filename,
         content_type,
         byte_size,
+        checksum_sha256,
     )
     .await
 }
@@ -2456,6 +2820,7 @@ async fn create_system_release_asset_api_with_architecture(
     filename: &str,
     content_type: &str,
     byte_size: i64,
+    checksum_sha256: String,
 ) -> Value {
     let (platform, architecture) = target;
     let response = app
@@ -2474,7 +2839,7 @@ async fn create_system_release_asset_api_with_architecture(
                         "original_filename": filename,
                         "content_type": content_type,
                         "byte_size": byte_size,
-                        "checksum_sha256": "0".repeat(64)
+                        "checksum_sha256": checksum_sha256
                     })
                     .to_string(),
                 ))
@@ -2486,6 +2851,10 @@ async fn create_system_release_asset_api_with_architecture(
     let body = response_body(response).await;
     assert_eq!(status, StatusCode::CREATED, "{body}");
     serde_json::from_str(&body).expect("body should be valid json")
+}
+
+fn sha256_hex(content: &[u8]) -> String {
+    hex::encode(Sha256::digest(content))
 }
 
 async fn get_system_release_asset_upload_url_api(

@@ -13,8 +13,8 @@ use crate::{
     cli::{
         ResourceAttachmentAccessArgs, ResourceAttachmentCompleteArgs, ResourceAttachmentCreateArgs,
         ResourceAttachmentDeleteArgs, ResourceAttachmentDownloadArgs, ResourceAttachmentUploadArgs,
-        ResourceAttachmentsCommand, ResourcesCommand, ResourcesCreateArgs, ResourcesListArgs,
-        ResourcesUnlockArgs, ResourcesUpdateArgs,
+        ResourceAttachmentUploadUrlArgs, ResourceAttachmentsCommand, ResourcesCommand,
+        ResourcesCreateArgs, ResourcesListArgs, ResourcesUnlockArgs, ResourcesUpdateArgs,
     },
     client::ApiClient,
     error::AgentError,
@@ -401,9 +401,9 @@ async fn attachments(
         ResourceAttachmentsCommand::Create(args) => create_attachment(client, args).await,
         ResourceAttachmentsCommand::Upload(args) => upload_attachment(client, args).await,
         ResourceAttachmentsCommand::Download(args) => download_attachment(client, args).await,
-        ResourceAttachmentsCommand::UploadUrl(args) => signed_url(client, args, "upload-url")
-            .await
-            .map(redact_signed_contract),
+        ResourceAttachmentsCommand::UploadUrl(args) => {
+            upload_url(client, args).await.map(redact_signed_contract)
+        }
         ResourceAttachmentsCommand::DownloadUrl(args) => signed_url(client, args, "download-url")
             .await
             .map(redact_signed_contract),
@@ -423,6 +423,15 @@ async fn upload_attachment(
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| upload_error("local-validation", "文件名无效", None, None))?
         .to_string();
+    let metadata = fs::metadata(&args.file).map_err(|error| {
+        upload_error(
+            "local-validation",
+            &format!("读取上传文件元数据失败: {error}"),
+            None,
+            None,
+        )
+    })?;
+    ensure_cli_upload_size(metadata.len())?;
     let digest = hash_file(&args.file).map_err(|error| {
         upload_error(
             "local-validation",
@@ -431,6 +440,7 @@ async fn upload_attachment(
             None,
         )
     })?;
+    ensure_cli_upload_size(digest.byte_size)?;
     let content_type = args
         .content_type
         .or_else(|| infer_content_type(&filename).map(str::to_string))
@@ -464,16 +474,14 @@ async fn upload_attachment(
         .filter(|value| *value > 0)
         .ok_or_else(|| upload_error("registering", "附件登记响应缺少有效 ID", None, None))?;
 
-    let signed = signed_url(
+    let signed = upload_url(
         client,
-        ResourceAttachmentAccessArgs {
+        ResourceAttachmentUploadUrlArgs {
             project_key: args.project_key.clone(),
             resource_id: args.resource_id,
-            attachment_id: Some(attachment_id),
-            access_token_stdin: false,
+            attachment_id,
             expires_in_seconds: Some(60),
         },
-        "upload-url",
     )
     .await
     .map_err(|error| upload_error("signing", &error.to_string(), Some(attachment_id), None))?;
@@ -531,13 +539,21 @@ async fn upload_attachment(
         let stream = tokio_util::io::ReaderStream::new(file);
         (reqwest::Body::wrap_stream(stream), None)
     };
-    transport.put(&contract, body).await.map_err(|error| {
-        upload_error("uploading", &error.to_string(), Some(attachment_id), None)
-    })?;
+    if let Err(error) = transport.put(&contract, body).await {
+        let recoverable_digest = encrypted_digest
+            .as_ref()
+            .and_then(|handle| handle.encrypted_sha256().ok());
+        return Err(upload_error(
+            "uploading-uncertain",
+            &format!("PUT 响应不确定 ({error})；先检查附件状态，不要重复上传"),
+            Some(attachment_id),
+            recoverable_digest,
+        ));
+    }
     let encrypted_sha256 = if let Some(handle) = encrypted_digest {
         Some(handle.encrypted_sha256().map_err(|error| {
             upload_error(
-                "uploading",
+                "uploading-uncertain",
                 &format!("读取密文摘要失败: {error}"),
                 Some(attachment_id),
                 None,
@@ -546,7 +562,7 @@ async fn upload_attachment(
     } else {
         let current = hash_file(&args.file).map_err(|error| {
             upload_error(
-                "uploading",
+                "uploading-uncertain",
                 &format!("复核上传文件失败: {error}"),
                 Some(attachment_id),
                 None,
@@ -554,7 +570,7 @@ async fn upload_attachment(
         })?;
         if current != digest {
             return Err(upload_error(
-                "uploading",
+                "uploading-uncertain",
                 "文件在上传期间发生变化",
                 Some(attachment_id),
                 None,
@@ -581,14 +597,55 @@ async fn upload_attachment(
         )
         .await
         .map_err(|error| {
+            let uncertain = confirmation_result_uncertain(&error);
             upload_error(
-                "confirming",
+                if uncertain {
+                    "confirming-uncertain"
+                } else {
+                    "confirming-rejected"
+                },
                 &error.to_string(),
-                Some(attachment_id),
-                encrypted_sha256.clone(),
+                uncertain.then_some(attachment_id),
+                if uncertain {
+                    encrypted_sha256.clone()
+                } else {
+                    None
+                },
             )
         })?;
+    if completed
+        .get("data")
+        .and_then(|value| value.get("status"))
+        .and_then(Value::as_str)
+        != Some("uploaded")
+    {
+        return Err(upload_error(
+            "confirming-uncertain",
+            "完成响应未确认 status=uploaded；请先读取附件状态，不要重新上传",
+            Some(attachment_id),
+            encrypted_sha256,
+        ));
+    }
     Ok(completed)
+}
+
+fn confirmation_result_uncertain(error: &AgentError) -> bool {
+    match error {
+        AgentError::Http { status, .. } => !(400..500).contains(status),
+        _ => true,
+    }
+}
+
+fn ensure_cli_upload_size(byte_size: u64) -> Result<(), AgentError> {
+    if byte_size > crate::transfer::MAX_TRANSFER_BYTES as u64 {
+        return Err(upload_error(
+            "local-validation",
+            "CLI 附件上传上限为 128 MiB；未创建远端附件",
+            None,
+            None,
+        ));
+    }
+    Ok(())
 }
 
 fn infer_content_type(filename: &str) -> Option<&'static str> {
@@ -617,6 +674,30 @@ fn upload_error(
         message: message.to_string(),
         attachment_id,
         encrypted_sha256,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn confirmation_redirects_are_uncertain_but_client_errors_are_rejections() {
+        let http_error = |status| AgentError::Http {
+            status,
+            code: "test".to_string(),
+            message: "test".to_string(),
+        };
+        assert!(confirmation_result_uncertain(&http_error(302)));
+        assert!(!confirmation_result_uncertain(&http_error(400)));
+        assert!(!confirmation_result_uncertain(&http_error(409)));
+        assert!(confirmation_result_uncertain(&http_error(500)));
+    }
+
+    #[test]
+    fn upload_size_is_validated_against_hashed_size() {
+        assert!(ensure_cli_upload_size(crate::transfer::MAX_TRANSFER_BYTES as u64).is_ok());
+        assert!(ensure_cli_upload_size(crate::transfer::MAX_TRANSFER_BYTES as u64 + 1).is_err());
     }
 }
 
@@ -711,6 +792,24 @@ async fn signed_url(
             &query_refs,
         )
         .await
+}
+
+async fn upload_url(
+    client: &ApiClient,
+    args: ResourceAttachmentUploadUrlArgs,
+) -> Result<Value, AgentError> {
+    signed_url(
+        client,
+        ResourceAttachmentAccessArgs {
+            project_key: args.project_key,
+            resource_id: args.resource_id,
+            attachment_id: Some(args.attachment_id),
+            access_token_stdin: false,
+            expires_in_seconds: args.expires_in_seconds,
+        },
+        "upload-url",
+    )
+    .await
 }
 
 async fn complete_attachment(

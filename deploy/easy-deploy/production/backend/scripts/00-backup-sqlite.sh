@@ -7,6 +7,8 @@ APP_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 
 if [ -n "${YUANCE_SQLITE_PATH:-}" ]; then
   DB_BASE="$YUANCE_SQLITE_PATH"
+elif [ "${YUANCE_BACKUP_REQUIRED:-0}" = "1" ]; then
+  DB_BASE="$APP_DIR/data/yuance.sqlite3"
 elif [ -d "/data" ] && [ ! -d "$APP_DIR/data" ]; then
   DB_BASE="/data/yuance.sqlite3"
 else
@@ -36,8 +38,19 @@ fail() {
 }
 
 if [ ! -f "$DB_BASE" ]; then
-  echo "未发现 SQLite 数据库 $DB_BASE，首次部署跳过备份。"
+  if [ "${YUANCE_BACKUP_REQUIRED:-0}" = "1" ]; then
+    fail "未发现要求备份的 SQLite 数据库：$DB_BASE"
+  fi
+  echo "未发现 SQLite 数据库 ${DB_BASE}，首次部署跳过备份。"
   exit 0
+fi
+
+if [ "${YUANCE_BACKUP_REQUIRED:-0}" = "1" ]; then
+  sh "$SCRIPT_DIR/validate-production-database.sh" "$CONFIG_FILE"
+  case "$DB_BASE" in
+    "$APP_DIR/data/yuance.sqlite3") ;;
+    *) fail "正式部署快照路径必须对应 Compose 的 /data/yuance.sqlite3：$DB_BASE" ;;
+  esac
 fi
 
 if [ -L "$DB_BASE" ]; then
@@ -155,6 +168,8 @@ file_master_key_source() {
       sub(/\r$/, "", line)
       sub(/^[[:space:]]*export[[:space:]]+/, "", line)
       delimiter = index(line, "=")
+      colon_delimiter = index(line, ":")
+      if (!delimiter || (colon_delimiter && colon_delimiter < delimiter)) delimiter = colon_delimiter
       if (!delimiter) next
       name = substr(line, 1, delimiter - 1)
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)

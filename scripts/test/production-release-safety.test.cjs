@@ -10,6 +10,9 @@ const { spawn, spawnSync } = require('node:child_process');
 const rootDir = path.resolve(__dirname, '../..');
 const deployScript = path.join(rootDir, 'scripts/deploy-production.sh');
 const backupScript = path.join(rootDir, 'deploy/easy-deploy/production/backend/scripts/00-backup-sqlite.sh');
+const cleanBackupEnvScript = path.join(rootDir, 'deploy/easy-deploy/production/backend/scripts/with-clean-backup-env.sh');
+const stopTimeoutScript = path.join(rootDir, 'deploy/easy-deploy/production/backend/scripts/resolve-stop-timeout.sh');
+const productionDatabaseScript = path.join(rootDir, 'deploy/easy-deploy/production/backend/scripts/validate-production-database.sh');
 const sqlite3Path = spawnSync('sh', ['-c', 'command -v sqlite3'], { encoding: 'utf8' }).stdout.trim();
 const shellPath = process.env.YUANCE_TEST_SHELL || 'sh';
 
@@ -18,7 +21,7 @@ const releaseVariables = [
   'YUANCE_DEPLOY_ROOT', 'YUANCE_DEPLOY_BACKEND_DIR', 'YUANCE_DEPLOY_GATEWAY_DIR',
   'YUANCE_LOCAL_WSL_ROOT', 'YUANCE_BUILD_ROOT', 'YUANCE_API_IMAGE', 'YUANCE_API_IMAGE_TAR',
   'YUANCE_RELEASE_VERSION', 'YUANCE_KEEP_RELEASE_BACKUPS', 'YUANCE_PRUNE_DANGLING_IMAGES',
-  'YUANCE_SSE_DRAIN_TIMEOUT', 'YUANCE_STOP_GRACE_PERIOD', 'YUANCE_MAX_RELEASE_WINDOW',
+  'YUANCE_SSE_DRAIN_TIMEOUT', 'YUANCE_STOP_GRACE_PERIOD', 'YUANCE_DATABASE_URL', 'YUANCE_SQLITE_PATH', 'YUANCE_DATA_DIR', 'YUANCE_MAX_RELEASE_WINDOW',
   'YUANCE_SKIP_LOCAL_BUILD', 'YUANCE_ALLOW_DIRTY_LOCAL_CONFIG',
 ];
 
@@ -98,6 +101,219 @@ function stopSqlite(child) {
 function mode(filePath) {
   return fs.statSync(filePath).mode & 0o777;
 }
+
+test('旧 API 停止后生成最终快照，再迁移并启动新 API', () => {
+  const source = fs.readFileSync(deployScript, 'utf8');
+  const backupSource = fs.readFileSync(backupScript, 'utf8');
+  const migrationSource = fs.readFileSync(path.join(rootDir, 'api/src/app/migrate.rs'), 'utf8');
+  const localStart = source.indexOf('if [ "$DEPLOY_MODE" = "local-wsl" ]; then');
+  const remoteStart = source.indexOf("REMOTE_SCRIPT");
+  assert.notEqual(localStart, -1);
+  assert.notEqual(remoteStart, -1);
+
+  const localFlow = source.slice(localStart, remoteStart);
+  const localStop = localFlow.indexOf('compose --env-file .env -f compose.yaml stop api');
+  const localBackup = localFlow.indexOf('./scripts/00-backup-sqlite.sh');
+  const localMigration = localFlow.indexOf('./yuance-api migrate up');
+  const localMaintenanceRun = localFlow.indexOf('docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$maintenance"');
+  const localStartApi = localFlow.indexOf('compose --env-file .env -f compose.yaml up -d --force-recreate');
+  assert.ok(localStop >= 0 && localStop < localBackup && localBackup < localMigration && localMigration < localStartApi);
+  assert.ok(localBackup < localMaintenanceRun && localMaintenanceRun < localMigration);
+
+  const remoteScript = source.slice(remoteStart);
+  const releaseStart = remoteScript.indexOf('stamp="$(date');
+  assert.notEqual(releaseStart, -1);
+  const remoteFlow = remoteScript.slice(releaseStart);
+  const remoteStop = remoteFlow.indexOf('停止 API，封闭旧上传签名窗口');
+  const remoteBackup = remoteFlow.indexOf('生成 API 停止后的 SQLite 回滚快照');
+  const remoteMigration = remoteFlow.indexOf('run_compose_maintenance "yuance-api-maintenance-$stamp"');
+  const remoteStartApi = remoteFlow.indexOf('重建并启动 api 容器');
+  assert.ok(remoteStop >= 0 && remoteStop < remoteBackup && remoteBackup < remoteMigration && remoteMigration < remoteStartApi);
+  assert.ok(remoteFlow.indexOf('RESTORE_API_ON_EXIT=0', remoteMigration) > remoteMigration);
+  assert.match(source, /快照失败，迁移尚未执行，尝试启动旧 API/);
+  assert.match(source, /迁移失败，API 保持停止/);
+  assert.match(localFlow, /trap 'handle_local_signal 143' TERM/);
+  assert.match(source.slice(remoteStart), /trap 'handle_remote_signal 143' TERM/);
+  assert.match(localFlow, /RESTORE_API_ON_EXIT=1/);
+  assert.match(source.slice(remoteStart), /RESTORE_API_ON_EXIT=1/);
+  assert.match(localFlow, /MIGRATION_STARTED_MARKER="\$LOCAL_BACKEND_DIR\/data\/\.\$maintenance\.migration-started"/);
+  assert.match(remoteFlow, /MIGRATION_STARTED_MARKER="\$BACKEND_DIR\/data\/\.yuance-api-maintenance-\$stamp\.migration-started"/);
+  assert.match(localFlow, /-e "YUANCE_MIGRATION_STARTED_MARKER=\$MIGRATION_STARTED_CONTAINER_PATH" api sh -eu -c '[\s\S]*?\.\/yuance-api migrate up/);
+  assert.match(remoteScript, /-e "YUANCE_MIGRATION_STARTED_MARKER=\$MIGRATION_STARTED_CONTAINER_PATH" api sh -eu -c '[\s\S]*?\.\/yuance-api migrate up/);
+  assert.match(localFlow, /\[ ! -f "\$MIGRATION_STARTED_MARKER" \]/);
+  assert.match(remoteScript, /\[ ! -f "\$MIGRATION_STARTED_MARKER" \]/);
+  assert.ok(remoteScript.indexOf('MIGRATION_STARTED_MARKER=""') < remoteScript.indexOf('trap cleanup EXIT'));
+  assert.match(migrationSource, /validate_migration_state\(&pool\)\.await\?;\s+write_migration_started_marker\(migration_started_marker\.as_deref\(\)\)\?;\s+db::run_migrations\(&pool\)\.await\?/);
+  assert.match(migrationSource, /validate_migration_state\(&pool\)\.await\?;\s+write_migration_started_marker\(migration_started_marker\.as_deref\(\)\)\?;\s+db::MIGRATOR\.run_to\(version, &pool\)\.await\?/);
+  assert.match(localFlow, /\.\/yuance-api migrate status\s+\.\/yuance-api migrate up/);
+  assert.match(remoteScript, /\.\/yuance-api migrate status\s+\.\/yuance-api migrate up/);
+  assert.match(backupSource, /elif \[ "\$\{YUANCE_BACKUP_REQUIRED:-0\}" = "1" \]; then\n  DB_BASE="\$APP_DIR\/data\/yuance\.sqlite3"/);
+  assert.doesNotMatch(backupSource, /"\$APP_DIR\/data\/yuance\.sqlite3"\|\/data\/yuance\.sqlite3/);
+  assert.match(localFlow, /resolve-stop-timeout\.sh \.env "\$STOP_GRACE_PERIOD_EXPLICIT"/);
+  assert.match(source.slice(remoteStart), /resolve-stop-timeout\.sh \.env "\$STOP_GRACE_PERIOD_EXPLICIT"/);
+  assert.match(localFlow, /validate-production-database\.sh \.env/);
+  assert.match(source.slice(remoteStart), /validate-production-database\.sh \.env/);
+  assert.match(localFlow, /unset YUANCE_DATABASE_URL YUANCE_SQLITE_PATH YUANCE_DATA_DIR/);
+  assert.match(source.slice(remoteStart), /unset YUANCE_DATABASE_URL YUANCE_SQLITE_PATH YUANCE_DATA_DIR/);
+  assert.match(localFlow, /export YUANCE_STOP_GRACE_PERIOD="\$STOP_GRACE_PERIOD"/);
+  assert.match(source.slice(remoteStart), /export YUANCE_STOP_GRACE_PERIOD="\$STOP_GRACE_PERIOD"/);
+  assert.match(localFlow, /timeout -k 30s "\$STOP_TIMEOUT" docker compose .* stop api/);
+  assert.match(remoteFlow, /停止 API，封闭旧上传签名窗口" "\$STOP_TIMEOUT" docker compose .* stop api/);
+  assert.match(localFlow, /with-clean-backup-env\.sh timeout -k 30s 300s \.\/scripts\/00-backup-sqlite\.sh/);
+  assert.match(remoteFlow, /with-clean-backup-env\.sh \.\/scripts\/00-backup-sqlite\.sh/);
+  assert.match(localFlow, /API_WAS_RUNNING="\$\(docker inspect --format '\{\{\.State\.Running\}\}' yuance-api\)"/);
+  assert.match(remoteFlow, /API_WAS_RUNNING="\$\(docker inspect --format '\{\{\.State\.Running\}\}' yuance-api\)"/);
+  assert.match(localFlow, /if \[ "\$API_WAS_RUNNING" = "true" \]; then[\s\S]*?compose --env-file \.env -f compose\.yaml start api/);
+  assert.match(remoteFlow, /if \[ "\$API_WAS_RUNNING" = "true" \]; then[\s\S]*?compose --env-file \.env -f compose\.yaml start api/);
+  assert.match(localFlow, /停止 API 失败，迁移尚未执行，尝试恢复停止前的运行状态/);
+  assert.match(remoteFlow, /停止 API 失败，迁移尚未执行，尝试恢复停止前的运行状态/);
+  assert.match(source, /YUANCE_STOP_GRACE_PERIOD_EXPLICIT='\$STOP_GRACE_PERIOD_EXPLICIT'/);
+  assert.match(source, /REMOTE_STOP_GRACE_ENV="YUANCE_STOP_GRACE_PERIOD='\$STOP_GRACE_PERIOD'"/);
+  assert.doesNotMatch(source, /YUANCE_STOP_TIMEOUT=/);
+});
+
+test('生产快照执行入口清除继承的数据库与备份路径变量', () => {
+  const root = tempDir('yuance-clean-backup-env-');
+  const commandPath = path.join(root, 'capture-env.sh');
+  fs.writeFileSync(commandPath, [
+    '#!/bin/sh',
+    'printf "PATH=%s\\n" "$PATH"',
+    'printf "YUANCE_BACKUP_REQUIRED=%s\\n" "${YUANCE_BACKUP_REQUIRED-}"',
+    'printf "YUANCE_FILE_MASTER_KEY=%s\\n" "${YUANCE_FILE_MASTER_KEY-<unset>}"',
+    '[ "${YUANCE_SQLITE_PATH+x}" != x ]',
+    '[ "${YUANCE_DATABASE_URL+x}" != x ]',
+    '[ "${YUANCE_DATA_DIR+x}" != x ]',
+    '[ "${YUANCE_BACKUP_DIR+x}" != x ]',
+    '[ "${YUANCE_BACKUP_DATA_DIR+x}" != x ]',
+    '[ "${YUANCE_BACKUP_ENV_FILE+x}" != x ]',
+  ].join('\n') + '\n', { mode: 0o700 });
+
+  try {
+    const result = spawnSync(shellPath, [cleanBackupEnvScript, commandPath], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        YUANCE_SQLITE_PATH: '/tmp/attacker.sqlite3',
+        YUANCE_DATABASE_URL: 'sqlite:///tmp/attacker.sqlite3',
+        YUANCE_DATA_DIR: '/tmp/attacker-data',
+        YUANCE_FILE_MASTER_KEY: 'runtime-key-fixture',
+        YUANCE_BACKUP_DIR: '/tmp/attacker-backups',
+        YUANCE_BACKUP_DATA_DIR: '/tmp/attacker-data',
+        YUANCE_BACKUP_ENV_FILE: '/tmp/attacker.env',
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /YUANCE_BACKUP_REQUIRED=1/);
+    assert.match(result.stdout, /YUANCE_FILE_MASTER_KEY=runtime-key-fixture/);
+    assert.match(result.stdout, /PATH=/);
+
+    const cleanEnvironment = { ...process.env };
+    delete cleanEnvironment.YUANCE_FILE_MASTER_KEY;
+    const noOverride = spawnSync(shellPath, [cleanBackupEnvScript, commandPath], {
+      cwd: rootDir,
+      env: cleanEnvironment,
+      encoding: 'utf8',
+    });
+    assert.equal(noOverride.status, 0, noOverride.stderr);
+    assert.match(noOverride.stdout, /YUANCE_FILE_MASTER_KEY=<unset>/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('停机超时读取目标机 .env，显式发布参数可覆盖且非法配置失败', () => {
+  const root = tempDir('yuance-stop-timeout-');
+  const envPath = path.join(root, '.env');
+  const resolve = (env, explicit = '0', requested = '45s') => spawnSync(shellPath, [stopTimeoutScript, envPath, explicit, requested], {
+    cwd: rootDir,
+    env: { ...process.env, ...env },
+    encoding: 'utf8',
+  });
+
+  try {
+    fs.writeFileSync(envPath, 'export YUANCE_STOP_GRACE_PERIOD = "90s" # compose grace\n');
+    const configured = resolve({});
+    assert.equal(configured.status, 0, configured.stderr);
+    assert.equal(configured.stdout.trim(), '90s 150s');
+
+    const explicit = resolve({}, '1', '2m');
+    assert.equal(explicit.status, 0, explicit.stderr);
+    assert.equal(explicit.stdout.trim(), '2m 180s');
+
+    fs.writeFileSync(envPath, 'YUANCE_STOP_GRACE_PERIOD: 24h\n');
+    const colonFormat = resolve({});
+    assert.equal(colonFormat.status, 0, colonFormat.stderr);
+    assert.equal(colonFormat.stdout.trim(), '24h 86460s');
+
+    fs.writeFileSync(envPath, 'YUANCE_STOP_GRACE_PERIOD=\n');
+    const fallback = resolve({});
+    assert.equal(fallback.status, 0, fallback.stderr);
+    assert.equal(fallback.stdout.trim(), '45s 105s');
+
+    for (const contents of [
+      'YUANCE_STOP_GRACE_PERIOD=45s\nYUANCE_STOP_GRACE_PERIOD=90s\n',
+      'YUANCE_STOP_GRACE_PERIOD=${YUANCE_TEST_SECRET}\n',
+      'YUANCE_STOP_GRACE_PERIOD=25h\n',
+      'YUANCE_STOP_GRACE_PERIOD=45s;touch /tmp/not-run\n',
+    ]) {
+      fs.writeFileSync(envPath, contents);
+      const rejected = resolve({ YUANCE_TEST_SECRET: 'private-value' });
+      assert.notEqual(rejected.status, 0, contents);
+      assert.equal(rejected.stdout.includes('private-value'), false);
+      assert.equal(rejected.stderr.includes('private-value'), false);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('生产数据库和数据目录必须与 Compose 挂载一致', () => {
+  const root = tempDir('yuance-production-database-');
+  const envPath = path.join(root, '.env');
+  const validationEnvironment = { ...process.env };
+  delete validationEnvironment.YUANCE_DATA_DIR;
+  const validate = (overrides = {}) => spawnSync(shellPath, [productionDatabaseScript, envPath], {
+    encoding: 'utf8',
+    env: { ...validationEnvironment, ...overrides },
+  });
+
+  try {
+    for (const contents of [
+      '',
+      'export YUANCE_DATABASE_URL = "sqlite:///data/yuance.sqlite3" # canonical\n',
+      'YUANCE_DATABASE_URL: sqlite:///data/yuance.sqlite3\n',
+      'YUANCE_DATA_DIR=/data\n',
+      'YUANCE_DATA_DIR: /data\n',
+      'YUANCE_DATA_DIR=""\n',
+    ]) {
+      fs.writeFileSync(envPath, contents);
+      const accepted = validate();
+      assert.equal(accepted.status, 0, accepted.stderr);
+    }
+
+    for (const contents of [
+      'YUANCE_DATABASE_URL=sqlite:///custom/yuance.sqlite3\n',
+      'YUANCE_DATABASE_URL=${YUANCE_DATABASE_URL}\n',
+      'YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3\nYUANCE_DATABASE_URL=sqlite:///other.sqlite3\n',
+      'YUANCE_DATA_DIR=/srv/yuance-data\n',
+      'YUANCE_DATA_DIR: /srv/yuance-data\n',
+      'YUANCE_DATA_DIR=/data\nYUANCE_DATA_DIR=/srv/yuance-data\n',
+    ]) {
+      fs.writeFileSync(envPath, contents);
+      const rejected = validate();
+      assert.notEqual(rejected.status, 0, contents);
+      assert.equal(rejected.stdout.includes('YUANCE_DATABASE_URL='), false);
+    }
+
+    fs.writeFileSync(envPath, 'YUANCE_DATA_DIR=/data\n');
+    const inheritedMismatch = validate({ YUANCE_DATA_DIR: '/srv/other-data' });
+    assert.notEqual(inheritedMismatch.status, 0);
+    assert.match(inheritedMismatch.stderr, /发布进程的 YUANCE_DATA_DIR/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('部署参数缺失或非法时，在 Git、Docker、npm、SSH、SCP 前失败', (t) => {
   const root = tempDir('yuance-release-safety-');
@@ -204,7 +420,7 @@ test('远程构建先预检 tar 和 Buildx builder，再创建源码归档或传
     'esac',
   ].join('\n') + '\n', { mode: 0o700 });
   fs.writeFileSync(path.join(bin, 'ssh'), '#!/bin/sh\nprintf "ssh %s\\n" "$*" >> "$DEPLOY_SAFETY_LOG"\nPATH="$DEPLOY_SAFETY_REMOTE_PATH" /bin/sh -c "$2"\n', { mode: 0o700 });
-  for (const command of ['docker', 'timeout', 'sha256sum', 'sqlite3', 'node', 'npm', 'scp']) {
+  for (const command of ['docker', 'timeout', 'sha256sum', 'sqlite3', 'awk', 'node', 'npm', 'scp']) {
     const behavior = command === 'docker'
       ? 'printf "docker %s\\n" "$*" >> "$DEPLOY_SAFETY_LOG"\ncase "$*" in *"buildx inspect --bootstrap"*) exit 23 ;; esac\nexit 0\n'
       : `printf "${command} %s\\n" "$*" >> "$DEPLOY_SAFETY_LOG"\nexit 0\n`;
@@ -373,8 +589,59 @@ test('SQLite 在线快照包含 WAL 已提交数据，并按密钥来源保存�
     const dotenvPath = dotenvResult.stdout.match(/SQLite 一致性备份完成：(.+)/)?.[1]?.trim();
     assert.match(fs.readFileSync(path.join(dotenvPath, 'manifest.txt'), 'utf8'), /file_master_key_source=environment/);
     assert.equal(fs.existsSync(path.join(dotenvPath, 'secrets/file_master_key')), false);
+
+    fs.writeFileSync(fixture.envPath, 'YUANCE_FILE_MASTER_KEY: "dotenv-fixture-master-key=="\n');
+    const colonDotenvResult = runBackup(fixture);
+    assert.equal(colonDotenvResult.status, 0, colonDotenvResult.stderr);
+    const colonDotenvPath = colonDotenvResult.stdout.match(/SQLite 一致性备份完成：(.+)/)?.[1]?.trim();
+    const colonManifest = fs.readFileSync(path.join(colonDotenvPath, 'manifest.txt'), 'utf8');
+    assert.match(colonManifest, /file_master_key_source=environment/);
+    assert.equal(fs.existsSync(path.join(colonDotenvPath, 'secrets/file_master_key')), false);
   } finally {
     await stopSqlite(writer);
+    fixture.cleanup();
+  }
+});
+
+test('部署要求 SQLite 回滚快照时，缺少数据库不能按首次部署跳过', () => {
+  const fixture = backupFixture();
+  try {
+    const optionalBackup = runBackup(fixture);
+    assert.equal(optionalBackup.status, 0, optionalBackup.stderr);
+    assert.match(optionalBackup.stdout, /首次部署跳过备份/);
+
+    const requiredBackup = runBackup(fixture, { YUANCE_BACKUP_REQUIRED: '1' });
+    assert.notEqual(requiredBackup.status, 0);
+    assert.match(requiredBackup.stderr, /未发现要求备份的 SQLite 数据库/);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('必需快照拒绝非 Compose 数据库或数据目录', () => {
+  const fixture = backupFixture();
+  try {
+    fs.writeFileSync(fixture.dbPath, 'fixture-not-a-database');
+    fs.writeFileSync(fixture.envPath, 'YUANCE_DATABASE_URL=sqlite:///custom/yuance.sqlite3\n');
+    const mismatchedUrl = runBackup(fixture, { YUANCE_BACKUP_REQUIRED: '1' });
+    assert.notEqual(mismatchedUrl.status, 0);
+    assert.match(mismatchedUrl.stderr, /仅支持 sqlite:\/\/\/data\/yuance\.sqlite3/);
+
+    fs.writeFileSync(fixture.envPath, 'YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3\n');
+    const otherDatabasePath = path.join(fixture.dataDir, 'other.sqlite3');
+    fs.writeFileSync(otherDatabasePath, 'fixture-not-a-database');
+    const mismatchedPath = runBackup(fixture, {
+      YUANCE_BACKUP_REQUIRED: '1',
+      YUANCE_SQLITE_PATH: otherDatabasePath,
+    });
+    assert.notEqual(mismatchedPath.status, 0);
+    assert.match(mismatchedPath.stderr, /快照路径必须对应 Compose 的 \/data\/yuance\.sqlite3/);
+
+    fs.writeFileSync(fixture.envPath, 'YUANCE_DATA_DIR: /srv/other-data\n');
+    const mismatchedDataDirectory = runBackup(fixture, { YUANCE_BACKUP_REQUIRED: '1' });
+    assert.notEqual(mismatchedDataDirectory.status, 0);
+    assert.match(mismatchedDataDirectory.stderr, /YUANCE_DATA_DIR=\/data/);
+  } finally {
     fixture.cleanup();
   }
 });

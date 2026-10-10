@@ -1,13 +1,15 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{LazyLock, Mutex},
     time::Duration,
 };
 
+use futures::io::AsyncReadExt;
 use opendal::{Error as OpendalError, ErrorKind, Operator, options, services};
 use reqsign_aliyun_oss::{Credential as OssCredential, RequestSigner};
 use reqsign_core::{Context as ReqsignContext, SignRequest};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 
 use crate::platform::{
@@ -26,10 +28,15 @@ pub const TEST_MEMORY_ENDPOINT: &str = "memory://yuance-tests";
 pub const STORAGE_INIT_MARKER_KEY: &str = "yuance-system/.initialized";
 const STORAGE_PROBE_PREFIX: &str = "yuance-system/probes";
 const OSS_BUCKET_INIT_TIMEOUT_SECONDS: u64 = 15;
+const MAX_VERIFIED_OBJECT_BYTE_SIZE: i64 = 1_107_296_256;
+const OBJECT_HASH_READ_TIMEOUT: Duration = Duration::from_secs(30);
+const OBJECT_HASH_BUFFER_SIZE: usize = 64 * 1024;
 const OSS_DIRECT_UPLOAD_CORS_RULE: &str = r#"<CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><ExposeHeader>x-oss-request-id</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule>"#;
 
 static TEST_MEMORY_OPERATORS: LazyLock<Mutex<HashMap<String, Operator>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+static TEST_DELETE_FAILURE_KEYS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageConfig {
@@ -636,6 +643,39 @@ pub async fn build_operator_from_active_config(
     )?))
 }
 
+async fn operator_for_object_key(
+    pool: &SqlitePool,
+    settings: &Settings,
+    object_key: &str,
+) -> AppResult<(StorageConfig, Operator)> {
+    let (storage_config_id, object_provider, object_bucket) =
+        sqlx::query_as::<_, (Option<i64>, String, String)>(
+            "SELECT storage_config_id, provider, bucket FROM file_objects WHERE object_key = ?1",
+        )
+        .bind(object_key)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("文件对象不存在".to_string()))?;
+    let storage_config_id = storage_config_id
+        .ok_or_else(|| AppError::BadRequest("文件对象未绑定有效的存储配置".to_string()))?;
+    let (config, access_key_id, access_key_secret) =
+        load_storage_config_with_secret_by_id(pool, settings, storage_config_id)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("文件对象的原存储配置不存在".to_string()))?;
+    if config.provider != object_provider || config.bucket != object_bucket {
+        return Err(AppError::BadRequest(
+            "文件对象与原存储配置的 provider/Bucket 不一致".to_string(),
+        ));
+    }
+
+    let operator = if is_test_memory_config(settings, &config) {
+        build_test_memory_operator(&config)?
+    } else {
+        build_oss_operator(&config, &access_key_id, &access_key_secret)?
+    };
+    Ok((config, operator))
+}
+
 pub async fn probe_active_config(
     pool: &SqlitePool,
     settings: &Settings,
@@ -775,15 +815,15 @@ pub async fn verify_uploaded_object(
     object_key: &str,
     expected_byte_size: i64,
     expected_content_type: &str,
-) -> AppResult<()> {
-    if expected_byte_size < 0 {
-        return Err(AppError::BadRequest("文件大小不能小于 0".to_string()));
+) -> AppResult<String> {
+    if !(0..=MAX_VERIFIED_OBJECT_BYTE_SIZE).contains(&expected_byte_size) {
+        return Err(AppError::BadRequest(
+            "对象大小超出服务端校验范围".to_string(),
+        ));
     }
     let object_key = normalize_object_key(object_key)?;
     let expected_content_type = validate_content_type(expected_content_type)?;
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let (_, operator) = operator_for_object_key(pool, settings, &object_key).await?;
     let metadata = operator.stat(&object_key).await.map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
             AppError::BadRequest("对象存储中未找到已上传文件".to_string())
@@ -798,15 +838,50 @@ pub async fn verify_uploaded_object(
             "对象存储文件大小不一致：期望 {expected_byte_size} 字节，实际 {actual_byte_size} 字节"
         )));
     }
-    if let Some(actual_content_type) = metadata.content_type()
-        && !actual_content_type.eq_ignore_ascii_case(&expected_content_type)
-    {
+    let actual_content_type = metadata
+        .content_type()
+        .ok_or_else(|| AppError::BadRequest("对象存储未返回文件 Content-Type".to_string()))?;
+    if !actual_content_type.eq_ignore_ascii_case(&expected_content_type) {
         return Err(AppError::BadRequest(format!(
             "对象存储 Content-Type 不一致：期望 {expected_content_type}，实际 {actual_content_type}"
         )));
     }
 
-    Ok(())
+    let mut reader = operator
+        .reader(&object_key)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取上传对象失败：{error}")))?
+        .into_futures_async_read(..)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("打开上传对象读取流失败：{error}")))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; OBJECT_HASH_BUFFER_SIZE];
+    let mut bytes_read = 0_i64;
+    loop {
+        let read = tokio::time::timeout(OBJECT_HASH_READ_TIMEOUT, reader.read(&mut buffer))
+            .await
+            .map_err(|_| AppError::BadRequest("读取上传对象摘要超时".to_string()))?
+            .map_err(|error| AppError::BadRequest(format!("读取上传对象摘要失败：{error}")))?;
+        if read == 0 {
+            break;
+        }
+        bytes_read = bytes_read
+            .checked_add(read as i64)
+            .ok_or_else(|| AppError::BadRequest("对象大小超出系统支持范围".to_string()))?;
+        if bytes_read > expected_byte_size {
+            return Err(AppError::BadRequest(
+                "对象存储文件大小与登记值不一致".to_string(),
+            ));
+        }
+        hasher.update(&buffer[..read]);
+    }
+    if bytes_read != expected_byte_size {
+        return Err(AppError::BadRequest(format!(
+            "对象存储文件大小不一致：期望 {expected_byte_size} 字节，实际 {bytes_read} 字节"
+        )));
+    }
+
+    Ok(hex::encode(hasher.finalize()))
 }
 
 pub async fn delete_object_if_exists(
@@ -815,12 +890,7 @@ pub async fn delete_object_if_exists(
     object_key: &str,
 ) -> AppResult<()> {
     let object_key = normalize_object_key(object_key)?;
-    let config = active_config(pool)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let (config, operator) = operator_for_object_key(pool, settings, &object_key).await?;
 
     match operator.delete(&object_key).await {
         Ok(()) => Ok(()),
@@ -832,6 +902,74 @@ pub async fn delete_object_if_exists(
     }
 }
 
+pub async fn delete_object_at_location(
+    pool: &SqlitePool,
+    settings: &Settings,
+    storage_config_id: Option<i64>,
+    provider: &str,
+    endpoint: &str,
+    region: &str,
+    bucket: &str,
+    object_key: &str,
+) -> AppResult<()> {
+    let storage_config_id = storage_config_id
+        .ok_or_else(|| AppError::BadRequest("删除任务缺少原存储配置 ID".to_string()))?;
+    let (config, access_key_id, access_key_secret) =
+        load_storage_config_with_secret_by_id(pool, settings, storage_config_id)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("删除任务的原存储配置不存在".to_string()))?;
+    if config.provider != provider
+        || config.endpoint != endpoint
+        || config.region != region
+        || config.bucket != bucket
+    {
+        return Err(AppError::BadRequest(
+            "删除任务的原存储位置与配置快照不一致".to_string(),
+        ));
+    }
+
+    let object_key = normalize_object_key(object_key)?;
+    let operator = if is_test_memory_config(settings, &config) {
+        build_test_memory_operator(&config)?
+    } else {
+        build_oss_operator(&config, &access_key_id, &access_key_secret)?
+    };
+    if is_test_memory_config(settings, &config) && consume_test_delete_failure(&object_key)? {
+        return Err(AppError::BadRequest(
+            "测试对象存储注入了删除失败".to_string(),
+        ));
+    }
+    match operator.delete(&object_key).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(AppError::BadRequest(format!(
+            "删除对象存储文件失败：{}",
+            storage_operation_error_message(&config, "删除对象存储文件", &error)
+        ))),
+    }
+}
+
+pub fn fail_next_test_delete(settings: &Settings, object_key: &str) -> AppResult<()> {
+    if settings.env != "test" {
+        return Err(AppError::InvalidEnvironment(
+            "对象删除故障注入只允许在 test 环境使用".to_string(),
+        ));
+    }
+    let object_key = normalize_object_key(object_key)?;
+    TEST_DELETE_FAILURE_KEYS
+        .lock()
+        .map_err(|_| AppError::Config("测试对象存储状态已损坏".to_string()))?
+        .insert(object_key);
+    Ok(())
+}
+
+fn consume_test_delete_failure(object_key: &str) -> AppResult<bool> {
+    Ok(TEST_DELETE_FAILURE_KEYS
+        .lock()
+        .map_err(|_| AppError::Config("测试对象存储状态已损坏".to_string()))?
+        .remove(object_key))
+}
+
 pub async fn write_test_memory_object(
     pool: &SqlitePool,
     settings: &Settings,
@@ -839,17 +977,15 @@ pub async fn write_test_memory_object(
     content_type: &str,
     content: Vec<u8>,
 ) -> AppResult<()> {
-    let config = active_config(pool)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let object_key = normalize_object_key(object_key)?;
+    let (config, operator) = operator_for_object_key(pool, settings, &object_key).await?;
     if !is_test_memory_config(settings, &config) {
         return Err(AppError::NotFound("测试对象存储入口不存在".to_string()));
     }
-    let object_key = normalize_object_key(object_key)?;
     let content_type = validate_content_type(content_type)?;
-    let operator = build_test_memory_operator(&config)?;
     operator
         .write_with(&object_key, content)
+        .if_not_exists(true)
         .content_type(&content_type)
         .await
         .map_err(|error| AppError::BadRequest(format!("测试对象存储写入失败：{error}")))?;
@@ -861,15 +997,21 @@ pub async fn read_test_memory_object(
     settings: &Settings,
     object_key: &str,
 ) -> AppResult<Option<(String, Vec<u8>)>> {
-    let Some(config) = active_config(pool).await? else {
+    let object_key = normalize_object_key(object_key)?;
+    let file_object_exists =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM file_objects WHERE object_key = ?1")
+            .bind(&object_key)
+            .fetch_optional(pool)
+            .await?
+            .is_some();
+    if !file_object_exists {
         return Ok(None);
-    };
+    }
+    let (config, operator) = operator_for_object_key(pool, settings, &object_key).await?;
     if !is_test_memory_config(settings, &config) {
         return Ok(None);
     }
 
-    let object_key = normalize_object_key(object_key)?;
-    let operator = build_test_memory_operator(&config)?;
     let metadata = match operator.stat(&object_key).await {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -901,9 +1043,7 @@ pub async fn read_object(
     }
 
     let object_key = normalize_object_key(object_key)?;
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let (_, operator) = operator_for_object_key(pool, settings, &object_key).await?;
     let metadata = operator
         .stat(&object_key)
         .await
@@ -926,9 +1066,7 @@ pub async fn stat_object(
     object_key: &str,
 ) -> AppResult<(String, u64)> {
     let object_key = normalize_object_key(object_key)?;
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let (_, operator) = operator_for_object_key(pool, settings, &object_key).await?;
     let metadata = operator
         .stat(&object_key)
         .await
@@ -950,9 +1088,7 @@ pub async fn read_object_range(
     end_exclusive: u64,
 ) -> AppResult<Vec<u8>> {
     let object_key = normalize_object_key(object_key)?;
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let (_, operator) = operator_for_object_key(pool, settings, &object_key).await?;
     let content = operator
         .read_with(&object_key)
         .range(start..end_exclusive)
@@ -968,10 +1104,9 @@ pub async fn presign_upload_url(
     content_type: &str,
     expire_seconds: u64,
 ) -> AppResult<SignedObjectRequest> {
-    if let Some(config) = active_config(pool).await?
-        && is_test_memory_config(settings, &config)
-    {
-        let object_key = normalize_object_key(object_key)?;
+    let object_key = normalize_object_key(object_key)?;
+    let (config, operator) = operator_for_object_key(pool, settings, &object_key).await?;
+    if is_test_memory_config(settings, &config) {
         let content_type = validate_content_type(content_type)?;
         let query = serde_urlencoded::to_string([("object_key", object_key.as_str())])
             .map_err(|error| AppError::BadRequest(format!("生成测试上传地址失败：{error}")))?;
@@ -982,15 +1117,13 @@ pub async fn presign_upload_url(
         });
     }
 
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let request = operator
         .presign_write_options(
-            &normalize_object_key(object_key)?,
+            &object_key,
             Duration::from_secs(expire_seconds),
             options::WriteOptions {
                 content_type: Some(validate_content_type(content_type)?),
+                if_not_exists: true,
                 ..Default::default()
             },
         )
@@ -1005,10 +1138,9 @@ pub async fn presign_download_url(
     object_key: &str,
     expire_seconds: u64,
 ) -> AppResult<SignedObjectRequest> {
-    if let Some(config) = active_config(pool).await?
-        && is_test_memory_config(settings, &config)
-    {
-        let object_key = normalize_object_key(object_key)?;
+    let object_key = normalize_object_key(object_key)?;
+    let (config, operator) = operator_for_object_key(pool, settings, &object_key).await?;
+    if is_test_memory_config(settings, &config) {
         let query = serde_urlencoded::to_string([("object_key", object_key.as_str())])
             .map_err(|error| AppError::BadRequest(format!("生成测试下载地址失败：{error}")))?;
         return Ok(SignedObjectRequest {
@@ -1018,14 +1150,8 @@ pub async fn presign_download_url(
         });
     }
 
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let request = operator
-        .presign_read(
-            &normalize_object_key(object_key)?,
-            Duration::from_secs(expire_seconds),
-        )
+        .presign_read(&object_key, Duration::from_secs(expire_seconds))
         .await
         .map_err(|error| AppError::BadRequest(format!("生成下载签名失败：{error}")))?;
     Ok(signed_request_from_opendal(request))
@@ -1112,6 +1238,93 @@ async fn load_active_config_with_secret(
     )?;
     let access_key_secret =
         crypto::decrypt_secret(&settings.security_master_key, &ciphertext, aad.as_bytes())?;
+    Ok(Some((
+        StorageConfig {
+            id,
+            provider,
+            endpoint,
+            region,
+            bucket,
+            access_key_id_hint,
+            status,
+            version,
+            updated_at,
+        },
+        access_key_id,
+        access_key_secret,
+    )))
+}
+
+async fn load_storage_config_with_secret_by_id(
+    pool: &SqlitePool,
+    settings: &Settings,
+    storage_config_id: i64,
+) -> AppResult<Option<(StorageConfig, String, String)>> {
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            id,
+            provider,
+            endpoint,
+            region,
+            bucket,
+            access_key_id_hint,
+            status,
+            version,
+            updated_at,
+            access_key_id_ciphertext,
+            access_key_secret_ciphertext
+        FROM storage_configs
+        WHERE id = ?1
+        "#,
+    )
+    .bind(storage_config_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((
+        id,
+        provider,
+        endpoint,
+        region,
+        bucket,
+        access_key_id_hint,
+        status,
+        version,
+        updated_at,
+        access_key_id_ciphertext,
+        access_key_secret_ciphertext,
+    )) = row
+    else {
+        return Ok(None);
+    };
+
+    let aad = storage_secret_aad(&provider, &bucket, &access_key_id_hint);
+    let access_key_id = crypto::decrypt_secret(
+        &settings.security_master_key,
+        &access_key_id_ciphertext,
+        aad.as_bytes(),
+    )?;
+    let access_key_secret = crypto::decrypt_secret(
+        &settings.security_master_key,
+        &access_key_secret_ciphertext,
+        aad.as_bytes(),
+    )?;
     Ok(Some((
         StorageConfig {
             id,

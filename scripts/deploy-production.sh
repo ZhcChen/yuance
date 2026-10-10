@@ -24,6 +24,10 @@ KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
 SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
 STOP_GRACE_PERIOD="${YUANCE_STOP_GRACE_PERIOD:-45s}"
+STOP_GRACE_PERIOD_EXPLICIT=0
+if [ -n "${YUANCE_STOP_GRACE_PERIOD:-}" ]; then
+  STOP_GRACE_PERIOD_EXPLICIT=1
+fi
 MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 SKIP_BUILD="${YUANCE_SKIP_LOCAL_BUILD:-0}"
 SOURCE_COMMIT=""
@@ -268,7 +272,7 @@ validate_local_wsl_target() {
   if [ "$(command -v docker 2>/dev/null || true)" != "/usr/bin/docker" ]; then
     fail "local-wsl 模式必须使用 WSL 原生 /usr/bin/docker。"
   fi
-  for command_name in docker timeout sha256sum install sqlite3; do
+  for command_name in docker timeout sha256sum install sqlite3 awk; do
     if ! command -v "$command_name" >/dev/null 2>&1; then
       fail "WSL 缺少命令：$command_name"
     fi
@@ -282,7 +286,7 @@ validate_local_wsl_target() {
 }
 
 preflight_remote_target() {
-  target_check="set -eu; for command_name in docker timeout sha256sum sqlite3; do command -v \"\$command_name\" >/dev/null 2>&1 || { echo \"服务器缺少命令：\$command_name\" >&2; exit 1; }; done; docker compose version >/dev/null 2>&1 || { echo '服务器缺少 Docker Compose 插件。' >&2; exit 1; }; test -s '$REMOTE_BACKEND_DIR/.env' || { echo '服务器缺少后端 .env，拒绝部署。' >&2; exit 1; }"
+  target_check="set -eu; for command_name in docker timeout sha256sum sqlite3 awk; do command -v \"\$command_name\" >/dev/null 2>&1 || { echo \"服务器缺少命令：\$command_name\" >&2; exit 1; }; done; docker compose version >/dev/null 2>&1 || { echo '服务器缺少 Docker Compose 插件。' >&2; exit 1; }; test -s '$REMOTE_BACKEND_DIR/.env' || { echo '服务器缺少后端 .env，拒绝部署。' >&2; exit 1; }"
   if [ "$BUILD_MODE" = "remote" ]; then
     target_check="$target_check; for command_name in node npm tar; do command -v \"\$command_name\" >/dev/null 2>&1 || { echo \"服务器缺少构建命令：\$command_name\" >&2; exit 1; }; done; canonicalize_missing() { candidate=\"\$1\"; suffix=\"\"; while [ ! -d \"\$candidate\" ]; do if [ -L \"\$candidate\" ] || [ -e \"\$candidate\" ]; then return 1; fi; component=\"\${candidate##*/}\"; candidate=\"\${candidate%/*}\"; [ -n \"\$candidate\" ] || candidate=/; suffix=\"/\$component\$suffix\"; done; canonical=\$(CDPATH= cd -P \"\$candidate\" && pwd -P) || return 1; [ \"\$canonical\" != / ] || canonical=\"\"; printf '%s%s\\n' \"\$canonical\" \"\$suffix\"; }; backend_real=\$(CDPATH= cd -P '$REMOTE_BACKEND_DIR' && pwd -P) || { echo '无法解析后端运行目录。' >&2; exit 1; }; build_real=\$(canonicalize_missing '$REMOTE_BUILD_ROOT') || { echo '无法解析远程构建目录。' >&2; exit 1; }; case \"\$build_real\" in \"\$backend_real\"|\"\$backend_real\"/*) echo '构建目录真实路径落入后端运行目录。' >&2; exit 1 ;; esac; docker buildx version >/dev/null 2>&1; docker buildx inspect --bootstrap >/dev/null 2>&1 || { echo '服务器 Buildx builder 无法初始化。' >&2; exit 1; }"
   fi
@@ -347,6 +351,10 @@ require_file "scripts/build-api-image-amd64.sh"
 require_file "deploy/easy-deploy/production/backend/app.yaml.example"
 require_file "deploy/easy-deploy/production/backend/compose.yaml.example"
 require_file "deploy/easy-deploy/production/backend/.env.example"
+require_file "deploy/easy-deploy/production/backend/scripts/00-backup-sqlite.sh"
+require_file "deploy/easy-deploy/production/backend/scripts/with-clean-backup-env.sh"
+require_file "deploy/easy-deploy/production/backend/scripts/resolve-stop-timeout.sh"
+require_file "deploy/easy-deploy/production/backend/scripts/validate-production-database.sh"
 require_file "deploy/easy-deploy/production/gateway/Caddyfile.yuance.example"
 
 if [ "$DEPLOY_MODE" = "local-wsl" ]; then
@@ -408,17 +416,76 @@ if [ "$DEPLOY_MODE" = "local-wsl" ]; then
   fi
 
   cd "$LOCAL_BACKEND_DIR"
+  sh ./scripts/validate-production-database.sh .env || fail "WSL 数据库配置不是受支持的生产 SQLite 路径。"
+  unset YUANCE_DATABASE_URL YUANCE_SQLITE_PATH YUANCE_DATA_DIR
+  stop_settings="$(sh ./scripts/resolve-stop-timeout.sh .env "$STOP_GRACE_PERIOD_EXPLICIT" "$STOP_GRACE_PERIOD")" || fail "无法确定 WSL API 停机超时。"
+  STOP_GRACE_PERIOD="${stop_settings%% *}"
+  STOP_TIMEOUT="${stop_settings#* }"
+  export YUANCE_STOP_GRACE_PERIOD="$STOP_GRACE_PERIOD"
   run timeout -k 30s 300s docker load -i "$LOCAL_IMAGE_TAR"
-  run timeout -k 30s 300s ./scripts/00-backup-sqlite.sh
-  maintenance="yuance-api-maintenance-$(date +%Y%m%d%H%M%S)"
-  trap 'docker rm -f "$maintenance" >/dev/null 2>&1 || true' EXIT HUP INT TERM
-  run timeout -k 30s 900s docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$maintenance" api sh -eu -c '
-    ./yuance-api migrate status
-    ./yuance-api migrate up
-    ./yuance-api seed core
-  '
+  maintenance="yuance-api-maintenance-$(date +%Y%m%d%H%M%S)-$$"
+  MIGRATION_STARTED_MARKER="$LOCAL_BACKEND_DIR/data/.$maintenance.migration-started"
+  MIGRATION_STARTED_CONTAINER_PATH="/data/.$maintenance.migration-started"
+  rm -f "$MIGRATION_STARTED_MARKER"
+  RESTORE_API_ON_EXIT=0
+  restore_api_before_migration() {
+    if [ "$RESTORE_API_ON_EXIT" = "1" ]; then
+      RESTORE_API_ON_EXIT=0
+      if [ "${API_WAS_RUNNING:-false}" = "true" ] && [ ! -f "$MIGRATION_STARTED_MARKER" ]; then
+        timeout -k 30s "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml start api >/dev/null 2>&1 || true
+      fi
+    fi
+  }
+  cleanup_local_deployment() {
+    restore_api_before_migration
+    rm -f "$MIGRATION_STARTED_MARKER"
+    docker rm -f "$maintenance" >/dev/null 2>&1 || true
+  }
+  handle_local_signal() {
+    signal_status="$1"
+    trap - EXIT HUP INT TERM
+    cleanup_local_deployment
+    exit "$signal_status"
+  }
+  trap cleanup_local_deployment EXIT
+  trap 'handle_local_signal 129' HUP
+  trap 'handle_local_signal 130' INT
+  trap 'handle_local_signal 143' TERM
+  API_WAS_RUNNING="$(docker inspect --format '{{.State.Running}}' yuance-api)"
+  case "$API_WAS_RUNNING" in true|false) ;; *) echo "无法确认 API 停止前的运行状态：$API_WAS_RUNNING" >&2; exit 1 ;; esac
+  if [ "$API_WAS_RUNNING" = "true" ]; then RESTORE_API_ON_EXIT=1; fi
+  if ! run timeout -k 30s "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml stop api; then
+    echo "停止 API 失败，迁移尚未执行，尝试恢复停止前的运行状态。" >&2
+    if [ "$API_WAS_RUNNING" = "true" ]; then
+      RESTORE_API_ON_EXIT=0
+      run timeout -k 30s "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml start api || true
+    fi
+    exit 1
+  fi
+  if ! run ./scripts/with-clean-backup-env.sh timeout -k 30s 300s ./scripts/00-backup-sqlite.sh; then
+    echo "SQLite 快照失败，迁移尚未执行，尝试启动旧 API。" >&2
+    if [ "$API_WAS_RUNNING" = "true" ]; then
+      RESTORE_API_ON_EXIT=0
+      run timeout -k 30s "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml start api || true
+    fi
+    exit 1
+  fi
+  if ! run timeout -k 30s 900s docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$maintenance" -e "YUANCE_MIGRATION_STARTED_MARKER=$MIGRATION_STARTED_CONTAINER_PATH" api sh -eu -c '
+      ./yuance-api migrate status
+      ./yuance-api migrate up
+      ./yuance-api seed core
+    '; then
+    if [ -f "$MIGRATION_STARTED_MARKER" ]; then
+      RESTORE_API_ON_EXIT=0
+      echo "迁移失败，API 保持停止；恢复旧版本写服务前必须先按备份回滚数据库。" >&2
+    else
+      echo "迁移容器未进入迁移阶段，退出时将恢复原 API。" >&2
+    fi
+    exit 1
+  fi
+  RESTORE_API_ON_EXIT=0
+  rm -f "$MIGRATION_STARTED_MARKER"
   docker rm -f "$maintenance" >/dev/null 2>&1 || true
-  trap - EXIT HUP INT TERM
   run timeout -k 30s 300s docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api
   run timeout -k 30s 120s ./scripts/90-healthcheck.sh
   run timeout -k 30s 120s ./scripts/80-files-audit.sh
@@ -477,8 +544,13 @@ elif [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
 fi
 echo "远程 SHA256 校验通过。"
 
+REMOTE_STOP_GRACE_ENV=""
+if [ "$STOP_GRACE_PERIOD_EXPLICIT" = "1" ]; then
+  REMOTE_STOP_GRACE_ENV="YUANCE_STOP_GRACE_PERIOD='$STOP_GRACE_PERIOD'"
+fi
+
 run ssh "$REMOTE_HOST" \
-  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' YUANCE_STOP_GRACE_PERIOD='$STOP_GRACE_PERIOD' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' YUANCE_BUILD_MODE='$BUILD_MODE' YUANCE_REMOTE_BUILD_DIR='$REMOTE_BUILD_DIR' sh -s" <<'REMOTE_SCRIPT'
+  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' $REMOTE_STOP_GRACE_ENV YUANCE_STOP_GRACE_PERIOD_EXPLICIT='$STOP_GRACE_PERIOD_EXPLICIT' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' YUANCE_BUILD_MODE='$BUILD_MODE' YUANCE_REMOTE_BUILD_DIR='$REMOTE_BUILD_DIR' sh -s" <<'REMOTE_SCRIPT'
 set -eu
 
 IMAGE="${YUANCE_IMAGE:-yuance-api:latest}"
@@ -487,12 +559,16 @@ BACKEND_DIR="${YUANCE_BACKEND_DIR:?set YUANCE_BACKEND_DIR}"
 KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
 SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
+STOP_GRACE_PERIOD_EXPLICIT="${YUANCE_STOP_GRACE_PERIOD_EXPLICIT:-0}"
+if [ "$STOP_GRACE_PERIOD_EXPLICIT" != "1" ]; then
+  unset YUANCE_STOP_GRACE_PERIOD
+fi
 STOP_GRACE_PERIOD="${YUANCE_STOP_GRACE_PERIOD:-45s}"
 MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 
 cd "$BACKEND_DIR"
 
-for command_name in docker timeout sha256sum sqlite3; do
+for command_name in docker timeout sha256sum sqlite3 awk; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "服务器缺少命令：$command_name" >&2
     exit 1
@@ -503,6 +579,19 @@ if [ ! -s ".env" ]; then
   echo "服务器缺少 $BACKEND_DIR/.env，拒绝部署。" >&2
   exit 1
 fi
+
+sh ./scripts/validate-production-database.sh .env || {
+  echo "服务器数据库配置不是受支持的生产 SQLite 路径。" >&2
+  exit 1
+}
+unset YUANCE_DATABASE_URL YUANCE_SQLITE_PATH YUANCE_DATA_DIR
+stop_settings="$(sh ./scripts/resolve-stop-timeout.sh .env "$STOP_GRACE_PERIOD_EXPLICIT" "$STOP_GRACE_PERIOD")" || {
+  echo "无法确定服务器 API 停机超时。" >&2
+  exit 1
+}
+STOP_GRACE_PERIOD="${stop_settings%% *}"
+STOP_TIMEOUT="${stop_settings#* }"
+export YUANCE_STOP_GRACE_PERIOD="$STOP_GRACE_PERIOD"
 
 chmod 600 .env
 chmod +x scripts/*.sh
@@ -532,20 +621,49 @@ run_timeout() {
 run_compose_maintenance() {
   container_name="$1"
   cleanup_named_container "$container_name"
-  run_timeout "执行迁移和基础 seed" 900 \
-    docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$container_name" api sh -eu -c '
+  if ! run_timeout "执行迁移和基础 seed" 900 \
+    docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$container_name" -e "YUANCE_MIGRATION_STARTED_MARKER=$MIGRATION_STARTED_CONTAINER_PATH" api sh -eu -c '
       ./yuance-api migrate status
       ./yuance-api migrate up
       ./yuance-api seed core
-    '
+    '; then
+    if [ -f "$MIGRATION_STARTED_MARKER" ]; then
+      echo "迁移失败，API 保持停止；恢复旧版本写服务前必须先按备份回滚数据库。" >&2
+    else
+      echo "迁移容器未进入迁移阶段，退出时将恢复原 API。" >&2
+    fi
+    return 1
+  fi
   cleanup_named_container "$container_name"
 }
 
 cleanup() {
+  if [ "$RESTORE_API_ON_EXIT" = "1" ]; then
+    RESTORE_API_ON_EXIT=0
+    if [ "$API_WAS_RUNNING" = "true" ] && [ ! -f "$MIGRATION_STARTED_MARKER" ]; then
+      timeout -k 30s "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml start api >/dev/null 2>&1 || true
+    fi
+  fi
+  if [ -n "${MIGRATION_STARTED_MARKER:-}" ]; then
+    rm -f "$MIGRATION_STARTED_MARKER"
+  fi
   cleanup_transient_containers
 }
 
-trap cleanup EXIT HUP INT TERM
+handle_remote_signal() {
+  signal_status="$1"
+  trap - EXIT HUP INT TERM
+  cleanup
+  exit "$signal_status"
+}
+
+RESTORE_API_ON_EXIT=0
+API_WAS_RUNNING=false
+MIGRATION_STARTED_MARKER=""
+trap cleanup EXIT
+trap 'handle_remote_signal 129' HUP
+trap 'handle_remote_signal 130' INT
+trap 'handle_remote_signal 143' TERM
 
 cleanup_transient_containers
 
@@ -554,10 +672,32 @@ printf '发布约束: sse_drain_timeout=%s stop_grace_period=%s max_release_wind
 
 run_timeout "加载镜像 tar" 300 docker load -i "$IMAGE_TAR"
 
-run_timeout "SQLite 发布前备份" 300 ./scripts/00-backup-sqlite.sh
-
-stamp="$(date +%Y%m%d%H%M%S)"
+stamp="$(date +%Y%m%d%H%M%S)-$$"
+MIGRATION_STARTED_MARKER="$BACKEND_DIR/data/.yuance-api-maintenance-$stamp.migration-started"
+MIGRATION_STARTED_CONTAINER_PATH="/data/.yuance-api-maintenance-$stamp.migration-started"
+rm -f "$MIGRATION_STARTED_MARKER"
+API_WAS_RUNNING="$(docker inspect --format '{{.State.Running}}' yuance-api)"
+case "$API_WAS_RUNNING" in true|false) ;; *) echo "无法确认 API 停止前的运行状态：$API_WAS_RUNNING" >&2; exit 1 ;; esac
+if [ "$API_WAS_RUNNING" = "true" ]; then RESTORE_API_ON_EXIT=1; fi
+if ! run_timeout "停止 API，封闭旧上传签名窗口" "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml stop api; then
+  echo "停止 API 失败，迁移尚未执行，尝试恢复停止前的运行状态。" >&2
+  if [ "$API_WAS_RUNNING" = "true" ]; then
+    RESTORE_API_ON_EXIT=0
+    run_timeout "恢复旧 API" "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml start api || true
+  fi
+  exit 1
+fi
+if ! run_timeout "生成 API 停止后的 SQLite 回滚快照" 300 ./scripts/with-clean-backup-env.sh ./scripts/00-backup-sqlite.sh; then
+  echo "SQLite 快照失败，迁移尚未执行，尝试启动旧 API。" >&2
+  if [ "$API_WAS_RUNNING" = "true" ]; then
+    RESTORE_API_ON_EXIT=0
+    run_timeout "启动旧 API" "$STOP_TIMEOUT" docker compose --env-file .env -f compose.yaml start api || true
+  fi
+  exit 1
+fi
 run_compose_maintenance "yuance-api-maintenance-$stamp"
+RESTORE_API_ON_EXIT=0
+rm -f "$MIGRATION_STARTED_MARKER"
 
 run_timeout "重建并启动 api 容器" 300 docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api
 run_timeout "Compose 状态" 60 docker compose --env-file .env -f compose.yaml ps

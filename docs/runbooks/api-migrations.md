@@ -56,12 +56,26 @@ password: Yuance@2026Dev!
 ## 生产发布步骤
 
 1. 确认生产服务配置及数据目录保持稳定，并确认目标机安装 `sqlite3`。
-2. 使用 `./scripts/00-backup-sqlite.sh` 生成并校验单文件快照。
-3. 确认生产环境变量：
+2. 确认生产环境变量：
    - `YUANCE_ENV=production`
    - `YUANCE_DATABASE_URL=sqlite://...`
    - `YUANCE_SECURITY_MASTER_KEY=<稳定强随机值>`
-4. 在后端运行目录使用单次维护容器执行迁移，不在服务器源码目录运行 `cargo run`：
+3. 使用 Compose 优雅停止 API，避免旧版本在迁移回填后继续创建未登记的上传签名：
+
+```bash
+cd /srv/yuance/backend
+docker compose --env-file .env -f compose.yaml stop api
+```
+
+4. 停止完成后生成并校验 SQLite 单文件快照：
+
+```bash
+./scripts/00-backup-sqlite.sh
+```
+
+若快照失败，迁移尚未执行，可重新启动旧 API 并排查备份原因。迁移失败时必须保持 API 停止；不得直接重启旧写服务，必须先恢复停止后的对应数据库备份或继续部署兼容的新版本。
+
+5. 在后端运行目录使用单次维护容器执行迁移，不在服务器源码目录运行 `cargo run`：
 
 ```bash
 cd /srv/yuance/backend
@@ -75,7 +89,9 @@ docker compose --env-file .env -f compose.yaml run --rm --no-deps \
 
 `migrate status` 输出 `migration state: ok` 表示当前 `_sqlx_migrations` 与二进制内置迁移一致；若失败，先处理错误中指出的迁移版本，不要继续执行 `up`。
 
-5. 启动服务并检查：
+生产发布向维护容器传入 `YUANCE_MIGRATION_STARTED_MARKER` 时，只有 `migrate up` 的环境加载、数据库连接和迁移历史校验成功后，程序才会在调用迁移器前创建并同步该标记。部署脚本据此区分“迁移阶段未开始，可尝试恢复旧 API”和“迁移阶段已进入，必须保持停机”。标记创建后的窄中断窗口采取保守策略：即使数据库尚未变化也不自动启动旧写服务。
+
+6. 启动服务并检查：
 
 ```bash
 docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api

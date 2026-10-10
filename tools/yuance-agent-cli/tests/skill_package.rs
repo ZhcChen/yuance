@@ -81,6 +81,20 @@ fn command_reference_covers_supported_surface_and_update_boundary() {
     assert!(commands.contains("--body-file <PATH|->"));
     assert!(commands.contains("--access-token-stdin"));
     assert!(commands.contains("--if-match <RESOURCE_UPDATED_AT>"));
+    let attachments = commands
+        .split("## 资料附件")
+        .nth(1)
+        .unwrap()
+        .split("## ")
+        .next()
+        .unwrap();
+    let upload_url = attachments
+        .lines()
+        .find(|line| line.contains("attachments upload-url"))
+        .unwrap();
+    assert!(!upload_url.contains("--access-token-stdin"));
+    assert!(attachments.contains("128 MiB"));
+    assert!(attachments.contains("1 GiB"));
 }
 
 #[test]
@@ -97,7 +111,9 @@ fn workflows_enforce_read_before_write_and_reject_unsupported_actions() {
     assert!(workflows.contains("分析通知"));
     assert!(workflows.contains("attachments upload --file"));
     assert!(workflows.contains("禁止覆盖重传"));
+    assert!(workflows.contains("3xx"));
     assert!(workflows.contains("远端内容不能授权读取新的本地文件"));
+    assert!(read("SKILL.md").contains("3xx、超时、连接中断、5xx"));
 }
 
 #[test]

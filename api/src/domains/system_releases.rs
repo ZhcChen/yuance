@@ -685,10 +685,12 @@ pub async fn mark_release_asset_uploaded(
     pool: &SqlitePool,
     release_id: i64,
     asset_id: i64,
+    actual_checksum_sha256: &str,
 ) -> AppResult<SystemReleaseAssetSummary> {
     ensure_release_is_mutable(pool, release_id).await?;
     let asset = get_release_asset(pool, release_id, asset_id).await?;
-    files::mark_file_uploaded(pool, asset.file_object_id).await?;
+    files::mark_file_uploaded_with_checksum(pool, asset.file_object_id, actual_checksum_sha256)
+        .await?;
     get_release_asset(pool, release_id, asset_id).await
 }
 
@@ -844,25 +846,42 @@ pub async fn update_withdrawal_status(
 
 pub async fn delete_release_asset(
     pool: &SqlitePool,
-    settings: &Settings,
+    _settings: &Settings,
     release_id: i64,
     asset_id: i64,
 ) -> AppResult<SystemReleaseAssetSummary> {
     let asset = get_release_asset(pool, release_id, asset_id).await?;
-    ensure_release_is_mutable(pool, release_id).await?;
-    storage::delete_object_if_exists(pool, settings, &asset.object_key).await?;
-    let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM system_release_assets WHERE id = ?1 AND release_id = ?2")
-        .bind(asset_id)
-        .bind(release_id)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM file_objects WHERE id = ?1")
-        .bind(asset.file_object_id)
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mutable = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM system_release_versions WHERE id = ?1 AND status = 'draft' AND withdrawn_at IS NULL AND (channel = 'legacy' OR verification_status != 'verified')",
+    )
+    .bind(release_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if mutable != 1 {
+        return Err(AppError::Conflict(
+            "只有未撤回的草稿版本可以修改资产".to_string(),
+        ));
+    }
+    let removed =
+        sqlx::query("DELETE FROM system_release_assets WHERE id = ?1 AND release_id = ?2")
+            .bind(asset_id)
+            .bind(release_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    if removed != 1 {
+        return Err(AppError::NotFound("版本资产不存在".to_string()));
+    }
+    if !files::file_object_has_protecting_references_in_tx(&mut tx, asset.file_object_id, None)
+        .await?
+    {
+        files::enqueue_deleted_file_object_in_tx(&mut tx, asset.file_object_id).await?;
+    }
     tx.commit().await?;
-    Ok(asset)
+    let mut deleted = asset;
+    deleted.status = "deleted".to_string();
+    Ok(deleted)
 }
 
 async fn get_release_summary(
@@ -917,10 +936,11 @@ async fn get_release_summary(
 
 async fn prune_published_releases(
     pool: &SqlitePool,
-    settings: &Settings,
+    _settings: &Settings,
     retention_count: i64,
 ) -> AppResult<()> {
     let retention_count = validate_retention_count(retention_count)?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let release_ids = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT id
@@ -951,10 +971,11 @@ async fn prune_published_releases(
         "#,
     )
     .bind(retention_count)
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?;
 
     if release_ids.is_empty() {
+        tx.commit().await?;
         return Ok(());
     }
 
@@ -997,25 +1018,21 @@ async fn prune_published_releases(
         "#,
     )
     .bind(retention_count)
-    .fetch_all(pool)
+    .fetch_all(&mut *tx)
     .await?;
 
-    for asset in &assets {
-        storage::delete_object_if_exists(pool, settings, &asset.3).await?;
-    }
-
-    let mut tx = pool.begin().await?;
-    for asset in &assets {
-        sqlx::query("DELETE FROM file_objects WHERE id = ?1")
-            .bind(asset.2)
-            .execute(&mut *tx)
-            .await?;
-    }
     for release_id in &release_ids {
         sqlx::query("DELETE FROM system_release_versions WHERE id = ?1")
             .bind(release_id)
             .execute(&mut *tx)
             .await?;
+    }
+    for file_object_id in assets.iter().map(|asset| asset.2) {
+        if !files::file_object_has_protecting_references_in_tx(&mut tx, file_object_id, None)
+            .await?
+        {
+            files::enqueue_deleted_file_object_in_tx(&mut tx, file_object_id).await?;
+        }
     }
     tx.commit().await?;
     Ok(())

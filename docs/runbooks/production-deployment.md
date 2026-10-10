@@ -140,12 +140,19 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 
 脚本要求 `main` 工作区干净并与 `origin/main` 一致，然后执行：
 
+同一 Docker Engine 上必须采用单发布者串行执行。当前脚本没有目标机部署锁，维护容器按前缀统一清理且生产镜像默认使用可变 `yuance-api:latest`；不得同时运行第二次发布、手工维护容器或会改写该镜像标签的任务，直到部署锁和按发布 ID 定向清理实现并验收。
+
 1. 预检目标机 Docker、Docker Compose、`sqlite3` 和 `.env`，再构建并校验 `linux/amd64` 镜像 tar。
 2. 备份 `/srv/yuance/releases` 中当前镜像 tar。
 3. 同步 Compose、app 元数据和运维脚本，但不覆盖 `.env` 或数据。
-4. 加载镜像并以 SQLite `.backup` 生成一致性单文件快照；通过完整性检查后才进入迁移。
-5. 在单次维护容器内执行 `migrate status`、`migrate up`、`seed core`。
-6. 重建 `yuance-api`，检查 health、ready、文件对象审计和镜像 ID。
+4. 加载镜像并使用 Compose 的 `stop_grace_period` 优雅停止旧 `yuance-api`，禁止其在迁移回填后继续签发未登记的 PUT URL。停机宽限期默认读取目标机 `.env` 中的 `YUANCE_STOP_GRACE_PERIOD`；仅当本机发布命令显式设置该变量时才覆盖目标机配置，并将最终值显式交给 Compose。部署脚本的外层停止超时按实际宽限期加 60 秒余量计算；配置无效、停止失败或最终快照失败时，迁移尚未执行，脚本只尝试恢复原本正在运行的 API。
+5. API 完全停止后，以 SQLite `.backup` 生成最终一致性单文件快照；生产部署只接受 `sqlite:///data/yuance.sqlite3`，并校验快照路径对应 Compose 的 `/data/yuance.sqlite3` 挂载。数据库缺失、数据库 URL 不匹配、快照失败或完整性检查失败都会阻止迁移。快照通过完整性检查后才进入迁移；失败时脚本会尝试重新启动旧 API。
+6. 在单次维护容器内执行 `migrate status`、`migrate up`、`seed core`。
+7. 重建 `yuance-api`，检查 health、ready、文件对象审计和镜像 ID。
+
+迁移失败时部署脚本会保持 API 停止。不得直接重启旧版本写服务，因为它可能继续签发不记录有效期的上传 URL；必须先按 API 停止后的对应备份恢复数据库，再启动匹配版本的应用，或修复后继续部署新版本。
+
+维护容器只有在 `migrate up` 已完成迁移历史校验并即将调用迁移器时，才会在 `/data` bind mount 创建并同步迁移阶段标记。容器无法启动、`migrate status` 失败或 `migrate up` 前置校验失败时不会生成标记，退出清理会尝试恢复原本运行的 API。标记代表迁移阶段即将执行，而非数据库已发生修改；标记后、迁移器首条 SQL 前的中断会保守地保持 API 停止。
 
 `qfy-test` 只能在明确确认目标后显式指定，不作为默认或隐式回退目标：
 
@@ -229,6 +236,8 @@ YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
 YUANCE_DEVICE_POLL_INTERVAL=5s
 ```
 
+`YUANCE_STOP_GRACE_PERIOD` 按 Compose 时长格式填写，范围为 `1s` 至 `24h`，支持 `.env` 的 `KEY=VALUE` 和 `KEY: VALUE` 格式。生产 `YUANCE_DATA_DIR` 只能留空或设为 `/data`；其他值及发布进程传入的非 `/data` 覆盖会在停机前拒绝，发布脚本校验后会清除进程环境覆盖。数据库 URL 与文件主密钥也按 Compose 的两种赋值格式校验，快照 manifest 会正确识别冒号格式主密钥。发布脚本安全读取目标机 `.env`，并清除数据库 URL 的进程环境覆盖以保证迁移和快照使用同一生产数据库；如需临时覆盖停机宽限期，显式设置发布机环境变量，例如 `YUANCE_STOP_GRACE_PERIOD=90s ./scripts/deploy-production.sh`。外层 `timeout` 会在该值上增加 60 秒余量。
+
 Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。
 
 公网检查：
@@ -290,7 +299,7 @@ cd /srv/yuance/backend
 快照必须通过 `PRAGMA integrity_check` 才会生成 manifest 并报告成功。备份目录为 `0700`，
 数据库快照、manifest 和密钥为 `0600`。
 
-每个备份目录包含 `yuance.sqlite3` 和 `manifest.txt`。当文件主密钥来自自动生成的数据文件时，
+正式部署必需快照只从 `$BACKEND_DIR/data/yuance.sqlite3` 读取，也就是 Compose `./data:/data` 的宿主挂载源；不得回退到宿主机 `/data/yuance.sqlite3`。快照会清除继承的数据库、数据目录和备份路径变量，防止目标被 shell 环境重定向；validator 只接受 `/data` 生产目录。若 Compose 环境设置了 `YUANCE_FILE_MASTER_KEY`，快照会使用同一值，并在 manifest 中记录外部配置依赖。每个备份目录包含 `yuance.sqlite3` 和 `manifest.txt`。当文件主密钥来自自动生成的数据文件时，
 还包含 `secrets/file_master_key`；当 `YUANCE_FILE_MASTER_KEY` 由环境配置提供时，manifest
 只记录 `file_master_key_source=environment` 及外部配置依赖，不包含密钥值。环境变量密钥必须
 从独立受控配置恢复。备份根目录本身不会被脚本改写权限；每份随机备份目录固定为 `0700`，
@@ -318,7 +327,20 @@ docker compose --env-file .env -f compose.yaml exec -T api \
   ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
-确认后去掉 `--dry-run`。当前命令只做数据库软删除，不删除 OSS 物理对象。
+确认后去掉 `--dry-run`。当前命令只做数据库软删除，不删除 OSS 物理对象；若对象签发过上传 URL，还会等到最后一张 URL 到期后 4 小时 5 分钟再失效对象，以免 URL 到期时仍在进行的 PUT 无法完成登记。
+
+资料附件、评论附件和系统发行资产的对象物理清理由同一 outbox 命令处理；项目附件仍只归档。API 删除后至少等待 65 分钟；若最近签发的 PUT URL 有更晚到期时间，则任务不早于该 URL 到期后 4 小时 5 分钟，以覆盖在途 PutObject 请求。迁移前没有到期记录的文件对象会保守回填为迁移时刻后 1 小时，因此这类对象的删除任务还会额外等待最多 5 小时 5 分钟。先 dry-run 确认到期数量，再按批次执行：
+
+```bash
+docker compose --env-file .env -f compose.yaml exec -T api \
+  ./yuance-api files cleanup-deleted --dry-run --limit 100
+docker compose --env-file .env -f compose.yaml exec -T api \
+  ./yuance-api files cleanup-deleted --limit 100
+docker compose --env-file .env -f compose.yaml exec -T api \
+  ./yuance-api files deletion-jobs --limit 100
+```
+
+失败任务会保留并延迟重试；命令失败时运行 `files deletion-jobs` 检查任务状态、重试时间和最近错误，再按 `docs/runbooks/file-maintenance.md` 排查原存储配置。不得用当前活动 Bucket 替代任务保存的原始位置。
 
 资料库新附件加密主密钥文件 `/data/secrets/file_master_key` 属于数据目录持久化内容。
 正式回滚时必须根据备份 manifest，将数据库快照与对应密钥作为一个恢复单元。恢复数据库前

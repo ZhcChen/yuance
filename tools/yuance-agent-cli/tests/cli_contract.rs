@@ -139,6 +139,22 @@ fn resource_and_notification_commands_have_explicit_boundaries() {
             "yuance-agent",
             "resources",
             "attachments",
+            "upload-url",
+            "--project-key",
+            "YCE",
+            "--resource-id",
+            "7",
+            "--attachment-id",
+            "8",
+            "--access-token-stdin",
+        ])
+        .is_err()
+    );
+    assert!(
+        Cli::try_parse_from([
+            "yuance-agent",
+            "resources",
+            "attachments",
             "upload",
             "--project-key",
             "YCE",

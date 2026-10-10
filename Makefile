@@ -1,4 +1,4 @@
-.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-cleanup-deleted api-files-deletion-jobs api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
 
 export SPEC_KIT_FEATURE = $(FEATURE)
 export SPEC_KIT_STAGE = $(STAGE)
@@ -34,6 +34,8 @@ help:
 	@echo "  make api-image-smoke"
 	@echo "  make api-seed-local-admin"
 	@echo "  make api-files-cleanup-pending"
+	@echo "  make api-files-cleanup-deleted [DRY_RUN=1] [LIMIT=100]"
+	@echo "  make api-files-deletion-jobs [LIMIT=100]"
 	@echo "  make api-files-audit-objects"
 	@echo "  make api-image-amd64"
 	@echo "  make validation-prepare"
@@ -123,6 +125,12 @@ api-seed-local-admin:
 
 api-files-cleanup-pending:
 	cargo run -p yuance-api -- files cleanup-pending --older-than-hours $(or $(HOURS),24)
+
+api-files-cleanup-deleted:
+	cargo run -p yuance-api -- files cleanup-deleted $(if $(DRY_RUN),--dry-run,) --limit $(or $(LIMIT),100)
+
+api-files-deletion-jobs:
+	cargo run -p yuance-api -- files deletion-jobs --limit $(or $(LIMIT),100)
 
 api-files-audit-objects:
 	cargo run -p yuance-api -- files audit-objects $(if $(INCLUDE_DELETED),--include-deleted,)

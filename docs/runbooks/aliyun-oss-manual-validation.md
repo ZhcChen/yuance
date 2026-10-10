@@ -19,6 +19,8 @@ date: 2026-06-30
   - `work_item.manage`
 - 阿里云 OSS Bucket 已创建，AccessKey 具备该 Bucket 的对象读写权限。
 - 使用专门测试目录或空测试 Bucket，避免混入正式业务文件。
+- 测试 Bucket 必须关闭对象版本控制；阿里云 OSS 在版本控制开启或暂停时不保证 `x-oss-forbid-overwrite` 防覆盖语义。
+- 资料附件、评论附件和系统发行资产物理清理依赖 Bucket 关闭版本控制；开启版本控制时 `DeleteObject` 可能只创建删除标记，清理任务的 `completed` 只代表删除请求成功，不代表历史对象版本已物理清除。应用不会枚举或删除历史版本。
 - Docker Compose 正式环境中已保持 `YUANCE_SECURITY_MASTER_KEY` 稳定；该值来自服务器 `.env`，不要重新生成覆盖。
 
 ## 配置验证
@@ -107,6 +109,16 @@ date: 2026-06-30
 - 下载失败：确认附件状态为 `uploaded`，且对象未被外部删除。
 - 密钥解密失败：确认 `YUANCE_SECURITY_MASTER_KEY` 与保存配置时一致。
 
+## PUT 防覆盖与资料附件回收
+
+1. 上传一个专用测试附件，检查 `upload-url` 返回的所有签名 Header 中包含防覆盖条件。
+2. 使用同一签名 PUT 写入后，再重放相同 PUT；第二次必须失败，OSS 中对象内容保持第一次上传的字节。
+3. 分别使用专用测试资料附件、评论附件、评论草稿附件和草稿发行资产验证删除/取消/保留裁剪：确认 API/页面关系已移除或状态变为 deleted，但 OSS 对象暂时仍存在；上传 URL 到期后不能新发起 PUT；若 PUT 在 URL 到期前已开始，确认 OSS 允许其继续完成，并确认统一清理任务窗口覆盖该请求。项目附件只归档，不应创建物理删除任务。
+4. 等待任务报告的安全窗口到期后先执行 `files cleanup-deleted --dry-run`，确认任务到期，再执行清理并检查原 Bucket 中对象已不存在且无历史版本残留。正常窗口至少 65 分钟；若上传签名在删除前刚发出，任务不早于该签名到期后 4 小时 5 分钟执行，以覆盖 OSS 对单次 PutObject 的最长请求时限及余量。参考 [预签名上传说明](https://help.aliyun.com/zh/oss/developer-reference/upload-an-object-using-a-signed-url-generated-with-oss-sdk-for-python-v2) 与 [PutObject 上传超时说明](https://help.aliyun.com/zh/oss/user-guide/0017-00000703)。
+5. 配置切换到另一个 Bucket 后，重复验证任务仍清理原 Bucket 对象，不能因新 Bucket 中对象不存在而误报完成。
+
+这些手工步骤应使用隔离的测试 Bucket 和专用测试资料，不使用真实业务附件。自动化测试只覆盖 memory 存储，不能证明阿里云 Bucket 版本控制配置或真实 OSS 的覆盖行为。
+
 ## 清理
 
 验证结束后：
@@ -119,11 +131,11 @@ date: 2026-06-30
 cargo run -p yuance-api -- files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
-正式环境 Compose 部署使用：
+pending 清理也会等待最后一张上传 URL 到期后 4 小时 5 分钟；此窗口用于覆盖 URL 到期时仍在进行的 PUT，防止上传完成后无法登记。正式环境 Compose 部署使用：
 
 ```bash
 cd /srv/yuance/easy-deploy/production/backend
 docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
-当前附件归档是数据库软删除，不会主动删除 OSS 物理对象；是否删除真实对象由运维按保留策略处理。
+项目附件归档仍是数据库软删除，不会主动删除 OSS 对象；资料附件、评论附件和系统发行资产删除会登记延迟清理任务，由 `files cleanup-deleted` 重试清理。历史已删除附件不会因迁移自动补建物理清理任务。

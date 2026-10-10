@@ -275,6 +275,31 @@
         }
       }
     },
+    "/api/v1/system/releases/{release_id}/assets/{asset_id}": {
+      "delete": {
+        "tags": ["releases"],
+        "summary": "删除草稿版本资产",
+        "description": "移除版本资产关系并登记对象清理任务。对象不会在该请求中立即物理删除；清理会等待上传签名有效期及在途 PUT 安全窗口，且失败后可重试。",
+        "parameters": [
+          {"$ref": "#/components/parameters/ReleaseId"},
+          {"$ref": "#/components/parameters/AssetId"}
+        ],
+        "responses": {
+          "200": {
+            "description": "资产关系已删除，返回状态为 deleted 的资产摘要",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/SystemReleaseAssetEnvelope"}
+              }
+            }
+          },
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url": {
       "get": {
         "tags": [
