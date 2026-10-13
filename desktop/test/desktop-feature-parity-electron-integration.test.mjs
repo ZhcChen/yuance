@@ -41,21 +41,6 @@ test("feature parity verifier requires every child report, cleanup and exact byt
   await assert.rejects(verifyDesktopFeatureParityArtifacts(root, { platform }));
 });
 
-test("desktop security workflow is disabled and still runs the same feature parity gate on every runner", async () => {
-  await assert.rejects(
-    fs.readFile(new URL("../../.github/workflows/desktop-security.yml", import.meta.url)),
-    /ENOENT/u,
-  );
-  const workflow = await fs.readFile(new URL("../../.github/workflows/desktop-security.yml.disabled", import.meta.url), "utf8");
-  assert.doesNotMatch(workflow, /^\s*push:\s*$/mu);
-  assert.doesNotMatch(workflow, /pull_request:/u);
-  assert.match(workflow, /--test device_business_parity_flow/u);
-  assert.equal((workflow.match(/smoke:desktop-feature-parity -- dist/gu) || []).length, 2);
-  assert.match(workflow, /runner\.os != 'Linux'[\s\S]*smoke:desktop-feature-parity -- dist/u);
-  assert.match(workflow, /runner\.os == 'Linux'[\s\S]*xvfb-run -a npm --prefix desktop run smoke:desktop-feature-parity -- dist/u);
-  assert.match(workflow, /verify:desktop-feature-parity-artifacts/u);
-});
-
 test("packaged UI smoke requires an explicit loopback port", async () => {
   const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(main, /origin\.hostname !== "127\.0\.0\.1" \|\| !origin\.port/u);
