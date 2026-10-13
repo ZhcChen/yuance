@@ -871,12 +871,21 @@ async fn device_principal_completes_work_item_and_comment_attachment_signing_lif
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["status"], "deleted");
+    // 逻辑删除后物理对象改为延迟清理：对象暂时保留，并登记 pending 删除任务。
     assert!(
         storage::read_test_memory_object(&pool, &test_settings(), &object_key)
             .await
             .unwrap()
-            .is_none()
+            .is_some()
     );
+    let pending_jobs = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM file_object_deletion_jobs WHERE object_key = ?1 AND status = 'pending'",
+    )
+    .bind(&object_key)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pending_jobs, 1);
     let comment_body =
         sqlx::query_scalar::<_, String>("SELECT body FROM work_item_comments WHERE id = ?1")
             .bind(comment_id)
@@ -1083,7 +1092,7 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
         let response = request(&app, "GET", &path, &manager.access_token, None).await;
         assert_eq!(
             response.status(),
-            StatusCode::BAD_REQUEST,
+            StatusCode::NOT_FOUND,
             "archived path: {path}"
         );
     }
