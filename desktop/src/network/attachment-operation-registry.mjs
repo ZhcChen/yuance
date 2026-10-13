@@ -126,7 +126,7 @@ function parseSignedAttachment(value, purpose) {
   if (!Number.isSafeInteger(value.expires_in_seconds) || value.expires_in_seconds < 1 || value.expires_in_seconds > 60) throw new TypeError("signed attachment expiry is invalid");
   if (typeof value.expires_at !== "string" || !Number.isFinite(Date.parse(value.expires_at))) throw new TypeError("signed attachment expiry is invalid");
   if (!isPlainObject(value.request) || !sameKeys(value.request, ["headers", "method", "url"])) throw new TypeError("signed attachment request is invalid");
-  const encryption = value.encryption === undefined ? null : parseSignedEncryption(value.encryption, purpose);
+  const encryption = value.encryption === undefined || value.encryption === null ? null : parseSignedEncryption(value.encryption, purpose);
   return Object.freeze({
     attachment: attachment.publicValue,
     transfer: Object.freeze({
