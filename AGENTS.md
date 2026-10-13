@@ -20,7 +20,7 @@
 - `docs/reviews/`：重要改动的独立复核和验证证据；`docs/solutions/`：可复用问题经验。
 - `.specify/memory/constitution.md`：项目原则摘要；`.specify/templates/overrides/`：项目模板定制；完整操作见 `docs/runbooks/spec-kit-workflow.md`。
 - `.specify/integrations/` 与 `.agents/skills/` 中由上游 manifest 管理的文件保持原样，不手工修改。
-- `docs/*/TEMPLATE.md` 仅用于对应历史或复核类文档，不替代 `specs/` 的 Spec Kit 模板。
+- `docs/reviews/TEMPLATE.md`、`docs/solutions/TEMPLATE.md` 仅用于复核与经验文档，不替代 `specs/` 的 Spec Kit 模板。
 
 ## 执行规则
 - `AGENTS.md`、`docs/` 下工作流文件、代码注释、说明文档、提交信息默认使用简体中文；必要时可保留英文术语、命令原文或现有专有名词
