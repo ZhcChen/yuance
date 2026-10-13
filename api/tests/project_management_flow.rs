@@ -3827,8 +3827,7 @@ async fn deleted_work_item_attachment_protects_a_shared_file_object_from_cleanup
     assert!(delete_result.is_err());
     assert!(
         delete_result
-            .err()
-            .expect("shared object deletion should be rejected")
+            .expect_err("shared object deletion should be rejected")
             .to_string()
             .contains("仍被其他受保护的附件关系引用")
     );

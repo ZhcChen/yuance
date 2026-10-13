@@ -1548,12 +1548,14 @@ pub async fn cleanup_deleted_file_objects(
         let deleted = storage::delete_object_at_location(
             pool,
             settings,
-            job.storage_config_id,
-            &job.provider,
-            &job.endpoint,
-            &job.region,
-            &job.bucket,
-            &job.object_key,
+            storage::ObjectLocation {
+                storage_config_id: job.storage_config_id,
+                provider: &job.provider,
+                endpoint: &job.endpoint,
+                region: &job.region,
+                bucket: &job.bucket,
+                object_key: &job.object_key,
+            },
         )
         .await;
         match deleted {

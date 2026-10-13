@@ -2789,6 +2789,7 @@ async fn update_system_release_api(
     response_json(response).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_system_release_asset_api(
     app: &axum::Router,
     admin_cookie: &str,
@@ -2812,6 +2813,7 @@ async fn create_system_release_asset_api(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_system_release_asset_api_with_architecture(
     app: &axum::Router,
     admin_cookie: &str,

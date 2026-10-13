@@ -917,16 +917,29 @@ pub async fn delete_object_if_exists(
     }
 }
 
+/// 删除任务登记时的原存储位置快照。
+pub struct ObjectLocation<'a> {
+    pub storage_config_id: Option<i64>,
+    pub provider: &'a str,
+    pub endpoint: &'a str,
+    pub region: &'a str,
+    pub bucket: &'a str,
+    pub object_key: &'a str,
+}
+
 pub async fn delete_object_at_location(
     pool: &SqlitePool,
     settings: &Settings,
-    storage_config_id: Option<i64>,
-    provider: &str,
-    endpoint: &str,
-    region: &str,
-    bucket: &str,
-    object_key: &str,
+    location: ObjectLocation<'_>,
 ) -> AppResult<()> {
+    let ObjectLocation {
+        storage_config_id,
+        provider,
+        endpoint,
+        region,
+        bucket,
+        object_key,
+    } = location;
     let storage_config_id = storage_config_id
         .ok_or_else(|| AppError::BadRequest("删除任务缺少原存储配置 ID".to_string()))?;
     let (config, access_key_id, access_key_secret) =
