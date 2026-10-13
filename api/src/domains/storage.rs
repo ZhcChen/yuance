@@ -643,11 +643,26 @@ pub async fn build_operator_from_active_config(
     )?))
 }
 
+/// Desktop 文件传输 canary 的对象键前缀；canary 不登记 file_objects，只验证当前激活存储的连通性。
+const DESKTOP_CANARY_KEY_PREFIX: &str = "desktop-file-canary/";
+
 async fn operator_for_object_key(
     pool: &SqlitePool,
     settings: &Settings,
     object_key: &str,
 ) -> AppResult<(StorageConfig, Operator)> {
+    if object_key.starts_with(DESKTOP_CANARY_KEY_PREFIX) {
+        let (config, access_key_id, access_key_secret) =
+            load_active_config_with_secret(pool, settings)
+                .await?
+                .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+        let operator = if is_test_memory_config(settings, &config) {
+            build_test_memory_operator(&config)?
+        } else {
+            build_oss_operator(&config, &access_key_id, &access_key_secret)?
+        };
+        return Ok((config, operator));
+    }
     let (storage_config_id, object_provider, object_bucket) =
         sqlx::query_as::<_, (Option<i64>, String, String)>(
             "SELECT storage_config_id, provider, bucket FROM file_objects WHERE object_key = ?1",
