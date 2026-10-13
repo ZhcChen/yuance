@@ -223,10 +223,10 @@ validate_release_parameters() {
     *) fail "YUANCE_DEPLOY_BUILD_MODE 仅支持 local 或 remote：$BUILD_MODE" ;;
   esac
 
-  for setting in "$SKIP_BUILD" "$PRUNE_DANGLING_IMAGES" "${YUANCE_ALLOW_DIRTY_LOCAL_CONFIG:-0}"; do
+  for setting in "$SKIP_BUILD" "$PRUNE_DANGLING_IMAGES"; do
     case "$setting" in
       0|1) ;;
-      *) fail "YUANCE_SKIP_LOCAL_BUILD、YUANCE_PRUNE_DANGLING_IMAGES 和 YUANCE_ALLOW_DIRTY_LOCAL_CONFIG 只支持 0 或 1。" ;;
+      *) fail "YUANCE_SKIP_LOCAL_BUILD 和 YUANCE_PRUNE_DANGLING_IMAGES 只支持 0 或 1。" ;;
     esac
   done
   if [ "$BUILD_MODE" = "remote" ] && [ "$SKIP_BUILD" = "1" ]; then
@@ -313,17 +313,8 @@ require_clean_main() {
   fi
   dirty="$(git -C "$ROOT_DIR" status --porcelain --untracked-files=all)"
   if [ -n "$dirty" ]; then
-    if [ "${YUANCE_ALLOW_DIRTY_LOCAL_CONFIG:-0}" != "1" ]; then
-      echo "正式环境部署前工作区必须干净，请先提交或还原本地改动。" >&2
-      exit 1
-    fi
-    unexpected_dirty="$(printf '%s\n' "$dirty" | awk 'length($0) > 0 && substr($0, 4) != ".compound-engineering/config.yaml"')"
-    if [ -n "$unexpected_dirty" ]; then
-      echo "仅允许保留未提交的 .compound-engineering/config.yaml，发现其他本地改动：" >&2
-      printf '%s\n' "$unexpected_dirty" >&2
-      exit 1
-    fi
-    echo "已按显式开关保留本地配置改动，不会将其纳入发布源码。" >&2
+    echo "正式环境部署前工作区必须干净，请先提交或还原本地改动。" >&2
+    exit 1
   fi
   git -C "$ROOT_DIR" fetch --quiet origin main
   local_head="$(git -C "$ROOT_DIR" rev-parse HEAD)"

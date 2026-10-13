@@ -152,7 +152,6 @@ for contract in \
   'if (length(name) > 255)' \
   'for command_name in node npm tar' \
   'docker buildx inspect --bootstrap' \
-  'YUANCE_ALLOW_DIRTY_LOCAL_CONFIG' \
   'YUANCE_REMOTE_BUILD_DIR' \
   'npm --prefix frontend ci' \
   'npm --prefix web ci' \

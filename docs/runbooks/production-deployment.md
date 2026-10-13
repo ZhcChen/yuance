@@ -172,10 +172,6 @@ YUANCE_DEPLOY_MODE=remote YUANCE_DEPLOY_BUILD_MODE=remote YUANCE_DEPLOY_HOST=qfy
 YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
 ```
 
-如果发布机存在仅用于本地开发的 `.compound-engineering/config.yaml` 未提交改动，
-可显式设置 `YUANCE_ALLOW_DIRTY_LOCAL_CONFIG=1`；该文件不会进入 `git archive`，
-其他任何工作区改动仍会阻止正式发布。不要用该开关绕过代码、依赖或部署模板改动。
-
 保留的旧远程流程只能显式调用，不会默认回退到旧服务器：
 
 ```bash
@@ -189,9 +185,8 @@ YUANCE_DEPLOY_HOST=<明确目标主机> \
 fetch、构建和传输前拒绝。`local-wsl` 是历史兼容模式，只能显式选择且只支持本地构建。
 发布脚本会在任何发布副作用前校验模式、目标、布尔开关、时长、镜像路径和保留数量。
 参数边界：`YUANCE_KEEP_RELEASE_BACKUPS` 为 `0` 到 `100` 的规范整数；
-`YUANCE_PRUNE_DANGLING_IMAGES`、`YUANCE_SKIP_LOCAL_BUILD` 和
-`YUANCE_ALLOW_DIRTY_LOCAL_CONFIG` 只接受 `0` 或 `1`；三个超时参数使用正整数加 `s`、`m`
-或 `h`，每项不超过 24 小时。`YUANCE_API_IMAGE` 必须是有效的 Docker 镜像名及可选标签，
+`YUANCE_PRUNE_DANGLING_IMAGES` 和 `YUANCE_SKIP_LOCAL_BUILD` 只接受 `0` 或 `1`；
+三个超时参数使用正整数加 `s`、`m` 或 `h`，每项不超过 24 小时。`YUANCE_API_IMAGE` 必须是有效的 Docker 镜像名及可选标签，
 不接受 digest；镜像 tar 必须是仓库内以 `.tar` 结尾的相对路径。自定义远程目录必须是无空格、
 不含重复斜杠和 shell 特殊字符的绝对路径，构建目录不能落入后端运行目录。
 
