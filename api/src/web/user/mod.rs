@@ -203,6 +203,21 @@ pub async fn messages_page(
     .await
 }
 
+pub async fn time_management_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
+) -> AppResult<Response> {
+    retired_shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await
+}
+
 pub async fn projects_page(
     State(state): State<AppState>,
     headers: HeaderMap,

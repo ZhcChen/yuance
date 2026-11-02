@@ -472,6 +472,7 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             .expect("router should respond");
         let mut migrated_route_responses = Vec::new();
         for uri in [
+            "/web/time-management",
             "/web/projects?status=in_progress&page=2&per_page=20",
             "/web/projects/YCE?tab=library",
             "/web/projects/YCE/cycles/7",
@@ -855,6 +856,7 @@ async fn retired_web_business_pages_share_one_app_entry() {
             "/web/me",
             "/web/search?q=release&page=2",
             "/web/messages?filter=unread&page=2",
+            "/web/time-management",
             "/web/projects?status=in_progress",
             "/web/projects/YCE?tab=library",
             "/web/projects/YCE/cycles/7",

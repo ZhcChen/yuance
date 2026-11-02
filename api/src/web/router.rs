@@ -231,6 +231,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
+        .route(
+            "/web/time-management",
+            get(web::user::time_management_page),
+        )
         .route("/web/projects", get(web::user::projects_page))
         .route(
             "/web/projects/{project_key}",
