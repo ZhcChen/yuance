@@ -1662,3 +1662,18 @@ html[data-theme="dark"] .shell-stats div {
   border-right: 1.5px solid currentColor;
   transform: translateY(-50%) rotate(45deg);
 }
+
+.yc-modal:has(.system-user-projects) { width: min(820px, calc(100% - 36px)); }
+.system-user-projects { display: grid; gap: 16px; }
+.system-user-projects > .yc-table-wrap { border: 1px solid var(--yc-line); border-radius: 8px; }
+.system-user-projects .yc-table th,
+.system-user-projects .yc-table td { white-space: nowrap; vertical-align: middle; }
+.system-user-projects .yc-table th:first-child,
+.system-user-projects .yc-table td:first-child { width: 40px; padding-right: 0; }
+.system-user-projects-target { margin: 0; }
+.system-user-projects-assign { display: grid; gap: 12px; margin: 0; padding: 12px 14px; border: 1px solid var(--yc-line); border-radius: 8px; min-width: 0; }
+.system-user-projects-assign legend { padding: 0 6px; color: var(--yc-muted-strong); font-size: 12px; font-weight: 600; }
+.system-user-projects-assign > p { margin: 0; }
+.system-user-projects-option { display: flex; align-items: center; gap: 8px; }
+.system-user-projects-assign-actions,
+.system-user-projects-footer { display: flex; justify-content: flex-end; }
