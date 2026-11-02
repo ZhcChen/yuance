@@ -615,6 +615,53 @@
       }
     },
     {
+      "id": "page.shell.time-management",
+      "route": "/web/time-management",
+      "methods": [
+        "GET"
+      ],
+      "family": "shell",
+      "sourceTemplates": [],
+      "sourceHandlers": [
+        "api/src/web/user/mod.rs::time_management_page"
+      ],
+      "actors": [
+        "authenticated-user"
+      ],
+      "permissions": [
+        "authenticated"
+      ],
+      "controls": [
+        "shared-react-root",
+        "startup-state"
+      ],
+      "states": [
+        "loading",
+        "ready",
+        "session-expired",
+        "asset-error"
+      ],
+      "responsiveStates": [
+        "compact",
+        "regular",
+        "wide"
+      ],
+      "migrationUnit": "U8",
+      "status": "shared",
+      "evidence": {
+        "browserTests": [
+          "api/tests/routing_smoke.rs",
+          "web/e2e/app-shell.spec.mjs"
+        ],
+        "desktopTests": [
+          "desktop/test/renderer-composition.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
+      }
+    },
+    {
       "id": "page.message-search.messages",
       "route": "/web/messages",
       "methods": [

@@ -261,6 +261,12 @@
       ]
     },
     {
+      "route": "/web/time-management",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
       "route": "/web/work-items/{item_key}",
       "methods": [
         "GET"

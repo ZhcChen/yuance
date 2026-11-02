@@ -9,7 +9,7 @@ const experienceUrl = new URL('../parity/experience-manifest.json', import.meta.
 
 const baselineCommit = '6c0e56daa5460a9725ee00b8937124d390e9bd0b';
 const viewports = ['390x844', '768x1024', '1280x800', '1440x900'];
-const noBaselinePages = ['page.boundary.device-authorization', 'page.boundary.shared-app'];
+const noBaselinePages = ['page.boundary.device-authorization', 'page.boundary.shared-app', 'page.shell.time-management'];
 const fixtureGaps = [
   'page.project.cycle-detail',
   'page.project.resource-detail',
@@ -56,13 +56,13 @@ test('视觉合同固定基线提交、CSS 来源和四个验收视口', async (
   assert.deepEqual(contract.globalShell.regionOrder, ['topbar', 'main']);
 });
 
-test('视觉合同与体验清单 30 页双向闭合并完整分配 V2-V10', async () => {
+test('视觉合同与体验清单 31 页双向闭合并完整分配 V2-V10', async () => {
   const [contract, experience] = await Promise.all([readJson(contractUrl), readJson(experienceUrl)]);
   const contractIds = contract.pages.map(({ id }) => id).sort();
   const experienceIds = experience.pages.map(({ id }) => id).sort();
 
   assert.deepEqual(contractIds, experienceIds);
-  assert.equal(new Set(contractIds).size, 30);
+  assert.equal(new Set(contractIds).size, 31);
   assert.deepEqual(
     [...new Set(contract.pages.map(({ visualUnit }) => visualUnit))].sort(),
     ['V10', 'V2', 'V3', 'V4', 'V5', 'V6', 'V7', 'V8', 'V9'],
