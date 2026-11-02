@@ -1,6 +1,6 @@
 // @ts-check
 /* global Blob, URL */
-/* global Element, ResizeObserver */
+/* global Element, ResizeObserver, setTimeout, clearTimeout */
 
 import React, { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
@@ -14,6 +14,7 @@ const PIXELS_PER_DAY_BY_SCALE = {
 };
 const DEFAULT_TIME_SCALE = 'week';
 const DAY_MS = 86400000;
+const HOVER_TIP_DELAY_MS = 300;
 const DEFAULT_SPAN_MONTHS = 4;
 const DEFAULT_DAILY_HOURS = 8;
 const TIME_GANTT_LABEL_WIDTH = 170;
@@ -125,6 +126,8 @@ export function TimeAllocationGantt({
   const [editPopover, setEditPopover] = useState(/** @type {{ left: number, top: number } | null} */ (null));
   const [stretchTrackWidth, setStretchTrackWidth] = useState(0);
   const [legendExpanded, setLegendExpanded] = useState(false);
+  const [hoverTip, setHoverTip] = useState(/** @type {{ open: boolean, above: boolean, left: number, top: number, owner: string, project: string, phase: string, range: string, remaining: string, hours: string, note: string }} */ ({ open: false, above: false, left: 0, top: 0, owner: '', project: '', phase: '', range: '', remaining: '', hours: '', note: '' }));
+  const hoverTipTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
   const ganttRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const ganttScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const ganttScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: ganttScrollRef, label: '时间排期' });
@@ -277,6 +280,35 @@ export function TimeAllocationGantt({
     return visibleMembers.find((member) => member.username === username)?.display_name || username;
   }
 
+  function hideHoverTip() {
+    if (hoverTipTimerRef.current) clearTimeout(hoverTipTimerRef.current);
+    hoverTipTimerRef.current = null;
+    setHoverTip((current) => (current.open ? { ...current, open: false } : current));
+  }
+
+  function scheduleHoverTip(event, tip) {
+    if (hoverTipTimerRef.current) clearTimeout(hoverTipTimerRef.current);
+    if (blockDragRef.current || selectionRef.current) return;
+    const { clientX, clientY } = event;
+    hoverTipTimerRef.current = setTimeout(() => {
+      hoverTipTimerRef.current = null;
+      const view = ganttRef.current?.ownerDocument.defaultView;
+      const viewWidth = view?.innerWidth || 1280;
+      const viewHeight = view?.innerHeight || 800;
+      setHoverTip({
+        ...tip,
+        open: true,
+        above: clientY + 220 > viewHeight,
+        left: Math.max(12, Math.min(clientX + 14, viewWidth - 352)),
+        top: clientY + (clientY + 220 > viewHeight ? -16 : 20),
+      });
+    }, HOVER_TIP_DELAY_MS);
+  }
+
+  useEffect(() => () => {
+    if (hoverTipTimerRef.current) clearTimeout(hoverTipTimerRef.current);
+  }, []);
+
   function allocationBlock(allocation, ownerLabel) {
     const start = Math.max(0, dayIndex(allocation.start_date, computedViewStart));
     const end = Math.min(totalDays - 1, dayIndex(allocation.end_date, computedViewStart));
@@ -294,7 +326,17 @@ export function TimeAllocationGantt({
         className={`time-gantt-allocation${conflict ? ' time-gantt-allocation-conflict' : ''}`}
         data-id={allocation.id}
         style={{ left: `${start * pxPerDay}px`, width: `${(end - start + 1) * pxPerDay}px`, background: projectColor(allocation.project_key) }}
-        title={`${ownerLabel} · ${allocation.project_name}${allocation.phase_task_name ? `\n阶段任务：${allocation.phase_task_name}` : ''}\n${allocation.start_date} ~ ${allocation.end_date}\n剩余时间：${remainingLabel}\n每天 ${allocation.daily_hours} 小时${allocation.note ? `\n${allocation.note}` : ''}`}>
+        onMouseEnter={(event) => scheduleHoverTip(event, {
+          owner: ownerLabel,
+          project: allocation.project_name,
+          phase: allocation.phase_task_name || '',
+          range: `${allocation.start_date} ~ ${allocation.end_date}`,
+          remaining: remainingLabel,
+          hours: `每天 ${allocation.daily_hours} 小时`,
+          note: allocation.note || '',
+        })}
+        onMouseLeave={hideHoverTip}
+        onContextMenu={hideHoverTip}>
         <span className="time-gantt-allocation-name">{allocation.phase_task_name || allocation.project_name}</span>
         <span className="time-gantt-allocation-meta">{allocation.phase_task_name ? `${allocation.project_name} · ` : ''}{allocation.start_date.slice(5)} ~ {allocation.end_date.slice(5)} {allocation.daily_hours}h/天</span>
         {!viewReadOnly ? <>
@@ -418,6 +460,7 @@ export function TimeAllocationGantt({
 
   function handleGanttPointerDown(event) {
     if (event.button !== 0) return;
+    hideHoverTip();
     const target = event.target;
     if (!(target instanceof Element)) return;
     const block = /** @type {HTMLElement | null} */ (target.closest('.time-gantt-allocation'));
@@ -953,6 +996,17 @@ export function TimeAllocationGantt({
           </ul>
         </Modal>
       ) : null}
+
+      <div className={`time-gantt-tip${hoverTip.open ? ' time-gantt-tip-open' : ''}${hoverTip.above ? ' time-gantt-tip-above' : ''}`} role="tooltip" aria-hidden={!hoverTip.open} style={{ left: `${hoverTip.left}px`, top: `${hoverTip.top}px` }}>
+        <div className="time-gantt-tip-title">{hoverTip.owner} · {hoverTip.project}</div>
+        <dl className="time-gantt-tip-list">
+          {hoverTip.phase ? <><dt>阶段任务</dt><dd>{hoverTip.phase}</dd></> : null}
+          <dt>起止日期</dt><dd>{hoverTip.range}</dd>
+          <dt>剩余时间</dt><dd>{hoverTip.remaining}</dd>
+          <dt>工时</dt><dd>{hoverTip.hours}</dd>
+          {hoverTip.note ? <><dt>备注</dt><dd>{hoverTip.note}</dd></> : null}
+        </dl>
+      </div>
 
       {editDraft && editPopover ? (
         <>
