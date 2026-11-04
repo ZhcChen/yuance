@@ -48,10 +48,27 @@
 - [x] T022 验证：键盘 Tab 遍历走查，确认焦点环可见且顺序与视觉顺序一致；正文对比度抽检 ≥ 4.5:1。依赖 T020。**结果：完成。40 个焦点元素全部可见焦点指示；18 组配色组合全部 ≥ 4.5:1。**
 - [x] T023 验证：运行 `make frontend-check` 与 `make web-build`，确认通过且生产产物不含 `ui-v3`；`git diff` 确认 `docs/prototypes/time-management/index.html` 未被改动。依赖 T008-T019。**结果：`make web-build` 通过且产物不含 ui-v3；`make frontend-check` 的 web/frontend 段通过，desktop 段因 `desktop/node_modules/typescript` 缺失导致 `tsc: command not found` 中断，属既有环境问题，与本轮无关；`docs/prototypes/time-management/index.html` 未改动。**
 
+## 阶段四：视觉重做（评审反馈后追加）
+
+> 触发：首轮评审结论「视觉太拉垮，不如线上」。目标是把「信息结构正确但视觉平淡」改成可交付的设计稿。
+
+- [x] T026 [P] FR-005 FR-008 重做 `ui-v3/styles/tokens.css`：改用 `ui-ux-pro-max` 命中的靛蓝主色 + 翡翠强调体系，
+  新增深色侧栏色组（`--nav-*`）、7 组状态色三元组（底色/边框/文字）、四级阴影与四级圆角，
+  字号刻度补 11/15/22/28。验收：令牌唯一来源，页面样式无原始色值。
+- [x] T027 [P] FR-010 重做 `ui-v3/styles/layout.css`：深色渐变品牌侧栏（分组导航 + 活动项左侧指示条 + 底部账户块）、
+  半透明模糊顶栏、卡片网格栅格、响应式断点调整为 1120 / 768。验收：深色侧栏与浅色内容区形成双锚点。
+- [x] T028 [P] FR-010 重做 `ui-v3/styles/components.css`：层级由描边改为阴影 + 留白，
+  指标卡用彩色图标磁贴 + 悬浮上浮，状态改为彩色胶囊，项目卡片新增 `.project-card` 形态，
+  进度条、图标磁贴、分段控件、页面入场动效。验收：视觉不再呈「Excel 打印稿」形态。
+- [x] T029 [P] FR-004 项目列表由大表格改为卡片网格（`ui-v3/scripts/pages/projects.js`），补充指标条与最近更新工作项面板；
+  工作台、需求列表、消息中心、个人中心同步新视觉。验收：项目实体以卡片呈现，信息项与现网一一对应。
+- [x] T030 验证：重做后复跑路由、响应式、键盘与对比度全量检查。
+  **结果：20 路由 × 4 断点 0 溢出、0 运行时错误；Tab 42 步焦点指示 0 缺失；对比度 24 组全部 ≥ 4.5:1。**
+
 ## 复核与交付
 
 - [x] T024 按风险完成代码审查；重要改动安排独立复核。**结果：完成。复核记录见 `docs/reviews/2026-11-04-ui-v3-design-prototype.md`。**
-- [ ] T025 执行最终聚焦验证、检查 diff 与 Runbook 一致性，按授权范围提交推送；不自动部署。**结果：验证部分已随 T020-T023 完成；提交待本轮收尾执行。**
+- [ ] T025 执行最终聚焦验证、检查 diff 与 Runbook 一致性，按授权范围提交推送；不自动部署。**结果：验证部分已随 T020-T023 与 T030 完成；提交待本轮收尾执行。**
 
 ## 验收证据
 
@@ -60,8 +77,9 @@
 - 静态服务：`python3 -m http.server 4183 --directory ui-v3`，`/`、`/scripts/app.js`、`/assets/icons.svg` 均 200。
 - 路由渲染：20 条路由逐条切换，20/20 有内容，`window.__v3Errors` 累计 0 条。
 - 响应式：CDP 设定 CSS 宽度 1440 / 1024 / 767 / 375，每档 20 路由，0 次横向溢出。
-- 键盘：Tab 40 步，40 个焦点元素全部有可见焦点指示，顺序与视觉顺序一致。
-- 对比度：解析 `tokens.css` 逐对计算，18 组全部 ≥ 4.5:1。
+- 键盘：Tab 42 步，42 个焦点元素全部有可见焦点指示，顺序与视觉顺序一致。
+- 对比度：解析 `tokens.css` 逐对计算，24 组组合全部 ≥ 4.5:1（含侧栏色组）。
+- 令牌完整性：`styles/*.css` 中 `var(--x)` 引用与 `tokens.css` 定义双向核对，无缺失定义。
 - 构建隔离：`make web-build` 通过，`web/dist` 仅含 `index.html`、`manifest.json` 与两个 hash 资源；全仓 grep 无构建链路引用 `ui-v3`。
 - 未验证项：`make frontend-check` 的 desktop 段因本地 `typescript` 依赖缺失无法执行，与本轮改动无关，需补齐依赖后单独复核。
-- 截图证据：`.artifacts/ui-v3/`（final-workbench、v3-requirements、v3-detail、v3-project、v3-users、v3-resource、v3-messages 及线上现网对照图 current-workbench、current-requirements）。
+- 截图证据：`.artifacts/ui-v3/`（final-workbench、final-projects、final-requirements、final-detail、final-messages、final-profile、final-users、final-resource，及线上现网对照图 current-workbench、current-requirements）。
