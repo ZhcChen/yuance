@@ -233,11 +233,31 @@ export function pagination(total, page, pageSize, onChange) {
   return h(
     'div',
     { class: 'cluster cluster--between' },
+    h('span', null, `共 ${total} 条 · 第 ${page} / ${pages} 页`),
+    h('div', { class: 'pagination' }, items),
+  );
+}
+
+/** 进度条。 */
+export function progressBar(percent, { done = false, label = '' } = {}) {
+  const value = Math.max(0, Math.min(100, percent));
+  return h(
+    'span',
+    { class: 'cluster', style: { gap: '8px', flexWrap: 'nowrap' } },
     h(
       'span',
-      null,
-      `共 ${total} 条 · 第 ${page} / ${pages} 页`,
+      { class: 'progress' },
+      h('span', { class: `progress__bar${done ? ' progress__bar--done' : ''}`, style: { width: `${value}%` } }),
     ),
-    h('div', { class: 'pagination' }, items),
+    h('span', { class: 'table__muted' }, label || `${value}%`),
+  );
+}
+
+/** 彩色图标磁贴。 */
+export function iconTile(iconId, variant = '', size = '') {
+  return h(
+    'span',
+    { class: `icon-tile${variant ? ` icon-tile--${variant}` : ''}${size ? ` icon-tile--${size}` : ''}` },
+    icon(iconId),
   );
 }

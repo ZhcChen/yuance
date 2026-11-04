@@ -74,6 +74,7 @@ export function renderSidebar(activePageId) {
       { class: 'sidebar__brand' },
       h('span', { class: 'sidebar__logo' }, icon('i-layers')),
       h('span', { class: 'sidebar__name' }, '元策'),
+      h('span', { class: 'sidebar__tag' }, 'V3 原型'),
     ),
     ...groups,
     h(
@@ -91,6 +92,17 @@ export function renderSidebar(activePageId) {
         icon('i-clock'),
         h('span', null, '时间管理'),
         h('span', { class: 'sidebar__badge' }, '现网'),
+      ),
+      h(
+        'div',
+        { class: 'sidebar__account' },
+        avatar(currentUser.display_name, 'violet'),
+        h(
+          'div',
+          { style: { minWidth: '0' } },
+          h('div', { class: 'sidebar__account-name' }, currentUser.display_name),
+          h('div', { class: 'sidebar__account-role' }, currentUser.role),
+        ),
       ),
     ),
   );
@@ -149,6 +161,7 @@ export function renderTopbar(onNavigate) {
     h('div', { class: 'global-search' }, searchInput, h('span', { class: 'global-search__hint' }, 'Enter')),
     h('div', { class: 'topbar__spacer' }),
     h('div', { class: 'cluster' }, h('span', { class: 'table__muted' }, '当前项目'), projectSelect),
+    h('span', { class: 'topbar__divider' }),
     h(
       'button',
       { class: 'topbar__icon-btn', type: 'button', 'aria-label': '打开消息通知', onclick: () => onNavigate('#/messages') },
@@ -161,7 +174,7 @@ export function renderTopbar(onNavigate) {
       h(
         'button',
         { class: 'topbar__icon-btn', type: 'button', 'aria-label': `打开 ${currentUser.display_name} 的账户菜单` },
-        avatar(currentUser.display_name),
+        avatar(currentUser.display_name, 'violet'),
       ),
       h(
         'div',

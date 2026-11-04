@@ -2,7 +2,7 @@
  * 元策 UI v3 · 工作项列表（需求 / 任务 / Bug 共用一套模板）
  */
 
-import { h, icon, dataTable, panel, status, priority, badge, pagination, emptyState } from '../ui.js';
+import { h, icon, dataTable, panel, status, priority, badge, pagination, emptyState, iconTile } from '../ui.js';
 import { workItems } from '../mock/data.js';
 
 const TYPES = {
@@ -42,9 +42,30 @@ export function renderWorkItems(itemType, params, query) {
   const metrics = h(
     'div',
     { class: 'metrics' },
-    h('div', { class: 'metric' }, h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '全部'), h('div', { class: 'metric__value' }, String(all.length)))),
-    h('div', { class: 'metric' }, h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理 / 进行中 / 待确认'), h('div', { class: 'metric__value' }, String(all.filter((item) => ['待处理', '进行中', '待确认'].includes(item.status)).length)))),
-    h('div', { class: 'metric' }, h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '高优先级'), h('div', { class: 'metric__value' }, String(all.filter((item) => item.priority === '高').length)))),
+    h(
+      'div',
+      { class: 'metric' },
+      iconTile('i-layers', 'brand'),
+      h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, `全部${config.label}`), h('div', { class: 'metric__value' }, String(all.length))),
+    ),
+    h(
+      'div',
+      { class: 'metric' },
+      iconTile('i-activity', 'warning'),
+      h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理 / 进行中 / 待确认'), h('div', { class: 'metric__value' }, String(all.filter((item) => ['待处理', '进行中', '待确认'].includes(item.status)).length))),
+    ),
+    h(
+      'div',
+      { class: 'metric' },
+      iconTile('i-alert', 'danger'),
+      h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '高优先级'), h('div', { class: 'metric__value' }, String(all.filter((item) => item.priority === '高').length))),
+    ),
+    h(
+      'div',
+      { class: 'metric' },
+      iconTile('i-check', 'success'),
+      h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '已完成'), h('div', { class: 'metric__value' }, String(all.filter((item) => item.status === '已完成').length))),
+    ),
   );
 
   const selected = new Set();
@@ -204,7 +225,7 @@ export function renderWorkItems(itemType, params, query) {
       ),
     ),
     metrics,
-    panel({ title: `${config.label}列表`, desc: `当前项目：零售系统`, body: filterBar }),
+    panel({ title: '筛选条件', desc: '当前项目：零售系统', body: filterBar }),
     panel({
       title: `${config.label}列表`,
       desc: `共 ${filtered.length} 条`,

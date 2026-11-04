@@ -2,13 +2,13 @@
  * 元策 UI v3 · 个人中心
  */
 
-import { h, icon, panel, badge, avatar, status } from '../ui.js';
+import { h, icon, panel, badge, avatar, status, iconTile } from '../ui.js';
 import { currentUser, personalAnalysis } from '../mock/data.js';
 
 export function renderProfile() {
   const profile = h(
     'div',
-    { class: 'cluster', style: { gap: '16px', alignItems: 'flex-start' } },
+    { class: 'cluster', style: { gap: '16px', alignItems: 'center' } },
     avatar(currentUser.display_name, 'success'),
     h(
       'div',
@@ -16,6 +16,15 @@ export function renderProfile() {
       h('h1', { class: 'page-head__title' }, currentUser.display_name, badge('超级管理员', 'brand')),
       h('p', { class: 'page-head__desc' }, `${currentUser.username} · ${currentUser.department} · ${currentUser.email}`),
     ),
+  );
+
+  const metrics = h(
+    'div',
+    { class: 'metrics' },
+    h('div', { class: 'metric' }, iconTile('i-inbox', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的需求'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.requirement)))),
+    h('div', { class: 'metric' }, iconTile('i-task', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的任务'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.task)))),
+    h('div', { class: 'metric' }, iconTile('i-bug', 'danger'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的 Bug'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.bug)))),
+    h('div', { class: 'metric' }, iconTile('i-calendar', 'violet'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '当前迭代'), h('div', { class: 'metric__value', style: { fontSize: 'var(--fs-16)' } }, personalAnalysis.cycle))),
   );
 
   const account = h(
@@ -81,6 +90,7 @@ export function renderProfile() {
     'div',
     { class: 'stack' },
     h('div', { class: 'page-head' }, h('div', { class: 'page-head__text' }, profile)),
+    metrics,
     h(
       'div',
       { class: 'grid grid--2' },

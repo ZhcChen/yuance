@@ -4,96 +4,113 @@
  * 本文件是 v3 设计令牌的唯一来源。其它样式文件只允许引用变量，
  * 不允许出现原始色值、间距数字或阴影字面量。
  *
- * 分层：
- *   1. surface  承载面
- *   2. border   分隔线
- *   3. text     文字
- *   4. brand    品牌
- *   5. status   状态（success/warning/danger/info/neutral）
- *   6. accent   数据可视化辅助色
+ * 方向：靛蓝主色 + 翡翠强调（ui-ux-pro-max 命中的 Micro SaaS 配色），
+ * 深色品牌侧栏 + 浅色内容区，靠阴影与留白建立层级，不靠满屏描边。
  */
 
 :root {
   color-scheme: light;
 
-  /* ---------- 1. 承载面 surface ---------- */
-  --surface-canvas: #f1f4f8;      /* 页面底色 */
-  --surface-raised: #ffffff;      /* 卡片、面板、表格 */
-  --surface-sunken: #f6f8fb;      /* 表头、次级分区、代码块 */
-  --surface-overlay: #ffffff;     /* 弹层、下拉、气泡 */
-  --surface-inverse: #17212b;     /* 反色块 */
-  --surface-overlay-scrim: rgb(23 33 43 / 45%);
+  /* ---------- 承载面 surface ---------- */
+  --bg: #f4f5fb;
+  --surface: #ffffff;
+  --surface-2: #fafbfe;
+  --surface-3: #f1f3f9;
+  --surface-hover: #f7f8fc;
+  --surface-overlay: #ffffff;
+  --surface-scrim: rgb(21 24 39 / 45%);
 
-  /* ---------- 2. 分隔线 border ---------- */
-  --border-subtle: #e8edf3;       /* 行分隔、浅色分隔 */
-  --border-default: #dce4ed;      /* 控件边框、卡片边框 */
-  --border-strong: #c2cfdd;       /* 强分隔、表头下沿 */
-  --border-inverse: #3c4a5c;
+  /* ---------- 侧栏（深色） ---------- */
+  --nav-bg: #151829;
+  --nav-bg-2: #1d2138;
+  --nav-border: rgb(255 255 255 / 7%);
+  --nav-text: #9ba2bc;
+  --nav-text-strong: #ffffff;
+  --nav-text-muted: #8088a6;
+  --nav-hover: rgb(255 255 255 / 7%);
+  --nav-active-bg: rgb(99 102 241 / 22%);
+  --nav-active-text: #c3cdff;
+  --nav-badge: rgb(255 255 255 / 10%);
+  --nav-badge-text: #b9c1dc;
 
-  /* ---------- 3. 文字 text ---------- */
-  --text-primary: #1a2430;        /* 正文，对 --surface-raised 15.7:1 */
-  --text-secondary: #5b6875;      /* 次要说明，对 --surface-raised 5.7:1 */
-  --text-tertiary: #68747f;       /* 弱化信息，对 --surface-raised 4.8:1，仅用于承载面之上的非关键信息 */
-  --text-disabled: #a3adb8;       /* 禁用态，不承载信息 */
+  /* ---------- 分隔线 border ---------- */
+  --line: #e9ebf2;
+  --line-soft: #f0f1f7;
+  --line-strong: #dcdfeb;
+  --line-focus: #4f46e5;
+
+  /* ---------- 文字 text ---------- */
+  --text-primary: #151827;
+  --text-secondary: #4f5568;
+  --text-tertiary: #676d7f;
+  --text-disabled: #b4b9c8;
   --text-inverse: #ffffff;
-  --text-link: #2c5f8f;
+  --text-link: #4338ca;
 
-  /* ---------- 4. 品牌 brand ---------- */
-  --brand: #376b9b;
-  --brand-strong: #285579;
-  --brand-soft: #eaf2f8;
-  --brand-line: #c3d9e9;
+  /* ---------- 品牌 brand ---------- */
+  --brand: #4f46e5;
+  --brand-strong: #4338ca;
+  --brand-hover: #4338ca;
+  --brand-soft: #eef0fe;
+  --brand-soft-2: #e2e5fd;
+  --brand-line: #d8dcfb;
   --brand-contrast: #ffffff;
-  --brand-ring: rgb(55 107 155 / 32%);
+  --brand-ring: rgb(79 70 229 / 26%);
+  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 
-  /* ---------- 5. 状态 status ---------- */
-  --success: #2d8a68;
-  --success-soft: #e6f4ef;
-  --success-line: #b7ddcd;
-  --success-text: #1f6b50;
+  /* ---------- 状态 status ---------- */
+  --success: #059669;
+  --success-soft: #e7f7f1;
+  --success-line: #bfe9d8;
+  --success-text: #047857;
 
-  --warning: #a85b00;
-  --warning-soft: #fdf1e0;
-  --warning-line: #f0d3a8;
-  --warning-text: #8a4b00;
+  --warning: #d97706;
+  --warning-soft: #fef3e2;
+  --warning-line: #fbdfb4;
+  --warning-text: #b45309;
 
-  --danger: #b42318;
-  --danger-soft: #fdeeed;
-  --danger-line: #f2c4c1;
-  --danger-text: #93201a;
+  --danger: #dc2626;
+  --danger-soft: #fdecec;
+  --danger-line: #f8cfcf;
+  --danger-text: #b91c1c;
 
-  --info: #376b9b;
-  --info-soft: #eaf2f8;
-  --info-line: #c3d9e9;
-  --info-text: #285579;
+  --info: #2563eb;
+  --info-soft: #eaf1fe;
+  --info-line: #c7dafb;
+  --info-text: #1d4ed8;
 
-  --neutral: #5b6875;
-  --neutral-soft: #eef1f5;
-  --neutral-line: #d7dee6;
-  --neutral-text: #4a5560;
+  --violet: #7c3aed;
+  --violet-soft: #f3eefe;
+  --violet-line: #ddd0fb;
+  --violet-text: #6d28d9;
 
-  --violet: #6d4fa8;
-  --violet-soft: #f1ecf8;
-  --violet-line: #d8c9ec;
+  --teal: #0d9488;
+  --teal-soft: #e6f7f5;
+  --teal-line: #bee9e4;
+  --teal-text: #0f766e;
 
-  --sand: #836333;
-  --sand-soft: #f7f1e5;
-  --sand-line: #e4d5b8;
+  --neutral: #64748b;
+  --neutral-soft: #f1f3f9;
+  --neutral-line: #dfe3ec;
+  --neutral-text: #475569;
 
-  /* ---------- 6. 字号刻度 type scale ---------- */
+  /* ---------- 字号刻度 type scale ---------- */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
-  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
+  --fs-11: 11px;
   --fs-12: 12px;
   --fs-13: 13px;
   --fs-14: 14px;
+  --fs-15: 15px;
   --fs-16: 16px;
   --fs-18: 18px;
-  --fs-24: 24px;
-  --fs-30: 30px;
+  --fs-22: 22px;
+  --fs-28: 28px;
+  --fs-34: 34px;
 
-  --lh-tight: 1.25;
+  --lh-tight: 1.2;
   --lh-snug: 1.4;
   --lh-normal: 1.55;
   --lh-relaxed: 1.75;
@@ -108,6 +125,7 @@
   --sp-4: 4px;
   --sp-6: 6px;
   --sp-8: 8px;
+  --sp-10: 10px;
   --sp-12: 12px;
   --sp-16: 16px;
   --sp-20: 20px;
@@ -117,27 +135,27 @@
   --sp-48: 48px;
 
   /* ---------- 圆角 radius ---------- */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-full: 999px;
 
   /* ---------- 阴影 elevation ---------- */
-  --shadow-xs: 0 1px 2px rgb(26 36 48 / 6%);
-  --shadow-sm: 0 1px 2px rgb(26 36 48 / 6%), 0 2px 6px rgb(26 36 48 / 5%);
-  --shadow-md: 0 4px 12px rgb(26 36 48 / 9%), 0 1px 3px rgb(26 36 48 / 6%);
-  --shadow-lg: 0 12px 32px rgb(26 36 48 / 13%), 0 2px 8px rgb(26 36 48 / 6%);
-  --shadow-inset: inset 0 0 0 1px var(--border-default);
+  --shadow-xs: 0 1px 2px rgb(21 24 39 / 5%);
+  --shadow-sm: 0 1px 2px rgb(21 24 39 / 5%), 0 2px 6px rgb(21 24 39 / 4%);
+  --shadow-md: 0 2px 4px rgb(21 24 39 / 4%), 0 8px 20px rgb(21 24 39 / 7%);
+  --shadow-lg: 0 4px 10px rgb(21 24 39 / 6%), 0 20px 44px rgb(21 24 39 / 12%);
+  --shadow-brand: 0 6px 16px rgb(79 70 229 / 26%);
 
   /* ---------- 动效 motion ---------- */
   --motion-instant: 0ms;
-  --motion-fast: 120ms;
-  --motion-base: 180ms;
-  --motion-slow: 260ms;
+  --motion-fast: 130ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
   --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
-  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---------- 层级 z-index ---------- */
   --z-base: 0;
@@ -148,21 +166,21 @@
   --z-toast: 500;
 
   /* ---------- 控件尺寸 control ---------- */
-  --control-h-sm: 26px;
-  --control-h-md: 30px;
-  --control-h-lg: 34px;
-  --control-h-input: 32px;
-  --control-px: 10px;
+  --control-h-sm: 28px;
+  --control-h-md: 32px;
+  --control-h-lg: 36px;
+  --control-h-input: 36px;
+  --control-px: 12px;
   --control-fs: var(--fs-13);
 
   /* ---------- 布局尺寸 layout ---------- */
-  --sidebar-w: 212px;
-  --sidebar-w-collapsed: 56px;
-  --topbar-h: 52px;
-  --content-max: 1680px;
+  --sidebar-w: 236px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 60px;
+  --content-max: 1560px;
 
   /* ---------- 表格 table ---------- */
-  --table-row-h: 38px;
-  --table-header-h: 34px;
-  --table-cell-px: 12px;
+  --table-row-h: 46px;
+  --table-header-h: 40px;
+  --table-cell-px: 16px;
 }

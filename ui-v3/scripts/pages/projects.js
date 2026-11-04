@@ -2,43 +2,95 @@
  * 元策 UI v3 · 项目列表与项目详情
  */
 
-import { h, icon, dataTable, panel, status, badge, avatar, emptyState } from '../ui.js';
-import { projects, projectOverview, personalAnalysis } from '../mock/data.js';
+import { h, icon, dataTable, panel, status, badge, avatar, emptyState, progressBar, iconTile } from '../ui.js';
+import { projects, projectOverview, personalAnalysis, workItems } from '../mock/data.js';
+
+const MEMBER_VARIANTS = ['success', 'violet', 'teal', 'info', 'sand'];
+
+function projectCard(project) {
+  const total = project.pending.requirement + project.pending.task + project.pending.bug;
+
+  return h(
+    'a',
+    { class: 'project-card v3-enter', href: `#/projects/${project.project_key}` },
+    h(
+      'div',
+      { class: 'project-card__top' },
+      h('span', { class: 'project-card__mark' }, project.name.charAt(0)),
+      h(
+        'div',
+        { style: { minWidth: '0' } },
+        h('div', { class: 'project-card__name' }, project.name),
+        h('div', { class: 'project-card__key' }, project.project_key),
+      ),
+      h('span', { style: { marginLeft: 'auto' } }, status(project.status, 'success')),
+    ),
+    h(
+      'div',
+      { class: 'project-card__stats' },
+      badge(`需求 ${project.pending.requirement}`, project.pending.requirement ? 'brand' : 'plain'),
+      badge(`任务 ${project.pending.task}`, 'plain'),
+      badge(`Bug ${project.pending.bug}`, project.pending.bug ? 'danger' : 'plain'),
+    ),
+    h(
+      'div',
+      { class: 'project-card__foot' },
+      h('span', null, '负责人 ', project.owner),
+      h('span', null, '·'),
+      h('span', null, project.updated_at.slice(5, 10)),
+      h(
+        'span',
+        { class: 'avatar-stack' },
+        project.members.map((member, index) =>
+          avatar(member === 'admin' ? '超' : member.charAt(0).toUpperCase(), MEMBER_VARIANTS[index % MEMBER_VARIANTS.length]),
+        ),
+      ),
+      total
+        ? h(
+            'span',
+            { class: 'mini-stat' },
+            h('span', { class: 'mini-stat__value' }, String(total)),
+            h('span', { class: 'mini-stat__label' }, '待处理'),
+          )
+        : null,
+    ),
+  );
+}
 
 export function renderProjects() {
-  const table = dataTable(
-    [
-      { key: 'project_key', label: '编号', cellClass: 'table__key' },
-      {
-        key: 'name',
-        label: '项目',
-        render: (row) => h('a', { class: 'table__title', href: `#/projects/${row.project_key}` }, row.name),
-      },
-      { key: 'owner', label: '项目负责人', cellClass: 'table__muted' },
-      {
-        key: 'pending',
-        label: '我的待处理',
-        render: (row) => {
-          const total = row.pending.requirement + row.pending.task + row.pending.bug;
-          return h(
-            'span',
-            { class: 'cluster', style: { gap: '4px' } },
-            badge(`需求 ${row.pending.requirement}`, row.pending.requirement ? 'brand' : 'plain'),
-            badge(`任务 ${row.pending.task}`, 'plain'),
-            badge(`Bug ${row.pending.bug}`, row.pending.bug ? 'danger' : 'plain'),
-          );
-        },
-      },
-      { key: 'status', label: '状态', render: (row) => status(row.status, 'success') },
-      { key: 'updated_at', label: '更新', cellClass: 'table__muted' },
-      {
-        key: 'action',
-        label: '操作',
-        align: 'right',
-        render: (row) => h('a', { class: 'btn btn--sm btn--ghost', href: `#/projects/${row.project_key}` }, '查看'),
-      },
-    ],
-    projects,
+  const cardGrid = h('div', { class: 'card-grid' }, projects.map((project) => projectCard(project)));
+
+  const pendingTotal = projects.reduce(
+    (sum, project) => sum + project.pending.requirement + project.pending.task + project.pending.bug,
+    0,
+  );
+  const memberTotal = projects.reduce((sum, project) => sum + project.members.length, 0);
+
+  const metrics = h(
+    'div',
+    { class: 'metrics' },
+    h('div', { class: 'metric' }, iconTile('i-folder', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '进行中项目'), h('div', { class: 'metric__value' }, String(projects.length)), h('div', { class: 'metric__delta' }, '较上月 +1'))),
+    h('div', { class: 'metric' }, iconTile('i-user', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我负责的'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.owner === '超级管理员').length)))),
+    h('div', { class: 'metric' }, iconTile('i-inbox', 'warning'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理工作项'), h('div', { class: 'metric__value' }, String(pendingTotal)), h('div', { class: 'metric__delta' }, '需求 / 任务 / Bug 合计'))),
+    h('div', { class: 'metric' }, iconTile('i-users', 'violet'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '项目成员'), h('div', { class: 'metric__value' }, String(memberTotal)), h('div', { class: 'metric__delta' }, '去重前'))),
+  );
+
+  const recentItems = h(
+    'div',
+    null,
+    workItems.slice(0, 5).map((item) =>
+      h(
+        'a',
+        { class: 'list-row', href: `#/work-items/${item.key}`, style: { textDecoration: 'none' } },
+        h(
+          'div',
+          { class: 'list-row__main' },
+          h('span', { class: 'list-row__title' }, item.title),
+          h('div', { class: 'list-row__meta' }, h('code', null, item.key), h('span', null, item.project_name)),
+        ),
+        h('div', { class: 'list-row__side' }, h('span', { class: 'table__muted' }, item.updated_at)),
+      ),
+    ),
   );
 
   return h(
@@ -51,11 +103,41 @@ export function renderProjects() {
         'div',
         { class: 'page-head__text' },
         h('h1', { class: 'page-head__title' }, '项目'),
-        h('p', { class: 'page-head__desc' }, '共 11 个进行中项目，含我的待处理数量与最近更新时间。'),
+        h('p', { class: 'page-head__desc' }, `共 ${projects.length} 个进行中项目，按最近更新排序。`),
       ),
-      h('div', { class: 'page-head__actions' }, h('button', { class: 'btn btn--primary', type: 'button' }, icon('i-plus'), '新建项目')),
+      h(
+        'div',
+        { class: 'page-head__actions' },
+        h('button', { class: 'btn btn--secondary', type: 'button' }, icon('i-filter'), '筛选'),
+        h('button', { class: 'btn btn--primary', type: 'button' }, icon('i-plus'), '新建项目'),
+      ),
     ),
-    panel({ body: table, flush: true }),
+    metrics,
+    h(
+      'div',
+      { class: 'cluster cluster--between' },
+      h(
+        'div',
+        { class: 'btn-group' },
+        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'true' }, '全部项目'),
+        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'false' }, '我负责的'),
+        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'false' }, '我参与的'),
+        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'false' }, '已归档'),
+      ),
+      h(
+        'label',
+        { class: 'field', style: { width: '240px' } },
+        h('input', { class: 'input input--search', type: 'search', placeholder: '搜索项目名称或编号', 'aria-label': '搜索项目' }),
+      ),
+    ),
+    cardGrid,
+    panel({
+      title: '最近更新的工作项',
+      desc: '跨项目',
+      actions: h('a', { class: 'btn btn--sm btn--ghost', href: '#/requirements' }, '查看全部'),
+      body: recentItems,
+      flush: true,
+    }),
   );
 }
 
@@ -102,14 +184,15 @@ export function renderProjectDetail(params) {
           panel({
             title: '项目成员',
             desc: `${overview.members.length} 人`,
+            actions: h('button', { class: 'btn btn--sm btn--secondary', type: 'button' }, icon('i-plus'), '添加'),
             body: h(
               'div',
               { class: 'stack stack--sm' },
-              overview.members.map((member) =>
+              overview.members.map((member, index) =>
                 h(
                   'div',
-                  { class: 'list-row', style: { padding: '6px 0', borderBottom: '0' } },
-                  avatar(member.display_name, member.role === '负责人' ? 'success' : ''),
+                  { class: 'list-row', style: { padding: '8px 0', borderBottom: '0' } },
+                  avatar(member.display_name, MEMBER_VARIANTS[index % MEMBER_VARIANTS.length]),
                   h(
                     'div',
                     { class: 'list-row__main' },
@@ -139,12 +222,11 @@ export function renderProjectDetail(params) {
             h(
               'div',
               { class: 'cluster cluster--between' },
-              h('span', null, '零售系统产品手册'),
+              h('span', { class: 'list-row__title' }, '零售系统产品手册'),
               badge('4 个关联工作项', 'brand'),
             ),
             h('div', { class: 'cluster' }, badge('文档', 'plain'), h('span', { class: 'table__muted' }, '12 章节 · 4.2 MB')),
           ),
-          flush: false,
         }),
       );
     }
@@ -167,33 +249,7 @@ export function renderProjectDetail(params) {
               {
                 key: 'progressText',
                 label: '进度',
-                render: (row) =>
-                  h(
-                    'span',
-                    { class: 'cluster', style: { gap: '8px', flexWrap: 'nowrap' } },
-                    h(
-                      'span',
-                      {
-                        style: {
-                          display: 'block',
-                          width: '72px',
-                          height: '6px',
-                          borderRadius: '999px',
-                          background: 'var(--surface-sunken)',
-                          overflow: 'hidden',
-                        },
-                      },
-                      h('span', {
-                        style: {
-                          display: 'block',
-                          width: `${row.progress}%`,
-                          height: '100%',
-                          background: row.progress === 100 ? 'var(--success)' : 'var(--brand)',
-                        },
-                      }),
-                    ),
-                    h('span', { class: 'table__muted' }, row.progressText),
-                  ),
+                render: (row) => progressBar(row.progress, { done: row.progress === 100, label: row.progressText }),
               },
               { key: 'state', label: '状态', render: (row) => status(row.state, row.state === '进行中' ? 'info' : 'neutral') },
             ],
@@ -220,9 +276,10 @@ export function renderProjectDetail(params) {
         ),
         panel({
           title: '近 12 周完成趋势',
+          desc: '单位：工作项数',
           body: h(
             'div',
-            { class: 'cluster', style: { alignItems: 'flex-end', gap: '4px', height: '120px' } },
+            { class: 'cluster', style: { alignItems: 'flex-end', gap: '6px', height: '140px' } },
             personalAnalysis.throughput.map((value, index) =>
               h(
                 'span',
@@ -230,12 +287,11 @@ export function renderProjectDetail(params) {
                   title: `第 ${index + 1} 周：${value}`,
                   style: {
                     display: 'block',
-                    width: '18px',
-                    height: `${Math.max(8, value * 8)}px`,
-                    borderRadius: '3px 3px 0 0',
-                    background: 'var(--brand-soft)',
-                    border: '1px solid var(--brand-line)',
-                    borderBottom: '0',
+                    width: '20px',
+                    height: `${Math.max(10, value * 8)}px`,
+                    borderRadius: '5px 5px 2px 2px',
+                    background: 'var(--brand-gradient)',
+                    opacity: String(0.45 + value / 30),
                   },
                 },
               ),

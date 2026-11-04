@@ -15,7 +15,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--surface-canvas);
+  background: var(--bg);
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: var(--fs-14);

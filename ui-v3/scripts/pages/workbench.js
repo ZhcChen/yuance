@@ -3,7 +3,7 @@
  * 与现网保持同样的信息项，压缩为指标条 + 双栏主体。
  */
 
-import { h, icon, dataTable, panel, metric, status, badge, avatar, emptyState } from '../ui.js';
+import { h, icon, dataTable, panel, metric, status, badge, avatar, emptyState, iconTile } from '../ui.js';
 import { projects, workItems, messages, recentActivities, currentProject } from '../mock/data.js';
 
 const STATUS_VARIANT = {
@@ -34,9 +34,15 @@ export function renderWorkbench() {
         label: '项目',
         render: (row) =>
           h(
-            'a',
-            { class: 'table__title', href: `#/projects/${row.project_key}` },
-            row.name,
+            'div',
+            { class: 'cluster', style: { gap: '10px', flexWrap: 'nowrap' } },
+            h('span', { class: 'project-card__mark', style: { width: '28px', height: '28px', borderRadius: '8px', fontSize: '12px' } }, row.name.charAt(0)),
+            h(
+              'div',
+              { style: { minWidth: '0' } },
+              h('a', { class: 'table__title', href: `#/projects/${row.project_key}` }, row.name),
+              h('div', { class: 'table__key' }, row.project_key),
+            ),
           ),
       },
       { key: 'owner', label: '负责人', cellClass: 'table__muted' },
@@ -48,7 +54,7 @@ export function renderWorkbench() {
           const total = row.pending.requirement + row.pending.task + row.pending.bug;
           return total
             ? h('span', { class: 'mini-stat' }, h('span', { class: 'mini-stat__value' }, String(total)))
-            : h('span', { class: 'table__muted' }, '0');
+            : h('span', { class: 'table__muted' }, '—');
         },
       },
       {
@@ -57,9 +63,9 @@ export function renderWorkbench() {
         render: (row) =>
           h(
             'span',
-            { class: 'cluster', style: { gap: '4px' } },
+            { class: 'cluster', style: { gap: '6px' } },
             badge(`需 ${row.pending.requirement}`, row.pending.requirement ? 'brand' : 'plain'),
-            badge(`任 ${row.pending.task}`, row.pending.task ? 'plain' : 'plain'),
+            badge(`任 ${row.pending.task}`, 'plain'),
             badge(`Bug ${row.pending.bug}`, row.pending.bug ? 'danger' : 'plain'),
           ),
       },
@@ -67,7 +73,7 @@ export function renderWorkbench() {
       { key: 'updated_at', label: '更新', cellClass: 'table__muted' },
       {
         key: 'action',
-        label: '操作',
+        label: '',
         align: 'right',
         render: (row) => h('a', { class: 'btn btn--sm btn--ghost', href: `#/projects/${row.project_key}` }, '查看'),
       },
@@ -80,12 +86,13 @@ export function renderWorkbench() {
     null,
     workItems.slice(0, 6).map((item) =>
       h(
-        'div',
-        { class: 'list-row' },
+        'a',
+        { class: 'list-row', href: `#/work-items/${item.key}`, style: { textDecoration: 'none' } },
+        h('span', { class: 'status__dot', style: { background: 'var(--brand)', width: '7px', height: '7px' } }),
         h(
           'div',
           { class: 'list-row__main' },
-          h('a', { class: 'list-row__title', href: `#/work-items/${item.key}` }, item.title),
+          h('span', { class: 'list-row__title' }, item.title),
           h(
             'div',
             { class: 'list-row__meta' },
@@ -93,11 +100,7 @@ export function renderWorkbench() {
             h('span', null, item.project_name),
           ),
         ),
-        h(
-          'div',
-          { class: 'list-row__side' },
-          status(item.status, STATUS_VARIANT[item.status] || 'neutral'),
-        ),
+        h('div', { class: 'list-row__side' }, status(item.status, STATUS_VARIANT[item.status] || 'neutral')),
       ),
     ),
   );
@@ -107,12 +110,13 @@ export function renderWorkbench() {
     null,
     messages.slice(0, 3).map((message) =>
       h(
-        'div',
-        { class: 'list-row' },
+        'a',
+        { class: 'list-row', href: `#/work-items/${message.item_key}`, style: { textDecoration: 'none' } },
+        avatar(message.author, 'violet'),
         h(
           'div',
           { class: 'list-row__main' },
-          h('a', { class: 'list-row__title', href: `#/work-items/${message.item_key}` }, message.title),
+          h('span', { class: 'list-row__title' }, message.title),
           h('div', { class: 'list-row__meta' }, h('span', null, message.author), h('span', null, message.created_at)),
         ),
         message.unread ? badge('未读', 'brand') : null,
@@ -127,7 +131,7 @@ export function renderWorkbench() {
       h(
         'div',
         { class: 'timeline__item' },
-        h('span', { class: 'avatar avatar--sm' }, activity.user.charAt(0)),
+        avatar(activity.user, 'info'),
         h(
           'div',
           { class: 'timeline__body' },
@@ -153,6 +157,7 @@ export function renderWorkbench() {
       h(
         'div',
         { class: 'page-head__actions' },
+        h('button', { class: 'btn btn--secondary', type: 'button' }, icon('i-refresh'), '刷新'),
         h('button', { class: 'btn btn--primary', type: 'button' }, icon('i-plus'), '新建项目'),
       ),
     ),
@@ -163,10 +168,16 @@ export function renderWorkbench() {
       h(
         'div',
         { class: 'stack' },
-        panel({ title: '项目推进', desc: '共 11 个进行中项目', actions: h('a', { class: 'btn btn--sm btn--ghost', href: '#/projects' }, '全部项目'), body: projectTable, flush: true }),
+        panel({
+          title: '项目推进',
+          desc: `共 ${projects.length} 个进行中项目`,
+          actions: h('a', { class: 'btn btn--sm btn--ghost', href: '#/projects' }, '全部项目'),
+          body: projectTable,
+          flush: true,
+        }),
         panel({
           title: '我的待处理',
-          desc: '按优先级排序',
+          desc: '按最近更新排序',
           actions: h('a', { class: 'btn btn--sm btn--ghost', href: '#/requirements' }, '查看全部'),
           body: myQueue,
           flush: true,
