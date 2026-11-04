@@ -150,7 +150,9 @@ export function renderProjects(params, query) {
         h(
           'p',
           { class: 'page-head__desc' },
-          `共 ${projects.filter((project) => project.status !== '已归档').length} 个进行中项目，当前显示 ${visible.length} 个，按最近更新排序。`,
+          visible.length === projects.length
+            ? `共 ${projects.length} 个项目，按最近更新排序。`
+            : `共 ${projects.length} 个项目，当前显示 ${visible.length} 个，按最近更新排序。`,
         ),
       ),
       h(
