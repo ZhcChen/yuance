@@ -36,7 +36,8 @@
   /* ---------- 分隔线 border ---------- */
   --line: #e9ebf2;
   --line-soft: #f0f1f7;
-  --line-strong: #dcdfeb;
+  --line-strong: #ccd3e2;
+  --line-strong-hover: #b6bfd4;
   --line-focus: #4f46e5;
 
   /* ---------- 文字 text ---------- */

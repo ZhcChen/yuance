@@ -109,13 +109,22 @@
 
 .btn-group {
   display: inline-flex;
+  max-width: 100%;
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-3);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.btn-group::-webkit-scrollbar {
+  display: none;
 }
 
 .btn-group .btn {
+  flex: none;
   border-radius: var(--radius-xs);
   height: 28px;
   color: var(--text-secondary);
@@ -915,21 +924,29 @@
   width: min(400px, 36vw);
 }
 
+/*
+ * 顶栏是半透明毛玻璃，控件若用同色系浅底会与背景糊在一起。
+ * 统一用「白底 + 明确描边 + 微阴影」，让控件从顶栏上浮起来。
+ */
 .global-search .input {
   height: 38px;
+  min-width: 0;
   border-radius: var(--radius-full);
-  border-color: transparent;
-  background: var(--surface-3);
+  border-color: var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   padding-right: 56px;
 }
 
 .global-search .input:hover {
-  background: #eaecf4;
+  border-color: var(--line-strong-hover);
+  box-shadow: var(--shadow-sm);
 }
 
 .global-search .input:focus-visible {
   background: var(--surface);
   border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-ring);
 }
 
 .global-search__hint {
@@ -940,24 +957,43 @@
   padding: 1px var(--sp-6);
   border-radius: var(--radius-xs);
   border: 1px solid var(--line-strong);
-  background: var(--surface);
+  background: var(--surface-3);
   font-size: var(--fs-11);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   pointer-events: none;
+}
+
+/* 项目切换组：禁止换行，否则标签与选择器会叠成两行并顶出顶栏 */
+.topbar__project {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-8);
+  flex: none;
+}
+
+.topbar__label {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .topbar__select {
   height: 36px;
-  max-width: 190px;
+  max-width: 168px;
   border-radius: var(--radius-full);
-  background-color: var(--surface-3);
-  border-color: transparent;
+  background-color: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-xs);
   padding-left: var(--sp-12);
   font-weight: var(--fw-medium);
+  color: var(--text-primary);
 }
 
 .topbar__select:hover {
-  background-color: #eaecf4;
+  background-color: var(--surface);
+  border-color: var(--line-strong-hover);
+  box-shadow: var(--shadow-sm);
 }
 
 .topbar__icon-btn {
@@ -967,16 +1003,20 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 0;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
   color: var(--text-secondary);
   transition: background var(--motion-fast) var(--ease-standard),
-    color var(--motion-fast) var(--ease-standard);
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
 }
 
 .topbar__icon-btn:hover {
-  background: var(--surface-3);
+  border-color: var(--line-strong-hover);
+  box-shadow: var(--shadow-sm);
   color: var(--text-primary);
 }
 
@@ -1600,8 +1640,20 @@ a.list-row__title:hover {
     width: 100%;
   }
 
+  /* 窄屏：搜索框可压缩，隐藏次要标签，保证顶栏不溢出 */
   .global-search {
-    width: 100%;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .topbar__label {
+    display: none;
+  }
+
+  .topbar__select {
+    max-width: 120px;
+    padding-left: var(--sp-10);
   }
 
   .global-search__hint {
@@ -1623,5 +1675,21 @@ a.list-row__title:hover {
 
   .metric__value {
     font-size: var(--fs-22);
+  }
+}
+
+/* 极窄屏：隐藏项目切换，压缩通知与账户按钮 */
+@media (max-width: 430px) {
+  .topbar__project {
+    display: none;
+  }
+
+  .topbar__icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .global-search .input {
+    padding-right: var(--sp-10);
   }
 }

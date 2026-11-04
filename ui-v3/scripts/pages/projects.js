@@ -126,7 +126,7 @@ export function renderProjects() {
       ),
       h(
         'label',
-        { class: 'field', style: { width: '240px' } },
+        { class: 'field', style: { width: 'min(240px, 100%)' } },
         h('input', { class: 'input input--search', type: 'search', placeholder: '搜索项目名称或编号', 'aria-label': '搜索项目' }),
       ),
     ),

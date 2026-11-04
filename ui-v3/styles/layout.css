@@ -161,36 +161,6 @@
   color: var(--nav-active-text);
 }
 
-.sidebar__footer {
-  margin-top: auto;
-  padding-top: var(--sp-12);
-  border-top: 1px solid var(--nav-border);
-}
-
-.sidebar__account {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-10);
-  padding: var(--sp-8);
-  border-radius: var(--radius-sm);
-  transition: background var(--motion-fast) var(--ease-standard);
-}
-
-.sidebar__account:hover {
-  background: var(--nav-hover);
-}
-
-.sidebar__account-name {
-  font-size: var(--fs-13);
-  color: var(--nav-text-strong);
-  font-weight: var(--fw-medium);
-}
-
-.sidebar__account-role {
-  font-size: var(--fs-11);
-  color: var(--nav-text-muted);
-}
-
 /* ---------- 主区 ---------- */
 
 .app-main {
@@ -425,9 +395,7 @@
   .sidebar__tag,
   .sidebar__group-label,
   .sidebar__badge,
-  .sidebar__link span,
-  .sidebar__account-name,
-  .sidebar__account-role {
+  .sidebar__link span {
     display: none;
   }
 
@@ -443,11 +411,6 @@
 
   .sidebar__link[aria-current="page"]::before {
     display: none;
-  }
-
-  .sidebar__account {
-    justify-content: center;
-    padding: var(--sp-4) 0;
   }
 
   .split,
@@ -484,9 +447,7 @@
   .sidebar[data-open="true"] .sidebar__tag,
   .sidebar[data-open="true"] .sidebar__group-label,
   .sidebar[data-open="true"] .sidebar__badge,
-  .sidebar[data-open="true"] .sidebar__link span,
-  .sidebar[data-open="true"] .sidebar__account-name,
-  .sidebar[data-open="true"] .sidebar__account-role {
+  .sidebar[data-open="true"] .sidebar__link span {
     display: block;
   }
 
@@ -508,13 +469,17 @@
     display: block;
   }
 
-  .sidebar[data-open="true"] .sidebar__account {
-    justify-content: flex-start;
-    padding: var(--sp-8);
-  }
-
   .topbar__menu {
     display: inline-flex;
+  }
+
+  /* 窄屏顶栏：顶栏自身的间距收紧；控件级覆盖在 components.css 中 */
+  .topbar {
+    gap: var(--sp-8);
+  }
+
+  .topbar__divider {
+    display: none;
   }
 
   .sidebar-scrim {
@@ -545,5 +510,13 @@
   .grid--3,
   .card-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 极窄屏：顶栏只保留菜单、搜索、通知与账户，并压缩尺寸 */
+@media (max-width: 430px) {
+  .topbar {
+    gap: var(--sp-6);
+    padding: 0 var(--sp-8);
   }
 }

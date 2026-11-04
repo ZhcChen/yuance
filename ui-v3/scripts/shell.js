@@ -34,6 +34,19 @@ const NAV_GROUPS = [
     items: [{ id: 'messages', href: '#/messages', label: '消息中心', icon: 'i-message', badge: '2' }],
   },
   {
+    label: '工具',
+    items: [
+      {
+        id: 'time-management',
+        href: LIVE_TIME_MANAGEMENT_URL,
+        label: '时间管理',
+        icon: 'i-clock',
+        badge: '现网',
+        external: true,
+      },
+    ],
+  },
+  {
     label: '系统',
     items: [{ id: 'system', href: '#/system', label: '系统管理', icon: 'i-settings' }],
   },
@@ -56,7 +69,9 @@ export function renderSidebar(activePageId) {
             class: 'sidebar__link',
             href: item.href,
             'aria-current': item.id === activePageId ? 'page' : null,
-            title: item.label,
+            title: item.external ? `${item.label}（沿用现有实现，另开标签页）` : item.label,
+            target: item.external ? '_blank' : null,
+            rel: item.external ? 'noreferrer noopener' : null,
           },
           icon(item.icon),
           h('span', null, item.label),
@@ -77,34 +92,6 @@ export function renderSidebar(activePageId) {
       h('span', { class: 'sidebar__tag' }, 'V3 原型'),
     ),
     ...groups,
-    h(
-      'div',
-      { class: 'sidebar__footer' },
-      h(
-        'a',
-        {
-          class: 'sidebar__link',
-          href: LIVE_TIME_MANAGEMENT_URL,
-          target: '_blank',
-          rel: 'noreferrer noopener',
-          title: '时间管理（沿用现有实现）',
-        },
-        icon('i-clock'),
-        h('span', null, '时间管理'),
-        h('span', { class: 'sidebar__badge' }, '现网'),
-      ),
-      h(
-        'div',
-        { class: 'sidebar__account' },
-        avatar(currentUser.display_name, 'violet'),
-        h(
-          'div',
-          { style: { minWidth: '0' } },
-          h('div', { class: 'sidebar__account-name' }, currentUser.display_name),
-          h('div', { class: 'sidebar__account-role' }, currentUser.role),
-        ),
-      ),
-    ),
   );
 }
 
@@ -160,7 +147,12 @@ export function renderTopbar(onNavigate) {
     ),
     h('div', { class: 'global-search' }, searchInput, h('span', { class: 'global-search__hint' }, 'Enter')),
     h('div', { class: 'topbar__spacer' }),
-    h('div', { class: 'cluster' }, h('span', { class: 'table__muted' }, '当前项目'), projectSelect),
+    h(
+      'div',
+      { class: 'topbar__project' },
+      h('span', { class: 'topbar__label' }, '当前项目'),
+      projectSelect,
+    ),
     h('span', { class: 'topbar__divider' }),
     h(
       'button',
