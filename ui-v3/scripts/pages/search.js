@@ -12,11 +12,28 @@ const KIND_META = {
   resource: { label: '资料', icon: 'i-book' },
 };
 
+/** 搜索页筛选写入 URL。 */
+function applySearchFilter(patch) {
+  const raw = window.location.hash.replace(/^#/, '') || '/search';
+  const [pathname, search = ''] = raw.split('?');
+  const query = Object.fromEntries(new URLSearchParams(search));
+  Object.assign(query, patch);
+
+  for (const [key, value] of Object.entries(query)) {
+    if (!value) delete query[key];
+  }
+
+  const next = Object.keys(query).length ? `${pathname}?${new URLSearchParams(query).toString()}` : pathname;
+  window.location.hash = `#${next}`;
+}
+
 export function renderSearch(params, query) {
   const keyword = (query.q || '').trim();
+  const kindFilter = query.kind || '';
 
   const grouped = new Map();
   for (const result of searchResults) {
+    if (kindFilter && result.kind !== kindFilter) continue;
     if (!grouped.has(result.kind)) grouped.set(result.kind, []);
     grouped.get(result.kind).push(result);
   }
@@ -63,7 +80,7 @@ export function renderSearch(params, query) {
     ),
     h(
       'div',
-      { class: 'filter-bar' },
+      { class: 'filter-bar filter-bar--card' },
       h(
         'label',
         { class: 'field field--wide' },
@@ -83,7 +100,7 @@ export function renderSearch(params, query) {
         { class: 'field' },
         h('span', { class: 'field__label' }, '范围'),
         select({
-          value: '',
+          value: kindFilter,
           ariaLabel: '按类型限定搜索范围',
           items: [
             { value: '', label: '全部类型' },
@@ -92,6 +109,7 @@ export function renderSearch(params, query) {
             { value: 'bug', label: 'Bug' },
             { value: 'resource', label: '资料' },
           ],
+          onChange: (value) => applySearchFilter({ kind: value }),
         }),
       ),
       h('div', { class: 'filter-bar__actions' }, h('button', { class: 'btn btn--primary', type: 'button' }, icon('i-search'), '搜索')),

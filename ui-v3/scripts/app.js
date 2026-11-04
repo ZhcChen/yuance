@@ -3,7 +3,7 @@
  * 组装壳层、注册路由、响应 hash 变化。
  */
 
-import { h, mount, clear } from './ui.js';
+import { h, mount, clear, icon } from './ui.js';
 import { route, resolve, navigate } from './router.js';
 import { renderSidebar, renderTopbar, toggleSidebar } from './shell.js';
 import { currentProject } from './mock/data.js';
@@ -81,11 +81,20 @@ function renderRoute() {
   const matched = resolve(pathname, search);
 
   if (!matched) {
+    activePageId = 'not-found';
     renderShell(activePageId);
     mount(
       document.getElementById('view'),
-      h('div', { class: 'empty' }, h('p', { class: 'empty__title' }, '页面不存在'), h('p', { class: 'empty__desc' }, pathname)),
+      h(
+        'div',
+        { class: 'empty' },
+        h('span', { class: 'empty__icon' }, icon('i-alert')),
+        h('h1', { class: 'empty__title' }, '页面不存在'),
+        h('p', { class: 'empty__desc' }, `没有找到与「${pathname}」对应的页面，可能是链接已失效。`),
+        h('a', { class: 'btn btn--primary', href: '#/' }, '返回工作台'),
+      ),
     );
+    document.title = '元策 · 页面不存在';
     return;
   }
 

@@ -441,11 +441,16 @@
 
 /* ===================== 筛选条 ===================== */
 
+/* 筛选条是面板内的裸行，卡片外观由外层面板提供，避免卡片套卡片 */
 .filter-bar {
   display: flex;
   align-items: flex-end;
   gap: var(--sp-10);
   flex-wrap: wrap;
+}
+
+/* 独立使用时自带卡片外观 */
+.filter-bar--card {
   padding: var(--sp-16);
   background: var(--surface);
   border: 1px solid var(--line);
@@ -482,6 +487,11 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   overflow: hidden;
+}
+
+/* 内含下拉浮层的面板：取消裁剪，让菜单能溢出面板边界 */
+.panel--pop {
+  overflow: visible;
 }
 
 .panel__head {

@@ -3,7 +3,7 @@
  */
 
 import { h, icon, dataTable, panel, status, badge, avatar, emptyState, progressBar, iconTile } from '../ui.js';
-import { projects, projectOverview, personalAnalysis, workItems } from '../mock/data.js';
+import { projects, projectOverview, personalAnalysis, workItems, currentUser } from '../mock/data.js';
 
 const MEMBER_VARIANTS = ['success', 'violet', 'teal', 'info', 'sand'];
 
@@ -57,20 +57,64 @@ function projectCard(project) {
   );
 }
 
-export function renderProjects() {
-  const cardGrid = h('div', { class: 'card-grid' }, projects.map((project) => projectCard(project)));
+const PROJECT_SCOPES = [
+  { id: 'all', label: '全部项目' },
+  { id: 'owned', label: '我负责的' },
+  { id: 'joined', label: '我参与的' },
+  { id: 'archived', label: '已归档' },
+];
 
-  const pendingTotal = projects.reduce(
+/** 项目页筛选写入 URL，保持可分享与刷新可还原。 */
+function applyProjectFilter(patch) {
+  const raw = window.location.hash.replace(/^#/, '') || '/projects';
+  const [pathname, search = ''] = raw.split('?');
+  const query = Object.fromEntries(new URLSearchParams(search));
+  Object.assign(query, patch);
+
+  for (const [key, value] of Object.entries(query)) {
+    if (!value) delete query[key];
+  }
+
+  const next = Object.keys(query).length ? `${pathname}?${new URLSearchParams(query).toString()}` : pathname;
+  window.location.hash = `#${next}`;
+}
+
+export function renderProjects(params, query) {
+  const scope = query.scope || 'all';
+  const keyword = (query.q || '').trim();
+
+  const scoped = projects.filter((project) => {
+    if (scope === 'owned') return project.owner === currentUser.display_name;
+    if (scope === 'joined') return project.members.includes(currentUser.username);
+    if (scope === 'archived') return project.status === '已归档';
+    return true;
+  });
+
+  const visible = scoped.filter((project) => {
+    if (!keyword) return true;
+    return project.name.includes(keyword) || project.project_key.includes(keyword);
+  });
+
+  const cardGrid = visible.length
+    ? h('div', { class: 'card-grid' }, visible.map((project) => projectCard(project)))
+    : emptyState(
+        'i-folder',
+        '没有匹配的项目',
+        keyword ? `没有名称或编号包含「${keyword}」的项目。` : '当前范围内没有项目，可以切换筛选范围。',
+      );
+
+  // 统计口径按「范围」而不是「关键词」：搜索只是检索，不该把统计清零
+  const pendingTotal = scoped.reduce(
     (sum, project) => sum + project.pending.requirement + project.pending.task + project.pending.bug,
     0,
   );
-  const memberTotal = projects.reduce((sum, project) => sum + project.members.length, 0);
+  const memberTotal = scoped.reduce((sum, project) => sum + project.members.length, 0);
 
   const metrics = h(
     'div',
     { class: 'metrics' },
-    h('div', { class: 'metric' }, iconTile('i-folder', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '进行中项目'), h('div', { class: 'metric__value' }, String(projects.length)), h('div', { class: 'metric__delta' }, '较上月 +1'))),
-    h('div', { class: 'metric' }, iconTile('i-user', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我负责的'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.owner === '超级管理员').length)))),
+    h('div', { class: 'metric' }, iconTile('i-folder', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '进行中项目'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.status !== '已归档').length)), h('div', { class: 'metric__delta' }, '较上月 +1'))),
+    h('div', { class: 'metric' }, iconTile('i-user', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我负责的'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.owner === currentUser.display_name).length)))),
     h('div', { class: 'metric' }, iconTile('i-inbox', 'warning'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理工作项'), h('div', { class: 'metric__value' }, String(pendingTotal)), h('div', { class: 'metric__delta' }, '需求 / 任务 / Bug 合计'))),
     h('div', { class: 'metric' }, iconTile('i-users', 'violet'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '项目成员'), h('div', { class: 'metric__value' }, String(memberTotal)), h('div', { class: 'metric__delta' }, '去重前'))),
   );
@@ -103,7 +147,11 @@ export function renderProjects() {
         'div',
         { class: 'page-head__text' },
         h('h1', { class: 'page-head__title' }, '项目'),
-        h('p', { class: 'page-head__desc' }, `共 ${projects.length} 个进行中项目，按最近更新排序。`),
+        h(
+          'p',
+          { class: 'page-head__desc' },
+          `共 ${projects.filter((project) => project.status !== '已归档').length} 个进行中项目，当前显示 ${visible.length} 个，按最近更新排序。`,
+        ),
       ),
       h(
         'div',
@@ -119,15 +167,30 @@ export function renderProjects() {
       h(
         'div',
         { class: 'btn-group' },
-        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'true' }, '全部项目'),
-        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'false' }, '我负责的'),
-        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'false' }, '我参与的'),
-        h('button', { class: 'btn', type: 'button', 'aria-pressed': 'false' }, '已归档'),
+        PROJECT_SCOPES.map((item) =>
+          h(
+            'button',
+            {
+              class: 'btn',
+              type: 'button',
+              'aria-pressed': item.id === scope ? 'true' : 'false',
+              onclick: () => applyProjectFilter({ scope: item.id === 'all' ? '' : item.id }),
+            },
+            item.label,
+          ),
+        ),
       ),
       h(
-        'label',
+        'div',
         { class: 'field', style: { width: 'min(240px, 100%)' } },
-        h('input', { class: 'input input--search', type: 'search', placeholder: '搜索项目名称或编号', 'aria-label': '搜索项目' }),
+        h('input', {
+          class: 'input input--search',
+          type: 'search',
+          placeholder: '搜索项目名称或编号',
+          value: keyword,
+          'aria-label': '搜索项目',
+          onchange: (event) => applyProjectFilter({ q: event.target.value }),
+        }),
       ),
     ),
     cardGrid,

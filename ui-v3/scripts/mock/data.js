@@ -32,13 +32,13 @@ export let currentProject = {
 
 export const projects = [
   { project_key: 'P261102793662', name: '零售系统', owner: '超级管理员', status: '进行中', updated_at: '2026-11-02 17:10:56', pending: { requirement: 2, task: 3, bug: 1 }, members: ['admin', 'chenxiaopeng', 'yangyaxin'] },
-  { project_key: 'P260918192028', name: '通用', owner: '超级管理员', status: '进行中', updated_at: '2026-09-18 09:12:17', pending: { requirement: 0, task: 1, bug: 0 }, members: ['admin'] },
-  { project_key: 'P260915242641', name: '客服系统', owner: '超级管理员', status: '进行中', updated_at: '2026-09-15 10:12:05', pending: { requirement: 1, task: 0, bug: 2 }, members: ['admin', 'yangyaxin'] },
-  { project_key: 'P260909697772', name: '灵枢', owner: '超级管理员', status: '进行中', updated_at: '2026-09-09 13:49:01', pending: { requirement: 0, task: 2, bug: 0 }, members: ['admin'] },
+  { project_key: 'P260918192028', name: '通用', owner: '陈晓鹏', status: '进行中', updated_at: '2026-09-18 09:12:17', pending: { requirement: 0, task: 1, bug: 0 }, members: ['chenxiaopeng'] },
+  { project_key: 'P260915242641', name: '客服系统', owner: '杨雅鑫', status: '进行中', updated_at: '2026-09-15 10:12:05', pending: { requirement: 1, task: 0, bug: 2 }, members: ['yangyaxin'] },
+  { project_key: 'P260909697772', name: '灵枢', owner: '陈晓鹏', status: '进行中', updated_at: '2026-09-09 13:49:01', pending: { requirement: 0, task: 2, bug: 0 }, members: ['admin', 'chenxiaopeng'] },
   { project_key: 'P260903715000', name: '社区团购（SaaS 版本）', owner: '超级管理员', status: '进行中', updated_at: '2026-09-03 14:44:52', pending: { requirement: 3, task: 4, bug: 1 }, members: ['admin', 'chenxiaopeng'] },
-  { project_key: 'P260902235379', name: '通知系统', owner: '超级管理员', status: '进行中', updated_at: '2026-09-02 09:30:36', pending: { requirement: 0, task: 1, bug: 0 }, members: ['admin'] },
+  { project_key: 'P260902235379', name: '通知系统', owner: '杨雅鑫', status: '进行中', updated_at: '2026-09-02 09:30:36', pending: { requirement: 0, task: 1, bug: 0 }, members: ['yangyaxin'] },
   { project_key: 'P260814951315', name: '企业数字工作平台', owner: '超级管理员', status: '进行中', updated_at: '2026-08-14 11:19:09', pending: { requirement: 2, task: 0, bug: 3 }, members: ['admin', 'yangyaxin'] },
-  { project_key: 'P260721202587', name: '多商城', owner: '超级管理员', status: '进行中', updated_at: '2026-07-21 14:47:51', pending: { requirement: 0, task: 2, bug: 0 }, members: ['admin'] },
+  { project_key: 'P260721202587', name: '多商城', owner: '陈晓鹏', status: '已归档', updated_at: '2026-07-21 14:47:51', pending: { requirement: 0, task: 2, bug: 0 }, members: ['chenxiaopeng'] },
   { project_key: 'P260713349103', name: 'CRM', owner: '超级管理员', status: '进行中', updated_at: '2026-07-13 14:29:52', pending: { requirement: 1, task: 3, bug: 0 }, members: ['admin'] },
   { project_key: 'P260713443429', name: '元策（项目管理）', owner: '超级管理员', status: '进行中', updated_at: '2026-07-13 13:54:01', pending: { requirement: 4, task: 6, bug: 2 }, members: ['admin', 'chenxiaopeng', 'yangyaxin'] },
   { project_key: 'P260713090179', name: 'BI 系统', owner: '超级管理员', status: '进行中', updated_at: '2026-07-13 13:53:33', pending: { requirement: 8, task: 12, bug: 2 }, members: ['admin'] },

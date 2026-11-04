@@ -26,8 +26,25 @@ const SUB_PAGES = [
 
 const AUDIT_ACTIONS = ['创建工作项', '更新工作项', '加入项目', '上传附件', '修改角色'];
 
-export function renderSystem(subPage) {
+/** 审计页筛选写入 URL，保持可分享与刷新可还原。 */
+function applySystemFilter(patch) {
+  const raw = window.location.hash.replace(/^#/, '') || '/system/audit';
+  const [pathname, search = ''] = raw.split('?');
+  const query = Object.fromEntries(new URLSearchParams(search));
+  Object.assign(query, patch);
+
+  for (const [key, value] of Object.entries(query)) {
+    if (!value) delete query[key];
+  }
+
+  const next = Object.keys(query).length ? `${pathname}?${new URLSearchParams(query).toString()}` : pathname;
+  window.location.hash = `#${next}`;
+}
+
+export function renderSystem(subPage, params, query) {
   const active = subPage || 'dashboard';
+  const actionFilter = (query.action || '').trim();
+  const targetTypeFilter = (query.target_type || '').trim();
 
   const nav = h(
     'div',
@@ -124,13 +141,22 @@ export function renderSystem(subPage) {
       flush: true,
     });
   } else if (active === 'audit') {
+    const auditRows = systemAudit.filter((entry) => {
+      if (actionFilter && entry.action !== actionFilter) return false;
+      if (targetTypeFilter && entry.target_type !== targetTypeFilter) return false;
+      return true;
+    });
+
     content = h(
       'div',
       { class: 'stack' },
       panel({
+        title: '筛选条件',
+        desc: '按操作人、动作与对象类型定位记录',
+        clip: false,
         body: h(
           'div',
-          { class: 'filter-bar', style: { border: '0', padding: '0' } },
+          { class: 'filter-bar' },
           h(
             'div',
             { class: 'field field--wide' },
@@ -142,9 +168,10 @@ export function renderSystem(subPage) {
             { class: 'field' },
             h('span', { class: 'field__label' }, '动作'),
             select({
-              value: '',
+              value: actionFilter,
               ariaLabel: '按动作筛选',
               items: [{ value: '', label: '全部动作' }, ...AUDIT_ACTIONS.map((action) => ({ value: action, label: action }))],
+              onChange: (value) => applySystemFilter({ action: value }),
             }),
           ),
           h(
@@ -152,22 +179,33 @@ export function renderSystem(subPage) {
             { class: 'field' },
             h('span', { class: 'field__label' }, '对象类型'),
             select({
-              value: '',
+              value: targetTypeFilter,
               ariaLabel: '按对象类型筛选',
               items: [
                 { value: '', label: '全部类型' },
+                { value: 'requirement', label: '需求' },
                 { value: 'work_item', label: '工作项' },
                 { value: 'project', label: '项目' },
                 { value: 'role', label: '角色' },
               ],
+              onChange: (value) => applySystemFilter({ target_type: value }),
             }),
           ),
-          h('div', { class: 'filter-bar__actions' }, h('button', { class: 'btn btn--secondary', type: 'button' }, icon('i-filter'), '筛选')),
+          h(
+            'div',
+            { class: 'filter-bar__actions' },
+            h(
+              'button',
+              { class: 'btn btn--secondary', type: 'button', onclick: () => applySystemFilter({ action: '', target_type: '' }) },
+              icon('i-refresh'),
+              '重置',
+            ),
+          ),
         ),
       }),
       panel({
         title: '审计记录',
-        desc: `最近 ${systemAudit.length} 条`,
+        desc: `共 ${auditRows.length} 条`,
         body: dataTable(
           [
             { key: 'actor', label: '操作人' },
@@ -177,7 +215,7 @@ export function renderSystem(subPage) {
             { key: 'ip', label: '来源 IP', cellClass: 'table__muted' },
             { key: 'created_at', label: '时间', cellClass: 'table__muted' },
           ],
-          systemAudit,
+          auditRows,
         ),
         flush: true,
       }),

@@ -31,11 +31,13 @@ export function renderWorkItems(itemType, params, query) {
   const keyword = (query.q || '').trim();
   const statusFilter = query.status || '';
   const priorityFilter = query.priority || '';
+  const projectFilter = query.project || '';
 
   const filtered = all.filter((item) => {
     if (keyword && !item.title.includes(keyword) && !item.key.includes(keyword)) return false;
     if (statusFilter && item.status !== statusFilter) return false;
     if (priorityFilter && item.priority !== priorityFilter) return false;
+    if (projectFilter && item.project_key !== projectFilter) return false;
     return true;
   });
 
@@ -138,14 +140,18 @@ export function renderWorkItems(itemType, params, query) {
     bulkBar,
     filtered.length
       ? dataTable(columns, filtered)
-      : emptyState('i-inbox', '暂无需求', '当前筛选条件下没有匹配的工作项，可以调整筛选条件或新建需求。'),
+      : emptyState(
+          'i-inbox',
+          `暂无${config.label}`,
+          `当前筛选条件下没有匹配的${config.label}，可以调整筛选条件或${config.create}。`,
+        ),
   );
 
   const filterBar = h(
     'div',
     { class: 'filter-bar' },
     h(
-      'label',
+      'div',
       { class: 'field field--wide' },
       h('span', { class: 'field__label' }, '关键词'),
       h('input', {
@@ -153,6 +159,7 @@ export function renderWorkItems(itemType, params, query) {
         type: 'search',
         placeholder: `搜索${config.singular}标题或编号`,
         value: keyword,
+        'aria-label': `按关键词搜索${config.label}`,
         onchange: (event) => {
           applyFilters({ q: event.target.value });
         },
@@ -185,18 +192,19 @@ export function renderWorkItems(itemType, params, query) {
       { class: 'field' },
       h('span', { class: 'field__label' }, '项目'),
       select({
-        value: '',
+        value: projectFilter,
         ariaLabel: '按项目筛选',
         items: [
           { value: '', label: '全部项目' },
           { value: 'P261102793662', label: '零售系统', hint: 'P261102793662' },
         ],
+        onChange: (value) => applyFilters({ project: value }),
       }),
     ),
     h(
       'div',
       { class: 'filter-bar__actions' },
-      h('button', { class: 'btn btn--secondary', type: 'button', onclick: () => applyFilters({ q: '', status: '', priority: '' }) }, icon('i-refresh'), '重置'),
+      h('button', { class: 'btn btn--secondary', type: 'button', onclick: () => applyFilters({ q: '', status: '', priority: '', project: '' }) }, icon('i-refresh'), '重置'),
     ),
   );
 
@@ -220,7 +228,18 @@ export function renderWorkItems(itemType, params, query) {
       ),
     ),
     metrics,
-    panel({ title: '筛选条件', desc: '当前项目：零售系统', body: filterBar }),
+    panel({
+      title: '筛选条件',
+      desc: [
+        projectFilter ? '按项目筛选' : null,
+        statusFilter ? `状态：${statusFilter}` : null,
+        priorityFilter ? `优先级：${priorityFilter}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || '未设置筛选条件',
+      body: filterBar,
+      clip: false,
+    }),
     panel({
       title: `${config.label}列表`,
       desc: `共 ${filtered.length} 条`,

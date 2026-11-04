@@ -13,7 +13,7 @@ export function renderProfile() {
     h(
       'div',
       null,
-      h('h1', { class: 'page-head__title' }, currentUser.display_name, badge('超级管理员', 'brand')),
+      h('h1', { class: 'page-head__title' }, currentUser.display_name),
       h('p', { class: 'page-head__desc' }, `${currentUser.username} · ${currentUser.department} · ${currentUser.email}`),
     ),
   );

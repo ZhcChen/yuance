@@ -120,11 +120,15 @@ export function emptyState(iconId, title, desc) {
   );
 }
 
-/** 面板容器。 */
-export function panel({ title, desc, actions, body, flush = false, foot = null }) {
+/**
+ * 面板容器。
+ * @param {{title?:string,desc?:string,actions?:any,body?:any,flush?:boolean,foot?:any,clip?:boolean}} options
+ *   clip=false 时不裁剪溢出内容，供内含下拉浮层的面板使用。
+ */
+export function panel({ title, desc, actions, body, flush = false, foot = null, clip = true }) {
   return h(
     'section',
-    { class: 'panel' },
+    { class: `panel${clip ? '' : ' panel--pop'}` },
     title
       ? h(
           'header',
