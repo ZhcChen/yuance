@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>元策 · UI v3 原型</title>
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/base.css" />
+    <link rel="stylesheet" href="styles/layout.css" />
+    <link rel="stylesheet" href="styles/components.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 模块加载前的占位。若停留在此，说明原生 ES Module 未加载成功，
+           最常见原因是用 file:// 直接打开，请改用本地静态服务。 -->
+      <div class="empty" style="padding-top: 25vh">
+        <p class="empty__title">正在加载 UI v3 原型…</p>
+        <p class="empty__desc">
+          若此提示长时间未消失，说明脚本未加载成功。请在仓库根目录执行
+          <code>python3 -m http.server 4183 --directory ui-v3</code>
+          后访问 http://127.0.0.1:4183/ （原生 ES Module 不能通过 file:// 协议加载）。
+        </p>
+      </div>
+    </div>
+    <script>
+      // 采集运行时错误，便于自动化走查时断言「控制台无报错」。
+      window.__v3Errors = [];
+      window.addEventListener('error', (event) => {
+        window.__v3Errors.push(String(event.message || event.error));
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+        window.__v3Errors.push('unhandledrejection: ' + String(event.reason));
+      });
+    </script>
+    <script type="module" src="scripts/app.js"></script>
+  </body>
+</html>
