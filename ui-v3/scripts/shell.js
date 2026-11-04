@@ -3,8 +3,8 @@
  * 侧边栏（分组导航）+ 顶栏（搜索 / 项目切换 / 通知 / 账户）。
  */
 
-import { h, icon, avatar } from './ui.js';
-import { currentUser, currentProject, projects } from './mock/data.js';
+import { h, icon, avatar, select } from './ui.js';
+import { currentUser, currentProject, projects, setCurrentProject } from './mock/data.js';
 
 /** 现网地址：时间管理沿用现有实现，不在 v3 范围内。 */
 export const LIVE_TIME_MANAGEMENT_URL = 'https://yuance.quanxinfu.com/web/time-management';
@@ -113,24 +113,23 @@ export function renderTopbar(onNavigate) {
     },
   });
 
-  const projectSelect = h(
-    'select',
-    {
-      class: 'select topbar__select',
-      'aria-label': '切换当前项目',
-      onchange: (event) => {
-        const selected = projects.find((project) => project.project_key === event.target.value);
-        if (selected) onNavigate(`#/projects/${selected.project_key}`);
-      },
+  const projectSelect = select({
+    value: currentProject.key,
+    ariaLabel: '切换当前项目',
+    size: 'pill',
+    width: '168px',
+    items: projects.map((project) => ({
+      value: project.project_key,
+      label: project.name,
+      hint: project.project_key,
+    })),
+    onChange: (value) => {
+      const selected = projects.find((project) => project.project_key === value);
+      if (!selected) return;
+      setCurrentProject(selected.project_key);
+      onNavigate(`#/projects/${selected.project_key}`);
     },
-    projects.map((project) =>
-      h(
-        'option',
-        { value: project.project_key, selected: project.project_key === currentProject.key },
-        project.name,
-      ),
-    ),
-  );
+  });
 
   return h(
     'header',

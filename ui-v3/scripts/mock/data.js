@@ -24,7 +24,7 @@ export const currentUser = {
   department: '研发中心',
 };
 
-export const currentProject = {
+export let currentProject = {
   key: 'P261102793662',
   name: '零售系统',
   pending_count: 3,
@@ -43,6 +43,14 @@ export const projects = [
   { project_key: 'P260713443429', name: '元策（项目管理）', owner: '超级管理员', status: '进行中', updated_at: '2026-07-13 13:54:01', pending: { requirement: 4, task: 6, bug: 2 }, members: ['admin', 'chenxiaopeng', 'yangyaxin'] },
   { project_key: 'P260713090179', name: 'BI 系统', owner: '超级管理员', status: '进行中', updated_at: '2026-07-13 13:53:33', pending: { requirement: 8, task: 12, bug: 2 }, members: ['admin'] },
 ];
+
+/** 切换当前项目（顶栏项目选择器使用）。 */
+export function setCurrentProject(projectKey) {
+  const found = projects.find((project) => project.project_key === projectKey);
+  if (!found) return;
+  const pending = found.pending.requirement + found.pending.task + found.pending.bug;
+  currentProject = { key: found.project_key, name: found.name, pending_count: pending };
+}
 
 export const projectOverview = {
   project_key: 'P261102793662',

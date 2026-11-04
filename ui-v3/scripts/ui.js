@@ -261,3 +261,146 @@ export function iconTile(iconId, variant = '', size = '') {
     icon(iconId),
   );
 }
+
+/**
+ * 自定义下拉选择器。
+ *
+ * 不使用原生 <select>：原生下拉由浏览器绘制，样式无法与设计系统对齐，
+ * 在深浅色顶栏上还会出现系统级的灰色菜单。这里统一替换为
+ * 「触发按钮 + 浮层菜单」，键盘可达（↑↓ 移动、Enter 选中、Esc 关闭）。
+ *
+ * @param {object} options
+ * @param {string} options.value 当前值
+ * @param {{value: string, label: string, hint?: string}[]} options.items 选项
+ * @param {(value: string) => void} [options.onChange] 选中回调
+ * @param {string} [options.ariaLabel] 无可见标签时的可访问名
+ * @param {string} [options.placeholder] 无值时的占位文案
+ * @param {string} [options.width] 触发器宽度
+ * @param {string} [options.size] 'pill' 用于顶栏胶囊形态
+ */
+export function select({ value = '', items = [], onChange, ariaLabel = '', placeholder = '请选择', width = '', size = '' }) {
+  const wrap = h('div', {
+    class: `select-wrap${size ? ` select-wrap--${size}` : ''}`,
+    style: width ? { width } : null,
+  });
+
+  const valueEl = h('span', { class: 'select-trigger__value' });
+  const trigger = h(
+    'button',
+    {
+      class: 'select-trigger',
+      type: 'button',
+      'aria-haspopup': 'listbox',
+      'aria-expanded': 'false',
+      'aria-label': ariaLabel,
+      onclick: () => (isOpen ? close() : open()),
+      onkeydown: (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          open();
+        } else if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          open();
+        } else if (event.key === 'Escape') {
+          close();
+        }
+      },
+    },
+    valueEl,
+    icon('i-chevron-down', 'select-trigger__caret'),
+  );
+
+  const menu = h('div', { class: 'select-menu', role: 'listbox', tabindex: '-1', hidden: true });
+  const optionEls = [];
+
+  for (const item of items) {
+    const option = h(
+      'button',
+      {
+        class: 'select-option',
+        type: 'button',
+        role: 'option',
+        'aria-selected': 'false',
+        onclick: () => pick(item.value),
+        onkeydown: (event) => {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            moveFocus(1);
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            moveFocus(-1);
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            close();
+            trigger.focus();
+          } else if (event.key === 'Tab') {
+            close();
+          }
+        },
+      },
+      h('span', { class: 'select-option__label' }, item.label),
+      item.hint ? h('span', { class: 'select-option__hint' }, item.hint) : null,
+      h('span', { class: 'select-option__check' }, icon('i-check')),
+    );
+    optionEls.push({ el: option, value: item.value });
+    menu.appendChild(option);
+  }
+
+  let current = value;
+  let isOpen = false;
+
+  function sync() {
+    const selected = items.find((item) => item.value === current);
+    valueEl.textContent = selected ? selected.label : placeholder;
+    valueEl.classList.toggle('select-trigger__value--placeholder', !selected);
+    for (const entry of optionEls) {
+      entry.el.setAttribute('aria-selected', entry.value === current ? 'true' : 'false');
+    }
+  }
+
+  function pick(next) {
+    current = next;
+    sync();
+    close();
+    trigger.focus();
+    if (onChange) onChange(next);
+  }
+
+  function moveFocus(step) {
+    const index = optionEls.findIndex((entry) => entry.el === document.activeElement);
+    const next = Math.min(optionEls.length - 1, Math.max(0, index + step));
+    if (optionEls[next]) optionEls[next].el.focus();
+  }
+
+  function onDocumentPointerDown(event) {
+    if (!wrap.contains(event.target)) close();
+  }
+
+  function open() {
+    if (isOpen) return;
+    isOpen = true;
+    menu.hidden = false;
+    wrap.dataset.open = 'true';
+    trigger.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', onDocumentPointerDown, true);
+
+    const selectedIndex = optionEls.findIndex((entry) => entry.value === current);
+    const focusTarget = optionEls[selectedIndex >= 0 ? selectedIndex : 0];
+    if (focusTarget) focusTarget.el.focus();
+  }
+
+  function close() {
+    if (!isOpen) return;
+    isOpen = false;
+    menu.hidden = true;
+    wrap.dataset.open = 'false';
+    trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', onDocumentPointerDown, true);
+  }
+
+  wrap.appendChild(trigger);
+  wrap.appendChild(menu);
+  sync();
+
+  return wrap;
+}

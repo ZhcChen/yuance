@@ -123,6 +123,25 @@ v3 的目标是提高信息密度同时保持可读：表格行高 46px，表头
 搜索框、项目切换器、通知与账户按钮统一用「白底 + 1px `#ccd3e2` 描边 + 微阴影」，
 确保在顶栏上清晰可辨。
 
+### 下拉一律不用原生 `<select>`
+
+原生下拉的展开菜单由浏览器绘制，样式无法与设计系统对齐，在半透明顶栏上还会弹出系统级灰色菜单。
+`ui-v3` 内没有任何原生 `<select>`，统一使用 `ui.js` 导出的 `select()` 组件：
+
+```js
+select({
+  value: currentProject.key,
+  ariaLabel: '切换当前项目',
+  size: 'pill',          // 顶栏用胶囊形态，筛选条用默认形态
+  width: '168px',
+  items: [{ value: 'P261102793662', label: '零售系统', hint: 'P261102793662' }],
+  onChange: (value) => { /* ... */ },
+});
+```
+
+行为：点击或 Enter/Space/↓ 打开，↑↓ 移动，Enter 选中，Esc 关闭并把焦点还给触发器，点击外部关闭。
+语义：`aria-haspopup` / `aria-expanded` / `role="listbox"` / `role="option"` / `aria-selected`。
+
 ### 可访问性
 
 - 全部可交互元素有可见焦点环（`:focus-visible` 描边，输入控件用描边 + 边框变色）。

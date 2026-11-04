@@ -2,7 +2,7 @@
  * 元策 UI v3 · 系统管理（总览 + 各子页）
  */
 
-import { h, icon, dataTable, panel, badge, status, emptyState } from '../ui.js';
+import { h, icon, dataTable, panel, badge, status, emptyState, select } from '../ui.js';
 import {
   systemUsers,
   systemRoles,
@@ -131,18 +131,36 @@ export function renderSystem(subPage) {
         body: h(
           'div',
           { class: 'filter-bar', style: { border: '0', padding: '0' } },
-          h('label', { class: 'field field--wide' }, h('span', { class: 'field__label' }, '操作人'), h('input', { class: 'input', type: 'search', placeholder: '按用户名筛选' })),
           h(
-            'label',
-            { class: 'field' },
-            h('span', { class: 'field__label' }, '动作'),
-            h('select', { class: 'select' }, h('option', null, '全部动作'), AUDIT_ACTIONS.map((action) => h('option', null, action))),
+            'div',
+            { class: 'field field--wide' },
+            h('span', { class: 'field__label' }, '操作人'),
+            h('input', { class: 'input', type: 'search', placeholder: '按用户名筛选', 'aria-label': '按用户名筛选' }),
           ),
           h(
-            'label',
+            'div',
+            { class: 'field' },
+            h('span', { class: 'field__label' }, '动作'),
+            select({
+              value: '',
+              ariaLabel: '按动作筛选',
+              items: [{ value: '', label: '全部动作' }, ...AUDIT_ACTIONS.map((action) => ({ value: action, label: action }))],
+            }),
+          ),
+          h(
+            'div',
             { class: 'field' },
             h('span', { class: 'field__label' }, '对象类型'),
-            h('select', { class: 'select' }, h('option', null, '全部类型'), h('option', null, '工作项'), h('option', null, '项目'), h('option', null, '角色')),
+            select({
+              value: '',
+              ariaLabel: '按对象类型筛选',
+              items: [
+                { value: '', label: '全部类型' },
+                { value: 'work_item', label: '工作项' },
+                { value: 'project', label: '项目' },
+                { value: 'role', label: '角色' },
+              ],
+            }),
           ),
           h('div', { class: 'filter-bar__actions' }, h('button', { class: 'btn btn--secondary', type: 'button' }, icon('i-filter'), '筛选')),
         ),

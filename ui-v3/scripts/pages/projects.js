@@ -149,7 +149,16 @@ const TABS = [
 ];
 
 export function renderProjectDetail(params) {
-  const overview = projectOverview;
+  // 详情页按路由参数取项目，避免所有项目都显示「零售系统」
+  const matched = projects.find((project) => project.project_key === params.projectKey);
+  const overview = {
+    ...projectOverview,
+    project_key: matched ? matched.project_key : projectOverview.project_key,
+    name: matched ? matched.name : projectOverview.name,
+    owner: matched ? matched.owner : projectOverview.owner,
+    status: matched ? matched.status : projectOverview.status,
+    updated_at: matched ? matched.updated_at : projectOverview.updated_at,
+  };
 
   const tabPanel = (id) => {
     if (id === 'info') {

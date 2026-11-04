@@ -6,6 +6,7 @@
 import { h, mount, clear } from './ui.js';
 import { route, resolve, navigate } from './router.js';
 import { renderSidebar, renderTopbar, toggleSidebar } from './shell.js';
+import { currentProject } from './mock/data.js';
 
 import { renderWorkbench } from './pages/workbench.js';
 import { renderProjects, renderProjectDetail } from './pages/projects.js';
@@ -58,6 +59,7 @@ route('/system/releases', 'system', (params, query) => renderSystem('releases', 
 route('/system/database-stats', 'system', (params, query) => renderSystem('database-stats', params, query));
 
 let activePageId = '';
+let renderedProjectKey = currentProject.key;
 
 function navigateTo(path) {
   navigate(path);
@@ -87,8 +89,11 @@ function renderRoute() {
     return;
   }
 
-  if (matched.pageId !== activePageId) {
+  // 页面类型变化，或当前项目变化（顶栏项目选择器切换）时重建壳层
+  const projectChanged = currentProject.key !== renderedProjectKey;
+  if (matched.pageId !== activePageId || projectChanged) {
     activePageId = matched.pageId;
+    renderedProjectKey = currentProject.key;
     renderShell(activePageId);
   }
 

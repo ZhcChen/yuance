@@ -48,9 +48,14 @@ export function resolve(pathname, search = '') {
   return null;
 }
 
-/** 跳转到指定路径。 */
+/**
+ * 跳转到指定路径。
+ * 调用方可能传 '/projects/x' 或 '#/projects/x'，两种都要归一化，
+ * 否则会拼出 '##/projects/x' 这种无法匹配路由的 fragment。
+ */
 export function navigate(path, { replace = false } = {}) {
-  const target = `#${path}`;
+  const normalized = String(path).replace(/^#+/, '');
+  const target = `#${normalized}`;
   if (replace) {
     window.history.replaceState(null, '', target);
   } else {

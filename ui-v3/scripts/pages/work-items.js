@@ -2,7 +2,7 @@
  * 元策 UI v3 · 工作项列表（需求 / 任务 / Bug 共用一套模板）
  */
 
-import { h, icon, dataTable, panel, status, priority, badge, pagination, emptyState, iconTile } from '../ui.js';
+import { h, icon, dataTable, panel, status, priority, badge, pagination, emptyState, iconTile, select } from '../ui.js';
 import { workItems } from '../mock/data.js';
 
 const TYPES = {
@@ -159,44 +159,39 @@ export function renderWorkItems(itemType, params, query) {
       }),
     ),
     h(
-      'label',
+      'div',
       { class: 'field' },
       h('span', { class: 'field__label' }, '状态'),
-      h(
-        'select',
-        {
-          class: 'select',
-          onchange: (event) => {
-            applyFilters({ status: event.target.value });
-          },
-        },
-        STATUS_OPTIONS.map((option) =>
-          h('option', { value: option === '全部状态' ? '' : option, selected: (statusFilter || '全部状态') === option }, option),
-        ),
-      ),
+      select({
+        value: statusFilter,
+        ariaLabel: '按状态筛选',
+        items: STATUS_OPTIONS.map((option) => ({ value: option === '全部状态' ? '' : option, label: option })),
+        onChange: (value) => applyFilters({ status: value }),
+      }),
     ),
     h(
-      'label',
+      'div',
       { class: 'field' },
       h('span', { class: 'field__label' }, '优先级'),
-      h(
-        'select',
-        {
-          class: 'select',
-          onchange: (event) => {
-            applyFilters({ priority: event.target.value });
-          },
-        },
-        PRIORITY_OPTIONS.map((option) =>
-          h('option', { value: option === '全部优先级' ? '' : option, selected: (priorityFilter || '全部优先级') === option }, option),
-        ),
-      ),
+      select({
+        value: priorityFilter,
+        ariaLabel: '按优先级筛选',
+        items: PRIORITY_OPTIONS.map((option) => ({ value: option === '全部优先级' ? '' : option, label: option })),
+        onChange: (value) => applyFilters({ priority: value }),
+      }),
     ),
     h(
-      'label',
+      'div',
       { class: 'field' },
       h('span', { class: 'field__label' }, '项目'),
-      h('select', { class: 'select' }, h('option', null, '全部项目'), h('option', null, '零售系统')),
+      select({
+        value: '',
+        ariaLabel: '按项目筛选',
+        items: [
+          { value: '', label: '全部项目' },
+          { value: 'P261102793662', label: '零售系统', hint: 'P261102793662' },
+        ],
+      }),
     ),
     h(
       'div',

@@ -2,7 +2,7 @@
  * 元策 UI v3 · 全局搜索
  */
 
-import { h, icon, panel, badge, emptyState } from '../ui.js';
+import { h, icon, panel, badge, emptyState, select } from '../ui.js';
 import { searchResults } from '../mock/data.js';
 
 const KIND_META = {
@@ -79,10 +79,20 @@ export function renderSearch(params, query) {
         }),
       ),
       h(
-        'label',
+        'div',
         { class: 'field' },
         h('span', { class: 'field__label' }, '范围'),
-        h('select', { class: 'select' }, h('option', null, '全部类型'), h('option', null, '需求'), h('option', null, '任务'), h('option', null, 'Bug'), h('option', null, '资料')),
+        select({
+          value: '',
+          ariaLabel: '按类型限定搜索范围',
+          items: [
+            { value: '', label: '全部类型' },
+            { value: 'requirement', label: '需求' },
+            { value: 'task', label: '任务' },
+            { value: 'bug', label: 'Bug' },
+            { value: 'resource', label: '资料' },
+          ],
+        }),
       ),
       h('div', { class: 'filter-bar__actions' }, h('button', { class: 'btn btn--primary', type: 'button' }, icon('i-search'), '搜索')),
     ),
