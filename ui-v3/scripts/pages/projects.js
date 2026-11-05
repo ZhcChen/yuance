@@ -114,9 +114,9 @@ export function renderProjects(params, query) {
     'div',
     { class: 'metrics' },
     h('div', { class: 'metric' }, iconTile('i-folder', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '进行中项目'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.status !== '已归档').length)), h('div', { class: 'metric__delta' }, '较上月 +1'))),
-    h('div', { class: 'metric' }, iconTile('i-user', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我负责的'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.owner === currentUser.display_name).length)))),
-    h('div', { class: 'metric' }, iconTile('i-inbox', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理工作项'), h('div', { class: 'metric__value' }, String(pendingTotal)), h('div', { class: 'metric__delta' }, '需求 / 任务 / Bug 合计'))),
-    h('div', { class: 'metric' }, iconTile('i-users', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '项目成员'), h('div', { class: 'metric__value' }, String(memberTotal)), h('div', { class: 'metric__delta' }, '去重前'))),
+    h('div', { class: 'metric' }, iconTile('i-user', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我负责的'), h('div', { class: 'metric__value' }, String(projects.filter((project) => project.owner === currentUser.display_name).length)))),
+    h('div', { class: 'metric' }, iconTile('i-inbox', 'warning'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理工作项'), h('div', { class: 'metric__value' }, String(pendingTotal)), h('div', { class: 'metric__delta' }, '需求 / 任务 / Bug 合计'))),
+    h('div', { class: 'metric' }, iconTile('i-users', 'violet'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '项目成员'), h('div', { class: 'metric__value' }, String(memberTotal)), h('div', { class: 'metric__delta' }, '去重前'))),
   );
 
   const recentItems = h(

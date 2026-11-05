@@ -42,9 +42,10 @@
   width: 32px;
   height: 32px;
   border-radius: var(--radius-sm);
-  background: var(--brand-lift);
+  background: var(--brand-gradient);
   color: #fff;
   flex: none;
+  box-shadow: 0 3px 10px rgb(99 102 241 / 38%);
 }
 
 .sidebar__logo svg {

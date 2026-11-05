@@ -22,9 +22,9 @@ export function renderProfile() {
     'div',
     { class: 'metrics' },
     h('div', { class: 'metric' }, iconTile('i-inbox', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的需求'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.requirement)))),
-    h('div', { class: 'metric' }, iconTile('i-task', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的任务'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.task)))),
-    h('div', { class: 'metric' }, iconTile('i-bug', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的 Bug'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.bug)))),
-    h('div', { class: 'metric' }, iconTile('i-calendar', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '当前迭代'), h('div', { class: 'metric__value', style: { fontSize: 'var(--fs-16)' } }, personalAnalysis.cycle))),
+    h('div', { class: 'metric' }, iconTile('i-task', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的任务'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.task)))),
+    h('div', { class: 'metric' }, iconTile('i-bug', 'danger'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '我的 Bug'), h('div', { class: 'metric__value' }, String(personalAnalysis.mine.bug)))),
+    h('div', { class: 'metric' }, iconTile('i-calendar', 'violet'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '当前迭代'), h('div', { class: 'metric__value', style: { fontSize: 'var(--fs-16)' } }, personalAnalysis.cycle))),
   );
 
   const account = h(

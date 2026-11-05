@@ -559,6 +559,10 @@
   box-shadow: var(--shadow-md);
 }
 
+/*
+ * 磁贴底色统一为品牌浅色（--brand-soft），只让图标按语义着色。
+ * 这样一排 KPI 有统一的靛蓝品牌张力，又不会出现四种底色打架。
+ */
 .metric__icon {
   display: grid;
   place-items: center;
@@ -566,7 +570,7 @@
   height: 42px;
   border-radius: var(--radius-md);
   flex: none;
-  background: var(--tile-bg);
+  background: var(--brand-soft);
   color: var(--tile-fg);
 }
 
@@ -575,45 +579,18 @@
   height: 19px;
 }
 
-.metric--brand .metric__icon {
-  background: var(--brand-soft);
-  color: var(--brand);
-}
-
-.metric--neutral .metric__icon {
-  background: var(--tile-bg);
-  color: var(--tile-fg);
-}
-
-.metric--success .metric__icon {
-  background: var(--success-soft);
-  color: var(--success-text);
-}
-
-.metric--warning .metric__icon {
-  background: var(--warning-soft);
-  color: var(--warning-text);
-}
-
-.metric--danger .metric__icon {
-  background: var(--danger-soft);
-  color: var(--danger-text);
-}
-
-.metric--info .metric__icon {
-  background: var(--info-soft);
-  color: var(--info-text);
-}
-
-.metric--violet .metric__icon {
-  background: var(--violet-soft);
-  color: var(--violet-text);
-}
-
-.metric--teal .metric__icon {
-  background: var(--teal-soft);
-  color: var(--teal-text);
-}
+/*
+ * 磁贴底色统一为浅中性，只让图标按语义着色。
+ * 这样一行 KPI 有颜色识别，但不会出现一排彩色色块。
+ */
+.metric--brand .metric__icon { color: var(--brand); }
+.metric--neutral .metric__icon { color: var(--tile-fg); }
+.metric--success .metric__icon { color: var(--success-text); }
+.metric--warning .metric__icon { color: var(--warning-text); }
+.metric--danger .metric__icon { color: var(--danger-text); }
+.metric--info .metric__icon { color: var(--info-text); }
+.metric--violet .metric__icon { color: var(--violet-text); }
+.metric--teal .metric__icon { color: var(--teal-text); }
 
 /* 独立图标磁贴（不依附于 metric 时使用） */
 .icon-tile {
@@ -623,7 +600,7 @@
   height: 42px;
   border-radius: var(--radius-md);
   flex: none;
-  background: var(--tile-bg);
+  background: var(--brand-soft);
   color: var(--tile-fg);
 }
 
@@ -643,14 +620,14 @@
   height: 16px;
 }
 
-.icon-tile--brand { background: var(--brand-soft); color: var(--brand); }
-.icon-tile--neutral { background: var(--tile-bg); color: var(--tile-fg); }
-.icon-tile--success { background: var(--success-soft); color: var(--success-text); }
-.icon-tile--warning { background: var(--warning-soft); color: var(--warning-text); }
-.icon-tile--danger { background: var(--danger-soft); color: var(--danger-text); }
-.icon-tile--info { background: var(--info-soft); color: var(--info-text); }
-.icon-tile--violet { background: var(--violet-soft); color: var(--violet-text); }
-.icon-tile--teal { background: var(--teal-soft); color: var(--teal-text); }
+.icon-tile--brand { color: var(--brand); }
+.icon-tile--neutral { color: var(--tile-fg); }
+.icon-tile--success { color: var(--success-text); }
+.icon-tile--warning { color: var(--warning-text); }
+.icon-tile--danger { color: var(--danger-text); }
+.icon-tile--info { color: var(--info-text); }
+.icon-tile--violet { color: var(--violet-text); }
+.icon-tile--teal { color: var(--teal-text); }
 
 .metric__body {
   min-width: 0;
@@ -1512,10 +1489,11 @@
   height: 38px;
   border-radius: var(--radius-md);
   flex: none;
-  background: var(--brand);
+  background: var(--brand-gradient);
   color: #fff;
   font-size: var(--fs-14);
   font-weight: var(--fw-bold);
+  box-shadow: 0 3px 8px rgb(99 102 241 / 26%);
 }
 
 .project-card__name {

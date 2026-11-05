@@ -12,89 +12,90 @@
   color-scheme: light;
 
   /* ---------- 承载面 surface ---------- */
-  --bg: #f2f4f6;
+  --bg: #f2f3f9;
   --surface: #ffffff;
-  --surface-2: #fafbfc;
-  --surface-3: #eff2f4;
-  --surface-hover: #f7f8fa;
+  --surface-2: #fafbfe;
+  --surface-3: #f0f2f8;
+  --surface-hover: #f7f8fc;
   --surface-overlay: #ffffff;
   --surface-scrim: rgb(21 24 39 / 45%);
 
   /* ---------- 侧栏（深色） ---------- */
-  --nav-bg: #1b2028;
-  --nav-bg-2: #232a35;
+  --nav-bg: #171a2c;
+  --nav-bg-2: #1f2340;
   --nav-border: rgb(255 255 255 / 6%);
-  --nav-text: #9aa2ad;
+  --nav-text: #9ba2c0;
   --nav-text-strong: #ffffff;
-  --nav-text-muted: #828a96;
-  --nav-hover: rgb(255 255 255 / 6%);
-  --nav-active-bg: rgb(255 255 255 / 9%);
-  --nav-active-text: #ffffff;
-  --nav-badge: rgb(255 255 255 / 9%);
-  --nav-badge-text: #b3bac4;
+  --nav-text-muted: #7d84a6;
+  --nav-hover: rgb(255 255 255 / 7%);
+  --nav-active-bg: rgb(99 102 241 / 20%);
+  --nav-active-text: #c7cffb;
+  --nav-badge: rgb(255 255 255 / 10%);
+  --nav-badge-text: #b9c1e0;
 
   /* ---------- 分隔线 border ---------- */
-  --line: #e7eaee;
-  --line-soft: #f0f2f4;
-  --line-strong: #ccd2d9;
-  --line-strong-hover: #b6bfc9;
+  --line: #e9ebf3;
+  --line-soft: #f0f1f8;
+  --line-strong: #cdd2e6;
+  --line-strong-hover: #b7bdd6;
   --line-focus: #4f46e5;
 
   /* ---------- 文字 text ---------- */
-  --text-primary: #16191f;
-  --text-secondary: #4d545e;
-  --text-tertiary: #666d78;
-  --text-disabled: #aeb5be;
+  --text-primary: #171a2b;
+  --text-secondary: #4e5568;
+  --text-tertiary: #656c80;
+  --text-disabled: #aab0c0;
   --text-inverse: #ffffff;
-  --text-link: #2a537d;
+  --text-link: #4149b5;
 
   /* ---------- 品牌 brand ---------- */
-  --brand: #2f5d8f;
-  --brand-strong: #244a73;
-  --brand-hover: #244a73;
-  --brand-soft: #edf2f7;
-  --brand-line: #d2dde8;
+  --brand: #4a52c8;
+  --brand-strong: #3d45ab;
+  --brand-hover: #3d45ab;
+  --brand-soft: #eef0fd;
+  --brand-line: #d7dbf7;
   --brand-contrast: #ffffff;
-  --brand-ring: rgb(47 93 143 / 22%);
-  --brand-lift: #3f719f;
-  --nav-accent: #5c8cbc;
-  --brand-ink: #1f3f61;
+  --brand-ring: rgb(74 82 200 / 24%);
+  --brand-lift: #6470e0;
+  --nav-accent: #8b96f0;
+  /* 品牌渐变只用于小面积视觉锚点（侧栏标识、项目色块），数据区不使用 */
+  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
 
   /* ---------- 状态 status ---------- */
-  --success: #2e7d5b;
-  --success-soft: #eef6f2;
-  --success-line: #d2e6dc;
-  --success-text: #256a4c;
+  --success: #0e8a63;
+  --success-soft: #e9f7f1;
+  --success-line: #c2e7d7;
+  --success-text: #0a7351;
 
-  --warning: #8a6a24;
-  --warning-soft: #f8f4ea;
-  --warning-line: #e5dbc3;
-  --warning-text: #74571b;
+  --warning: #c07808;
+  --warning-soft: #fdf4e4;
+  --warning-line: #f9dfb8;
+  --warning-text: #9a6108;
 
-  --danger: #a5433c;
-  --danger-soft: #f9efee;
-  --danger-line: #e8d0cd;
-  --danger-text: #8d3831;
+  --danger: #cf3a33;
+  --danger-soft: #fdeeed;
+  --danger-line: #f6cecb;
+  --danger-text: #ad2f29;
 
-  --info: #2f5d8f;
-  --info-soft: #edf2f7;
-  --info-line: #d2dde8;
-  --info-text: #2a537d;
+  --info: #2f62d6;
+  --info-soft: #ebf1fd;
+  --info-line: #c8d8fa;
+  --info-text: #2653bb;
 
-  --violet: #655891;
-  --violet-soft: #f2f1f7;
-  --violet-line: #dcd8e8;
-  --violet-text: #544a78;
+  --violet: #6f45c9;
+  --violet-soft: #f2edfd;
+  --violet-line: #dccff8;
+  --violet-text: #5d3aa9;
 
-  --teal: #2b7168;
-  --teal-soft: #edf4f3;
-  --teal-line: #d0e2df;
-  --teal-text: #235e57;
+  --teal: #0d8f83;
+  --teal-soft: #e8f6f4;
+  --teal-line: #c1e5e0;
+  --teal-text: #0b766c;
 
-  --neutral: #5d6672;
-  --neutral-soft: #f2f4f6;
-  --neutral-line: #e0e4e9;
-  --neutral-text: #4b535e;
+  --neutral: #5f6a7d;
+  --neutral-soft: #f1f3f8;
+  --neutral-line: #e0e3ec;
+  --neutral-text: #4c5668;
 
   /* ---------- 字号刻度 type scale ---------- */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
@@ -176,8 +177,8 @@
   --control-fs: var(--fs-13);
 
   /* ---------- 图标磁贴：默认单色，只有语义色才上色 ---------- */
-  --tile-bg: #eff2f5;
-  --tile-fg: #5a626d;
+  --tile-bg: #eff1f8;
+  --tile-fg: #5a6274;
 
   /* ---------- 布局尺寸 layout ---------- */
   --sidebar-w: 236px;
