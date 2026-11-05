@@ -19,7 +19,7 @@ test('a login page in another tab resumes after a sibling tab authenticates', as
   await login(page);
 
   await expect(waitingPage).toHaveURL('/web/app');
-  await expect(waitingPage.getByRole('navigation', { name: '应用导航' })).toBeVisible();
+  await expect(waitingPage.getByRole('navigation', { name: '主导航' })).toBeVisible();
 });
 
 test('a login page redirects when its shared browser session is already valid', async ({ page }) => {
@@ -27,5 +27,5 @@ test('a login page redirects when its shared browser session is already valid', 
   await page.goto('/web/login?return_to=%2Fweb%2Fapp');
 
   await expect(page).toHaveURL('/web/app');
-  await expect(page.getByRole('navigation', { name: '应用导航' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
 });

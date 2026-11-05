@@ -35,8 +35,16 @@ button:disabled {
   position: relative;
   height: 100vh;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
+}
+
+/* 顶栏与业务内容区：侧栏右侧的这一列 */
+.app-shell__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .main {
@@ -60,27 +68,37 @@ button:disabled {
 .app-skeleton-nav {
   flex: 0 0 var(--yc-topbar-height);
   height: var(--yc-topbar-height);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 0 18px;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 var(--yc-sp-16);
   border-bottom: 1px solid var(--yc-line);
   background: var(--yc-panel);
 }
 
-.app-skeleton-nav-brand,
-.app-skeleton-nav-links,
 .app-skeleton-nav-tools {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 
-.app-skeleton-nav-brand { gap: 10px; }
-.app-skeleton-nav-links { gap: 8px; }
-.app-skeleton-nav-tools { gap: 12px; }
+/* 侧栏骨架：分组导航的占位 */
+.app-skeleton-sidebar {
+  flex: 0 0 var(--yc-sidebar-w);
+  width: var(--yc-sidebar-w);
+  display: flex;
+  flex-direction: column;
+  gap: var(--yc-sp-16);
+  padding: var(--yc-sp-20) var(--yc-sp-12);
+  background: linear-gradient(180deg, var(--yc-nav-bg-2) 0%, var(--yc-nav-bg) 320px);
+  border-right: 1px solid var(--yc-nav-border);
+}
 
-.app-skeleton-nav-links .app-skeleton-block { width: 72px; height: 32px; }
+.app-skeleton-sidebar-brand { display: flex; align-items: center; gap: var(--yc-sp-10); padding: 0 var(--yc-sp-8) var(--yc-sp-8); }
+.app-skeleton-sidebar-group { display: flex; flex-direction: column; gap: var(--yc-sp-8); }
+.app-skeleton-sidebar-group .app-skeleton-block { height: 12px; background: linear-gradient(90deg, rgb(255 255 255 / 8%), rgb(255 255 255 / 16%), rgb(255 255 255 / 8%)); background-size: 200% 100%; }
+.app-skeleton-sidebar-link { height: 30px; border-radius: var(--yc-radius-sm); background: linear-gradient(90deg, rgb(255 255 255 / 6%), rgb(255 255 255 / 12%), rgb(255 255 255 / 6%)); background-size: 200% 100%; }
 
 .app-skeleton-block {
   display: block;
@@ -880,9 +898,13 @@ html[data-theme="dark"] .shell-code-block {
   font: inherit;
 }
 
+/*
+ * 筛选条保持 7 列结构，但列宽可收缩。
+ * 侧栏占掉 236px 后主区变窄，固定列宽会撑出主区并把业务滚动容器变成横向滚动条。
+ */
 .work-item-filter-bar {
   display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) repeat(5, minmax(130px, 1fr)) auto;
+  grid-template-columns: minmax(200px, 1.5fr) repeat(5, minmax(0, 1fr)) auto;
   align-items: end;
   gap: 12px;
   padding: 14px 16px 16px;

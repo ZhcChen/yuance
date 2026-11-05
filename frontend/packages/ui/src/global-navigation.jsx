@@ -1,12 +1,9 @@
 // @ts-check
-/* global ResizeObserver, requestAnimationFrame */
-
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 
 import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
 import { UserAvatar } from './user-avatar.jsx';
 
-const logoSrc = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"%3E%3Crect x="4" y="4" width="88" height="88" rx="22" fill="%231f5fbf"/%3E%3Cpath d="M22 22h27v14H36v38H22V22Z" fill="%23fff"/%3E%3Cpath d="M50 22h24v14H56L37 74H22l21-42c2-4 4-7 7-10Z" fill="%23fff"/%3E%3Cpath d="M57 45h17v14H50l7-14Z" fill="%23fff"/%3E%3Crect x="62" y="62" width="15" height="15" rx="4" fill="%232d8a68"/%3E%3C/svg%3E';
 
 /** @param {number} count */
 export function formatNavigationBadge(count) {
@@ -35,13 +32,9 @@ export function closeContainingNavigationMenu(event) {
 
 /**
  * @param {{
- *   productName: string,
- *   links: Array<{ id: string, label: string, href: string, active?: boolean, badge?: number }>,
  *   currentProject?: { key: string, name: string, pending_count?: number } | null,
  *   projectOptions?: Array<{ key: string, name: string, pending_count?: number }>,
  *   projectsHref: string,
- *   downloadsHref: string,
- *   systemLinks?: Array<{ id: string, label: string, href: string, active?: boolean }>,
  *   messagesHref: string,
  *   unreadCount?: number,
  *   notifications?: Array<{ id: number, kind?: string, title: string, body: string, actor: string, createdAt: string, read: boolean }>,
@@ -57,16 +50,14 @@ export function closeContainingNavigationMenu(event) {
  *   onMarkAllRead(): void,
  *   onThemeChange(theme: 'light' | 'dark'): void,
  *   onLogout(): void,
+ *   onToggleNavigation?(): void,
+ *   navigationOpen?: boolean,
  * }} props
  */
 export function GlobalNavigation({
-  productName,
-  links,
   currentProject,
   projectOptions = [],
   projectsHref,
-  downloadsHref,
-  systemLinks = [],
   messagesHref,
   unreadCount = 0,
   notifications = [],
@@ -82,14 +73,13 @@ export function GlobalNavigation({
   onMarkAllRead,
   onThemeChange,
   onLogout,
+  onToggleNavigation,
+  navigationOpen = false,
 }) {
-  const linksRef = useRef(/** @type {HTMLElement | null} */ (null));
   const projectOptionsRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const notificationListRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
-  const linksScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: linksRef, label: '应用导航' });
-  const hasSyncedIndicatorRef = useRef(false);
   const displayName = user?.display_name || user?.username || '未知用户';
   const totalProjectPendingCount = projectOptions.reduce((total, project) => {
     const count = Number(project.pending_count || 0);
@@ -105,29 +95,6 @@ export function GlobalNavigation({
   }, [projectOptions, projectQuery]);
   const projectOptionsScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: projectOptionsRef, enabled: projectMenuOpen, label: '项目列表', refreshKey: filteredProjects.length });
   const notificationScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: notificationListRef, enabled: notificationMenuOpen, label: '消息列表', refreshKey: notifications.length });
-
-  useLayoutEffect(() => {
-    const navigation = linksRef.current;
-    const active = /** @type {HTMLElement | null} */ (navigation?.querySelector('.global-nav-link.active') || null);
-    const indicator = /** @type {HTMLElement | null} */ (navigation?.querySelector('.global-nav-links-indicator') || null);
-    if (!navigation || !active || !indicator) return undefined;
-
-    const syncIndicator = (animate) => {
-      const navigationBounds = navigation.getBoundingClientRect();
-      const activeBounds = active.getBoundingClientRect();
-      indicator.style.transition = animate ? '' : 'none';
-      navigation.style.setProperty('--yc-global-nav-indicator-width', `${activeBounds.width}px`);
-      navigation.style.setProperty('--yc-global-nav-indicator-x', `${activeBounds.left - navigationBounds.left + navigation.scrollLeft}px`);
-      if (!animate) requestAnimationFrame(() => { indicator.style.transition = ''; });
-    };
-
-    syncIndicator(hasSyncedIndicatorRef.current);
-    hasSyncedIndicatorRef.current = true;
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => syncIndicator(true));
-    observer?.observe(navigation);
-    Array.from(navigation.querySelectorAll('.global-nav-link')).forEach((link) => observer?.observe(link));
-    return () => observer?.disconnect();
-  }, [links, systemLinks]);
 
   /** @param {React.FormEvent<HTMLFormElement>} event */
   function submitSearch(event) {
@@ -145,38 +112,18 @@ export function GlobalNavigation({
 
   return (
     <header className="global-nav">
-      <a className="global-nav-brand" href={links[0]?.href || projectsHref} onClick={(event) => onNavigate(event, links[0]?.href || projectsHref, productName)}>
-        <img className="global-nav-mark" src={logoSrc} alt="" width="32" height="32" />
-        <strong>{productName}</strong>
-      </a>
-
-      <nav ref={linksRef} className="global-nav-links yc-overlay-scroll-target" aria-label="应用导航">
-        <span className="global-nav-links-indicator" aria-hidden="true" />
-        {links.map((link) => {
-          const badge = formatNavigationBadge(link.badge || 0);
-          return (
-            <a key={link.id} className={['global-nav-link', link.active ? 'active' : ''].filter(Boolean).join(' ')} href={link.href}
-              aria-current={link.active ? 'page' : undefined} onClick={(event) => onNavigate(event, link.href, link.label)}>
-              {link.label}
-              {badge ? <span className="global-nav-badge" aria-label={`${link.label} ${link.badge} 项`}>{badge}</span> : null}
-            </a>
-          );
-        })}
-        {systemLinks.length ? (
-          <details className="global-nav-system" onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
-            <summary className={systemLinks.some((link) => link.active) ? 'global-nav-link active' : 'global-nav-link'} role="button">
-              系统管理<span className="global-nav-caret" aria-hidden="true" />
-            </summary>
-            <div className="global-nav-menu global-nav-system-menu">
-              {systemLinks.map((link) => <a key={link.id} className={link.active ? 'active' : ''} href={link.href} onClick={(event) => { closeContainingNavigationMenu(event); onNavigate(event, link.href, link.label); }}>{link.label}</a>)}
-            </div>
-          </details>
-        ) : null}
-      </nav>
-      {linksScrollbar.scrollbar}
-
+      {onToggleNavigation ? (
+        <button className="global-nav-menu-button" type="button" aria-label={navigationOpen ? '关闭导航' : '打开导航'} aria-expanded={navigationOpen} onClick={onToggleNavigation}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+        </button>
+      ) : null}
       <div className="global-nav-tools">
-        <a className="global-nav-download" href={downloadsHref} target="_blank" rel="noreferrer">桌面端下载</a>
+        <form className="global-nav-search" role="search" onSubmit={submitSearch}>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10.8 5.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2ZM3.6 10.8a7.2 7.2 0 1 1 12.7 4.6l3.8 3.8-1 1-3.8-3.8A7.2 7.2 0 0 1 3.6 10.8Z" /></svg>
+          <label className="shell-live-region" htmlFor="global-search">全局搜索</label>
+          <input id="global-search" name="q" type="search" placeholder="搜索项目、需求、任务、Bug、资料库" autoComplete="off" />
+          <button type="submit">搜索</button>
+        </form>
         <details className="global-nav-project" onToggle={(event) => setProjectMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
           <summary role="button" aria-label="切换当前项目">
             <span className="global-nav-project-label">当前项目</span>
@@ -203,12 +150,6 @@ export function GlobalNavigation({
           </div>
         </details>
 
-        <form className="global-nav-search" role="search" onSubmit={submitSearch}>
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10.8 5.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2ZM3.6 10.8a7.2 7.2 0 1 1 12.7 4.6l3.8 3.8-1 1-3.8-3.8A7.2 7.2 0 0 1 3.6 10.8Z" /></svg>
-          <label className="shell-live-region" htmlFor="global-search">全局搜索</label>
-          <input id="global-search" name="q" type="search" placeholder="搜索项目、需求、任务、Bug、资料库" autoComplete="off" />
-          <button type="submit">搜索</button>
-        </form>
 
         <details className="global-nav-notifications" onToggle={(event) => setNotificationMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
           <summary role="button" aria-label="打开消息通知">

@@ -160,16 +160,34 @@ StatusPill（状态胶囊）、ProgressBar、IconTile、EmptyState。
 ### P3：壳层改造
 
 - 新增 `frontend/packages/ui/src/app-sidebar.jsx`：分组侧栏（概览 / 项目 / 交付 / 协作 / 工具 / 系统）、
-  活动态指示、当前项目切换入口、「时间管理」作为常规导航项并标注沿用现有实现。
-- `frontend/packages/app-shell/src/app.jsx` 的壳层区域由「顶部导航 + 主区」改为「侧栏 + 顶栏 + 主区」。
-- 顶栏收敛为搜索、项目切换、通知、账户；移除「桌面端下载」与系统管理下拉（其内容迁入侧栏）。
-- 同步 parity 视觉合同的 4 项硬编码值：`globalShell.regionOrder`、`tokens.topbarHeight`、
-  `breakpoints`、`viewports`；同步 `frontend/test/main-web-visual-contract.test.mjs` 中对应的硬编码常量。
+  活动态指示、「时间管理」作为常规导航项并标注沿用现有实现。
+  侧栏在 ≤1120px 收成图标条，≤768px 变为由顶栏菜单按钮开合的抽屉。
+- `frontend/packages/app-shell/src/app.jsx` 的壳层区域由「顶部导航 + 主区」改为
+  「侧栏 + 顶栏 + 主区」：`.app-shell` 改为横向 flex，右侧 `.app-shell__body` 承载顶栏与业务区。
+- 顶栏收敛为搜索、项目切换、通知、账户；品牌标识迁到侧栏；
+  「桌面端下载」与系统管理下拉迁入侧栏分组。
+- 同步 parity 视觉合同：`globalShell.regionOrder` 改为 `["sidebar","topbar","main"]`，
+  `tokens.topbarHeight` 58px → 60px（合同、schema、测试常量、令牌四处同步），
+  `breakpoints` 改为两个包里实际在用的断点集合。
 
-文件范围：新增 `frontend/packages/ui/src/app-sidebar.jsx`；改 `frontend/packages/ui/src/index.js`、
+文件范围：新增 `frontend/packages/ui/src/app-sidebar.jsx`、`frontend/packages/ui/src/brand.js`；
+改 `frontend/packages/ui/src/global-navigation.jsx`、`frontend/packages/ui/src/styles.css`、
+`frontend/packages/ui/src/index.js`、`frontend/packages/ui/src/tokens.css`、
 `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、
-`frontend/packages/app-shell/src/app-skeleton.jsx`（骨架屏同步侧栏）、
-`frontend/parity/main-web-visual-contract.json`、`frontend/test/main-web-visual-contract.test.mjs`。
+`frontend/packages/app-shell/src/app-skeleton.jsx`、
+`frontend/parity/main-web-visual-contract.json` 与其 schema、
+`frontend/test/main-web-visual-contract.test.mjs`、
+`frontend/packages/app-shell/test/stable-navigation-shell.test.mjs`、
+`frontend/packages/ui/test/global-navigation.test.mjs`，
+以及 `web/e2e/` 下依赖旧导航结构的用例。
+
+实施结果补充两处计划外修复：
+
+- 侧栏固定占走 236px 后主区变窄，工作项筛选条的固定七列栅格会撑出主区，
+  改为列宽可收缩（`minmax(200px, 1.5fr) repeat(5, minmax(0, 1fr)) auto`），结构不变；
+  同时把结构护栏从「只查文档级溢出」补强为「文档级 + 主区内部溢出」。
+- 修掉 P1 遗留的令牌断链 `--yc-control-fs: var(--fs-13)`（真名为 `--yc-fs-13`），
+  并把令牌解析断言从「只查 `--yc-*` 引用」扩展为「查全部 `var(--x)` 引用」。
 
 ### P4：页面改造
 

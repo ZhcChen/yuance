@@ -50,10 +50,10 @@ test('视觉合同固定基线提交、CSS 来源和四个验收视口', async (
     layoutTemplate: 'api/templates/layouts/web.html',
   });
   assert.deepEqual(contract.viewports.map(({ width, height }) => `${width}x${height}`), viewports);
-  assert.equal(contract.tokens.topbarHeight, '58px');
-  assert.deepEqual(contract.breakpoints, [1280, 1100, 980, 920, 900, 860, 760, 620]);
+  assert.equal(contract.tokens.topbarHeight, '60px');
+  assert.deepEqual(contract.breakpoints, [1280, 1120, 1100, 1024, 960, 900, 860, 768, 760, 720, 640, 620]);
   assert.equal(contract.globalShell.geometryTolerancePx, 2);
-  assert.deepEqual(contract.globalShell.regionOrder, ['topbar', 'main']);
+  assert.deepEqual(contract.globalShell.regionOrder, ['sidebar', 'topbar', 'main']);
 });
 
 test('视觉合同与体验清单 31 页双向闭合并完整分配 V2-V10', async () => {

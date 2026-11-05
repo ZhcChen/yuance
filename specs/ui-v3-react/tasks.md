@@ -125,23 +125,39 @@
 
 ## 阶段四：P3 壳层改造
 
-- [ ] T012 FR-005 [US1] 新增 `frontend/packages/ui/src/app-sidebar.jsx`：
+- [x] T012 FR-005 [US1] 新增 `frontend/packages/ui/src/app-sidebar.jsx`：
   分组侧栏（概览 / 项目 / 交付 / 协作 / 工具 / 系统）、活动态指示、当前项目切换入口，
   「时间管理」作为常规导航项并标注沿用现有实现；从 `index.js` 导出。
   依赖：T011。验收：侧栏渲染正确，键盘可达。
-- [ ] T013 FR-005 [US1] `frontend/packages/app-shell/src/app.jsx` 壳层由「顶部导航 + 主区」改为
+  **结果：侧栏组件已落地并导出；图标为内联 SVG 描边路径，无 emoji、无外链；
+  窄屏（≤768px）变为抽屉，由顶栏的菜单按钮开合。**
+- [x] T013 FR-005 [US1] `frontend/packages/app-shell/src/app.jsx` 壳层由「顶部导航 + 主区」改为
   「侧栏 + 顶栏 + 主区」；顶栏收敛为搜索、项目切换、通知、账户，
   移除「桌面端下载」与系统管理下拉（内容迁入侧栏）。
   文件：`app.jsx`、`application.css`、`app-skeleton.jsx`（骨架屏同步侧栏）。依赖：T012。
   验收：四档视口无溢出、无遮挡。
-- [ ] T014 FR-011 [US4] 同步 parity 视觉合同的 4 项硬编码值：
+  **结果：壳层改为「侧栏 + 顶栏 + 主区」三段式；品牌标识迁到侧栏，
+  系统管理与桌面端下载迁入侧栏分组；顶栏只保留搜索、项目切换、通知、账户；
+  骨架屏同步出侧栏骨架。390 / 375 / 768 / 1280 / 1440 五档宽度无横向溢出。**
+- [x] T014 FR-011 [US4] 同步 parity 视觉合同的 4 项硬编码值：
   `globalShell.regionOrder`、`tokens.topbarHeight`、`breakpoints`、`viewports`；
   同步 `frontend/test/main-web-visual-contract.test.mjs` 中对应的硬编码常量。
   文件：`frontend/parity/main-web-visual-contract.json`、该测试文件。依赖：T013。
   验收：`npm --prefix frontend run check` 通过。
+  **结果：`regionOrder` 改为 `["sidebar","topbar","main"]`；`topbarHeight` 58px → 60px
+  （合同、schema、测试常量、令牌四处同步）；`breakpoints` 改为实际在用的
+  `[1280,1120,1100,1024,960,900,860,768,760,720,640,620]`；
+  `viewports` 按既定结论保持 390/768/1280/1440 不变，375 作为 e2e 额外窄屏档。**
 - [ ] T015 验证：运行 `npm --prefix frontend run check`、`npm --prefix web run test:e2e`；
   桌面端启动后走查深浅两色。依赖：T014。
   验收：31 页双向闭合保持；两端一致。
+  **结果（前端与 Web 侧已完成，桌面端待补）：**
+  `npm --prefix frontend run check` 通过（60 + 76 + 10 + 8 项测试 0 失败）；
+  `npm --prefix web run check` 通过（68 项测试 0 失败）；`make web-build` 通过；
+  `npm --prefix web run test:visual` 9/9 通过（20 个页面 × 5 档宽度无横向溢出，含主区内部溢出检查）；
+  全量 e2e（干净数据库）92 通过 / 30 失败 / 4 跳过，回迁前基线为 77 通过 / 40 失败 / 4 跳过，
+  本轮多出的 2 条失败在隔离复跑中通过，属用例间数据依赖；
+  桌面端 renderer 因 `desktop/node_modules` 为空无法构建，走查未完成，列为未验证项。
 
 **Checkpoint**：壳层形态切换完成。
 

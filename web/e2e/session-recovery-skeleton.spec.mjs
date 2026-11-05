@@ -41,5 +41,5 @@ test('session recovery shows the shared app shell skeleton before the app render
   await expect(skeleton.getByRole('status')).toContainText('正在恢复当前会话');
 
   await expect(skeleton).toBeHidden({ timeout: 15000 });
-  await expect(page.getByRole('navigation', { name: '应用导航' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
 });

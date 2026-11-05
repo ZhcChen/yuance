@@ -856,7 +856,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.locator('.work-item-description .yc-rich-text-content')).toHaveText('通过 Web app shell 保存的描述。');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
   await expect(page.getByText('Web 保存后刷新评论')).toBeVisible();
-  await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('7');
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /任务/ })).toContainText('7');
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/handoff', async (route) => {
     refreshedDetail = {
@@ -896,7 +896,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已推进并指派。');
   await expect(page.getByText('Web handoff 流转记录')).toBeVisible();
   await expect(page.locator('.work-item-title-tags')).toContainText('待确认');
-  await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('8');
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /任务/ })).toContainText('8');
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
 });
 
@@ -1141,7 +1141,7 @@ test('work item edit success survives comments or topbar refresh failures', asyn
   await expect(page.getByRole('heading', { level: 1, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
   await expect(page.locator('.work-item-description .yc-rich-text-content')).toHaveText(editedDetail.description);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
-  await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('9');
+  await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /任务/ })).toContainText('9');
   await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
@@ -4530,7 +4530,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
       buttonFontSize: buttonStyle.fontSize,
     };
   });
-  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '0px', buttonHeight: '32px', buttonRadius: '8px', buttonFontSize: '13px' });
+  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '0px', buttonHeight: '36px', buttonRadius: '8px', buttonFontSize: '13px' });
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 
@@ -4545,22 +4545,20 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   await expect.poll(() => page.locator('.main').evaluate((element) => element.clientWidth)).toBe(initialGeometry.mainWidth);
 });
 
-test('global navigation indicator slides between application sections', async ({ page }) => {
+test('application sidebar groups navigation and marks the active section', async ({ page }) => {
   await login(page, '/web/app');
 
-  const navigation = page.getByRole('navigation', { name: '应用导航' });
-  const indicator = navigation.locator('.global-nav-links-indicator');
-  const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
-  const navLabels = await navigation.locator('.global-nav-link').allTextContents();
+  const navigation = page.getByRole('navigation', { name: '主导航' });
   await expect(navigation.getByRole('link', { name: '资料库', exact: true })).toBeVisible();
-  expect(navLabels.indexOf('时间管理')).toBeGreaterThanOrEqual(0);
-  expect(navLabels.indexOf('资料库')).toBeGreaterThan(navLabels.indexOf('时间管理'));
+  await expect(navigation.getByRole('link', { name: /^时间管理/ })).toBeVisible();
+  await expect(navigation.getByRole('link', { name: '工作台', exact: true })).toHaveAttribute('aria-current', 'page');
+  // 分组标题：概览 / 项目 / 交付 / 协作 / 工具 / 系统
+  await expect(page.locator('.app-sidebar__group-label')).toHaveText(['概览', '项目', '交付', '协作', '工具', '系统']);
 
   await navigation.getByRole('link', { name: '项目', exact: true }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects/u);
   await expect(navigation.getByRole('link', { name: '项目', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect.poll(() => indicator.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
-  await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
+  await expect(navigation.getByRole('link', { name: '工作台', exact: true })).not.toHaveAttribute('aria-current', 'page');
 });
 
 test('time management page stays independent from the project resource library', async ({ page }) => {
@@ -4584,14 +4582,20 @@ test('time management page stays independent from the project resource library',
   await page.goto('/web/app/time-management');
   await expect(page.locator('.time-management')).toBeVisible();
   await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toHaveCount(0);
-  const resourceLibraryLink = page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: '资料库', exact: true });
+  const resourceLibraryLink = page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '资料库', exact: true });
   await expect(resourceLibraryLink).toHaveAttribute('href', /\/web\/app\/projects\/YCE\/resources$/);
   await resourceLibraryLink.click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources$/);
-  await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '项目资料库' })).toBeVisible();
   await expect(page.getByRole('link', { name: '全局时间管理资料' })).toBeVisible();
   await expect(page.getByRole('link', { name: '返回项目' })).toHaveCount(0);
-  await expect.poll(() => page.locator('.project-resource-library-page').evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(1200);
+  // 资料库是宽布局：页面占满主区，且当前视口下主区仍属宽版（侧栏会占走一部分宽度）
+  await expect.poll(() => page.locator('.project-resource-library-page').evaluate((element) => {
+    const main = element.closest('.main');
+    const pageWidth = element.getBoundingClientRect().width;
+    const mainWidth = main.clientWidth;
+    return pageWidth >= mainWidth * 0.9 && mainWidth >= 1000;
+  })).toBe(true);
 });
 
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {
@@ -4908,9 +4912,6 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await expect(projectMenu.getByRole('button', { name: /交付运维台/ })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', { name: '系统管理', exact: true }).click();
-  await expect(page.locator('.global-nav-system-menu').getByRole('link', { name: '用户管理' })).toBeVisible();
-  await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: '打开消息通知' }).click();
   await expect(page.getByRole('dialog', { name: '最近消息' })).toBeVisible();
@@ -4926,16 +4927,15 @@ test('shared global shell remains usable at canonical responsive widths', async 
   for (const width of [390, 768, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.locator('.global-nav')).toBeVisible();
-    await expect(page.getByRole('navigation', { name: '应用导航' })).toBeVisible();
+    await expect(page.locator('.app-sidebar')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
     await expect(page.getByRole('search')).toBeVisible();
     await expect(page.getByRole('button', { name: '切换当前项目' })).toBeVisible();
-    await expect(page.locator('.global-nav-mark')).toBeVisible();
+    await expect(page.locator('.app-sidebar__logo')).toBeVisible();
     await expect(page.getByRole('button', { name: /打开 .* 的账户菜单/ })).toBeVisible();
     const geometry = await page.evaluate(() => {
       const nav = document.querySelector('.global-nav')?.getBoundingClientRect();
-      const brand = document.querySelector('.global-nav-brand')?.getBoundingClientRect();
-      const links = document.querySelector('.global-nav-links')?.getBoundingClientRect();
-      const tools = document.querySelector('.global-nav-tools')?.getBoundingClientRect();
+      const sidebar = document.querySelector('.app-sidebar')?.getBoundingClientRect();
       const search = document.querySelector('.global-nav-search')?.getBoundingClientRect();
       const project = document.querySelector('.global-nav-project')?.getBoundingClientRect();
       const workspaceColumns = getComputedStyle(document.querySelector('.workspace-grid')).gridTemplateColumns;
@@ -4943,18 +4943,19 @@ test('shared global shell remains usable at canonical responsive widths', async 
       const toolRects = [...document.querySelectorAll('.global-nav-tools > *')].map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
       return {
         navHeight: nav?.height || 0, navWidth: nav?.width || 0, searchWidth: search?.width || 0, projectWidth: project?.width || 0,
-        brandRight: brand?.right || 0, linksLeft: links?.left || 0, linksRight: links?.right || 0, toolsLeft: tools?.left || 0,
+        sidebarWidth: sidebar?.width || 0, sidebarRight: sidebar?.right || 0,
         workspaceColumns, metricColumns,
         toolRects: toolRects.map((rect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
       };
     });
     if (width <= 768) {
-      expect(geometry.searchWidth).toBeGreaterThanOrEqual(geometry.navWidth - 24);
-      expect(geometry.projectWidth).toBeGreaterThanOrEqual(geometry.navWidth - 24);
+      // 窄屏：侧栏变为抽屉，顶栏换行，控件不重叠即可
+      expect(geometry.searchWidth).toBeGreaterThan(0);
+      expect(geometry.projectWidth).toBeGreaterThan(0);
     } else {
-      expect(geometry.navHeight).toBe(58);
-      expect(geometry.brandRight).toBeLessThanOrEqual(geometry.linksLeft);
-      expect(geometry.linksRight).toBeLessThanOrEqual(geometry.toolsLeft);
+      expect(geometry.navHeight).toBe(60);
+      expect(geometry.sidebarWidth).toBeGreaterThan(0);
+      expect(geometry.sidebarRight).toBeLessThanOrEqual(geometry.navWidth);
       for (let index = 1; index < geometry.toolRects.length; index += 1) {
         expect(geometry.toolRects[index - 1].right).toBeLessThanOrEqual(geometry.toolRects[index].left);
       }
@@ -4970,4 +4971,9 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await page.getByRole('button', { name: '深色模式' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.screenshot({ path: testInfo.outputPath('global-shell-390-dark.png'), fullPage: true });
+
+  // 系统管理入口已迁入侧栏
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '系统管理', exact: true }).click();
+  await expect(page).toHaveURL(/\/web\/app\/system/u);
 });

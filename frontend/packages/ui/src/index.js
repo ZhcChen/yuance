@@ -1,6 +1,8 @@
 // @ts-check
 
 export { UI_PACKAGE_NAME } from './package-info.js';
+export { logoSrc } from './brand.js';
+export { AppSidebar } from './app-sidebar.jsx';
 export { HostStatusShell } from './host-status-shell.jsx';
 export { GlobalNavigation, closeContainingNavigationMenu, closeNavigationMenuOnBlur, closeNavigationMenuOnEscape, formatNavigationBadge } from './global-navigation.jsx';
 export { Badge, Button, Card, ContentTab, ContentTabs, DataTable, EmptyState, ErrorToast, Feedback, Field, FilterBar, FilterField, IconTile, Metric, Modal, PaginatedList, PaginatedTable, Pagination, Panel, PriorityBadge, ProgressBar, Select, Skeleton, StatusPill, TextArea, TextInput } from './primitives.jsx';

@@ -42,7 +42,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["topbarHeight", "controlHeight", "controlHeightSmall", "controlRadius", "cardRadius", "light", "dark"],
       "properties": {
-        "topbarHeight": { "const": "58px" },
+        "topbarHeight": { "const": "60px" },
         "controlHeight": { "const": "40px" },
         "controlHeightSmall": { "const": "32px" },
         "controlRadius": { "const": "8px" },

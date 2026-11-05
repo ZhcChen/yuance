@@ -169,7 +169,7 @@
   --yc-control-h-lg: 36px;
   --yc-control-h-input: 36px;
   --yc-control-px: 12px;
-  --yc-control-fs: var(--fs-13);
+  --yc-control-fs: var(--yc-fs-13);
 
   /* ---------- 图标磁贴 icon tile ---------- */
   --yc-tile-bg: #eff1f8;
@@ -186,8 +186,8 @@
   --yc-table-header-h: 40px;
   --yc-table-cell-px: 16px;
 
-  /* ---------- 顶栏高度（P3 壳层改造时与 parity 合同同步） ---------- */
-  --yc-topbar-height: 58px;
+  /* ---------- 顶栏高度（与 parity 合同的 tokens.topbarHeight 同步） ---------- */
+  --yc-topbar-height: 60px;
 
   /* ---------- 组件专用 component ---------- */
   --yc-tab-bg: #f1f5f8;
@@ -379,7 +379,7 @@ html[data-theme="dark"] {
   --yc-control-h-lg: 36px;
   --yc-control-h-input: 36px;
   --yc-control-px: 12px;
-  --yc-control-fs: var(--fs-13);
+  --yc-control-fs: var(--yc-fs-13);
 
   /* ---------- 图标磁贴 icon tile ---------- */
   --yc-tile-bg: #1a2433;

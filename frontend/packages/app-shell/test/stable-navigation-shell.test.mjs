@@ -31,13 +31,14 @@ test('shared shell keeps the 58px navigation outside the only business scroll co
   assert.match(source, /return \(\s*<div className="app-shell"/u);
   assert.ok(mainIndex > navigationIndex, '业务滚动容器必须位于稳定导航之后');
   assert.ok(routeLoadingIndex > mainIndex, 'route loading 必须留在业务滚动容器内');
-  assert.match(applicationStyles, /\.app-shell \{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/u);
+  assert.match(applicationStyles, /\.app-shell \{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*flex-direction: row;[\s\S]*overflow: hidden;/u);
+  assert.match(applicationStyles, /\.app-shell__body \{[\s\S]*flex: 1 1 auto;[\s\S]*display: flex;[\s\S]*flex-direction: column;/u);
   assert.match(applicationStyles, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: auto;/u);
   assert.doesNotMatch(applicationStyles, /\.app-scrollbar(?:-thumb)?\s*\{/u);
   assert.match(uiStyles, /\.yc-overlay-scrollbar\s*\{[\s\S]*position:\s*fixed;/u);
   assert.match(uiTokens, /--yc-scrollbar-thumb-alpha:\s*30%;/u);
   assert.ok(source.includes('{mainScrollbar.scrollbar}'));
-  assert.match(uiTokens, /--yc-topbar-height: 58px;/u);
+  assert.match(uiTokens, /--yc-topbar-height: 60px;/u);
   assert.match(uiStyles, /\.global-nav \{[\s\S]*flex: 0 0 var\(--yc-topbar-height\);[\s\S]*height: var\(--yc-topbar-height\);/u);
   assert.doesNotMatch(uiStyles, /\.global-nav \{[^}]*position: sticky;/u);
 });

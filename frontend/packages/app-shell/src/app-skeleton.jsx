@@ -8,17 +8,21 @@ export function AppShellSkeleton() {
   return (
     <div className="app-shell app-shell-skeleton" aria-busy="true">
       <p className="shell-live-region" role="status" aria-live="polite">正在恢复当前会话，正在加载用户、项目上下文和消息状态。</p>
-      <div className="app-skeleton-nav" aria-hidden="true">
-        <div className="app-skeleton-nav-brand">
+      <div className="app-skeleton-sidebar" aria-hidden="true">
+        <div className="app-skeleton-sidebar-brand">
           <span className="app-skeleton-block app-skeleton-mark" />
           <span className="app-skeleton-block app-skeleton-name" />
         </div>
-        <div className="app-skeleton-nav-links">
-          <span className="app-skeleton-block" />
-          <span className="app-skeleton-block" />
-          <span className="app-skeleton-block" />
-          <span className="app-skeleton-block" />
-        </div>
+        {['overview', 'projects', 'delivery', 'collaboration', 'tools', 'system'].map((group) => (
+          <div className="app-skeleton-sidebar-group" key={group}>
+            <span className="app-skeleton-block" />
+            <span className="app-skeleton-block app-skeleton-sidebar-link" />
+            <span className="app-skeleton-block app-skeleton-sidebar-link" />
+          </div>
+        ))}
+      </div>
+      <div className="app-shell__body">
+      <div className="app-skeleton-nav" aria-hidden="true">
         <div className="app-skeleton-nav-tools">
           <span className="app-skeleton-block app-skeleton-search" />
           <span className="app-skeleton-block app-skeleton-avatar" />
@@ -62,6 +66,7 @@ export function AppShellSkeleton() {
             </section>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

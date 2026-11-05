@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
 import { UI_PACKAGE_NAME } from '@yuance/frontend-ui';
 
@@ -69,13 +69,35 @@ test('every shared token reference resolves to a defined token', async () => {
   const stylesheets = await Promise.all([
     readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
     readFile(new URL('../../app-shell/src/application.css', import.meta.url), 'utf8'),
+    tokenSource,
   ]);
-  const missing = new Set();
+
+  // 局部自定义属性与内联样式里声明的变量
+  const local = new Set();
   for (const source of stylesheets) {
-    for (const match of source.matchAll(/var\((--yc-[a-zA-Z0-9-]+)/gu)) {
-      if (!defined.has(match[1]) && !runtimeInjected.has(match[1])) missing.add(match[1]);
+    for (const match of source.matchAll(/(--[a-zA-Z0-9-]+)\s*:/gu)) local.add(match[1]);
+  }
+  const sourceDirectories = [
+    new URL('../src/', import.meta.url),
+    new URL('../../app-shell/src/', import.meta.url),
+  ];
+  for (const directory of sourceDirectories) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isFile() || !/\.(jsx?|mjs)$/u.test(entry.name)) continue;
+      const source = await readFile(new URL(entry.name, directory), 'utf8');
+      for (const match of source.matchAll(/(--[a-zA-Z0-9-]+)\s*:/gu)) local.add(match[1]);
     }
   }
 
-  assert.deepEqual([...missing].sort(), [], '样式里引用了未定义的共享令牌');
+  const missing = new Set();
+  for (const source of stylesheets) {
+    // 带兜底值的引用视为已解析
+    for (const match of source.matchAll(/var\((--[a-zA-Z0-9-]+)(\s*,|\s*\))/gu)) {
+      if (match[2].trim() === ',') continue;
+      if (defined.has(match[1]) || local.has(match[1]) || runtimeInjected.has(match[1])) continue;
+      missing.add(match[1]);
+    }
+  }
+
+  assert.deepEqual([...missing].sort(), [], '样式里引用了未定义的变量');
 });

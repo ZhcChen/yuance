@@ -88,6 +88,7 @@
   --neutral-line: var(--yc-neutral-line);
   --neutral-text: var(--yc-neutral-text);
   /* ---------- 字号刻度 type scale ---------- */
+  --font-sans: var(--yc-font-sans);
   --font-mono: var(--yc-font-mono);
   --fs-11: var(--yc-fs-11);
   --fs-12: var(--yc-fs-12);

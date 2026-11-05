@@ -127,9 +127,13 @@ async function horizontalOverflow(page) {
       })
       .filter(({ right }) => right > window.innerWidth + 1)
       .sort((left, right) => right.right - left.right)[0];
+    // 业务滚动容器自身也可能被内容撑宽，那种溢出不会体现在文档级
+    const main = document.querySelector('.main');
     return {
       scrollWidth: root.scrollWidth,
       innerWidth: window.innerWidth,
+      mainScrollWidth: main ? main.scrollWidth : 0,
+      mainClientWidth: main ? main.clientWidth : 0,
       widest: widest ?? null,
     };
   });
@@ -151,7 +155,12 @@ test.describe('主 Web 视觉结构护栏', () => {
         const overflow = await horizontalOverflow(page);
         if (overflow.scrollWidth > overflow.innerWidth + 1) {
           failures.push(
-            `${target.id} 横向溢出：scrollWidth=${overflow.scrollWidth} > innerWidth=${overflow.innerWidth}，最宽元素 ${overflow.widest?.selector ?? '未知'}`,
+            `${target.id} 文档级横向溢出：scrollWidth=${overflow.scrollWidth} > innerWidth=${overflow.innerWidth}，最宽元素 ${overflow.widest?.selector ?? '未知'}`,
+          );
+        }
+        if (overflow.mainScrollWidth > overflow.mainClientWidth + 1) {
+          failures.push(
+            `${target.id} 主区横向溢出：scrollWidth=${overflow.mainScrollWidth} > clientWidth=${overflow.mainClientWidth}`,
           );
         }
         const headingCount = await page.locator('h1').count();

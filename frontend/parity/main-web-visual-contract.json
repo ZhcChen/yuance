@@ -14,13 +14,13 @@
     { "name": "wide", "width": 1440, "height": 900 }
   ],
   "tokens": {
-    "topbarHeight": "58px", "controlHeight": "40px", "controlHeightSmall": "32px", "controlRadius": "8px", "cardRadius": "16px",
+    "topbarHeight": "60px", "controlHeight": "40px", "controlHeightSmall": "32px", "controlRadius": "8px", "cardRadius": "16px",
     "light": { "background": "#edf1f5", "panel": "#ffffff", "text": "#17212b", "muted": "#6b7785", "line": "#dfe6ed", "brand": "#376b9b", "accent": "#2d8a68", "danger": "#b42318" },
     "dark": { "background": "#0f1723", "panel": "#151f2d", "text": "#e6edf5", "muted": "#91a1b4", "line": "#293548", "brand": "#78a7cf", "accent": "#5ad09a", "danger": "#ff8078" }
   },
-  "breakpoints": [1280, 1100, 980, 920, 900, 860, 760, 620],
+  "breakpoints": [1280, 1120, 1100, 1024, 960, 900, 860, 768, 760, 720, 640, 620],
   "globalShell": {
-    "regionOrder": ["topbar", "main"],
+    "regionOrder": ["sidebar", "topbar", "main"],
     "mainScrollContainer": ".main",
     "geometryTolerancePx": 2,
     "computedStyleProperties": ["display", "position", "width", "height", "padding", "margin", "background-color", "color", "border", "border-radius", "box-shadow", "font-size", "font-weight", "line-height"]

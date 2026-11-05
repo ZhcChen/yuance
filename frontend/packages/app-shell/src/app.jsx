@@ -24,6 +24,7 @@ import {
   buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
+  buildSystemPath,
   buildSystemStoragePath,
   buildSystemUsersPath,
   buildTimeManagementPath,
@@ -45,6 +46,7 @@ import {
   uploadSystemReleaseAsset,
 } from '@yuance/frontend-app-core';
 import {
+  AppSidebar,
   AttachmentPreview as BaseAttachmentPreview,
   Badge,
   Button,
@@ -57,6 +59,7 @@ import {
   Field,
   FilterBar,
   FilterField,
+  formatNavigationBadge,
   GlobalNavigation,
   Modal,
   PaginatedTable,
@@ -1306,6 +1309,7 @@ export function SharedApp({ services }) {
 
   const currentProject = topbar?.current_project || null;
   topbarRef.current = topbar;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
   const profilePath = buildProfilePath(route.owner);
@@ -1367,6 +1371,56 @@ export function SharedApp({ services }) {
   }), [api]);
   const activeFeed = route.id === 'messages' ? messageFeed : homeFeed;
   const unreadCount = activeFeed?.unread_count ?? topbar?.notifications_count ?? 0;
+
+  // 一级导航分组，与设计稿的左侧栏一致。
+  const sidebarGroups = [
+    {
+      id: 'overview',
+      label: '概览',
+      items: [
+        { id: 'home', label: '工作台', href: homePath, icon: 'home', active: route.id === 'home' },
+      ],
+    },
+    {
+      id: 'projects',
+      label: '项目',
+      items: [
+        { id: 'projects', label: '项目', href: currentProject ? buildProjectDetailPath({ owner: route.owner, projectKey: currentProject.key }) : projectsPath, icon: 'folder', active: ['projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis'].includes(route.id) },
+        { id: 'resource-library', label: '资料库', href: resourceLibraryPath, icon: 'book', active: route.id === 'project-resource-library' || route.id === 'project-resource-detail' },
+      ],
+    },
+    {
+      id: 'delivery',
+      label: '交付',
+      items: [
+        { id: 'requirements', label: '需求', href: requirementsPath, icon: 'inbox', badge: formatNavigationBadge(topbar?.requirements_count || 0), active: route.id === 'requirements' },
+        { id: 'tasks', label: '任务', href: tasksPath, icon: 'task', badge: formatNavigationBadge(topbar?.tasks_count || 0), active: route.id === 'tasks' },
+        { id: 'bugs', label: 'Bug', href: bugsPath, icon: 'bug', badge: formatNavigationBadge(topbar?.bugs_count || 0), active: route.id === 'bugs' },
+      ],
+    },
+    {
+      id: 'collaboration',
+      label: '协作',
+      items: [
+        { id: 'messages', label: '消息中心', href: messagesPath, icon: 'message', badge: formatNavigationBadge(unreadCount), active: route.id === 'messages' },
+      ],
+    },
+    {
+      id: 'tools',
+      label: '工具',
+      items: [
+        { id: 'time-management', label: '时间管理', href: timeManagementPath, icon: 'clock', badge: '现网', title: '时间管理（沿用现有实现）', active: route.id === 'time-management' },
+        { id: 'downloads', label: '桌面端下载', href: route.owner === 'app' ? 'https://yuance.quanxinfu.com/web/downloads' : '/web/downloads', icon: 'download', badge: '现网', external: true, title: '桌面端下载（沿用现有实现，另开标签页）' },
+      ],
+    },
+    {
+      id: 'system',
+      label: '系统',
+      items: [
+        { id: 'system', label: '系统管理', href: buildSystemPath(route.owner), icon: 'settings', active: route.id.startsWith('system-') },
+      ],
+    },
+  ];
   const pendingCount = messageFeed?.pending_count ?? 0;
   const pageRangeStart = activeFeed && activeFeed.total_items > 0
     ? (activeFeed.page - 1) * activeFeed.per_page + 1
@@ -5674,27 +5728,19 @@ export function SharedApp({ services }) {
         {statusMessage || (refreshing ? '正在刷新页面数据。' : '')}
       </p>
 
-      <GlobalNavigation
+      <AppSidebar
         productName="元策"
-        links={[
-          { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
-          { id: 'projects', label: '项目', href: currentProject ? buildProjectDetailPath({ owner: route.owner, projectKey: currentProject.key }) : projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-personal-analysis' },
-          { id: 'requirements', label: '需求', href: requirementsPath, active: route.id === 'requirements', badge: topbar?.requirements_count || 0 },
-          { id: 'tasks', label: '任务', href: tasksPath, active: route.id === 'tasks', badge: topbar?.tasks_count || 0 },
-          { id: 'bugs', label: 'Bug', href: bugsPath, active: route.id === 'bugs', badge: topbar?.bugs_count || 0 },
-          { id: 'time-management', label: '时间管理', href: timeManagementPath, active: route.id === 'time-management' },
-          { id: 'resource-library', label: '资料库', href: resourceLibraryPath, active: route.id === 'project-resource-library' || route.id === 'project-resource-detail' },
-        ]}
+        groups={sidebarGroups}
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        onNavigate={(event, path, label) => handleNavigate(event, path, `已切换到${label}。`)}
+      />
+
+      <div className="app-shell__body">
+      <GlobalNavigation
         currentProject={currentProject}
         projectOptions={topbar?.project_options || []}
         projectsHref={projectsPath}
-        downloadsHref={route.owner === 'app' ? 'https://yuance.quanxinfu.com/web/downloads' : '/web/downloads'}
-        systemLinks={(topbar?.system_links || []).map((link) => ({
-          id: link.id,
-          label: link.title,
-          href: routePathForOwner(link.path, route.owner),
-          active: link.id === 'dashboard' ? route.id === 'system-dashboard' : route.id === `system-${link.id}`,
-        }))}
         messagesHref={messagesPath}
         unreadCount={unreadCount}
         notifications={previewItems.map((item) => ({ ...item, createdAt: formatTimestamp(item.created_at) }))}
@@ -5704,7 +5750,7 @@ export function SharedApp({ services }) {
         profileHref={profilePath}
         theme={theme}
         onNavigate={(event, path, label) => handleNavigate(event, path, `已切换到${label}。`)}
-        onSearch={(query) => navigate(buildSearchPath({ owner: route.owner, q: query }), query ? `正在搜索 ${query}。` : '请输入搜索内容。')}
+        onSearch={(query) => navigate(buildSearchPath({ owner: route.owner, q: query }), query ? '正在搜索 ' + query + '。' : '请输入搜索内容。')}
         onProjectChange={(project) => void handleSetCurrentProject(project)}
         onOpenNotification={(notification) => {
           const item = previewItems.find((candidate) => candidate.id === notification.id);
@@ -5713,6 +5759,8 @@ export function SharedApp({ services }) {
         onMarkAllRead={() => void handleMarkAllRead()}
         onThemeChange={handleThemeChange}
         onLogout={handleLogout}
+        onToggleNavigation={() => setSidebarOpen((open) => !open)}
+        navigationOpen={sidebarOpen}
       />
 
       <main ref={mainScrollbar.ref} className="main yc-overlay-scroll-target">
@@ -6929,6 +6977,7 @@ export function SharedApp({ services }) {
       </div>
       </main>
       {mainScrollbar.scrollbar}
+      </div>
       {dashboardTableScrollbar.scrollbar}
       {workTableScrollbar.scrollbar}
     </div>
