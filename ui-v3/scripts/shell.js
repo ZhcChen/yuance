@@ -89,7 +89,6 @@ export function renderSidebar(activePageId) {
       { class: 'sidebar__brand' },
       h('span', { class: 'sidebar__logo' }, icon('i-layers')),
       h('span', { class: 'sidebar__name' }, '元策'),
-      h('span', { class: 'sidebar__tag' }, 'V3 原型'),
     ),
     ...groups,
   );

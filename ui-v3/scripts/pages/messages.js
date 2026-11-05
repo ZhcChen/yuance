@@ -85,9 +85,9 @@ export function renderMessages(params, query) {
     'div',
     { class: 'metrics' },
     h('div', { class: 'metric' }, iconTile('i-bell', 'brand'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '未读消息'), h('div', { class: 'metric__value' }, String(unreadCount)))),
-    h('div', { class: 'metric' }, iconTile('i-user', 'violet'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '提及我'), h('div', { class: 'metric__value' }, String(messages.filter((message) => message.type === 'mention').length)))),
-    h('div', { class: 'metric' }, iconTile('i-message', 'info'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '回复我'), h('div', { class: 'metric__value' }, String(messages.filter((message) => message.type === 'reply').length)))),
-    h('div', { class: 'metric' }, iconTile('i-task', 'teal'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '转交给我'), h('div', { class: 'metric__value' }, String(messages.filter((message) => message.type === 'handoff').length)))),
+    h('div', { class: 'metric' }, iconTile('i-user', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '提及我'), h('div', { class: 'metric__value' }, String(messages.filter((message) => message.type === 'mention').length)))),
+    h('div', { class: 'metric' }, iconTile('i-message', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '回复我'), h('div', { class: 'metric__value' }, String(messages.filter((message) => message.type === 'reply').length)))),
+    h('div', { class: 'metric' }, iconTile('i-task', 'neutral'), h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '转交给我'), h('div', { class: 'metric__value' }, String(messages.filter((message) => message.type === 'handoff').length)))),
   );
 
   return h(

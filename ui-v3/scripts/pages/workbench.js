@@ -22,8 +22,8 @@ export function renderWorkbench() {
     'div',
     { class: 'metrics' },
     metric({ label: '进行中项目', value: String(projects.length), delta: '较上周 +1', iconId: 'i-folder', variant: 'brand' }),
-    metric({ label: '我的待处理', value: String(mine.length), delta: `全部工作项 ${openCount} 项`, iconId: 'i-inbox', variant: 'warning' }),
-    metric({ label: '本周完成', value: '12', delta: '较上周 +4', iconId: 'i-check', variant: 'success' }),
+    metric({ label: '我的待处理', value: String(mine.length), delta: `全部工作项 ${openCount} 项`, iconId: 'i-inbox', variant: 'neutral' }),
+    metric({ label: '本周完成', value: '12', delta: '较上周 +4', iconId: 'i-check', variant: 'neutral' }),
     metric({ label: '逾期工作项', value: '2', delta: '需要关注', iconId: 'i-alert', variant: 'danger' }),
   );
 
@@ -63,7 +63,7 @@ export function renderWorkbench() {
         render: (row) =>
           h(
             'span',
-            { class: 'cluster', style: { gap: '6px' } },
+            { class: 'cluster', style: { gap: '6px', flexWrap: 'nowrap' } },
             badge(`需 ${row.pending.requirement}`, row.pending.requirement ? 'brand' : 'plain'),
             badge(`任 ${row.pending.task}`, 'plain'),
             badge(`Bug ${row.pending.bug}`, row.pending.bug ? 'danger' : 'plain'),

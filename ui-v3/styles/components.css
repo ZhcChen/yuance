@@ -566,8 +566,8 @@
   height: 42px;
   border-radius: var(--radius-md);
   flex: none;
-  background: var(--surface-3);
-  color: var(--text-secondary);
+  background: var(--tile-bg);
+  color: var(--tile-fg);
 }
 
 .metric__icon svg {
@@ -578,6 +578,11 @@
 .metric--brand .metric__icon {
   background: var(--brand-soft);
   color: var(--brand);
+}
+
+.metric--neutral .metric__icon {
+  background: var(--tile-bg);
+  color: var(--tile-fg);
 }
 
 .metric--success .metric__icon {
@@ -618,8 +623,8 @@
   height: 42px;
   border-radius: var(--radius-md);
   flex: none;
-  background: var(--surface-3);
-  color: var(--text-secondary);
+  background: var(--tile-bg);
+  color: var(--tile-fg);
 }
 
 .icon-tile svg {
@@ -639,6 +644,7 @@
 }
 
 .icon-tile--brand { background: var(--brand-soft); color: var(--brand); }
+.icon-tile--neutral { background: var(--tile-bg); color: var(--tile-fg); }
 .icon-tile--success { background: var(--success-soft); color: var(--success-text); }
 .icon-tile--warning { background: var(--warning-soft); color: var(--warning-text); }
 .icon-tile--danger { background: var(--danger-soft); color: var(--danger-text); }
@@ -1506,11 +1512,10 @@
   height: 38px;
   border-radius: var(--radius-md);
   flex: none;
-  background: var(--brand-gradient);
+  background: var(--brand);
   color: #fff;
   font-size: var(--fs-14);
   font-weight: var(--fw-bold);
-  box-shadow: 0 4px 10px rgb(99 102 241 / 30%);
 }
 
 .project-card__name {
@@ -1779,7 +1784,7 @@ a.list-row__title:hover {
   display: block;
   height: 100%;
   border-radius: var(--radius-full);
-  background: var(--brand-gradient);
+  background: var(--brand);
   transition: width var(--motion-slow) var(--ease-out);
 }
 

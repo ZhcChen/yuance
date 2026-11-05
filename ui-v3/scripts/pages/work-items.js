@@ -53,7 +53,7 @@ export function renderWorkItems(itemType, params, query) {
     h(
       'div',
       { class: 'metric' },
-      iconTile('i-activity', 'warning'),
+      iconTile('i-activity', 'neutral'),
       h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '待处理 / 进行中 / 待确认'), h('div', { class: 'metric__value' }, String(all.filter((item) => ['待处理', '进行中', '待确认'].includes(item.status)).length))),
     ),
     h(
@@ -65,7 +65,7 @@ export function renderWorkItems(itemType, params, query) {
     h(
       'div',
       { class: 'metric' },
-      iconTile('i-check', 'success'),
+      iconTile('i-check', 'neutral'),
       h('div', { class: 'metric__body' }, h('div', { class: 'metric__label' }, '已完成'), h('div', { class: 'metric__value' }, String(all.filter((item) => item.status === '已完成').length))),
     ),
   );
