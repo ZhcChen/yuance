@@ -14,7 +14,8 @@
     "lint": "eslint --cache --cache-location node_modules/.cache/.eslintcache \"src/**/*.{js,jsx}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" vite.config.js eslint.config.js",
     "test": "node --test test/**/*.test.mjs",
     "check": "npm run check:source && npm run check:js && npm run lint && npm run test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:visual": "YUANCE_VISUAL_BASELINE=1 playwright test --config playwright.visual.config.js"
   },
   "dependencies": {
     "@yuance/frontend-app-shell": "file:../frontend/packages/app-shell",

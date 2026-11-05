@@ -15,16 +15,52 @@
 
 ## 阶段一：P0 视觉护栏（所有后续阶段的前提）
 
-- [ ] T001 FR-012 [US2] 新增 `frontend/test/visual-contract-anchors.test.mjs`：
+- [x] T001 FR-012 [US2] 新增 `frontend/test/visual-contract-anchors.test.mjs`：
   读 `frontend/parity/main-web-visual-contract.json` 的 `stableAnchors` / `geometryAnchors`，
-  提取选择器中的类名与 id，在 `frontend/packages/app-shell/src/**` 与 `frontend/packages/ui/src/**`
-  源码中检索；缺失即失败。依赖：无。验收：人为删除一个已登记锚点后该测试失败。
-- [ ] T002 FR-012 [US2] 新增 `web/e2e/visual-regression.spec.mjs`：
-  沿用 `web/playwright.config.js` 现有设施，覆盖设计稿声明的视口宽度与主要页面，
-  截图基线按 Playwright 默认落在 spec 同级 `*-snapshots/` 并入库。依赖：T001。
-  验收：首次运行全绿，基线文件进入版本库。
-- [ ] T003 验证：运行 `npm --prefix frontend run check` 与 `npm --prefix web run test:e2e`。
-  验收：19 项 parity 校验保持通过；新增锚点校验与截图回归可用。
+  把选择器拆成类名 / id / 标签 / 属性片段，在「当前真正提供该路由的实现」里检索：
+  React 生产实现（`frontend/packages/app-shell/src`、`frontend/packages/ui/src`）、
+  仍由服务端渲染的边界页模板与静态样式（`api/templates`、`api/static`、`api/src/web`）、
+  共享应用入口 HTML（`web/index.html`）。类名必须挂在元素上才算存在，样式表残留规则不算。
+  依赖：无。验收：人为删除一个已登记锚点后该测试失败。
+  **结果：测试已落地。人为把 `app.jsx` 中的 `project-detail-overview` 全部改名后，
+  测试报出 `page.project.detail stableAnchors / geometryAnchors` 两条失效并失败；还原后全绿。
+  实施中发现合同有 8 个失效类名（5 个页面、20 处引用），
+  已在同批修正为 React 侧真实类名并同步 `baselineSources`。**
+- [x] T001b FR-011 [US4] 修正 `frontend/parity/main-web-visual-contract.json` 中 9 个页面的 12 个失效锚点：
+  `page.project.detail`（`.metrics`→`.project-detail-metrics`、`.tabs`→`.project-tabs-card`、
+  `.overview-grid`→`.project-detail-overview`）、`page.project.cycle-detail`（`.cycle-grid`→`.cycle-detail-overview`）、
+  `page.project.resource-detail`（`.resource-hero`→`.resource-reader-header`、`.resource-layout`→`.resource-content-card`）、
+  `page.project.personal-analysis`（`.metrics`→`.personal-analysis-output`、`.analysis-grid`→`.analysis-columns`、
+  `.page-heading`→`.analysis-header`）、
+  `page.work-item-list.*`（`.metrics`→`.work-item-list-metrics`、`.work-item-filters`→`.work-item-filter-bar`、
+  `.compact-table`→`.work-item-table`）、
+  `page.system.users`（`.compact-table`→`.yc-table`）、
+  `page.system.storage`（`.storage-version-list`→`.storage-versions-panel`）；
+  这 6 个页面的 `baselineSources` 同步改为 React 侧真实来源文件。
+  依赖：无。验收：`npm --prefix frontend run check` 通过。
+- [x] T001c FR-006 [US1] 修复护栏发现的 `h1` 缺失：
+  ① 工作项列表页标题由 `<h2 id="work-item-center-title">` 改为 `<h1>`（`application.css` 已有
+  `.panel-head h1, .panel-head h2` 同规则，样式不变），并接上 `headingRef` 保持路由切换后的焦点落点；
+  ② 系统管理总览页补 `shell-panel-header` 区块与 `<h1 id="system-dashboard-title">`。
+  依赖：无。验收：20 个页面在 5 档宽度下 `h1` 数量均为 1。
+- [x] T002 FR-012 [US2] 新增 `web/e2e/visual-regression.spec.mjs`：
+  沿用 `web/playwright.config.js` 现有设施，分两层——
+  ① 结构层：20 个共享应用页面 × 5 档宽度（合同 4 档 + 设计稿最小支持宽度 375），
+  断言无横向溢出、唯一 `h1`、合同登记的全部锚点仍在 DOM 中；与数据无关，随 `test:e2e` 一起跑；
+  ② 像素层：4 个代表性页面 × 合同 4 档视口截图，基线落在 spec 同级 `*-snapshots/` 并入库，
+  动态内容按合同 `dynamicMasks`、类名规则与文本规则三重屏蔽。
+  像素层不能与功能用例共用一份数据（当前项目与工作项会被改动，基线随执行顺序漂移），
+  因此新增 `web/playwright.visual.config.js`：独立端口 33037、独立种子数据目录，
+  由 `npm --prefix web run test:visual` 单独触发；主配置加载同一 spec 时跳过像素层。
+  依赖：T001。验收：首次运行全绿，基线文件进入版本库。
+  **结果：16 张基线入库（约 1.6MB）；建基线后换一个全新服务与全新种子数据纯对比，9/9 通过。**
+- [x] T003 验证：运行 `npm --prefix frontend run check` 与 `npm --prefix web run test:e2e`。
+  验收：既有 parity 校验保持通过；新增锚点校验与截图回归可用。
+  **结果：`npm --prefix frontend run check` 通过（54 项测试 0 失败）；
+  `npm --prefix web run check` 通过（68 项测试 0 失败）；
+  `npm --prefix web run test:visual` 9/9 通过。
+  既有 e2e 用例的失败已用 A/B 对照确认属既有漂移（`ensureCurrentProject` 依赖只存在于历史样式的
+  `.project-row`，工作项详情部分标题层级不一致），记录在复核文档中，不在本阶段范围。**
 
 **Checkpoint**：护栏就位，后续 DOM 改动可自动发现回归。
 

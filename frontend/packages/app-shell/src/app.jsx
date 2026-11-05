@@ -6210,7 +6210,13 @@ export function SharedApp({ services }) {
               <Modal open={systemUserProjectDialog?.kind === 'remove-one' || systemUserProjectDialog?.kind === 'remove-batch'} title="移除项目关系" onClose={() => { if (!systemUserSubmitting && systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { if (systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }}>取消</Button><Button variant="danger" loading={systemUserSubmitting} onClick={() => void confirmSystemUserProjectRemove()}>确认移除</Button></>}><p>确认移除 {systemUserProjectTarget?.display_name} 的 {systemUserProjectDialog?.kind === 'remove-one' ? '1' : systemUserProjectRemoveKeys.length} 个项目关系？目标用户将立即失去对应项目访问和实时订阅。</p>{systemUserError ? <Feedback tone="danger" title="移除失败">{systemUserError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-dashboard' ? (
-            <section className="system-dashboard-page" aria-label="管理入口">
+            <section className="system-dashboard-page" aria-labelledby="system-dashboard-title">
+              <header className="shell-panel-header system-ops-panel-head">
+                <div>
+                  <h1 id="system-dashboard-title" ref={headingRef} tabIndex={-1}>系统管理</h1>
+                  <p className="shell-muted">按当前角色可用的权限进入各管理模块。</p>
+                </div>
+              </header>
               {systemDashboard?.links.length ? (
                 <div className="system-grid">
                   {systemDashboard.links.map((link) => {
@@ -6609,7 +6615,7 @@ export function SharedApp({ services }) {
               <section className="panel work-list-panel">
               <div className="panel-head work-item-center-header">
                 <div>
-                  <h2 id="work-item-center-title">{workItemTypeLabel(route.itemType)}列表</h2>
+                  <h1 id="work-item-center-title" ref={headingRef} tabIndex={-1}>{workItemTypeLabel(route.itemType)}列表</h1>
                   <p>当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}，支持按关键词、状态、优先级和处理人筛选。</p>
                 </div>
                 <div className="toolbar-actions">

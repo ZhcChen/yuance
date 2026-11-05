@@ -82,17 +82,36 @@ P2 先行是刻意的：视觉改善的主要来源是「阴影 + 留白 + 降�
 
 1. **锚点存在性静态校验**（进 `frontend/test/`，随 `npm --prefix frontend run check` 执行）
    读 `main-web-visual-contract.json` 的 `stableAnchors` / `geometryAnchors`，
-   对每个选择器取其类名或 id，在 `frontend/packages/app-shell/src/**` 与 `frontend/packages/ui/src/**`
-   源码中检索其出现；缺失即失败。
+   把选择器拆成类名 / id / 标签 / 属性片段，在「当前真正提供该路由的实现」里检索：
+   React 生产实现（`frontend/packages/app-shell/src`、`frontend/packages/ui/src`）、
+   仍由服务端渲染的边界页模板与静态样式（`api/templates`、`api/static`、`api/src/web`）、
+   共享应用入口 HTML（`web/index.html`）。
    选静态方案而非运行时方案的原因：运行时方案需要起完整服务才能跑，而锚点漂移绝大多数是源码级改名，静态检索即可覆盖；
    且静态校验可以进常规 `check`，不像 e2e 那样只在发版前跑。
-2. **截图 golden**（进 `web/e2e/`）
-   沿用现有 Playwright 设施（`web/playwright.config.js`，`testDir: ./e2e`，
-   `webServer` 走 `scripts/start-web-e2e-server.sh`），新增视觉回归 spec，
-   截图基线按 Playwright 默认落在 spec 同级 `*-snapshots/` 目录并入库。
-   覆盖设计稿声明的视口宽度集合与主要页面。
 
-文件范围：新增 `frontend/test/visual-contract-anchors.test.mjs`、`web/e2e/visual-regression.spec.mjs` 与其截图基线。
+   **类名必须挂在元素上才算存在**：样式表里残留同名规则不算数，否则「删了 JSX、留着 CSS」
+   这类改动会漏检。
+
+   **校验对象是当前实现，不是历史基线。** legacy 服务端模板已在正式 Web 切换中退役，
+   历史基线里的类名对不上时应当修正合同，而不是放宽校验——护栏只有在能失败时才有价值。
+   实施中发现合同里有 8 个失效类名（5 个页面、20 处引用），已在 P0 内一并修正为 React 侧真实类名。
+
+2. **视觉回归 e2e**（进 `web/e2e/`）
+   沿用现有 Playwright 设施（`web/playwright.config.js`，`testDir: ./e2e`，
+   `webServer` 走 `scripts/start-web-e2e-server.sh`），分两层：
+   - **结构层**：20 个共享应用页面 × 5 档宽度（合同 4 档 + 设计稿最小支持宽度 375），
+     断言无横向溢出、唯一 `h1`、合同登记的几何锚点仍在 DOM 中。这一层抗脆弱，挡住结构塌陷，
+     与数据无关，随 `npm --prefix web run test:e2e` 一起跑。
+   - **像素层**：4 个代表性页面 × 合同 4 档视口截图，基线落在 spec 同级 `*-snapshots/` 并入库；
+     动态内容按合同 `dynamicMasks`、类名规则与文本规则三重屏蔽。
+     像素基线不能与功能用例共用一份数据（当前项目与工作项会被改动，基线随执行顺序漂移），
+     因此另给一份配置 `web/playwright.visual.config.js`：独立端口、独立种子数据目录，
+     由 `npm --prefix web run test:visual` 单独触发。
+
+文件范围：新增 `frontend/test/visual-contract-anchors.test.mjs`、
+`web/e2e/visual-regression.spec.mjs`、`web/playwright.visual.config.js` 与其截图基线；
+修正 `frontend/parity/main-web-visual-contract.json` 中失效锚点与 `baselineSources`；
+修复工作项列表页与系统管理总览页缺失的 `h1`。
 
 ### P1：令牌归一
 
