@@ -23,6 +23,7 @@ test('shared shell keeps the 58px navigation outside the only business scroll co
   const source = await readFile(new URL('../src/app.jsx', import.meta.url), 'utf8');
   const applicationStyles = await readFile(new URL('../src/application.css', import.meta.url), 'utf8');
   const uiStyles = await readFile(new URL('../../ui/src/styles.css', import.meta.url), 'utf8');
+  const uiTokens = await readFile(new URL('../../ui/src/tokens.css', import.meta.url), 'utf8');
   const navigationIndex = source.indexOf('<GlobalNavigation');
   const mainIndex = source.indexOf('<main ref={mainScrollbar.ref} className="main yc-overlay-scroll-target">', navigationIndex);
   const routeLoadingIndex = source.indexOf("{loading && route.id !== 'project-resource-detail' ? (", navigationIndex);
@@ -34,9 +35,9 @@ test('shared shell keeps the 58px navigation outside the only business scroll co
   assert.match(applicationStyles, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: auto;/u);
   assert.doesNotMatch(applicationStyles, /\.app-scrollbar(?:-thumb)?\s*\{/u);
   assert.match(uiStyles, /\.yc-overlay-scrollbar\s*\{[\s\S]*position:\s*fixed;/u);
-  assert.match(uiStyles, /--yc-scrollbar-thumb-alpha:\s*30%;/u);
+  assert.match(uiTokens, /--yc-scrollbar-thumb-alpha:\s*30%;/u);
   assert.ok(source.includes('{mainScrollbar.scrollbar}'));
-  assert.match(uiStyles, /--yc-topbar-height: 58px;/u);
+  assert.match(uiTokens, /--yc-topbar-height: 58px;/u);
   assert.match(uiStyles, /\.global-nav \{[\s\S]*flex: 0 0 var\(--yc-topbar-height\);[\s\S]*height: var\(--yc-topbar-height\);/u);
   assert.doesNotMatch(uiStyles, /\.global-nav \{[^}]*position: sticky;/u);
 });

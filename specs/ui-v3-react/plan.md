@@ -116,13 +116,23 @@ P2 先行是刻意的：视觉改善的主要来源是「阴影 + 留白 + 降�
 ### P1：令牌归一
 
 - 抽出 `frontend/packages/ui/src/tokens.css` 作为令牌唯一来源，承载浅色与深色两组。
-- `frontend/packages/ui/src/styles.css` 改为 `@import './tokens.css'` 后继续定义组件样式。
-- `ui-v3/styles/tokens.css` 改为引用同一份生产令牌（原型改为以仓库根为服务根，
-  引用 `../frontend/packages/ui/src/tokens.css`），使设计稿与生产不再有两份令牌。
-- 令牌命名从 `--yc-*` 保持不变，避免大面积改名带来的回归面。
+  浅色取值即 `ui-v3/` 定稿值，深色取值由生产原有深色主题推导（设计稿的暗色规格在 P5 补齐）。
+- `frontend/packages/ui/src/styles.css` 改为 `@import './tokens.css'` 后继续定义组件样式，
+  其内不再有任何 `--yc-*` 定义。
+- 生产既有的 `--yc-panel` / `--yc-text` / `--yc-muted` / `--yc-radius` 等短名保留为
+  `var()` 兼容别名，指向规范名，因此生产组件的引用一行都不用改；
+  别名用 `var()` 引用，深色主题会自动跟随规范值变化。
+- `ui-v3/styles/tokens.css` 退化为别名层：把原型的短名映射到 `--yc-` 规范名，不再定义任何颜色。
+  原型样式保持短名可读，避免 700 多处引用全部改写，也避免两套命名各走各的。
+  取值要改时只改生产那一份。
+- **原型服务根改为仓库根**：原型要引用 `frontend/packages/ui/src/tokens.css`，
+  静态服务必须以仓库根为根目录，访问路径变为 `/ui-v3/`。
+- 顶栏高度 `--yc-topbar-height` 暂留 `58px` 原值：它属于 P3 壳层改造范围，
+  届时要与 parity 合同里的 `tokens.topbarHeight` 一起改，不在本阶段提前动。
 
 文件范围：新增 `frontend/packages/ui/src/tokens.css`；改 `frontend/packages/ui/src/styles.css`、
-`ui-v3/styles/tokens.css`、`ui-v3/index.html`（服务根调整说明）、`ui-v3/README.md`。
+`frontend/packages/ui/test/index.test.mjs`、`frontend/packages/app-shell/test/stable-navigation-shell.test.mjs`、
+`ui-v3/styles/tokens.css`、`ui-v3/index.html`、`ui-v3/README.md`、`ui-v3/DESIGN-NOTES.md`。
 
 ### P2：组件换皮
 

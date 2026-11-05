@@ -17,14 +17,15 @@
 
 ## 启动
 
-原生 ES Module 不能通过 `file://` 协议加载，必须用静态服务打开：
+原生 ES Module 不能通过 `file://` 协议加载，必须用静态服务打开。
+服务根必须是**仓库根**，因为设计令牌与生产包共用 `frontend/packages/ui/src/tokens.css`：
 
 ```bash
 # 在仓库根目录执行
-python3 -m http.server 4183 --directory ui-v3
+python3 -m http.server 4183 --directory .
 ```
 
-然后访问 <http://127.0.0.1:4183/>。
+然后访问 <http://127.0.0.1:4183/ui-v3/>。
 
 不需要 `make dev-*`，不需要启动 `api/`，不需要 Docker。
 
@@ -53,7 +54,7 @@ ui-v3/
 ├── index.html            # 唯一入口，承载壳层与内容容器
 ├── assets/icons.svg      # SVG 图标符号表（统一 24×24，禁止 emoji）
 ├── styles/
-│   ├── tokens.css        # 设计令牌唯一来源：色板/间距/字号/圆角/阴影/动效/层级
+│   ├── tokens.css        # 设计令牌别名层：把原型短名映射到生产规范名（值不在这里定义）
 │   ├── base.css          # reset、排版、焦点态、可访问性、reduced-motion
 │   ├── layout.css        # 应用壳层布局与通用排布原语
 │   └── components.css    # 按钮/表单/表格/徽标/面板/标签页/弹层等组件
@@ -92,7 +93,13 @@ ui-v3/
 
 ### 令牌
 
-所有颜色、间距、字号、圆角、阴影、动效时长只在 `styles/tokens.css` 定义，页面样式一律引用变量。
+令牌的**唯一来源是生产包** `frontend/packages/ui/src/tokens.css`，生产组件与本原型共用同一份取值。
+本模块的 `styles/tokens.css` 只是别名层：把原型的短名映射到 `--yc-` 规范名，
+让原型样式保持可读，同时避免两套命名各走各的。
+
+调整设计取值时改 `frontend/packages/ui/src/tokens.css`，不要改原型里的别名层。
+
+所有颜色、间距、字号、圆角、阴影、动效时长只在那一份文件里定义，页面样式一律引用变量。
 这条规则是为了让回迁 React 时有一张可一一对应的令牌表。
 
 - 颜色分三层语义：`--surface-*`（承载面）、`--line*`（分隔线）、`--text-*`（文字），

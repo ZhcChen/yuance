@@ -1,193 +1,169 @@
 /*
- * 元策 UI v3 · 设计令牌
+ * 元策 UI v3 · 设计令牌别名
  * ------------------------------------------------------------------
- * 本文件是 v3 设计令牌的唯一来源。其它样式文件只允许引用变量，
- * 不允许出现原始色值、间距数字或阴影字面量。
+ * 令牌的唯一来源是生产包 frontend/packages/ui/src/tokens.css，
+ * 生产组件与本原型共用同一份取值，原型不再单独维护一套颜色。
  *
- * 方向：靛蓝主色 + 翡翠强调（ui-ux-pro-max 命中的 Micro SaaS 配色），
- * 深色品牌侧栏 + 浅色内容区，靠阴影与留白建立层级，不靠满屏描边。
+ * 本文件只做一件事：把原型的短名映射到规范名。
+ * 规范名统一带 --yc- 前缀；原型样式保持短名可读，
+ * 避免 700 多处引用全部改写，也避免两套命名各走各的。
+ *
+ * 需要调整设计取值时，改 frontend/packages/ui/src/tokens.css，不要改这里。
  */
+@import url('../../frontend/packages/ui/src/tokens.css');
 
 :root {
-  color-scheme: light;
-
   /* ---------- 承载面 surface ---------- */
-  --bg: #f2f3f9;
-  --surface: #ffffff;
-  --surface-2: #fafbfe;
-  --surface-3: #f0f2f8;
-  --surface-hover: #f7f8fc;
-  --surface-overlay: #ffffff;
-  --surface-scrim: rgb(21 24 39 / 45%);
-
+  --bg: var(--yc-bg);
+  --surface: var(--yc-surface);
+  --surface-2: var(--yc-surface-2);
+  --surface-3: var(--yc-surface-3);
+  --surface-hover: var(--yc-surface-hover);
+  --surface-overlay: var(--yc-surface-overlay);
+  --surface-scrim: var(--yc-surface-scrim);
   /* ---------- 侧栏（深色） ---------- */
-  --nav-bg: #171a2c;
-  --nav-bg-2: #1f2340;
-  --nav-border: rgb(255 255 255 / 6%);
-  --nav-text: #9ba2c0;
-  --nav-text-strong: #ffffff;
-  --nav-text-muted: #7d84a6;
-  --nav-hover: rgb(255 255 255 / 7%);
-  --nav-active-bg: rgb(99 102 241 / 20%);
-  --nav-active-text: #c7cffb;
-  --nav-badge: rgb(255 255 255 / 10%);
-  --nav-badge-text: #b9c1e0;
-
+  --nav-bg: var(--yc-nav-bg);
+  --nav-bg-2: var(--yc-nav-bg-2);
+  --nav-border: var(--yc-nav-border);
+  --nav-text: var(--yc-nav-text);
+  --nav-text-strong: var(--yc-nav-text-strong);
+  --nav-text-muted: var(--yc-nav-text-muted);
+  --nav-hover: var(--yc-nav-hover);
+  --nav-active-bg: var(--yc-nav-active-bg);
+  --nav-active-text: var(--yc-nav-active-text);
+  --nav-badge: var(--yc-nav-badge);
+  --nav-badge-text: var(--yc-nav-badge-text);
   /* ---------- 分隔线 border ---------- */
-  --line: #e9ebf3;
-  --line-soft: #f0f1f8;
-  --line-strong: #cdd2e6;
-  --line-strong-hover: #b7bdd6;
-  --line-focus: #4f46e5;
-
+  --line: var(--yc-line);
+  --line-soft: var(--yc-line-soft);
+  --line-strong: var(--yc-line-strong);
+  --line-strong-hover: var(--yc-line-strong-hover);
+  --line-focus: var(--yc-line-focus);
   /* ---------- 文字 text ---------- */
-  --text-primary: #171a2b;
-  --text-secondary: #4e5568;
-  --text-tertiary: #656c80;
-  --text-disabled: #aab0c0;
-  --text-inverse: #ffffff;
-  --text-link: #4149b5;
-
+  --text-primary: var(--yc-text-primary);
+  --text-secondary: var(--yc-text-secondary);
+  --text-tertiary: var(--yc-text-tertiary);
+  --text-disabled: var(--yc-text-disabled);
+  --text-inverse: var(--yc-text-inverse);
+  --text-link: var(--yc-text-link);
   /* ---------- 品牌 brand ---------- */
-  --brand: #4a52c8;
-  --brand-strong: #3d45ab;
-  --brand-hover: #3d45ab;
-  --brand-soft: #eef0fd;
-  --brand-line: #d7dbf7;
-  --brand-contrast: #ffffff;
-  --brand-ring: rgb(74 82 200 / 24%);
-  --brand-lift: #6470e0;
-  --nav-accent: #8b96f0;
+  --brand: var(--yc-brand);
+  --brand-strong: var(--yc-brand-strong);
+  --brand-hover: var(--yc-brand-hover);
+  --brand-soft: var(--yc-brand-soft);
+  --brand-line: var(--yc-brand-line);
+  --brand-contrast: var(--yc-brand-contrast);
+  --brand-ring: var(--yc-brand-ring);
+  --brand-lift: var(--yc-brand-lift);
+  --nav-accent: var(--yc-nav-accent);
   /* 品牌渐变只用于小面积视觉锚点（侧栏标识、项目色块），数据区不使用 */
-  --brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-
+  --brand-gradient: var(--yc-brand-gradient);
   /* ---------- 状态 status ---------- */
-  --success: #0e8a63;
-  --success-soft: #e9f7f1;
-  --success-line: #c2e7d7;
-  --success-text: #0a7351;
-
-  --warning: #c07808;
-  --warning-soft: #fdf4e4;
-  --warning-line: #f9dfb8;
-  --warning-text: #9a6108;
-
-  --danger: #cf3a33;
-  --danger-soft: #fdeeed;
-  --danger-line: #f6cecb;
-  --danger-text: #ad2f29;
-
-  --info: #2f62d6;
-  --info-soft: #ebf1fd;
-  --info-line: #c8d8fa;
-  --info-text: #2653bb;
-
-  --violet: #6f45c9;
-  --violet-soft: #f2edfd;
-  --violet-line: #dccff8;
-  --violet-text: #5d3aa9;
-
-  --teal: #0d8f83;
-  --teal-soft: #e8f6f4;
-  --teal-line: #c1e5e0;
-  --teal-text: #0b766c;
-
-  --neutral: #5f6a7d;
-  --neutral-soft: #f1f3f8;
-  --neutral-line: #e0e3ec;
-  --neutral-text: #4c5668;
-
+  --success: var(--yc-success);
+  --success-soft: var(--yc-success-soft);
+  --success-line: var(--yc-success-line);
+  --success-text: var(--yc-success-text);
+  --warning: var(--yc-warning);
+  --warning-soft: var(--yc-warning-soft);
+  --warning-line: var(--yc-warning-line);
+  --warning-text: var(--yc-warning-text);
+  --danger: var(--yc-danger);
+  --danger-soft: var(--yc-danger-soft);
+  --danger-line: var(--yc-danger-line);
+  --danger-text: var(--yc-danger-text);
+  --info: var(--yc-info);
+  --info-soft: var(--yc-info-soft);
+  --info-line: var(--yc-info-line);
+  --info-text: var(--yc-info-text);
+  --violet: var(--yc-violet);
+  --violet-soft: var(--yc-violet-soft);
+  --violet-line: var(--yc-violet-line);
+  --violet-text: var(--yc-violet-text);
+  --teal: var(--yc-teal);
+  --teal-soft: var(--yc-teal-soft);
+  --teal-line: var(--yc-teal-line);
+  --teal-text: var(--yc-teal-text);
+  --neutral: var(--yc-neutral);
+  --neutral-soft: var(--yc-neutral-soft);
+  --neutral-line: var(--yc-neutral-line);
+  --neutral-text: var(--yc-neutral-text);
   /* ---------- 字号刻度 type scale ---------- */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
-
-  --fs-11: 11px;
-  --fs-12: 12px;
-  --fs-13: 13px;
-  --fs-14: 14px;
-  --fs-15: 15px;
-  --fs-16: 16px;
-  --fs-18: 18px;
-  --fs-22: 22px;
-  --fs-28: 28px;
-  --fs-34: 34px;
-
-  --lh-tight: 1.2;
-  --lh-snug: 1.4;
-  --lh-normal: 1.55;
-  --lh-relaxed: 1.75;
-
-  --fw-regular: 400;
-  --fw-medium: 500;
-  --fw-semibold: 600;
-  --fw-bold: 700;
-
+  --font-mono: var(--yc-font-mono);
+  --fs-11: var(--yc-fs-11);
+  --fs-12: var(--yc-fs-12);
+  --fs-13: var(--yc-fs-13);
+  --fs-14: var(--yc-fs-14);
+  --fs-15: var(--yc-fs-15);
+  --fs-16: var(--yc-fs-16);
+  --fs-18: var(--yc-fs-18);
+  --fs-22: var(--yc-fs-22);
+  --fs-28: var(--yc-fs-28);
+  --fs-34: var(--yc-fs-34);
+  --lh-tight: var(--yc-lh-tight);
+  --lh-snug: var(--yc-lh-snug);
+  --lh-normal: var(--yc-lh-normal);
+  --lh-relaxed: var(--yc-lh-relaxed);
+  --fw-regular: var(--yc-fw-regular);
+  --fw-medium: var(--yc-fw-medium);
+  --fw-semibold: var(--yc-fw-semibold);
+  --fw-bold: var(--yc-fw-bold);
   /* ---------- 间距刻度 spacing ---------- */
-  --sp-2: 2px;
-  --sp-4: 4px;
-  --sp-6: 6px;
-  --sp-8: 8px;
-  --sp-10: 10px;
-  --sp-12: 12px;
-  --sp-16: 16px;
-  --sp-20: 20px;
-  --sp-24: 24px;
-  --sp-32: 32px;
-  --sp-40: 40px;
-  --sp-48: 48px;
-
+  --sp-2: var(--yc-sp-2);
+  --sp-4: var(--yc-sp-4);
+  --sp-6: var(--yc-sp-6);
+  --sp-8: var(--yc-sp-8);
+  --sp-10: var(--yc-sp-10);
+  --sp-12: var(--yc-sp-12);
+  --sp-16: var(--yc-sp-16);
+  --sp-20: var(--yc-sp-20);
+  --sp-24: var(--yc-sp-24);
+  --sp-32: var(--yc-sp-32);
+  --sp-40: var(--yc-sp-40);
+  --sp-48: var(--yc-sp-48);
   /* ---------- 圆角 radius ---------- */
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-  --radius-full: 999px;
-
+  --radius-xs: var(--yc-radius-xs);
+  --radius-sm: var(--yc-radius-sm);
+  --radius-md: var(--yc-radius-md);
+  --radius-lg: var(--yc-radius-lg);
+  --radius-xl: var(--yc-radius-xl);
+  --radius-full: var(--yc-radius-full);
   /* ---------- 阴影 elevation ---------- */
-  --shadow-xs: 0 1px 2px rgb(21 24 39 / 5%);
-  --shadow-sm: 0 1px 2px rgb(21 24 39 / 5%), 0 2px 6px rgb(21 24 39 / 4%);
-  --shadow-md: 0 2px 4px rgb(21 24 39 / 4%), 0 8px 20px rgb(21 24 39 / 7%);
-  --shadow-lg: 0 4px 10px rgb(21 24 39 / 6%), 0 20px 44px rgb(21 24 39 / 12%);
-  --shadow-brand: 0 6px 16px rgb(79 70 229 / 26%);
-
+  --shadow-xs: var(--yc-shadow-xs);
+  --shadow-sm: var(--yc-shadow-sm);
+  --shadow-md: var(--yc-shadow-md);
+  --shadow-lg: var(--yc-shadow-lg);
+  --shadow-brand: var(--yc-shadow-brand);
   /* ---------- 动效 motion ---------- */
-  --motion-instant: 0ms;
-  --motion-fast: 130ms;
-  --motion-base: 200ms;
-  --motion-slow: 320ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-
+  --motion-instant: var(--yc-motion-instant);
+  --motion-fast: var(--yc-motion-fast);
+  --motion-base: var(--yc-motion-base);
+  --motion-slow: var(--yc-motion-slow);
+  --ease-standard: var(--yc-ease-standard);
+  --ease-out: var(--yc-ease-out);
   /* ---------- 层级 z-index ---------- */
-  --z-base: 0;
-  --z-sticky: 100;
-  --z-header: 200;
-  --z-overlay: 300;
-  --z-modal: 400;
-  --z-toast: 500;
-
+  --z-base: var(--yc-z-base);
+  --z-sticky: var(--yc-z-sticky);
+  --z-header: var(--yc-z-header);
+  --z-overlay: var(--yc-z-overlay);
+  --z-modal: var(--yc-z-modal);
+  --z-toast: var(--yc-z-toast);
   /* ---------- 控件尺寸 control ---------- */
-  --control-h-sm: 28px;
-  --control-h-md: 32px;
-  --control-h-lg: 36px;
-  --control-h-input: 36px;
-  --control-px: 12px;
-  --control-fs: var(--fs-13);
-
+  --control-h-sm: var(--yc-control-h-sm);
+  --control-h-md: var(--yc-control-h-md);
+  --control-h-lg: var(--yc-control-h-lg);
+  --control-h-input: var(--yc-control-h-input);
+  --control-px: var(--yc-control-px);
+  --control-fs: var(--yc-control-fs);
   /* ---------- 图标磁贴：默认单色，只有语义色才上色 ---------- */
-  --tile-bg: #eff1f8;
-  --tile-fg: #5a6274;
-
+  --tile-bg: var(--yc-tile-bg);
+  --tile-fg: var(--yc-tile-fg);
   /* ---------- 布局尺寸 layout ---------- */
-  --sidebar-w: 236px;
-  --sidebar-w-collapsed: 64px;
-  --topbar-h: 60px;
-  --content-max: 1560px;
-
+  --sidebar-w: var(--yc-sidebar-w);
+  --sidebar-w-collapsed: var(--yc-sidebar-w-collapsed);
+  --topbar-h: var(--yc-topbar-h);
+  --content-max: var(--yc-content-max);
   /* ---------- 表格 table ---------- */
-  --table-row-h: 46px;
-  --table-header-h: 40px;
-  --table-cell-px: 16px;
+  --table-row-h: var(--yc-table-row-h);
+  --table-header-h: var(--yc-table-header-h);
+  --table-cell-px: var(--yc-table-cell-px);
 }

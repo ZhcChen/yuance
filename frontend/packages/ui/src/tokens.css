@@ -1,0 +1,412 @@
+/*
+ * 元策设计令牌 · 唯一来源
+ * ------------------------------------------------------------------
+ * 生产组件（frontend/packages/ui）与 UI v3 原型（ui-v3/）共用这一份令牌。
+ * 颜色、字号、间距、圆角、阴影、动效与层级都只在这里定义一次，
+ * 其它样式文件只允许引用变量，不允许出现原始色值或字面量。
+ *
+ * 浅色取值来自 ui-v3 定稿（靛蓝主色 + 靛底指标磁贴），
+ * 深色取值由生产原有深色主题推导，设计稿的深色规格在 P5 单独补齐。
+ */
+:root {
+  color-scheme: light;
+  font-family: var(--yc-font);
+  /* ---------- 承载面 surface ---------- */
+  --yc-bg: #f2f3f9;
+  --yc-surface: #ffffff;
+  --yc-surface-2: #fafbfe;
+  --yc-surface-3: #f0f2f8;
+  --yc-surface-hover: #f7f8fc;
+  --yc-surface-overlay: #ffffff;
+  --yc-surface-scrim: rgb(21 24 39 / 45%);
+
+  /* ---------- 侧栏（深色） ---------- */
+  --yc-nav-bg: #171a2c;
+  --yc-nav-bg-2: #1f2340;
+  --yc-nav-border: rgb(255 255 255 / 6%);
+  --yc-nav-text: #9ba2c0;
+  --yc-nav-text-strong: #ffffff;
+  --yc-nav-text-muted: #7d84a6;
+  --yc-nav-hover: rgb(255 255 255 / 7%);
+  --yc-nav-active-bg: rgb(99 102 241 / 20%);
+  --yc-nav-active-text: #c7cffb;
+  --yc-nav-badge: rgb(255 255 255 / 10%);
+  --yc-nav-badge-text: #b9c1e0;
+
+  /* ---------- 分隔线 border ---------- */
+  --yc-line: #e9ebf3;
+  --yc-line-soft: #f0f1f8;
+  --yc-line-strong: #cdd2e6;
+  --yc-line-strong-hover: #b7bdd6;
+  --yc-line-focus: #4f46e5;
+
+  /* ---------- 文字 text ---------- */
+  --yc-text-primary: #171a2b;
+  --yc-text-secondary: #4e5568;
+  --yc-text-tertiary: #656c80;
+  --yc-text-disabled: #aab0c0;
+  --yc-text-inverse: #ffffff;
+  --yc-text-link: #4149b5;
+
+  /* ---------- 品牌 brand ---------- */
+  --yc-brand: #4a52c8;
+  --yc-brand-strong: #3d45ab;
+  --yc-brand-hover: #3d45ab;
+  --yc-brand-soft: #eef0fd;
+  --yc-brand-line: #d7dbf7;
+  --yc-brand-contrast: #ffffff;
+  --yc-brand-ring: rgb(74 82 200 / 24%);
+  --yc-brand-lift: #6470e0;
+  --yc-nav-accent: #8b96f0;
+  --yc-brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+
+  /* ---------- 状态 status ---------- */
+  --yc-success: #0e8a63;
+  --yc-success-soft: #e9f7f1;
+  --yc-success-line: #c2e7d7;
+  --yc-success-text: #0a7351;
+  --yc-warning: #c07808;
+  --yc-warning-soft: #fdf4e4;
+  --yc-warning-line: #f9dfb8;
+  --yc-warning-text: #9a6108;
+  --yc-danger: #cf3a33;
+  --yc-danger-soft: #fdeeed;
+  --yc-danger-line: #f6cecb;
+  --yc-danger-text: #ad2f29;
+  --yc-info: #2f62d6;
+  --yc-info-soft: #ebf1fd;
+  --yc-info-line: #c8d8fa;
+  --yc-info-text: #2653bb;
+  --yc-violet: #6f45c9;
+  --yc-violet-soft: #f2edfd;
+  --yc-violet-line: #dccff8;
+  --yc-violet-text: #5d3aa9;
+  --yc-teal: #0d8f83;
+  --yc-teal-soft: #e8f6f4;
+  --yc-teal-line: #c1e5e0;
+  --yc-teal-text: #0b766c;
+  --yc-neutral: #5f6a7d;
+  --yc-neutral-soft: #f1f3f8;
+  --yc-neutral-line: #e0e3ec;
+  --yc-neutral-text: #4c5668;
+
+  /* ---------- 字体 font ---------- */
+  --yc-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
+  --yc-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---------- 字号刻度 type scale ---------- */
+  --yc-fs-11: 11px;
+  --yc-fs-12: 12px;
+  --yc-fs-13: 13px;
+  --yc-fs-14: 14px;
+  --yc-fs-15: 15px;
+  --yc-fs-16: 16px;
+  --yc-fs-18: 18px;
+  --yc-fs-22: 22px;
+  --yc-fs-28: 28px;
+  --yc-fs-34: 34px;
+
+  /* ---------- 行高 line height ---------- */
+  --yc-lh-tight: 1.2;
+  --yc-lh-snug: 1.4;
+  --yc-lh-normal: 1.55;
+  --yc-lh-relaxed: 1.75;
+
+  /* ---------- 字重 font weight ---------- */
+  --yc-fw-regular: 400;
+  --yc-fw-medium: 500;
+  --yc-fw-semibold: 600;
+  --yc-fw-bold: 700;
+
+  /* ---------- 间距刻度 spacing ---------- */
+  --yc-sp-2: 2px;
+  --yc-sp-4: 4px;
+  --yc-sp-6: 6px;
+  --yc-sp-8: 8px;
+  --yc-sp-10: 10px;
+  --yc-sp-12: 12px;
+  --yc-sp-16: 16px;
+  --yc-sp-20: 20px;
+  --yc-sp-24: 24px;
+  --yc-sp-32: 32px;
+  --yc-sp-40: 40px;
+  --yc-sp-48: 48px;
+
+  /* ---------- 圆角 radius ---------- */
+  --yc-radius-xs: 6px;
+  --yc-radius-sm: 8px;
+  --yc-radius-md: 10px;
+  --yc-radius-lg: 14px;
+  --yc-radius-xl: 18px;
+  --yc-radius-full: 999px;
+
+  /* ---------- 阴影 elevation ---------- */
+  --yc-shadow-xs: 0 1px 2px rgb(21 24 39 / 5%);
+  --yc-shadow-sm: 0 1px 2px rgb(21 24 39 / 5%), 0 2px 6px rgb(21 24 39 / 4%);
+  --yc-shadow-md: 0 2px 4px rgb(21 24 39 / 4%), 0 8px 20px rgb(21 24 39 / 7%);
+  --yc-shadow-lg: 0 4px 10px rgb(21 24 39 / 6%), 0 20px 44px rgb(21 24 39 / 12%);
+  --yc-shadow-brand: 0 6px 16px rgb(79 70 229 / 26%);
+
+  /* ---------- 动效 motion ---------- */
+  --yc-motion-instant: 0ms;
+  --yc-motion-fast: 130ms;
+  --yc-motion-base: 200ms;
+  --yc-motion-slow: 320ms;
+  --yc-ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --yc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---------- 层级 z-index ---------- */
+  --yc-z-base: 0;
+  --yc-z-sticky: 100;
+  --yc-z-header: 200;
+  --yc-z-overlay: 300;
+  --yc-z-modal: 400;
+  --yc-z-toast: 500;
+
+  /* ---------- 控件尺寸 control ---------- */
+  --yc-control-h-sm: 28px;
+  --yc-control-h-md: 32px;
+  --yc-control-h-lg: 36px;
+  --yc-control-h-input: 36px;
+  --yc-control-px: 12px;
+  --yc-control-fs: var(--fs-13);
+
+  /* ---------- 图标磁贴 icon tile ---------- */
+  --yc-tile-bg: #eff1f8;
+  --yc-tile-fg: #5a6274;
+
+  /* ---------- 布局尺寸 layout ---------- */
+  --yc-sidebar-w: 236px;
+  --yc-sidebar-w-collapsed: 64px;
+  --yc-topbar-h: 60px;
+  --yc-content-max: 1560px;
+
+  /* ---------- 表格 table ---------- */
+  --yc-table-row-h: 46px;
+  --yc-table-header-h: 40px;
+  --yc-table-cell-px: 16px;
+
+  /* ---------- 顶栏高度（P3 壳层改造时与 parity 合同同步） ---------- */
+  --yc-topbar-height: 58px;
+
+  /* ---------- 组件专用 component ---------- */
+  --yc-tab-bg: #f1f5f8;
+  --yc-tab-active-bg: #ffffff;
+  --yc-tab-active-border: #cbd8e2;
+  --yc-tab-active-text: #285579;
+  --yc-tab-active-shadow: 0 1px 3px rgb(31 48 65 / 10%), 0 4px 12px rgb(31 48 65 / 5%);
+  --yc-sand: #8b6b35;
+  --yc-scrollbar-size: 8px;
+  --yc-scrollbar-thumb-alpha: 30%;
+  --yc-scrollbar-thumb-hover-alpha: 44%;
+
+  /* ---------- 生产既有名字的兼容别名 ---------- */
+  /* 值为 var() 引用，深色主题会自动跟随规范值变化。 */
+  --yc-panel: var(--yc-surface);
+  --yc-panel-soft: var(--yc-surface-2);
+  --yc-text: var(--yc-text-primary);
+  --yc-muted: var(--yc-text-tertiary);
+  --yc-muted-strong: var(--yc-text-secondary);
+  --yc-radius: var(--yc-radius-md);
+  --yc-card-radius: var(--yc-radius-lg);
+  --yc-shadow: var(--yc-shadow-lg);
+  --yc-shadow-soft: var(--yc-shadow-md);
+  --yc-card-shadow: var(--yc-shadow-md);
+  --yc-control-height: var(--yc-control-h-md);
+  --yc-control-height-sm: var(--yc-control-h-sm);
+  --yc-control-radius: var(--yc-radius-sm);
+  --yc-control-font-size: var(--yc-fs-13);
+  --yc-font: var(--yc-font-sans);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  /* ---------- 承载面 surface ---------- */
+  --yc-bg: #0f1723;
+  --yc-surface: #151f2d;
+  --yc-surface-2: #101826;
+  --yc-surface-3: #1a2433;
+  --yc-surface-hover: #1c2634;
+  --yc-surface-overlay: #151f2d;
+  --yc-surface-scrim: rgb(3 6 12 / 62%);
+
+  /* ---------- 侧栏（深色） ---------- */
+  --yc-nav-bg: #0b0e1a;
+  --yc-nav-bg-2: #131830;
+  --yc-nav-border: rgb(255 255 255 / 8%);
+  --yc-nav-text: #9ba2c0;
+  --yc-nav-text-strong: #ffffff;
+  --yc-nav-text-muted: #6f7797;
+  --yc-nav-hover: rgb(255 255 255 / 8%);
+  --yc-nav-active-bg: rgb(99 102 241 / 26%);
+  --yc-nav-active-text: #c7cffb;
+  --yc-nav-badge: rgb(255 255 255 / 12%);
+  --yc-nav-badge-text: #b9c1e0;
+
+  /* ---------- 分隔线 border ---------- */
+  --yc-line: #293548;
+  --yc-line-soft: #1f2a3a;
+  --yc-line-strong: #3a485d;
+  --yc-line-strong-hover: #4c5b72;
+  --yc-line-focus: #6470e0;
+
+  /* ---------- 文字 text ---------- */
+  --yc-text-primary: #e6edf5;
+  --yc-text-secondary: #c1ccda;
+  --yc-text-tertiary: #91a1b4;
+  --yc-text-disabled: #5d6b7d;
+  --yc-text-inverse: #0f1723;
+  --yc-text-link: #9db8d8;
+
+  /* ---------- 品牌 brand ---------- */
+  --yc-brand: #78a7cf;
+  --yc-brand-strong: #a9c8e2;
+  --yc-brand-hover: #a9c8e2;
+  --yc-brand-soft: #1c3244;
+  --yc-brand-line: #36556f;
+  --yc-brand-contrast: #0f1723;
+  --yc-brand-ring: rgb(120 167 207 / 26%);
+  --yc-brand-lift: #8b96f0;
+  --yc-nav-accent: #8b96f0;
+  --yc-brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+
+  /* ---------- 状态 status ---------- */
+  --yc-success: #5ad09a;
+  --yc-success-soft: #10281f;
+  --yc-success-line: #1f4636;
+  --yc-success-text: #7fe3bb;
+  --yc-warning: #f1b45f;
+  --yc-warning-soft: #2b2113;
+  --yc-warning-line: #4a3a1c;
+  --yc-warning-text: #f7cd8c;
+  --yc-danger: #ff8078;
+  --yc-danger-soft: #2c1615;
+  --yc-danger-line: #4d2725;
+  --yc-danger-text: #ffa39d;
+  --yc-info: #7fa8f5;
+  --yc-info-soft: #16223a;
+  --yc-info-line: #263a5c;
+  --yc-info-text: #a6c4fa;
+  --yc-violet: #b49ae8;
+  --yc-violet-soft: #1e1930;
+  --yc-violet-line: #342a4f;
+  --yc-violet-text: #cbb9f2;
+  --yc-teal: #4fc7bb;
+  --yc-teal-soft: #102623;
+  --yc-teal-line: #1e4440;
+  --yc-teal-text: #86ded6;
+  --yc-neutral: #8b95a8;
+  --yc-neutral-soft: #1a2130;
+  --yc-neutral-line: #2b3648;
+  --yc-neutral-text: #aab3c4;
+
+  /* ---------- 字体 font ---------- */
+  --yc-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
+  --yc-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* ---------- 字号刻度 type scale ---------- */
+  --yc-fs-11: 11px;
+  --yc-fs-12: 12px;
+  --yc-fs-13: 13px;
+  --yc-fs-14: 14px;
+  --yc-fs-15: 15px;
+  --yc-fs-16: 16px;
+  --yc-fs-18: 18px;
+  --yc-fs-22: 22px;
+  --yc-fs-28: 28px;
+  --yc-fs-34: 34px;
+
+  /* ---------- 行高 line height ---------- */
+  --yc-lh-tight: 1.2;
+  --yc-lh-snug: 1.4;
+  --yc-lh-normal: 1.55;
+  --yc-lh-relaxed: 1.75;
+
+  /* ---------- 字重 font weight ---------- */
+  --yc-fw-regular: 400;
+  --yc-fw-medium: 500;
+  --yc-fw-semibold: 600;
+  --yc-fw-bold: 700;
+
+  /* ---------- 间距刻度 spacing ---------- */
+  --yc-sp-2: 2px;
+  --yc-sp-4: 4px;
+  --yc-sp-6: 6px;
+  --yc-sp-8: 8px;
+  --yc-sp-10: 10px;
+  --yc-sp-12: 12px;
+  --yc-sp-16: 16px;
+  --yc-sp-20: 20px;
+  --yc-sp-24: 24px;
+  --yc-sp-32: 32px;
+  --yc-sp-40: 40px;
+  --yc-sp-48: 48px;
+
+  /* ---------- 圆角 radius ---------- */
+  --yc-radius-xs: 6px;
+  --yc-radius-sm: 8px;
+  --yc-radius-md: 10px;
+  --yc-radius-lg: 14px;
+  --yc-radius-xl: 18px;
+  --yc-radius-full: 999px;
+
+  /* ---------- 阴影 elevation ---------- */
+  --yc-shadow-xs: 0 1px 2px rgb(0 0 0 / 30%);
+  --yc-shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 2px 6px rgb(0 0 0 / 24%);
+  --yc-shadow-md: 0 2px 4px rgb(0 0 0 / 26%), 0 8px 20px rgb(0 0 0 / 34%);
+  --yc-shadow-lg: 0 4px 10px rgb(0 0 0 / 30%), 0 20px 44px rgb(0 0 0 / 46%);
+  --yc-shadow-brand: 0 6px 16px rgb(79 70 229 / 34%);
+
+  /* ---------- 动效 motion ---------- */
+  --yc-motion-instant: 0ms;
+  --yc-motion-fast: 130ms;
+  --yc-motion-base: 200ms;
+  --yc-motion-slow: 320ms;
+  --yc-ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --yc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---------- 层级 z-index ---------- */
+  --yc-z-base: 0;
+  --yc-z-sticky: 100;
+  --yc-z-header: 200;
+  --yc-z-overlay: 300;
+  --yc-z-modal: 400;
+  --yc-z-toast: 500;
+
+  /* ---------- 控件尺寸 control ---------- */
+  --yc-control-h-sm: 28px;
+  --yc-control-h-md: 32px;
+  --yc-control-h-lg: 36px;
+  --yc-control-h-input: 36px;
+  --yc-control-px: 12px;
+  --yc-control-fs: var(--fs-13);
+
+  /* ---------- 图标磁贴 icon tile ---------- */
+  --yc-tile-bg: #1a2433;
+  --yc-tile-fg: #91a1b4;
+
+  /* ---------- 布局尺寸 layout ---------- */
+  --yc-sidebar-w: 236px;
+  --yc-sidebar-w-collapsed: 64px;
+  --yc-topbar-h: 60px;
+  --yc-content-max: 1560px;
+
+  /* ---------- 表格 table ---------- */
+  --yc-table-row-h: 46px;
+  --yc-table-header-h: 40px;
+  --yc-table-cell-px: 16px;
+
+  /* ---------- 顶栏高度（P3 壳层改造时与 parity 合同同步） ---------- */
+  --yc-topbar-height: 58px;
+
+  /* ---------- 组件专用 component ---------- */
+  --yc-tab-bg: #111c29;
+  --yc-tab-active-bg: #223343;
+  --yc-tab-active-border: #3b5267;
+  --yc-tab-active-text: #b8d1e5;
+  --yc-tab-active-shadow: 0 1px 3px rgb(0 0 0 / 28%), 0 5px 14px rgb(0 0 0 / 16%);
+  --yc-sand: #d9b98a;
+  --yc-scrollbar-size: 8px;
+  --yc-scrollbar-thumb-alpha: 30%;
+  --yc-scrollbar-thumb-hover-alpha: 44%;
+}

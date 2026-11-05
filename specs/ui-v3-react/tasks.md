@@ -66,16 +66,27 @@
 
 ## 阶段二：P1 令牌归一
 
-- [ ] T004 FR-001 FR-002 [US3] 新增 `frontend/packages/ui/src/tokens.css`：
-  承载 `ui-v3/` 定稿的浅色与深色两组令牌（颜色、间距、字号、圆角、阴影、动效、层级），
-  命名沿用 `--yc-*` 以避免大面积改名。依赖：T001-T003。验收：令牌完整、无重复定义。
-- [ ] T005 FR-001 [US3] `frontend/packages/ui/src/styles.css` 改为 `@import './tokens.css'` 后继续定义组件样式，
-  移除其内重复的 `:root` 令牌块。依赖：T004。验收：样式表无重复令牌定义。
-- [ ] T006 FR-001 [US3] `ui-v3/styles/tokens.css` 改为引用生产令牌，原型服务根由 `ui-v3/` 调整为仓库根；
-  同步 `ui-v3/README.md` 与 `ui-v3/index.html` 的启动说明。依赖：T004。
+- [x] T004 FR-001 FR-002 [US3] 新增 `frontend/packages/ui/src/tokens.css`：
+  承载浅色与深色两组令牌（颜色、间距、字号、圆角、阴影、动效、层级），命名沿用 `--yc-*` 以避免大面积改名。
+  浅色取值即 `ui-v3/` 定稿值；深色取值由生产原有深色主题推导，设计稿的暗色规格留给 P5。
+  生产既有的 `--yc-panel` / `--yc-text` / `--yc-muted` / `--yc-radius` 等短名保留为 `var()` 兼容别名，
+  指向规范名，生产组件引用一行不改。依赖：无。验收：令牌完整、无重复定义。
+  **结果：168 个令牌（浅色 168 + 深色 146 项覆盖），生产原有 `--yc-*` 全部保留，另有 16 个兼容别名。**
+- [x] T005 FR-001 [US3] `frontend/packages/ui/src/styles.css` 改为 `@import './tokens.css'` 后继续定义组件样式，
+  移除其内重复的 `:root` 令牌块与 `html[data-theme="dark"]` 令牌块。依赖：T004。
+  验收：样式表无重复令牌定义。
+  **结果：`styles.css` 净减 71 行；两处令牌块移除后由 `tokens.css` 统一提供。**
+- [x] T006 FR-001 [US3] `ui-v3/styles/tokens.css` 改为引用生产令牌：
+  退化为别名层，把原型短名映射到 `--yc-` 规范名；原型服务根由 `ui-v3/` 调整为仓库根，
+  同步 `ui-v3/README.md`、`ui-v3/index.html` 与 `ui-v3/DESIGN-NOTES.md` 的启动说明。依赖：T004。
   验收：脚本比对原型与生产令牌值完全一致。
-- [ ] T007 验证：运行 `npm --prefix frontend run check`、`npm --prefix web run check`，并截图比对原型与生产。
+  **结果：别名层 137 条映射；原型渲染逐像素不变（工作台 / 项目列表 / 需求列表差异像素占比 0.0000%）。**
+- [x] T007 验证：运行 `npm --prefix frontend run check`、`npm --prefix web run check` 与 `make web-build`。
   验收：全部通过；令牌只有一处来源。
+  **结果：frontend check 97 + 54 项全绿、web check 68 项全绿、`make web-build` 通过；
+  生产像素基线按新令牌重新生成，`npm --prefix web run test:visual` 9/9 通过。**
+  同步修正两处因令牌搬家而失效的既有断言
+  （`frontend/packages/ui/test/index.test.mjs`、`frontend/packages/app-shell/test/stable-navigation-shell.test.mjs`）。
 
 **Checkpoint**：令牌单一来源达成。
 
@@ -167,5 +178,8 @@
 
 ## 已知环境问题（非本特性引入）
 
-- `make frontend-check` 的 desktop 段因本机 `desktop/node_modules/typescript` 缺失而无法执行（`tsc: command not found`）。
+- `make frontend-check` 的 desktop 段因本机 `desktop/node_modules` 为空（`vite`、`typescript` 均未安装）而无法执行。
   需补齐依赖后单独复核；在补齐前，desktop 侧只能靠启动应用人工走查，不能宣称已自动验证。
+- 既有 e2e 用例与 React 实现存在漂移：`ensureCurrentProject()` 依赖只存在于历史样式里的 `.project-row`，
+  导致依赖它的用例超时；工作项详情页部分标题层级与断言不一致。已用 A/B 对照确认与 P0/P1 无关，
+  需单独跟进修复，详见 `docs/reviews/2026-11-05-ui-v3-react-p0-visual-guardrail.md`。

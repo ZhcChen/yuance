@@ -9,12 +9,15 @@ test('ui exposes package root marker', () => {
 });
 
 test('ui owns the shared light and dark design tokens', async () => {
-  const source = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const tokens = await readFile(new URL('../src/tokens.css', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
   for (const token of ['--yc-bg', '--yc-panel', '--yc-text', '--yc-brand', '--yc-danger', '--yc-control-height']) {
-    assert.match(source, new RegExp(`${token}:`, 'u'));
+    assert.match(tokens, new RegExp(`${token}:`, 'u'));
   }
-  assert.match(source, /html\[data-theme="dark"\]/u);
-  assert.match(source, /\.yc-button\s*\{[^}]*text-decoration:\s*none;/su);
+  assert.match(tokens, /html\[data-theme="dark"\]/u);
+  assert.match(styles, /@import '\.\/tokens\.css';/u);
+  assert.doesNotMatch(styles, /--yc-[a-z-]+\s*:/u);
+  assert.match(styles, /\.yc-button\s*\{[^}]*text-decoration:\s*none;/su);
 });
 
 test('project menu delegates scrollbar rendering without reserving option width', async () => {
@@ -29,8 +32,9 @@ test('project menu delegates scrollbar rendering without reserving option width'
 
 test('shared scrollbars use fixed overlay tracks with 30% thumb opacity', async () => {
   const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+  const tokens = await readFile(new URL('../src/tokens.css', import.meta.url), 'utf8');
 
-  assert.match(styles, /--yc-scrollbar-thumb-alpha:\s*30%;/u);
+  assert.match(tokens, /--yc-scrollbar-thumb-alpha:\s*30%;/u);
   assert.match(styles, /html\.yc-overlay-scrollbars-enabled \*[\s\S]*scrollbar-width:\s*none !important;/u);
   assert.match(styles, /\.yc-overlay-scrollbar\s*\{[\s\S]*position:\s*fixed;/u);
   assert.match(styles, /background:\s*color-mix\(in srgb, var\(--yc-muted\) var\(--yc-scrollbar-thumb-alpha\), transparent\)/u);

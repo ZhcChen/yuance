@@ -18,8 +18,9 @@
         <p class="empty__title">正在加载 UI v3 原型…</p>
         <p class="empty__desc">
           若此提示长时间未消失，说明脚本未加载成功。请在仓库根目录执行
-          <code>python3 -m http.server 4183 --directory ui-v3</code>
-          后访问 http://127.0.0.1:4183/ （原生 ES Module 不能通过 file:// 协议加载）。
+          <code>python3 -m http.server 4183 --directory .</code>
+          后访问 http://127.0.0.1:4183/ui-v3/ （原生 ES Module 不能通过 file:// 协议加载；
+          服务根必须是仓库根，因为设计令牌与生产包共用 frontend/packages/ui/src/tokens.css）。
         </p>
       </div>
     </div>
