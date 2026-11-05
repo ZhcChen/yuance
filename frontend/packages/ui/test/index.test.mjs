@@ -54,3 +54,28 @@ test('host styles do not define shared business tokens', async () => {
     assert.doesNotMatch(source, /--yc-[a-z-]+\s*:/u);
   }
 });
+
+test('every shared token reference resolves to a defined token', async () => {
+  const tokenSource = await readFile(new URL('../src/tokens.css', import.meta.url), 'utf8');
+  const defined = new Set([...tokenSource.matchAll(/(--yc-[a-zA-Z0-9-]+)\s*:/gu)].map((match) => match[1]));
+  // 这几个由脚本在运行时写入，样式里只声明了回退值。
+  const runtimeInjected = new Set([
+    '--yc-content-tab-indicator-width',
+    '--yc-content-tab-indicator-x',
+    '--yc-global-nav-indicator-width',
+    '--yc-global-nav-indicator-x',
+  ]);
+
+  const stylesheets = await Promise.all([
+    readFile(new URL('../src/styles.css', import.meta.url), 'utf8'),
+    readFile(new URL('../../app-shell/src/application.css', import.meta.url), 'utf8'),
+  ]);
+  const missing = new Set();
+  for (const source of stylesheets) {
+    for (const match of source.matchAll(/var\((--yc-[a-zA-Z0-9-]+)/gu)) {
+      if (!defined.has(match[1]) && !runtimeInjected.has(match[1])) missing.add(match[1]);
+    }
+  }
+
+  assert.deepEqual([...missing].sort(), [], '样式里引用了未定义的共享令牌');
+});

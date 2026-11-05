@@ -461,3 +461,112 @@ export function Skeleton({ lines = 3, label = '正在加载' }) {
   const count = Math.min(12, Math.max(1, Math.floor(lines)));
   return <div className="yc-skeleton" role="status" aria-label={label}>{Array.from({ length: count }, (_, index) => <span key={index} />)}</div>;
 }
+
+/* ===================== 设计稿新增组件 ===================== */
+
+/** @param {{ children?: React.ReactNode, className?: string }} props */
+export function Card({ children, className = '' }) {
+  return <div className={`yc-card${className ? ` ${className}` : ''}`}>{children}</div>;
+}
+
+/**
+ * 面板：标题区 + 主体 + 底部动作区。
+ * @param {{ title?: React.ReactNode, description?: React.ReactNode, actions?: React.ReactNode, children?: React.ReactNode, footer?: React.ReactNode, flush?: boolean, pop?: boolean, className?: string, ariaLabel?: string }} props
+ */
+export function Panel({ title, description, actions, children, footer, flush = false, pop = false, className = '', ariaLabel }) {
+  const hasHead = Boolean(title || description || actions);
+  return (
+    <section className={`yc-panel${pop ? ' yc-panel--pop' : ''}${className ? ` ${className}` : ''}`} aria-label={ariaLabel}>
+      {hasHead ? (
+        <header className="yc-panel__head">
+          <div>
+            <div className="yc-panel__title">{title}</div>
+            {description ? <div className="yc-panel__desc">{description}</div> : null}
+          </div>
+          {actions ? <div className="yc-panel__actions">{actions}</div> : null}
+        </header>
+      ) : null}
+      <div className={`yc-panel__body${flush ? ' yc-panel__body--flush' : ''}`}>{children}</div>
+      {footer ? <footer className="yc-panel__foot">{footer}</footer> : null}
+    </section>
+  );
+}
+
+/**
+ * 指标磁贴：底色统一品牌浅色，只让图标按语义着色。
+ * @param {{ label: React.ReactNode, value: React.ReactNode, delta?: React.ReactNode, icon?: React.ReactNode, variant?: 'brand' | 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'violet' | 'teal', className?: string }} props
+ */
+export function Metric({ label, value, delta, icon, variant = 'brand', className = '' }) {
+  return (
+    <article className={`yc-metric yc-metric-${variant}${className ? ` ${className}` : ''}`}>
+      {icon ? <span className="yc-metric__icon" aria-hidden="true">{icon}</span> : null}
+      <div className="yc-metric__body">
+        <div className="yc-metric__label">{label}</div>
+        <div className="yc-metric__value">{value}</div>
+        {delta ? <div className="yc-metric__delta">{delta}</div> : null}
+      </div>
+    </article>
+  );
+}
+
+/**
+ * 状态胶囊：颜色只作辅助，语义由紧邻文字承担。
+ * @param {{ children?: React.ReactNode, tone?: 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'violet' | 'teal', dot?: boolean, className?: string }} props
+ */
+export function StatusPill({ children, tone = 'neutral', dot = true, className = '' }) {
+  return (
+    <span className={`yc-status-pill yc-status-pill--${tone}${className ? ` ${className}` : ''}`}>
+      {dot ? <span className="yc-status-pill__dot" aria-hidden="true" /> : null}
+      {children}
+    </span>
+  );
+}
+
+/**
+ * 进度条。
+ * @param {{ value: number, max?: number, label?: React.ReactNode, meta?: React.ReactNode, tone?: 'brand' | 'success' | 'warning' | 'danger', className?: string, ariaLabel?: string }} props
+ */
+export function ProgressBar({ value, max = 100, label, meta, tone = 'brand', className = '', ariaLabel }) {
+  const bounded = Math.max(0, Math.min(max, Number(value) || 0));
+  const percent = max > 0 ? Math.round((bounded / max) * 100) : 0;
+  return (
+    <div className={`yc-progress yc-progress--${tone}${className ? ` ${className}` : ''}`}>
+      {label || meta ? (
+        <div className="yc-progress__meta">
+          <span>{label}</span>
+          {meta ? <span>{meta}</span> : null}
+        </div>
+      ) : null}
+      <div className="yc-progress__track" role="progressbar" aria-label={ariaLabel} aria-valuemin={0} aria-valuemax={max} aria-valuenow={bounded}>
+        <div className="yc-progress__bar" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 图标磁贴。
+ * @param {{ icon?: React.ReactNode, tone?: 'brand' | 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'violet' | 'teal', size?: 'md' | 'sm', className?: string }} props
+ */
+export function IconTile({ icon, tone = 'neutral', size = 'md', className = '' }) {
+  return (
+    <span className={`yc-icon-tile yc-icon-tile--${tone}${size === 'sm' ? ' yc-icon-tile--sm' : ''}${className ? ` ${className}` : ''}`} aria-hidden="true">
+      {icon}
+    </span>
+  );
+}
+
+/**
+ * 空态。
+ * @param {{ icon?: React.ReactNode, title?: React.ReactNode, description?: React.ReactNode, action?: React.ReactNode, className?: string }} props
+ */
+export function EmptyState({ icon, title, description, action, className = '' }) {
+  return (
+    <div className={`yc-empty${className ? ` ${className}` : ''}`}>
+      {icon ? <div className="yc-empty__icon" aria-hidden="true">{icon}</div> : null}
+      {title ? <div className="yc-empty__title">{title}</div> : null}
+      {description ? <div className="yc-empty__desc">{description}</div> : null}
+      {action ? <div className="yc-empty__action">{action}</div> : null}
+    </div>
+  );
+}

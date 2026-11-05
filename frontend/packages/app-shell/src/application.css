@@ -253,7 +253,7 @@ button:disabled {
 .system-permissions-panel > .yc-filter-bar { margin: 0 16px 16px; }
 .permission-tree { display: grid; gap: 12px; padding: 16px; }
 .permission-group { overflow: hidden; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-panel); }
-.permission-group-head { padding: 12px 14px; border-bottom: 1px solid var(--yc-line); background: var(--yc-table-head); }
+.permission-group-head { padding: 12px 14px; border-bottom: 1px solid var(--yc-line); background: var(--yc-surface-2); }
 .permission-pages { display: grid; }
 .permission-page { padding: 12px 14px; border-bottom: 1px solid var(--yc-line); }
 .permission-page:last-child { border-bottom: 0; }
@@ -264,7 +264,7 @@ button:disabled {
 .permission-check-group strong { font-size: 15px; }
 .permission-check input { width: 16px; min-height: 16px; margin-top: 3px; accent-color: var(--yc-brand); }
 .permission-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-left: 28px; }
-.permission-check-action { padding: 9px; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-table-head); }
+.permission-check-action { padding: 9px; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-surface-2); }
 
 .role-workbench { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }
 .role-workbench-sidebar, .role-permission-panel { overflow: hidden; padding: 0; }
@@ -280,7 +280,7 @@ button:disabled {
 .role-list-meta { display: grid; justify-items: end; gap: 4px; color: var(--yc-muted); font-size: 12px; }
 .role-status-action { display: flex; align-items: center; padding: 0 12px; border-left: 1px solid var(--yc-line); }
 .role-workbench-sidebar > .shell-panel-header:last-child { padding: 12px 14px; border-top: 1px solid var(--yc-line); }
-.role-summary-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--yc-line); background: var(--yc-table-head); color: var(--yc-muted); font-size: 12px; }
+.role-summary-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--yc-line); background: var(--yc-surface-2); color: var(--yc-muted); font-size: 12px; }
 .role-summary-strip span { min-height: 26px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--yc-line); border-radius: 999px; background: var(--yc-panel); }
 .role-summary-strip strong { color: var(--yc-text); }
 

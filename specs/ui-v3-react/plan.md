@@ -146,9 +146,16 @@ Feedback / ErrorToast / UserAvatar。
 StatusPill（状态胶囊）、ProgressBar、IconTile、EmptyState。
 
 注意：`Select` 已是自绘下拉，**只换皮不重写**；其 `searchable` 模式保留。
+`ContentTabs` 由分段胶囊改为设计稿的下划线形态：指示条原本就由脚本写入位置与宽度变量，
+只改 CSS 即可变成贴底横线，DOM 与 JS 都不动。
 
-文件范围：`frontend/packages/ui/src/primitives.jsx`、`frontend/packages/ui/src/styles.css`、
-`frontend/packages/ui/src/index.js`（导出新增组件）；`frontend/packages/ui/src/global-navigation.jsx`（顶部导航换肤）。
+同时处理原生控件外观：隐藏浏览器搜索清除按钮，字符图标统一换成内联 SVG。
+
+文件范围：`frontend/packages/ui/src/primitives.jsx`（新增 7 个组件）、
+`frontend/packages/ui/src/styles.css`（既有组件皮肤 + 新组件样式）、
+`frontend/packages/ui/src/index.js`（导出）、
+`frontend/packages/ui/test/index.test.mjs`（新增令牌引用完整性断言）、
+`frontend/packages/app-shell/src/application.css`（修掉引用未定义令牌的规则）。
 
 ### P3：壳层改造
 

@@ -107,11 +107,15 @@ legacy 服务端模板退役后，React 实现沿用了大部分旧类名，但�
 `web/e2e/session-recovery-skeleton.spec.mjs`）暂存回退后重跑同一组失败用例，
 **结果完全相同**——即这些失败在本阶段之前就存在。
 
-根因是 e2e 用例与当前 React 实现之间的既有漂移：
-`ensureCurrentProject()` 依赖 `.project-row` 选择器定位项目行，
-但该类名只存在于 `application.css` 的历史样式里，React 组件树已改为项目卡片，
-于是该辅助函数永远等不到「设为当前项目」按钮，60 秒超时。
+根因是 e2e 用例与当前演示数据之间的既有漂移：
+`ensureCurrentProject()` 会去项目列表里找编号为 `YCE` 的项目行并点「设为当前项目」，
+但当前演示种子已经不再创建编号为 `YCE` 的项目（种子里的项目编号是 TRAIN / OPEN / IM / PAY / IOT / OA 等），
+于是该辅助函数永远等不到目标行，60 秒超时。
 工作项详情页的 `评论与流转` 标题层级也与用例断言不一致。
+
+> 更正记录：本文件初版把原因写成「`.project-row` 只存在于历史样式里」，
+> 实际该类名在 `frontend/packages/app-shell/src/app.jsx` 的项目卡片上仍在使用，
+> 失效的是用例依赖的 `YCE` 项目编号，不是类名。
 
 本阶段顺带修正了其中与 `h1` 层级直接相关的断言
 （`app-shell.spec.mjs` 7 处、`session-recovery-skeleton.spec.mjs` 1 处，

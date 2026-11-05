@@ -92,21 +92,34 @@
 
 ## 阶段三：P2 组件换皮
 
-- [ ] T008 FR-003 FR-004 [US1] 重做既有组件皮肤，不改 DOM 与 props：
+- [x] T008 FR-003 FR-004 [US1] 重做既有组件皮肤，不改 DOM 与 props：
   Button / TextInput / TextArea / Select / Field / FilterBar / FilterField / Badge / PriorityBadge /
   DataTable / Pagination / PaginatedList / PaginatedTable / ContentTabs / ContentTab / Modal / Skeleton /
   Feedback / ErrorToast / UserAvatar。文件：`frontend/packages/ui/src/primitives.jsx`、`styles.css`。
   注意：`Select` 已是自绘下拉，只换皮不重写，保留 `searchable` 模式。依赖：T007。
   验收：组件表现与 `ui-v3/` 一致；原生控件残留为 0。
-- [ ] T009 FR-003 [US1] 新增设计稿用到而现有没有的组件：Card、Panel（head/body/foot）、
+  **结果：20 个组件按设计稿令牌重做皮肤，DOM 与 props 一律未动；
+  `Select` 只换皮（箭头与勾选标记改用内联 SVG mask，保留 searchable）；
+  `ContentTabs` 由分段胶囊改为设计稿的下划线形态（指示条改为贴底 2px 横线，DOM 与 JS 未改）。**
+- [x] T009 FR-003 [US1] 新增设计稿用到而现有没有的组件：Card、Panel（head/body/foot）、
   Metric（磁贴指标卡）、StatusPill、ProgressBar、IconTile、EmptyState；
   从 `frontend/packages/ui/src/index.js` 导出。依赖：T008。
   验收：新增组件在 `app-shell` 中可用且有单测或 e2e 覆盖。
-- [ ] T010 FR-004 [US1] 清除残留的浏览器原生控件外观（搜索清除按钮等），
+  **结果：7 个组件已实现并导出，样式落在 `styles.css` 的「设计稿新增组件」段；
+  另加一条「所有共享令牌引用都能解析」的断言，兜住这类组件的取值。**
+- [x] T010 FR-004 [US1] 清除残留的浏览器原生控件外观（搜索清除按钮等），
   确认图标全部为 SVG、无 emoji。依赖：T008。验收：源码中无针对原生控件外观的补丁残留需求。
-- [ ] T011 验证：运行 `npm --prefix frontend run check`、`npm --prefix web run check`；
+  **结果：隐藏 `::-webkit-search-cancel-button` / `::-webkit-search-decoration`；
+  下拉箭头与勾选标记改用内联 SVG mask；甘特冲突标记的 `⚠` 字符改为 SVG 图标；
+  全包扫描确认无 emoji。**
+- [x] T011 验证：运行 `npm --prefix frontend run check`、`npm --prefix web run check`；
   浏览器端与桌面端各截一轮图并排比对设计稿。依赖：T009-T010。
   验收：全部通过；两端表现一致；观感达到设计稿水平。
+  **结果：frontend check 98 + 54 项全绿（含新增令牌解析断言）、web check 68 项全绿、
+  `make web-build` 通过、`npm --prefix web run test:visual` 9/9 通过；
+  浏览器端浅色与深色两轮截图逐页走查，观感达到设计稿水平；
+  桌面端因本机 `desktop/node_modules` 为空无法构建，未能截图，列为未验证项。**
+  顺带修掉 4 处引用未定义令牌（`--yc-table-head`）导致的样式失效。
 
 **Checkpoint**：约七成视觉改善落地，DOM 未动。
 
@@ -180,6 +193,8 @@
 
 - `make frontend-check` 的 desktop 段因本机 `desktop/node_modules` 为空（`vite`、`typescript` 均未安装）而无法执行。
   需补齐依赖后单独复核；在补齐前，desktop 侧只能靠启动应用人工走查，不能宣称已自动验证。
-- 既有 e2e 用例与 React 实现存在漂移：`ensureCurrentProject()` 依赖只存在于历史样式里的 `.project-row`，
-  导致依赖它的用例超时；工作项详情页部分标题层级与断言不一致。已用 A/B 对照确认与 P0/P1 无关，
-  需单独跟进修复，详见 `docs/reviews/2026-11-05-ui-v3-react-p0-visual-guardrail.md`。
+- 既有 e2e 用例与演示数据存在漂移：`ensureCurrentProject()` 依赖演示种子里编号为 `YCE` 的项目，
+  但当前种子已不再创建该编号（种子里的项目编号是 TRAIN / OPEN / IM / PAY / IOT / OA 等），
+  导致依赖它的用例超时；工作项详情页部分标题层级与断言不一致。
+  已用 A/B 对照确认与 P0/P1 无关，需单独跟进修复，
+  详见 `docs/reviews/2026-11-05-ui-v3-react-p0-visual-guardrail.md`。
