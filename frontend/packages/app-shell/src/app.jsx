@@ -569,6 +569,20 @@ function dashboardTimestamp(value) {
 }
 
 /**
+ * 全局搜索结果类型的中文标签。
+ *
+ * @param {string} kind
+ */
+function searchResultKindLabel(kind) {
+  if (kind === 'project') return '项目';
+  if (kind === 'requirement') return '需求';
+  if (kind === 'task') return '任务';
+  if (kind === 'bug') return 'Bug';
+  if (kind === 'resource') return '资料';
+  return kind;
+}
+
+/**
  * 资料库筛选条件：整理成一句可读的摘要。
  *
  * @param {{ q: string, category: string, status: string, tag: string }} filters
@@ -1448,6 +1462,16 @@ export function SharedApp({ services }) {
     [projectResourceDetail, projectResourceLocked],
   );
   const projectResourceRelatedWorkItem = projectResourceDetail?.related_work_item || null;
+  const searchResultGroups = useMemo(() => {
+    const groups = new Map();
+    for (const item of searchPage?.items || []) {
+      const kind = item.kind || 'other';
+      if (!groups.has(kind)) groups.set(kind, []);
+      groups.get(kind).push(item);
+    }
+    return [...groups.entries()].map(([kind, items]) => ({ kind, items }));
+  }, [searchPage?.items]);
+
   const projectPersonalAnalysisRoute = route.id === 'project-personal-analysis' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemSelectionScope = workItemListRoute
@@ -6487,23 +6511,42 @@ export function SharedApp({ services }) {
               </Panel>
             </section>
           ) : route.id === 'search' ? (
-            <section className="page-stack search-page">
-              <section className="page-hero"><div><p className="shell-eyebrow">全局搜索</p><h1 ref={headingRef} tabIndex={-1}>搜索项目、需求、任务、Bug 和资料库</h1><p>搜索结果遵循项目成员数据范围；系统管理员可查看全部项目协作数据。</p></div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回工作台。')}>返回工作台</a></div></section>
-              <section className="panel search-panel"><FilterBar className="search-form" role="search" ariaLabel="全局搜索" onSubmit={(event) => { event.preventDefault(); const input = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q')); navigate(buildSearchPath({ owner: route.owner, q: input?.value || '', perPage: searchPage?.pagination.per_page })); }} actions={<Button type="submit">搜索</Button>}><FilterField id="search-page-input" label="关键词"><TextInput name="q" type="search" defaultValue={searchRoute?.q || ''} placeholder="输入项目编号、工作项编号、资料标题或描述" /></FilterField></FilterBar></section>
-              <section className="panel" aria-labelledby="search-results-title">
-                <div className="panel-head"><div><h2 id="search-results-title">搜索结果</h2><p>{searchRoute?.q ? `关键词：${searchRoute.q}` : '输入关键词后开始检索。'}</p></div></div>
-                {searchPage?.items.length ? <>
-                  <div className="search-result-list" role="list" aria-label="搜索结果列表">
-                    {searchPage.items.map((item) => {
-                      const target = routePathForOwner(item.target, route.owner);
-                      return (
-                        <article key={`${item.kind}:${item.key}`} className="search-result" role="listitem"><div><Badge>{item.kind}</Badge> <code>{item.key}</code><h3><a href={target} onClick={(event) => handleNavigate(event, target, `已打开 ${item.key}。`)}>{item.title}</a></h3><p>{item.context}</p></div><span className="search-result-time">{dashboardTimestamp(item.updated_at)}</span></article>
-                      );
-                    })}
+            <section className="page-stack search-page" aria-labelledby="search-page-title">
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="search-page-title" ref={headingRef} tabIndex={-1}>全局搜索</h1>
+                  <p className="page-head__desc">{searchRoute?.q ? `「${searchRoute.q}」的搜索结果，按类型分组。` : '输入关键词后搜索项目、需求、任务、Bug 与资料库。'}</p>
+                </div>
+                <div className="page-head__actions">
+                  <a className="yc-button yc-button-secondary" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回工作台。')}>返回工作台</a>
+                </div>
+              </div>
+              <Panel title="搜索条件" description={searchRoute?.q ? `关键词：${searchRoute.q}` : '支持按工作项编号、标题、资料标题与项目名称检索。'}>
+                <FilterBar className="search-form" role="search" ariaLabel="全局搜索" onSubmit={(event) => { event.preventDefault(); const input = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q')); navigate(buildSearchPath({ owner: route.owner, q: input?.value || '', perPage: searchPage?.pagination.per_page })); }} actions={<Button type="submit">搜索</Button>}>
+                  <FilterField id="search-page-input" label="关键词"><TextInput name="q" type="search" defaultValue={searchRoute?.q || ''} placeholder="输入项目编号、工作项编号、资料标题或描述" /></FilterField>
+                </FilterBar>
+              </Panel>
+              {searchPage?.items.length ? (
+                <>
+                  {searchResultGroups.map((group) => (
+                    <Panel key={group.kind} title={searchResultKindLabel(group.kind)} description={`${group.items.length} 条`} flush>
+                      <div className="search-result-list" role="list" aria-label={`${searchResultKindLabel(group.kind)}搜索结果`}>
+                        {group.items.map((item) => {
+                          const target = routePathForOwner(item.target, route.owner);
+                          return (
+                            <article key={`${item.kind}:${item.key}`} className="search-result" role="listitem"><div><Badge>{searchResultKindLabel(item.kind)}</Badge> <code>{item.key}</code><h3><a href={target} onClick={(event) => handleNavigate(event, target, `已打开 ${item.key}。`)}>{item.title}</a></h3><p>{item.context}</p></div><span className="search-result-time">{dashboardTimestamp(item.updated_at)}</span></article>
+                          );
+                        })}
+                      </div>
+                    </Panel>
+                  ))}
+                  <div className="work-item-list-pager">
+                    <Pagination ariaLabel="搜索结果分页" page={searchPage.pagination.page} totalPages={searchPage.pagination.total_pages} totalItems={searchPage.pagination.total_items} onPageChange={(page) => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page, perPage: searchPage.pagination.per_page }))} />
                   </div>
-                  <Pagination ariaLabel="搜索结果分页" page={searchPage.pagination.page} totalPages={searchPage.pagination.total_pages} totalItems={searchPage.pagination.total_items} onPageChange={(page) => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page, perPage: searchPage.pagination.per_page }))} />
-                </> : <div className="empty-state"><strong>{searchRoute?.q ? '没有找到结果' : '等待搜索'}</strong><span>{searchRoute?.q ? '可以换一个项目编号、工作项编号、资料标题或正文关键词。' : '例如搜索 YCE、对象存储、资料库、Bug 或工作项编号。'}</span></div>}
-              </section>
+                </>
+              ) : (
+                <EmptyState icon={<Icon name="inbox" />} title={searchRoute?.q ? '没有找到结果' : '等待搜索'} description={searchRoute?.q ? '可以换一个项目编号、工作项编号、资料标题或正文关键词。' : '例如搜索 YCE、对象存储、资料库、Bug 或工作项编号。'} />
+              )}
             </section>
           ) : route.id === 'profile' ? (
             <section className="page-stack profile-page" aria-labelledby="profile-title">

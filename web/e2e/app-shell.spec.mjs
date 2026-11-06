@@ -212,7 +212,7 @@ test('browser shell preserves the shared deep link when the session expires', as
   await login(page, '/web/app');
   await page.goto('/web/app/search?q=YCE-TASK-2');
   await expect(page).toHaveURL(/\/web\/app\/search\?q=YCE-TASK-2/);
-  await expect(page.getByRole('heading', { level: 1, name: '搜索项目、需求、任务、Bug 和资料库' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
   await page.route('**/api/v1/auth/me', async (route) => {
     await route.fulfill({
       status: 401,
@@ -255,8 +255,8 @@ test('app-owner global search loads shared results and resolves result targets',
 
   await expect(page).toHaveURL(/\/web\/app\/search\?q=YCE-TASK-2/);
   await expect(page).toHaveTitle('全局搜索 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '搜索项目、需求、任务、Bug 和资料库' })).toBeVisible();
-  const result = page.getByRole('list', { name: '搜索结果列表' }).locator('.search-result', { hasText: 'YCE-TASK-2' });
+  await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
+  const result = page.locator('.search-result').filter({ hasText: 'YCE-TASK-2' });
   await expect(result).toContainText('设计项目与工作项数据模型');
   await result.getByRole('link', { name: '设计项目与工作项数据模型' }).click();
 
@@ -299,7 +299,7 @@ test('message and search pages preserve the main responsive geometry', async ({ 
     if (messageGeometry.rowColumns) expect(messageGeometry.rowColumns).toBe(viewport.compact ? 3 : 4);
 
     await page.goto('/web/app/search?q=YCE-TASK-2');
-    await expect(page.getByRole('heading', { level: 1, name: '搜索项目、需求、任务、Bug 和资料库' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
     const searchGeometry = await page.locator('.search-page').evaluate((element) => ({
       mainWidth: element.closest('.main').clientWidth,
       mainScrollWidth: element.closest('.main').scrollWidth,
