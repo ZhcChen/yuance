@@ -6082,23 +6082,32 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'system-permissions' ? (
             <section className="page-stack system-permissions-page" aria-labelledby="system-permissions-title">
-              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-permissions-title" ref={headingRef} tabIndex={-1}>权限点</h1><p>权限点由 core seed 管理；角色权限维护推荐在角色权限工作台完成。</p></div><a className="yc-button yc-button-secondary" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>返回角色权限</a></header>
-              <section className="shell-card system-permissions-panel" aria-labelledby="system-permission-tree-title">
-              <div className="shell-panel-header"><div><h2 id="system-permission-tree-title">权限树</h2><p className="shell-muted">权限点由 core seed 维护，共 {systemPermissions.length} 项。</p></div></div>
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="system-permissions-title" ref={headingRef} tabIndex={-1}>权限点</h1>
+                  <p className="page-head__desc">权限点由 core seed 管理；角色权限维护推荐在角色权限工作台完成。</p>
+                </div>
+                <div className="page-head__actions">
+                  <a className="yc-button yc-button-secondary" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>返回角色权限</a>
+                </div>
+              </div>
+              <Panel title="权限树" description={`权限点由 core seed 管理，共 ${systemPermissions.length} 项`} flush>
               <FilterBar ariaLabel="权限筛选" onSubmit={(event) => { event.preventDefault(); const input = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q')); navigate(buildSystemPermissionsPath({ owner: route.owner, q: input?.value || '' }), '正在筛选权限目录。'); }} actions={<><Button type="submit">搜索</Button>{route.q ? <Button variant="secondary" onClick={() => navigate(buildSystemPermissionsPath({ owner: route.owner }), '已清除权限筛选。')}>清除</Button> : null}</>}>
                 <FilterField id="system-permissions-query" label="搜索权限"><TextInput name="q" defaultValue={route.q} placeholder="名称、权限键或资源" /></FilterField>
               </FilterBar>
               {systemPermissionGroups.length ? <div className="permission-tree" aria-label="系统权限目录">{systemPermissionGroups.map((group) => <section className="permission-group" key={group.key}><header className="permission-group-head"><div className="permission-check permission-check-group"><span><strong>{group.key}</strong><em>{group.permissions.length} 个权限点</em></span></div></header><div className="permission-pages">{group.permissions.map((permission) => <article className="permission-page" key={permission.permission_key}><div className="permission-check permission-check-page"><span><strong>{permission.permission_name}</strong><em>{permission.permission_key} · {permission.resource_type === 'page' ? '页面' : '操作'}</em></span></div></article>)}</div></section>)}</div> : <Feedback tone="info" title={route.q ? '没有匹配的权限点。' : '暂无权限点。'} />}
-              </section>
+              </Panel>
             </section>
           ) : route.id === 'system-database-stats' ? (
-            <section className="shell-card system-ops-panel database-stats-panel" aria-labelledby="system-database-stats-title" aria-busy={systemDatabaseStatsRefreshing}>
-              <div className="shell-panel-header system-ops-panel-head">
-                <div>
+            <section className="page-stack database-stats-page" aria-labelledby="system-database-stats-title" aria-busy={systemDatabaseStatsRefreshing}>
+              <div className="page-head">
+                <div className="page-head__text">
                   <h1 id="system-database-stats-title" ref={headingRef} tabIndex={-1}>数据库统计</h1>
-                  <p className="shell-muted">进入页面时仅展示浏览器缓存；点击刷新后才会重新读取最新表清单、备注与数据量。</p>
+                  <p className="page-head__desc">进入页面时仅展示浏览器缓存；点击刷新后才会重新读取最新表清单、备注与数据量。</p>
                 </div>
-                <Button loading={systemDatabaseStatsRefreshing} onClick={() => void refreshSystemDatabaseStats()}>刷新</Button>
+                <div className="page-head__actions">
+                  <Button loading={systemDatabaseStatsRefreshing} onClick={() => void refreshSystemDatabaseStats()}>刷新</Button>
+                </div>
               </div>
               {systemDatabaseStatsError ? <Feedback tone="danger" title="刷新失败">{systemDatabaseStatsError}{systemDatabaseStats ? ' 当前继续展示上一次缓存。' : ''}</Feedback> : null}
               {systemDatabaseStats ? (
@@ -6120,9 +6129,12 @@ export function SharedApp({ services }) {
               )}
             </section>
           ) : route.id === 'system-audit' ? (
-            <section className="shell-card system-ops-panel audit-panel" aria-labelledby="system-audit-title">
-              <div className="shell-panel-header system-ops-panel-head">
-                <div><h1 id="system-audit-title" ref={headingRef} tabIndex={-1}>审计日志</h1><p className="shell-muted">记录登录、首次初始化、用户角色维护、对象存储配置等关键操作，支持按操作人、动作和对象过滤。</p></div>
+            <section className="page-stack audit-page" aria-labelledby="system-audit-title">
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="system-audit-title" ref={headingRef} tabIndex={-1}>审计日志</h1>
+                  <p className="page-head__desc">记录登录、首次初始化、用户角色维护、对象存储配置等关键操作，支持按操作人、动作和对象过滤。</p>
+                </div>
               </div>
               <FilterBar className="audit-filter-bar" ariaLabel="审计日志筛选" onSubmit={(event) => {
                 event.preventDefault();
@@ -6171,7 +6183,15 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'system-openapi' ? (
             <section className="page-stack system-openapi-page" aria-labelledby="system-openapi-title">
-              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-openapi-title" ref={headingRef} tabIndex={-1}>系统 OpenAPI</h1><p>独立于普通业务 OpenAPI，当前用于版本管理自动化接入。适合 GitHub Actions、发布脚本和系统级集成。</p></div>{systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建系统 Token</Button> : null}</header>
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="system-openapi-title" ref={headingRef} tabIndex={-1}>系统 OpenAPI</h1>
+                  <p className="page-head__desc">独立于普通业务 OpenAPI，当前用于版本管理自动化接入。适合 GitHub Actions、发布脚本和系统级集成。</p>
+                </div>
+                <div className="page-head__actions">
+                  {systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建系统 Token</Button> : null}
+                </div>
+              </div>
               <section className="storage-layout system-openapi-layout">
                 <section className="shell-card system-openapi-access-panel"><div className="shell-panel-header system-openapi-panel-head"><div><h2>文档与接入</h2><p className="shell-muted">system token 使用 Bearer 认证；第一阶段仅开放版本读取与版本写入能力。</p></div></div><div className="system-openapi-body"><div className="system-openapi-actions"><a className="yc-button yc-button-secondary" href="/api/system/openapi.json" target="_blank" rel="noreferrer">下载 OpenAPI JSON</a><a className="yc-button yc-button-secondary" href={buildSystemApiDocsPath(route.owner)} onClick={(event) => handleNavigate(event, buildSystemApiDocsPath(route.owner), '正在打开系统 API 文档。')}>打开在线文档</a></div><dl className="system-openapi-summary"><div className="system-openapi-summary-item"><dt>认证方式</dt><dd><code>Authorization: Bearer &lt;system_token&gt;</code></dd></div><div className="system-openapi-summary-item"><dt>当前开放</dt><dd><div className="system-openapi-scope-list" aria-label="当前开放接口范围">{['版本列表', '版本详情', '创建版本', '编辑版本', '发布版本', '资产上传签名', '上传确认'].map((label) => <span className="system-openapi-scope" key={label}>{label}</span>)}</div></dd></div><div className="system-openapi-summary-item system-openapi-summary-item-muted"><dt>暂未开放</dt><dd>版本保留策略、对象存储设置、用户 / 角色 / 审计等其它系统接口。</dd></div></dl></div></section>
                 <aside className="shell-card storage-side"><h2>接入提示</h2><ul className="check-list"><li>优先为自动化任务创建最小权限 token。</li><li>版本资产上传采用：创建资产 → 获取上传地址 → 上传文件 → 确认已上传。</li><li>{systemOpenApiView?.can_manage_tokens ? 'Token 明文仅在创建成功后展示一次；删除后立即失效。' : '你当前只有查看权限，无法修改 token。'}</li></ul></aside>
@@ -6202,7 +6222,15 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'system-releases' ? (
             <section className="page-stack system-release-page" aria-label="发布工作台">
-              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-releases-title" ref={headingRef} tabIndex={-1}>版本管理</h1><p>维护桌面端与移动端发布版本，安装包统一走当前已激活的对象存储。</p></div>{systemReleasesView?.can_manage_releases ? <Button disabled={systemReleaseSubmitting} onClick={openSystemReleaseCreate}>新建版本</Button> : null}</header>
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="system-releases-title" ref={headingRef} tabIndex={-1}>版本管理</h1>
+                  <p className="page-head__desc">维护桌面端与移动端发布版本，安装包统一走当前已激活的对象存储。</p>
+                </div>
+                <div className="page-head__actions">
+                  {systemReleasesView?.can_manage_releases ? <Button disabled={systemReleaseSubmitting} onClick={openSystemReleaseCreate}>新建版本</Button> : null}
+                </div>
+              </div>
               <section className="storage-layout system-release-policy-layout"><section className="shell-card system-release-policy-panel"><div className="shell-panel-header system-release-panel-head"><div><h2>保留策略</h2><p className="shell-muted">仅对已发布版本生效。超过保留数的旧版本会自动删除数据库记录和 OSS 对象。</p></div></div>
               {systemReleaseError && !systemReleaseEditor && !systemReleaseConfirmation ? <Feedback tone="danger" title="发布操作需要处理">{systemReleaseError}</Feedback> : null}
               {systemReleasesView ? <dl className="config-summary-grid storage-meta"><div className="config-summary-item"><dt>当前保留数</dt><dd>{systemReleasesView.settings.retention_count}</dd></div><div className="config-summary-item"><dt>最近更新人</dt><dd>{systemReleasesView.settings.updated_by || '系统'}</dd></div><div className="config-summary-item"><dt>更新时间</dt><dd>{formatTimestamp(systemReleasesView.settings.updated_at)}</dd></div></dl> : null}
@@ -6316,7 +6344,15 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'system-roles' ? (
             <section className="page-stack system-roles-page" aria-labelledby="system-roles-title">
-              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-roles-title" ref={headingRef} tabIndex={-1}>角色权限</h1><p>按 RBAC 模型维护角色、状态、数据范围与功能权限树；项目内数据范围仍由项目成员关系控制。</p></div><a className="yc-button yc-button-secondary" href={buildSystemPermissionsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemPermissionsPath({ owner: route.owner }), '正在打开权限目录。')}>全部权限点</a></header>
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="system-roles-title" ref={headingRef} tabIndex={-1}>角色权限</h1>
+                  <p className="page-head__desc">按 RBAC 模型维护角色、状态、数据范围与功能权限树；项目内数据范围仍由项目成员关系控制。</p>
+                </div>
+                <div className="page-head__actions">
+                  <a className="yc-button yc-button-secondary" href={buildSystemPermissionsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemPermissionsPath({ owner: route.owner }), '正在打开权限目录。')}>全部权限点</a>
+                </div>
+              </div>
               <section className="role-workbench">
               <aside className="shell-card role-workbench-sidebar" aria-label="角色列表">
               <div className="shell-panel-header"><div><h2>角色列表</h2><p className="shell-muted">选择左侧角色后，在右侧直接维护权限树。</p></div>{systemRolesView?.can_manage_roles ? <Button onClick={() => { setSystemRoleError(''); setSystemRoleCreateOpen(true); }}>新建角色</Button> : null}</div>
@@ -6338,12 +6374,16 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'system-users' ? (
             <section className="page-stack system-users-page" aria-labelledby="system-users-title">
-              <header className="page-hero">
-                <div><p className="eyebrow">系统管理</p><h1 id="system-users-title" ref={headingRef} tabIndex={-1}>用户管理</h1><p>维护登录账号、基础资料和系统角色绑定。</p></div>
-                {systemUsersView?.can_manage_users ? <Button onClick={() => { setSystemUserError(''); setSystemUserCreateForm((current) => ({ ...current, roleCode: current.roleCode || systemUsersView.roles.find((role) => role.status === 'active')?.role_code || '' })); setSystemUserCreateOpen(true); }}>新建用户</Button> : null}
-              </header>
-              <section className="shell-card system-users-panel" aria-labelledby="system-users-list-title">
-              <div className="shell-panel-header"><div><h2 id="system-users-list-title">用户列表</h2><p className="shell-muted">按创建时间倒序排列。</p></div></div>
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="system-users-title" ref={headingRef} tabIndex={-1}>用户管理</h1>
+                  <p className="page-head__desc">维护登录账号、基础资料和系统角色绑定。</p>
+                </div>
+                <div className="page-head__actions">
+                  {systemUsersView?.can_manage_users ? <Button onClick={() => { setSystemUserError(''); setSystemUserCreateForm((current) => ({ ...current, roleCode: current.roleCode || systemUsersView.roles.find((role) => role.status === 'active')?.role_code || '' })); setSystemUserCreateOpen(true); }}>新建用户</Button> : null}
+                </div>
+              </div>
+              <Panel title="用户列表" description={`共 ${systemUsersView?.pagination.total_items || 0} 个账号 · 按创建时间倒序排列`} ariaLabel="系统用户列表" flush>
               {systemUserError && !systemUserCreateOpen && !systemUserAction ? <Feedback tone="danger" title="用户操作失败">{systemUserError}</Feedback> : null}
               <DataTable
                 caption="系统用户列表"
@@ -6376,7 +6416,7 @@ export function SharedApp({ services }) {
                 onPageSizeChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}
                 onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)}
               /> : null}
-              </section>
+              </Panel>
               <Modal open={systemUserCreateOpen} title="新建用户" onClose={closeSystemUserCreate} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserCreate}>取消</Button><Button loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
                 <form id="system-user-create-form" onSubmit={submitSystemUserCreate}>
                   {systemUserError ? <Feedback tone="danger" title="创建失败">{systemUserError}</Feedback> : null}

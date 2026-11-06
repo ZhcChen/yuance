@@ -189,7 +189,9 @@
   **结果：搜索页改为页头 + 搜索条件面板 + 按类型分组的结果面板；范围筛选依赖后端字段，本轮未新增。**
 - [x] T023 FR-006 [US1] 个人中心：信息分组与偏好设置。
   **结果：个人中心改为页头 + 指标磁贴 + 账号信息面板 + 我的项目面板；偏好设置因生产无对应能力未实现。**
-- [ ] T024 FR-006 [US1] 系统管理各子页：总览、用户、角色权限、权限目录、对象存储、审计日志、发布记录、数据库统计。
+- [x] T024 FR-006 [US1] 系统管理各子页：总览、用户、角色权限、权限目录、对象存储、审计日志、发布记录、数据库统计。
+  **结果：用户、角色、权限、审计、数据库统计、OpenAPI 与版本管理各页统一改为页头 + 面板结构；
+  总览与对象存储保留生产已有的入口卡与配置工作台。**
 - [ ] T025 FR-011 [US4] 逐页同步 `frontend/parity/main-web-visual-contract.json` 的
   `regionOrder` / `stableAnchors` / `geometryAnchors` / `computedStyleProperties` / `responsiveExpectations`，
   以及 `frontend/parity/experience-manifest.json` 同 `id` 条目的 `evidence` 与 `responsiveStates`。

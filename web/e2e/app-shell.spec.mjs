@@ -2848,7 +2848,7 @@ test('system users preserves the main responsive geometry', async ({ page }) => 
     await page.setViewportSize(viewport);
     const geometry = await page.locator('.system-users-page').evaluate((element) => {
       const main = element.closest('.main');
-      const hero = element.querySelector('.page-hero');
+      const hero = element.querySelector('.page-head');
       const tableWrap = element.querySelector('.yc-table-wrap');
       return {
         mainWidth: main.clientWidth,
