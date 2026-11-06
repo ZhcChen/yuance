@@ -59,11 +59,14 @@
 | 生产构建 | `npm --prefix web run build` | 通过 |
 | API 测试 | `cargo test -p yuance-api` | 通过 |
 | 视觉护栏 | `npm --prefix web run test:visual` | 结构层 5/5、像素层 4/4 通过 |
-| 全量 e2e | `npx playwright test`（干净数据库） | 见下 |
+| 全量 e2e | `npx playwright test`（干净数据库） | 96 通过 / 27 失败 / 4 跳过 |
+| 构建 | `make web-build` | 通过 |
+| 全量检查 | `make frontend-check` | web 与 frontend 各包全部通过；desktop 段因 `desktop/node_modules` 为空缺少 `tsc` 无法执行（既有环境问题） |
 
 ### e2e 失败集合说明
 
-阶段结束时仍然失败的用例全部属于回迁前就存在的问题，逐条归因见各页复核记录：
+阶段结束时仍然失败的 27 条全部属于回迁前就存在的问题（回迁前基线为 28 条失败），
+失败集合是基线的子集，没有引入新回归，逐条归因见各页复核记录：
 
 1. 工作项详情弹窗里的原生 `select` 被判定为不可见（回迁前基线同样失败）。
 2. 断言引用了代码里已经不存在的旧结构（陈旧用例）。

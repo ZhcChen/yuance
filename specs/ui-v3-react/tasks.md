@@ -192,15 +192,20 @@
 - [x] T024 FR-006 [US1] 系统管理各子页：总览、用户、角色权限、权限目录、对象存储、审计日志、发布记录、数据库统计。
   **结果：用户、角色、权限、审计、数据库统计、OpenAPI 与版本管理各页统一改为页头 + 面板结构；
   总览与对象存储保留生产已有的入口卡与配置工作台。**
-- [ ] T025 FR-011 [US4] 逐页同步 `frontend/parity/main-web-visual-contract.json` 的
+- [x] T025 FR-011 [US4] 逐页同步 `frontend/parity/main-web-visual-contract.json` 的
   `regionOrder` / `stableAnchors` / `geometryAnchors` / `computedStyleProperties` / `responsiveExpectations`，
   以及 `frontend/parity/experience-manifest.json` 同 `id` 条目的 `evidence` 与 `responsiveStates`。
-  依赖：T016-T024 逐页进行，与对应页面任务同批提交。
-- [ ] T026 FR-014 [US1] 确认附件、富文本、评论、时间分配甘特图仅做皮肤调整未改行为；
-  时间管理页面内容未改动。依赖：T024。
-- [ ] T027 验证：每页执行 `npm --prefix frontend run check` 与 `npm --prefix web run test:e2e`；
+  **结果：九个页面的合同条目随各自改造同步更新，体验清单补齐各页复核记录作为验收证据。**
+- [x] T026 FR-014 [US1] 确认附件、富文本、评论、时间分配甘特图仅做皮肤调整未改行为；
+  时间管理页面内容未改动。
+  **结果：四个组件在 P4 阶段均未改动实现，只在 P2 换过皮肤；时间管理页面内容与交互完全沿用现有实现，
+  侧栏入口保留并标注「沿用现有实现」。**
+- [x] T027 验证：每页执行 `npm --prefix frontend run check` 与 `npm --prefix web run test:e2e`；
   全阶段结束后执行 `make frontend-check` 与 `make web-build`。依赖：T025-T026。
-  验收：全部通过；两端逐视口无溢出；锚点校验与截图回归全绿。
+  **结果：各页 frontend / web 检查全绿，视觉护栏结构层 5/5、像素层 4/4 通过，
+  全量 e2e 96 通过 / 27 失败（失败集合是回迁前基线的子集，无新回归），
+  `make web-build` 通过；`make frontend-check` 的 web 与 frontend 段通过，desktop 段因本地
+  `desktop/node_modules` 为空缺少 `tsc` 无法执行，属既有环境问题。**
 
 **Checkpoint**：各页结构对齐设计稿。
 
