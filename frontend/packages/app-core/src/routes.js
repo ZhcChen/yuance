@@ -24,6 +24,7 @@ const WORK_ITEM_ROUTE_META = {
   },
 };
 
+/** @returns {'app' | 'web'} */
 function normalizeOwner(pathname) {
   return pathname.startsWith('/web/app') ? 'app' : 'web';
 }

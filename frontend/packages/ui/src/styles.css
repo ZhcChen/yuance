@@ -429,6 +429,7 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 @keyframes yc-toast-enter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
 .yc-badge { min-height: 22px; display: inline-flex; align-items: center; gap: var(--yc-sp-4); padding: 0 var(--yc-sp-8); border: 1px solid var(--yc-neutral-line); border-radius: var(--yc-radius-xs); background: var(--yc-neutral-soft); color: var(--yc-neutral-text); font-size: var(--yc-fs-12); font-weight: var(--yc-fw-medium); line-height: 1; white-space: nowrap; }
+.yc-badge-brand { border-color: var(--yc-brand-line); background: var(--yc-brand-soft); color: var(--yc-brand-strong); }
 .yc-badge-info { border-color: var(--yc-brand-line); background: var(--yc-brand-soft); color: var(--yc-brand-strong); }
 .yc-badge-success { border-color: var(--yc-success-line); background: var(--yc-success-soft); color: var(--yc-success-text); }
 .yc-badge-warning { border-color: var(--yc-warning-line); background: var(--yc-warning-soft); color: var(--yc-warning-text); }

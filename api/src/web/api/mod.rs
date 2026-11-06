@@ -336,6 +336,7 @@ pub struct WorkItemPayload {
     pub project_key: String,
     pub project_name: String,
     pub assignee: String,
+    pub due_date: String,
     pub updated_at: String,
 }
 
@@ -361,6 +362,7 @@ pub struct WorkItemListSummaryPayload {
     pub total_items: i64,
     pub active_items: i64,
     pub high_priority_items: i64,
+    pub completed_items: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -3761,6 +3763,7 @@ pub async fn get_work_item_list_view(
             total_items: stats.total_items,
             active_items: stats.active_items,
             high_priority_items: stats.high_priority_items,
+            completed_items: stats.completed_items,
         },
         filters: work_item_list_filter_payload(item_type, filter),
         assignees: members
@@ -9747,6 +9750,7 @@ fn work_item_payload(item: projects::WorkItemSummary) -> WorkItemPayload {
         project_key: item.project_key,
         project_name: item.project_name,
         assignee: item.assignee_display_name,
+        due_date: item.due_date,
         updated_at: item.updated_at,
     }
 }

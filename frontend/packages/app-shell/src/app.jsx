@@ -175,8 +175,12 @@ import { AppShellSkeleton, ProjectResourceDetailSkeleton } from './app-skeleton.
  * @property {string} name
  * @property {string} status
  * @property {string} owner
+ * @property {string} owner_username
  * @property {number} work_item_count
  * @property {number} active_work_item_count
+ * @property {number} pending_requirements
+ * @property {number} pending_tasks
+ * @property {number} pending_bugs
  * @property {string} updated_at
  */
 
@@ -324,6 +328,7 @@ import { AppShellSkeleton, ProjectResourceDetailSkeleton } from './app-skeleton.
  * @property {string} project_key
  * @property {string} project_name
  * @property {string} assignee
+ * @property {string} due_date
  * @property {string} updated_at
  */
 
@@ -331,7 +336,7 @@ import { AppShellSkeleton, ProjectResourceDetailSkeleton } from './app-skeleton.
  * @typedef AppWorkItemPage
  * @property {AppWorkItem[]} items
  * @property {{ page: number, per_page: number, total_items: number, total_pages: number }} pagination
- * @property {{ total_items: number, active_items: number, high_priority_items: number }} summary
+ * @property {{ total_items: number, active_items: number, high_priority_items: number, completed_items: number }} summary
  * @property {{ item_type: string, q: string, status: string, priority: string, project_key: string, assignee_username: string, cycle_id: string, sort: string }} filters
  * @property {{ username: string, display_name: string }[]} assignees
  * @property {{ id: number, name: string, is_closed: boolean }[]} cycles
@@ -561,6 +566,25 @@ function dashboardProjectStatus(status) {
 
 function dashboardTimestamp(value) {
   return formatBusinessTimestamp(value);
+}
+
+/**
+ * 工作项列表：把当前筛选条件整理成一句可读的摘要。
+ *
+ * @param {{ q?: string, status?: string, priority?: string, assignee_username?: string, cycle_id?: string } | null | undefined} filters
+ * @param {{ q?: string, status?: string, priority?: string, assigneeUsername?: string, cycleId?: number | null } | null | undefined} route
+ */
+function workItemFilterSummary(filters, route) {
+  const status = filters?.status || route?.status || '';
+  const parts = [];
+  const keyword = filters?.q || route?.q || '';
+  if (keyword) parts.push(`关键词：${keyword}`);
+  if (status) parts.push(`状态：${status === 'pending' ? '待处理 / 进行中 / 待确认' : workItemStatusLabel(status)}`);
+  const priority = filters?.priority || route?.priority || '';
+  if (priority) parts.push(`优先级：${priority.toUpperCase()}`);
+  if (filters?.assignee_username) parts.push(`处理人：${filters.assignee_username}`);
+  if (filters?.cycle_id) parts.push(`周期：${filters.cycle_id}`);
+  return parts.length ? parts.join(' · ') : '未设置筛选条件';
 }
 
 /**
@@ -2109,13 +2133,11 @@ export function SharedApp({ services }) {
   }
 
   /**
-   * @param {string} path
-   * @param {string} [nextStatusMessage]
-   * @param {boolean} [replace]
+   * @param {import('react').FormEvent<HTMLFormElement>} event
    */
   function submitProjectSearch(event) {
     event.preventDefault();
-    const form = /** @type {HTMLFormElement | null} */ (event.currentTarget);
+    const form = event.currentTarget;
     const keyword = String(new FormData(form).get('q') || '').trim();
     navigate(
       buildProjectsPath({ owner: route.owner, status: projectRoute?.status || '', q: keyword, page: 1, perPage: projectRoute?.perPage }),
@@ -6787,24 +6809,25 @@ export function SharedApp({ services }) {
             </section>
           ) : isWorkItemListRouteId(route.id) ? (
             <section className="page-stack work-item-list-page" aria-labelledby="work-item-center-title">
-              {workItemPage ? <section className="metric-grid compact-metrics work-item-list-metrics" aria-label="工作项概览">{[
-                ['全部', workItemPage.summary.total_items, 'info', 'projects'],
-                ['待处理 / 进行中 / 待确认', workItemPage.summary.active_items, 'warning', 'tasks'],
-                ['高优先级', workItemPage.summary.high_priority_items, 'danger', 'bug'],
-              ].map(([label, value, tone, icon]) => <article className={`metric metric-${tone}`} key={label}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section> : null}
-              <section className="panel work-list-panel">
-              <div className="panel-head work-item-center-header">
-                <div>
-                  <h1 id="work-item-center-title" ref={headingRef} tabIndex={-1}>{workItemTypeLabel(route.itemType)}列表</h1>
-                  <p>当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}，支持按关键词、状态、优先级和处理人筛选。</p>
+              <div className="page-head">
+                <div className="page-head__text">
+                  <h1 id="work-item-center-title" ref={headingRef} tabIndex={-1}>{workItemTypeLabel(route.itemType)}</h1>
+                  <p className="page-head__desc">当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}，组合筛选、优先级、负责人和截止日期，以最快速度定位目标{workItemTypeLabel(route.itemType)}。</p>
                 </div>
-                <div className="toolbar-actions">
+                <div className="page-head__actions">
                   {workItemPage?.can_manage_work_items ? <Button disabled={workItemCreateSubmitting} onClick={openWorkItemCreate}>{workItemCreateLabel(route.itemType)}</Button> : null}
                 </div>
               </div>
 
+              {workItemPage ? <section className="metric-grid work-item-list-metrics" aria-label="工作项概览">
+                <Metric label={`全部${workItemTypeLabel(route.itemType)}`} value={workItemPage.summary.total_items} delta={`当前项目 ${currentProject?.key || '未选择'}`} icon={<Icon name="inbox" />} variant="brand" />
+                <Metric label="待处理 / 进行中 / 待确认" value={workItemPage.summary.active_items} delta="未完成工作项" icon={<Icon name="task" />} variant="warning" />
+                <Metric label="高优先级" value={workItemPage.summary.high_priority_items} delta="P0 / P1" icon={<Icon name="alert" />} variant="danger" />
+                <Metric label="已完成" value={workItemPage.summary.completed_items} delta="已完成 / 已验证" icon={<Icon name="check" />} variant="success" />
+              </section> : null}
+
               {workItemPage ? <>
-                <div className="filter-shell"><div className="filter-shell-head"><strong>筛选条件</strong><span>组合条件可快速缩小当前项目中的{workItemTypeLabel(route.itemType)}范围</span></div>
+                <Panel title="筛选条件" description={workItemFilterSummary(workItemPage?.filters, route)}>
 
               <FilterBar key={workItemPage ? JSON.stringify(workItemPage.filters) : route.id} className="work-item-filter-bar" ariaLabel="工作项筛选" onSubmit={submitWorkItemFilters} actions={<><Button type="submit">筛选</Button><Button variant="secondary" onClick={resetWorkItemFilters}>重置</Button></>}>
                 <FilterField id="work-item-filter-keyword" label="关键词"><TextInput name="q" defaultValue={workItemPage?.filters.q ?? route.q} placeholder="标题或编号" /></FilterField>
@@ -6852,8 +6875,9 @@ export function SharedApp({ services }) {
                   </Select>
                 </FilterField>
               </FilterBar>
-              </div></> : null}
+                </Panel>
 
+                <Panel title={`${workItemTypeLabel(route.itemType)}列表`} description={`共 ${workItemPage.pagination.total_items || 0} 条`} flush>
               {workItemPage?.items?.length ? (
                 <>
                   {workItemPage.can_manage_work_items ? <div className="work-item-batch-bar" aria-label="批量操作">
@@ -6872,16 +6896,17 @@ export function SharedApp({ services }) {
                     {workItemSelection.size ? <Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemSelection(new Set())}>清空选择</Button> : null}
                   </div> : null}
                   {workItemBatchError ? <Feedback tone="danger" title="部分工作项未更新">{workItemBatchError}</Feedback> : null}
-                  <div ref={workTableRef} className="yc-table-wrap work-table-wrap yc-overlay-scroll-target"><table className="yc-table work-item-table" aria-label={route.title}><thead><tr>{workItemPage.can_manage_work_items ? <th className="work-table-select"><span className="visually-hidden">选择</span></th> : null}<th>编号</th><th className="work-table-title">标题</th><th>项目</th><th>处理人</th><th>优先级</th><th>状态</th><th className="work-table-actions">操作</th></tr></thead><tbody>{workItemPage.items.map((item) => { const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }); return <tr key={item.key} className="work-item-row">{workItemPage.can_manage_work_items ? <td className="work-table-select"><input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /></td> : null}<td><div className="work-table-key"><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code></div></td><td className="work-table-title"><a className="work-table-title-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>{item.title}</a></td><td className="work-table-muted">{item.project_name || item.project_key}</td><td>{item.assignee || '未分配'}</td><td><PriorityBadge priority={item.priority} /></td><td><Badge tone={workItemStatusTone(item.status)}>{workItemStatusLabel(item.status)}</Badge></td><td className="work-table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>打开详情</a></td></tr>; })}</tbody></table></div>{workTableScrollbar.scrollbar}
+                  <div ref={workTableRef} className="yc-table-wrap work-table-wrap yc-overlay-scroll-target"><table className="yc-table work-item-table" aria-label={route.title}><thead><tr>{workItemPage.can_manage_work_items ? <th className="work-table-select"><span className="visually-hidden">选择</span></th> : null}<th>编号</th><th className="work-table-title">标题</th><th>状态</th><th>优先级</th><th>处理人</th><th>截止</th><th>更新</th><th className="work-table-actions">操作</th></tr></thead><tbody>{workItemPage.items.map((item) => { const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }); return <tr key={item.key} className="work-item-row">{workItemPage.can_manage_work_items ? <td className="work-table-select"><input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /></td> : null}<td><div className="work-table-key"><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code></div></td><td className="work-table-title"><a className="work-table-title-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>{item.title}</a></td><td><StatusPill tone={workItemStatusPillTone(item.status)}>{workItemStatusLabel(item.status)}</StatusPill></td><td><PriorityBadge priority={item.priority} /></td><td>{item.assignee || '未分配'}</td><td className="work-table-muted">{item.due_date || '—'}</td><td className="work-table-muted">{dashboardTimestamp(item.updated_at)}</td><td className="work-table-actions"><a className="yc-button yc-button-secondary yc-button-sm" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>打开详情</a></td></tr>; })}</tbody></table></div>{workTableScrollbar.scrollbar}
 
-                  <Pagination ariaLabel="工作项分页" page={workItemPage.pagination.page} totalPages={workItemPage.pagination.total_pages} totalItems={workItemPage.pagination.total_items} rangeLabel={`当前显示 ${workItemRangeStart}-${workItemRangeEnd}`} pageSize={workItemPage.pagination.per_page} onPageSizeChange={changeWorkItemPageSize} onPageChange={changeWorkItemPage} />
+                  <div className="work-item-list-pager">
+                    <Pagination ariaLabel="工作项分页" page={workItemPage.pagination.page} totalPages={workItemPage.pagination.total_pages} totalItems={workItemPage.pagination.total_items} rangeLabel={`当前显示 ${workItemRangeStart}-${workItemRangeEnd}`} pageSize={workItemPage.pagination.per_page} onPageSizeChange={changeWorkItemPageSize} onPageChange={changeWorkItemPage} />
+                  </div>
                 </>
               ) : (
-                <div className="empty-state work-item-list-empty" role="status">
-                  <strong>暂无{workItemTypeLabel(route.itemType)}</strong>
-                  <span>当前筛选条件下没有匹配项，可以调整筛选条件或重置后查看。</span>
-                </div>
+                <EmptyState icon={<Icon name="inbox" />} title={`暂无${workItemTypeLabel(route.itemType)}`} description="当前筛选条件下没有匹配项，可以调整筛选条件或重置后查看。" />
               )}
+                </Panel>
+              </> : null}
               <Modal open={workItemBatchConfirmOpen} title="确认批量更新" onClose={() => { if (!workItemBatchSubmitting) setWorkItemBatchConfirmOpen(false); }} footer={<><Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemBatchConfirmOpen(false)}>取消</Button><Button loading={workItemBatchSubmitting} onClick={() => void confirmWorkItemBatchUpdate()}>确认更新</Button></>}><p>将对已选择的 {workItemSelection.size} 个工作项执行批量更新。</p><p className="work-item-batch-confirm-target">{workItemBatchChangeSummary(workItemBatchForm.action, workItemBatchForm.value, workItemSelection.size, workItemPage?.assignees || [], workItemPage?.cycles || [])}</p><p>每个工作项独立提交，未成功的项目会保留选择。</p></Modal>
               <Modal wide open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={closeWorkItemCreate} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onClick={closeWorkItemCreate}>{workItemCreateCheckpoint ? '转到详情' : '取消'}</Button><Button loading={workItemCreateSubmitting} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
                 <form id="work-item-create-form" className="work-item-create-form" onSubmit={submitWorkItemCreate}>
@@ -6898,7 +6923,6 @@ export function SharedApp({ services }) {
                 </form>
               </Modal>
               </section>
-            </section>
           ) : route.id === 'work-item-detail' ? (
             <section className="work-item-detail-center" aria-label="工作项详情">
               {activeWorkItemDetail ? (

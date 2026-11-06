@@ -213,7 +213,7 @@ export function ErrorToast({ open, message, onClose }) {
   return <aside className="yc-error-toast" role="alert" aria-live="assertive"><span className="yc-error-toast-mark" aria-hidden="true">!</span><div><strong>操作未完成</strong><p>{message}</p></div><button type="button" aria-label="关闭提示" title="关闭提示" onClick={onClose}>×</button></aside>;
 }
 
-/** @param {{ children?: React.ReactNode, tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' | 'violet' | 'sand' }} props */
+/** @param {{ children?: React.ReactNode, tone?: 'neutral' | 'brand' | 'info' | 'success' | 'warning' | 'danger' | 'violet' | 'sand' }} props */
 export function Badge({ children, tone = 'neutral' }) {
   return <span className={`yc-badge yc-badge-${tone}`}>{children}</span>;
 }
@@ -237,7 +237,7 @@ export function ContentTabs({ children, ariaLabel }) {
   const tabsRef = useRef(/** @type {HTMLElement | null} */ (null));
   // 角标悬在标签右上角，最后一个标签的角标会探出标签条；给标签条留出等宽的右侧余量。
   const hasBadge = React.Children.toArray(children).some(
-    (child) => React.isValidElement(child) && Number(/** @type {{ badge?: number }} */ (child).props?.badge || 0) > 0,
+    (child) => React.isValidElement(child) && Number(/** @type {{ badge?: number }} */ (child.props)?.badge || 0) > 0,
   );
   const scrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: tabsRef, label: ariaLabel, refreshKey: children });
   const hasSyncedRef = useRef(false);

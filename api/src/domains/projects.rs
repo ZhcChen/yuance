@@ -136,6 +136,7 @@ pub struct WorkItemSummary {
     pub project_key: String,
     pub project_name: String,
     pub assignee_display_name: String,
+    pub due_date: String,
     pub updated_at: String,
 }
 
@@ -356,6 +357,7 @@ pub struct WorkItemListStats {
     pub total_items: i64,
     pub active_items: i64,
     pub high_priority_items: i64,
+    pub completed_items: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2530,6 +2532,7 @@ pub async fn list_project_work_items(
             String,
             String,
             String,
+            String,
         ),
     >(
         r#"
@@ -2543,6 +2546,7 @@ pub async fn list_project_work_items(
                 p.project_key,
                 p.name AS project_name,
                 COALESCE(assignee.display_name, '') AS assignee_display_name,
+                COALESCE(wi.due_date, '') AS due_date,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
@@ -2571,6 +2575,7 @@ pub async fn list_project_work_items(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             )| WorkItemSummary {
                 id,
@@ -2582,6 +2587,7 @@ pub async fn list_project_work_items(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             },
         )
@@ -2639,6 +2645,7 @@ pub async fn list_work_item_summaries_filtered_paginated(
                 p.project_key,
                 p.name AS project_name,
                 COALESCE(assignee.display_name, '') AS assignee_display_name,
+                COALESCE(wi.due_date, '') AS due_date,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
@@ -2675,6 +2682,7 @@ pub async fn list_work_item_summaries_filtered_paginated(
             String,
             String,
             String,
+            String,
         ),
     >(AssertSqlSafe(query_sql))
     .bind(&normalized.item_type)
@@ -2702,6 +2710,7 @@ pub async fn list_work_item_summaries_filtered_paginated(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             )| WorkItemSummary {
                 id,
@@ -2713,6 +2722,7 @@ pub async fn list_work_item_summaries_filtered_paginated(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             },
         )
@@ -2792,6 +2802,7 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
                 p.project_key,
                 p.name AS project_name,
                 COALESCE(assignee.display_name, '') AS assignee_display_name,
+                COALESCE(wi.due_date, '') AS due_date,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
@@ -2830,6 +2841,7 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
             String,
             String,
             String,
+            String,
         ),
     >(AssertSqlSafe(query_sql))
     .bind(user_id)
@@ -2858,6 +2870,7 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             )| WorkItemSummary {
                 id,
@@ -2869,6 +2882,7 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             },
         )
@@ -2893,12 +2907,13 @@ pub async fn work_item_list_stats_filtered_for_user(
     }
 
     let normalized = normalize_work_item_filter(filter)?;
-    let row = sqlx::query_as::<_, (i64, i64, i64)>(
+    let row = sqlx::query_as::<_, (i64, i64, i64, i64)>(
         r#"
         SELECT
             COUNT(*) AS total_items,
             COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS active_items,
-            COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items
+            COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items,
+            COALESCE(SUM(CASE WHEN wi.status IN ('done', 'verified') THEN 1 ELSE 0 END), 0) AS completed_items
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
         JOIN project_members pm ON pm.project_id = p.id
@@ -2936,6 +2951,7 @@ pub async fn work_item_list_stats_filtered_for_user(
         total_items: row.0,
         active_items: row.1,
         high_priority_items: row.2,
+        completed_items: row.3,
     })
 }
 
@@ -2948,6 +2964,7 @@ pub async fn list_assigned_work_item_summaries(
         _,
         (
             i64,
+            String,
             String,
             String,
             String,
@@ -2970,6 +2987,7 @@ pub async fn list_assigned_work_item_summaries(
                 p.project_key,
                 p.name AS project_name,
                 COALESCE(u.display_name, '') AS assignee_display_name,
+                COALESCE(wi.due_date, '') AS due_date,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
@@ -2998,6 +3016,7 @@ pub async fn list_assigned_work_item_summaries(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             )| WorkItemSummary {
                 id,
@@ -3009,6 +3028,7 @@ pub async fn list_assigned_work_item_summaries(
                 project_key,
                 project_name,
                 assignee_display_name,
+                due_date,
                 updated_at,
             },
         )
@@ -6875,12 +6895,13 @@ async fn work_item_list_stats_filtered(
     filter: WorkItemListFilter,
 ) -> AppResult<WorkItemListStats> {
     let normalized = normalize_work_item_filter(filter)?;
-    let row = sqlx::query_as::<_, (i64, i64, i64)>(
+    let row = sqlx::query_as::<_, (i64, i64, i64, i64)>(
         r#"
         SELECT
             COUNT(*) AS total_items,
             COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS active_items,
-            COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items
+            COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items,
+            COALESCE(SUM(CASE WHEN wi.status IN ('done', 'verified') THEN 1 ELSE 0 END), 0) AS completed_items
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
         LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
@@ -6915,6 +6936,7 @@ async fn work_item_list_stats_filtered(
         total_items: row.0,
         active_items: row.1,
         high_priority_items: row.2,
+        completed_items: row.3,
     })
 }
 

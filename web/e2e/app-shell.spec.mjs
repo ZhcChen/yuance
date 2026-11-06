@@ -437,7 +437,7 @@ test('app-owner task list can filter and open read-only work item detail', async
 
   await page.goto('/web/app/tasks?q=%E6%A8%A1%E5%9E%8B');
   await expect(page).toHaveURL(/\/web\/app\/tasks\?q=/);
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
 
   const filters = page.locator('.work-item-filter-bar');
@@ -469,7 +469,7 @@ test('formal web work item detail keeps web route ownership', async ({ page }) =
 test('formal web task list keeps web route ownership while filtering', async ({ page }) => {
   await login(page, '/web/tasks?q=%E6%A8%A1%E5%9E%8B');
   await expect(page).toHaveURL(/\/web\/tasks\?q=/);
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
 
   const filters = page.locator('.work-item-filter-bar');
@@ -537,13 +537,13 @@ test('work item lists preserve the main responsive geometry', async ({ page }) =
         return {
           mainWidth: main.clientWidth,
           mainScrollWidth: main.scrollWidth,
-          metricColumns: getComputedStyle(element.querySelector('.work-item-list-metrics')).gridTemplateColumns.split(' ').length,
+          metricColumns: getComputedStyle(element.querySelector('.work-item-list-metrics')).gridTemplateColumns.split(' ').filter((value) => value !== '0px').length,
           filterColumns: getComputedStyle(element.querySelector('.work-item-filter-bar')).gridTemplateColumns.split(' ').length,
           tableContained: tableWrap.scrollWidth >= tableWrap.clientWidth && tableWrap.getBoundingClientRect().right <= main.getBoundingClientRect().right + 1,
         };
       });
       expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-      expect(geometry.metricColumns).toBe(viewport.compact ? 1 : 3);
+      expect(geometry.metricColumns).toBe(viewport.compact ? 1 : viewport.width <= 768 ? 3 : 4);
       expect(geometry.filterColumns).toBe(viewport.compact ? 1 : 7);
       expect(geometry.tableContained).toBe(true);
     }
@@ -683,7 +683,7 @@ test('shared work item lists hide creation when the atomic contract is read only
     await route.fulfill({ response, json: payload });
   });
   await page.goto('/web/app/tasks');
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   await expect(page.getByRole('button', { name: '新建任务' })).toHaveCount(0);
   await expect(page.getByLabel('批量操作')).toHaveCount(0);
   await expect(page.getByLabel(/选择 YCE-TASK/u)).toHaveCount(0);
@@ -701,7 +701,7 @@ test('shared work item lists render a stable empty state for filtered results', 
   });
   await page.goto('/web/app/requirements');
 
-  const emptyState = page.locator('.work-item-list-empty');
+  const emptyState = page.locator('.yc-empty');
   await expect(emptyState).toContainText('暂无需求');
   await expect(emptyState).toContainText('当前筛选条件下没有匹配项');
   await expect.poll(() => emptyState.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(176);
@@ -1332,7 +1332,7 @@ test('work item detail load failure does not expose stale write forms', async ({
   });
 
   await page.locator('.work-item-back').click();
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-1' }).getByRole('link', { name: '打开详情' }).click();
 
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-1$/);
@@ -1383,7 +1383,7 @@ test('work item mutation disables peer form and ignores stale responses after na
 
   await page.getByRole('button', { name: '关闭', exact: true }).click();
   await page.locator('.work-item-back').click();
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-1' }).getByRole('link', { name: '打开详情' }).click();
   await expect(page.getByRole('heading', { level: 1, name: /YCE-TASK-1/ })).toBeVisible();
 
@@ -1431,7 +1431,7 @@ test('work item mutation ignores stale response after re-entering the same item'
 
   await page.getByRole('button', { name: '关闭', exact: true }).click();
   await page.locator('.work-item-back').click();
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-2' }).getByRole('link', { name: '打开详情' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
 
@@ -4850,7 +4850,7 @@ test('project switch serializes repeated input and refreshes the current context
 
 test('global project switch navigates the current work item list to the selected project', async ({ page }) => {
   await login(page, '/web/app/tasks?project_key=YCE');
-  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '任务' })).toBeVisible();
   let switched = false;
 
   await page.route('**/api/v1/current-project', async (route) => {

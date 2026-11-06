@@ -61,6 +61,7 @@ test('parseAppRoute supports projects route and owner-aware builders', () => {
       pathname: '/web/app/projects',
       search: '?status=on_hold&page=2&per_page=20',
       status: 'on_hold',
+      q: '',
       page: 2,
       perPage: 20,
       title: '项目列表',

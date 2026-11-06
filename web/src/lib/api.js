@@ -19,7 +19,7 @@ export { ApiError };
 /** @typedef {{ id: number, kind: string, title: string, body: string, actor: string, created_at: string, read: boolean, target: NotificationTarget | null }} NotificationItem */
 /** @typedef {{ items: NotificationItem[], unread_count: number, pending_count: number, filter: string, page: number, per_page: number, total_items: number, total_pages: number }} NotificationFeed */
 /** @typedef {{ notification_id: number, read: boolean, target: NotificationTarget | null }} NotificationTargetPayload */
-/** @typedef {{ key: string, item_type: string, title: string, status: string, priority: string, project_key: string, project_name: string, assignee: string, updated_at: string }} WorkItemSummary */
+/** @typedef {{ key: string, item_type: string, title: string, status: string, priority: string, project_key: string, project_name: string, assignee: string, due_date: string, updated_at: string }} WorkItemSummary */
 /** @typedef {{ key: string, item_type: string, title: string, description: string, status: string, priority: string, project_key: string, project_name: string, parent_item_key: string, parent_title: string, assignee_username: string, assignee: string, reporter: string, reporter_username: string, due_date: string, created_at: string, updated_at: string, deleted_at: string }} WorkItemDetail */
 /** @typedef {{ id: number, parent_comment_id: number | null, parent_author: string, body: string, body_format: string, author: string, author_username: string, created_at: string, updated_at: string, is_flow: boolean, is_draft: boolean }} WorkItemComment */
 /** @typedef {{ id: number, filename: string, content_type: string, byte_size: number, status: string, created_by: string, created_at: string }} Attachment */
@@ -90,7 +90,7 @@ export const removeSystemUserProjects = apiClient.removeSystemUserProjects;
 export const removeSystemUserProject = apiClient.removeSystemUserProject;
 export const updateSystemUserProjectRole = apiClient.updateSystemUserProjectRole;
 
-export const getProjects = /** @type {(query?: { status?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
+export const getProjects = /** @type {(query?: { status?: string, q?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, owner_username: string, work_item_count: number, active_work_item_count: number, pending_requirements: number, pending_tasks: number, pending_bugs: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
 export const createProject = apiClient.createProject;
 export const getProject = apiClient.getProject;
 export const getProjectMembers = apiClient.getProjectMembers;
