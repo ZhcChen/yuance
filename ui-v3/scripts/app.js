@@ -7,6 +7,7 @@ import { h, mount, clear, icon } from './ui.js';
 import { route, resolve, navigate } from './router.js';
 import { renderSidebar, renderTopbar, toggleSidebar } from './shell.js';
 import { currentProject } from './mock/data.js';
+import { readTheme, toggleTheme } from './theme.js';
 
 import { renderWorkbench } from './pages/workbench.js';
 import { renderProjects, renderProjectDetail } from './pages/projects.js';
@@ -115,6 +116,9 @@ function renderRoute() {
   document.title = `元策 · ${PAGE_TITLES[matched.pageId] || '工作台'}`;
   toggleSidebar(false);
 }
+
+// 主题：与生产一致，读取本地偏好并在文档根节点标记。
+document.documentElement.setAttribute('data-theme', readTheme());
 
 window.addEventListener('hashchange', renderRoute);
 renderRoute();

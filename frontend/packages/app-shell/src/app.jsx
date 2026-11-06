@@ -569,6 +569,19 @@ function dashboardTimestamp(value) {
 }
 
 /**
+ * 系统账号与角色的状态中文化。
+ *
+ * @param {string} status
+ */
+function systemAccountStatusLabel(status) {
+  if (status === 'active') return '启用';
+  if (status === 'locked') return '已锁定';
+  if (status === 'disabled') return '已停用';
+  if (status === 'inactive') return '未激活';
+  return status;
+}
+
+/**
  * 全局搜索结果类型的中文标签。
  *
  * @param {string} kind
@@ -6357,7 +6370,7 @@ export function SharedApp({ services }) {
               <aside className="shell-card role-workbench-sidebar" aria-label="角色列表">
               <div className="shell-panel-header"><div><h2>角色列表</h2><p className="shell-muted">选择左侧角色后，在右侧直接维护权限树。</p></div>{systemRolesView?.can_manage_roles ? <Button onClick={() => { setSystemRoleError(''); setSystemRoleCreateOpen(true); }}>新建角色</Button> : null}</div>
               {systemRoleError && !systemRoleCreateOpen && !systemRoleStatusTarget ? <Feedback tone="danger" title="角色操作失败">{systemRoleError}</Feedback> : null}
-              {(systemRolesView?.items || []).length ? <div className="role-list">{systemRolesView.items.map((item) => <div className={`role-list-row ${item.role_code === systemRolesView.selected_role?.role_code ? 'active' : ''}`} key={item.role_code}><a className="role-list-item" href={buildSystemRolesPath({ owner: route.owner, role: item.role_code, page: systemRolesView.pagination.page, perPage: systemRolesView.pagination.per_page })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner, role: item.role_code, page: systemRolesView.pagination.page, perPage: systemRolesView.pagination.per_page }), `正在打开${item.role_name}。`)}><span><strong>{item.role_name}</strong><em>{item.role_code}{item.is_system ? ' · 系统内置' : ''}</em></span><span className="role-list-meta"><span className={`status status-${item.status === 'active' ? 'success' : 'muted'}`}>{item.status}</span><span>{item.permission_count} 项</span></span></a>{systemRolesView.can_manage_roles && !item.is_system ? <div className="role-status-action"><Button variant="secondary" disabled={systemRoleSubmitting} onClick={() => { setSystemRoleError(''); setSystemRoleStatusTarget(item); }}>{item.status === 'active' ? '禁用' : '启用'}</Button></div> : null}</div>)}</div> : <Feedback tone="info" title="暂无角色">运行 core seed 后会生成系统角色。</Feedback>}
+              {(systemRolesView?.items || []).length ? <div className="role-list">{systemRolesView.items.map((item) => <div className={`role-list-row ${item.role_code === systemRolesView.selected_role?.role_code ? 'active' : ''}`} key={item.role_code}><a className="role-list-item" href={buildSystemRolesPath({ owner: route.owner, role: item.role_code, page: systemRolesView.pagination.page, perPage: systemRolesView.pagination.per_page })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner, role: item.role_code, page: systemRolesView.pagination.page, perPage: systemRolesView.pagination.per_page }), `正在打开${item.role_name}。`)}><span><strong>{item.role_name}</strong><em>{item.role_code}{item.is_system ? ' · 系统内置' : ''}</em></span><span className="role-list-meta"><span className={`status status-${item.status === 'active' ? 'success' : 'muted'}`}>{systemAccountStatusLabel(item.status)}</span><span>{item.permission_count} 项</span></span></a>{systemRolesView.can_manage_roles && !item.is_system ? <div className="role-status-action"><Button variant="secondary" disabled={systemRoleSubmitting} onClick={() => { setSystemRoleError(''); setSystemRoleStatusTarget(item); }}>{item.status === 'active' ? '禁用' : '启用'}</Button></div> : null}</div>)}</div> : <Feedback tone="info" title="暂无角色">运行 core seed 后会生成系统角色。</Feedback>}
               {systemRolesView ? <div className="shell-panel-header">
                 <Pagination page={systemRolesView.pagination.page} totalPages={systemRolesView.pagination.total_pages} totalItems={systemRolesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemRolesPath({ owner: route.owner, role: systemRolesView.selected_role?.role_code || '', page, perPage: systemRolesView.pagination.per_page }), `正在加载第 ${page} 页角色。`)} />
                 <label className="shell-page-size">每页<select value={systemRolesView.pagination.per_page} onChange={(event) => navigate(buildSystemRolesPath({ owner: route.owner, role: systemRolesView.selected_role?.role_code || '', perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
@@ -6395,7 +6408,7 @@ export function SharedApp({ services }) {
                   { key: 'contact', label: '联系方式', render: (item) => item.email || item.mobile || '未填写' },
                   { key: 'projects', label: '项目', render: (item) => item.is_super_admin ? <div className="user-project-stack"><span className="status status-info">全项目访问</span><span className="shell-muted">无需单独加入项目</span></div> : <div className="user-project-stack"><strong>{item.assigned_projects.length} 个项目</strong>{item.assigned_projects.length ? <div className="user-project-chip-list">{item.assigned_projects.slice(0, 2).map((project) => <span className="user-project-chip" title={`${project.key} · ${project.name}`} key={project.key}>{project.key}</span>)}{item.assigned_projects.length > 2 ? <span className="user-project-chip user-project-chip-muted">+{item.assigned_projects.length - 2}</span> : null}</div> : <span className="shell-muted">暂未加入任何项目</span>}</div> },
                   { key: 'roles', label: '角色', render: (item) => item.role_names || '未分配' },
-                  { key: 'status', label: '状态', render: (item) => <span className={`status status-${item.status === 'active' ? 'success' : item.status === 'locked' ? 'warning' : 'muted'}`}>{item.status}</span> },
+                  { key: 'status', label: '状态', render: (item) => <span className={`status status-${item.status === 'active' ? 'success' : item.status === 'locked' ? 'warning' : 'muted'}`}>{systemAccountStatusLabel(item.status)}</span> },
                   { key: 'updated', label: '更新', render: (item) => formatTimestamp(item.updated_at) },
                   { key: 'actions', label: '操作', render: (item) => systemUsersView?.can_manage_users ? <div className="shell-actions-inline">
                     {systemUsersView.can_manage_user_projects && !item.is_super_admin ? <Button variant="secondary" disabled={systemUserSubmitting} onClick={() => openSystemUserProjects(item)}>项目</Button> : null}

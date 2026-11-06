@@ -5,6 +5,7 @@
 
 import { h, icon, avatar, select } from './ui.js';
 import { currentUser, currentProject, projects, setCurrentProject } from './mock/data.js';
+import { readTheme, toggleTheme } from './theme.js';
 
 /** 现网地址：时间管理沿用现有实现，不在 v3 范围内。 */
 export const LIVE_TIME_MANAGEMENT_URL = 'https://yuance.quanxinfu.com/web/time-management';
@@ -152,6 +153,20 @@ export function renderTopbar(onNavigate) {
       projectSelect,
     ),
     h('span', { class: 'topbar__divider' }),
+    h(
+      'button',
+      {
+        class: 'topbar__icon-btn',
+        type: 'button',
+        'aria-label': '切换深浅色主题',
+        onclick: (event) => {
+          const next = toggleTheme();
+          event.currentTarget.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
+        },
+        'aria-pressed': readTheme() === 'dark' ? 'true' : 'false',
+      },
+      icon('i-theme'),
+    ),
     h(
       'button',
       { class: 'topbar__icon-btn', type: 'button', 'aria-label': '打开消息通知', onclick: () => onNavigate('#/messages') },
