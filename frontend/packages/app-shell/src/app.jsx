@@ -6418,14 +6418,22 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'messages' ? (
             <section className="page-stack messages-page" aria-labelledby="message-center-title" aria-busy={refreshing || messageOpeningId !== null}>
-              <header className="page-heading messages-heading">
-                <div>
-                  <span className="section-kicker">协作通知</span>
+              <div className="page-head">
+                <div className="page-head__text">
                   <h1 id="message-center-title" ref={headingRef} tabIndex={-1}>消息中心</h1>
-                  <p>查看工作项指派、提及和讨论回复，未读消息 {messageFeed?.unread_count || 0} 条，待处理讨论 {pendingCount} 条。</p>
+                  <p className="page-head__desc">优先查看被提及和被回复的最新讨论，未读状态同时用文字与强调色标注。</p>
                 </div>
-                {(messageFeed?.unread_count || 0) > 0 ? <Button variant="secondary" disabled={messageReadAllSubmitting} onClick={handleMarkAllRead}>{messageReadAllSubmitting ? '处理中…' : '全部标为已读'}</Button> : null}
-              </header>
+                <div className="page-head__actions">
+                  {(messageFeed?.unread_count || 0) > 0 ? <Button variant="secondary" disabled={messageReadAllSubmitting} onClick={handleMarkAllRead}>{messageReadAllSubmitting ? '处理中…' : '全部标为已读'}</Button> : null}
+                </div>
+              </div>
+
+              <section className="metric-grid message-metrics" aria-label="消息概览">
+                <Metric label="全部消息" value={messageFeed?.total_items || 0} delta="当前数据范围" icon={<Icon name="inbox" />} variant="brand" />
+                <Metric label="未读消息" value={messageFeed?.unread_count || 0} delta="需要逐条处理" icon={<Icon name="message" />} variant="warning" />
+                <Metric label="待处理讨论" value={pendingCount} delta="指派给我跟进" icon={<Icon name="clock" />} variant="danger" />
+                <Metric label="已读消息" value={messageRoute ? Math.max((messageFeed?.total_items || 0) - (messageFeed?.unread_count || 0), 0) : 0} delta="历史记录" icon={<Icon name="check" />} variant="success" />
+              </section>
 
               {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
 
@@ -6451,6 +6459,7 @@ export function SharedApp({ services }) {
                 ))}
               </ContentTabs>
 
+              <Panel title="消息列表" description={`共 ${messageFeed?.items?.length || 0} 条`} flush>
               {messageFeed?.items?.length ? (
                 <>
                   <ul className="message-list" aria-label={`${filterLabel(messageFilter)}列表`}>
@@ -6468,11 +6477,14 @@ export function SharedApp({ services }) {
                     ))}
                   </ul>
 
-                  <Pagination ariaLabel="消息分页" page={messageFeed.page} totalPages={messageFeed.total_pages} totalItems={messageFeed.total_items} rangeLabel={`当前显示 ${pageRangeStart}-${pageRangeEnd}`} pageSize={messageFeed.per_page} onPageSizeChange={changeMessagePageSize} onPageChange={changeMessagePage} />
+                  <div className="work-item-list-pager">
+                    <Pagination ariaLabel="消息分页" page={messageFeed.page} totalPages={messageFeed.total_pages} totalItems={messageFeed.total_items} rangeLabel={`当前显示 ${pageRangeStart}-${pageRangeEnd}`} pageSize={messageFeed.per_page} onPageSizeChange={changeMessagePageSize} onPageChange={changeMessagePage} />
+                  </div>
                 </>
               ) : (
-                <div className="empty-state message-empty"><strong>{emptyMessageTitle(route)}</strong><span>新的指派、提及和回复会显示在这里。</span></div>
+                <EmptyState icon={<Icon name="inbox" />} title={emptyMessageTitle(route)} description="新的指派、提及和回复会显示在这里。" />
               )}
+              </Panel>
             </section>
           ) : route.id === 'search' ? (
             <section className="page-stack search-page">
