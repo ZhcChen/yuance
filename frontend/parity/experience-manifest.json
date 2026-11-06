@@ -814,6 +814,7 @@
       ],
       "controls": [
         "status-tabs",
+        "project-search",
         "project-list",
         "project-metrics",
         "create-project",

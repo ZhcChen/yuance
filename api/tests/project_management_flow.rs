@@ -1723,6 +1723,7 @@ async fn project_summaries_can_paginate_and_filter_by_status() {
         &pool,
         projects::ProjectListFilter {
             status: "on_hold".to_string(),
+            keyword: String::new(),
         },
         projects::Pagination {
             page: 1,
@@ -1739,6 +1740,66 @@ async fn project_summaries_can_paginate_and_filter_by_status() {
         .collect::<Vec<_>>();
     keys.sort_unstable();
     assert_eq!(keys, ["CRM", "IOT", "TRAIN"]);
+}
+
+#[tokio::test]
+async fn project_summaries_can_filter_by_keyword() {
+    let pool = test_pool().await;
+    let owner_user_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, owner_user_id)
+        .await
+        .expect("demo seed should apply");
+
+    let by_name = projects::list_project_summaries_paginated(
+        &pool,
+        projects::ProjectListFilter {
+            status: String::new(),
+            keyword: "运维".to_string(),
+        },
+        projects::Pagination {
+            page: 1,
+            per_page: 10,
+        },
+    )
+    .await
+    .expect("keyword filtered project page should load");
+    assert!(by_name.total_items >= 1);
+    assert!(by_name
+        .items
+        .iter()
+        .all(|project| project.name.contains("运维") || project.project_key.contains("运维")));
+
+    let by_key = projects::list_project_summaries_paginated(
+        &pool,
+        projects::ProjectListFilter {
+            status: String::new(),
+            keyword: "YCE".to_string(),
+        },
+        projects::Pagination {
+            page: 1,
+            per_page: 10,
+        },
+    )
+    .await
+    .expect("project key filtered page should load");
+    assert_eq!(by_key.total_items, 1);
+    assert_eq!(by_key.items[0].project_key, "YCE");
+
+    let combined = projects::list_project_summaries_paginated(
+        &pool,
+        projects::ProjectListFilter {
+            status: "in_progress".to_string(),
+            keyword: "YCE".to_string(),
+        },
+        projects::Pagination {
+            page: 1,
+            per_page: 10,
+        },
+    )
+    .await
+    .expect("combined filtered page should load");
+    assert_eq!(combined.total_items, 1);
+    assert_eq!(combined.items[0].project_key, "YCE");
 }
 
 #[tokio::test]

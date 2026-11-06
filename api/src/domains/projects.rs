@@ -49,6 +49,7 @@ pub struct ProjectSummary {
     pub name: String,
     pub status: String,
     pub owner_display_name: String,
+    pub owner_username: String,
     pub work_item_count: i64,
     pub active_work_item_count: i64,
     pub updated_at: String,
@@ -328,11 +329,14 @@ pub struct CreateWorkItemInput {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectListFilter {
     pub status: String,
+    pub keyword: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NormalizedProjectFilter {
     status: String,
+    keyword: String,
+    keyword_like: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -503,7 +507,7 @@ pub async fn list_project_summaries_paginated(
     let normalized = normalize_project_filter(filter)?;
     let pagination = normalize_pagination(pagination)?;
     let total_items = count_project_summaries(pool, &normalized).await?;
-    let rows = sqlx::query_as::<_, (i64, String, String, String, String, i64, i64, String)>(
+    let rows = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, i64, String)>(
         r#"
         SELECT
             p.id,
@@ -511,6 +515,7 @@ pub async fn list_project_summaries_paginated(
             p.name,
             p.status,
             COALESCE(u.display_name, '') AS owner_display_name,
+            COALESCE(u.username, '') AS owner_username,
             COUNT(wi.id) AS work_item_count,
             COALESCE(SUM(CASE
                 WHEN wi.id IS NOT NULL
@@ -524,6 +529,7 @@ pub async fn list_project_summaries_paginated(
         LEFT JOIN work_items wi ON wi.project_id = p.id
             AND wi.deleted_at IS NULL
         WHERE (?1 = '' OR p.status = ?1)
+          AND (?4 = '' OR p.name LIKE ?4 OR p.project_key LIKE ?4)
         GROUP BY p.id
         ORDER BY p.updated_at DESC, p.id DESC
         LIMIT ?2 OFFSET ?3
@@ -532,6 +538,7 @@ pub async fn list_project_summaries_paginated(
     .bind(&normalized.status)
     .bind(pagination.per_page)
     .bind(pagination.offset())
+    .bind(&normalized.keyword_like)
     .fetch_all(pool)
     .await?;
 
@@ -544,6 +551,7 @@ pub async fn list_project_summaries_paginated(
                 name,
                 status,
                 owner_display_name,
+                owner_username,
                 work_item_count,
                 active_work_item_count,
                 updated_at,
@@ -553,6 +561,7 @@ pub async fn list_project_summaries_paginated(
                 name,
                 status,
                 owner_display_name,
+                owner_username,
                 work_item_count,
                 active_work_item_count,
                 updated_at,
@@ -601,7 +610,7 @@ pub async fn list_project_summaries_for_user_paginated(
     let normalized = normalize_project_filter(filter)?;
     let pagination = normalize_pagination(pagination)?;
     let total_items = count_project_summaries_for_user(pool, user_id, &normalized).await?;
-    let rows = sqlx::query_as::<_, (i64, String, String, String, String, i64, i64, String)>(
+    let rows = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, i64, String)>(
         r#"
         SELECT
             p.id,
@@ -609,6 +618,7 @@ pub async fn list_project_summaries_for_user_paginated(
             p.name,
             p.status,
             COALESCE(u.display_name, '') AS owner_display_name,
+            COALESCE(u.username, '') AS owner_username,
             COUNT(wi.id) AS work_item_count,
             COALESCE(SUM(CASE
                 WHEN wi.id IS NOT NULL
@@ -645,6 +655,7 @@ pub async fn list_project_summaries_for_user_paginated(
                 name,
                 status,
                 owner_display_name,
+                owner_username,
                 work_item_count,
                 active_work_item_count,
                 updated_at,
@@ -654,6 +665,7 @@ pub async fn list_project_summaries_for_user_paginated(
                 name,
                 status,
                 owner_display_name,
+                owner_username,
                 work_item_count,
                 active_work_item_count,
                 updated_at,
@@ -6698,8 +6710,18 @@ fn normalize_project_filter(filter: ProjectListFilter) -> AppResult<NormalizedPr
         "" => String::new(),
         value => validate_project_status(value)?.to_string(),
     };
+    let keyword = validate_optional_text(&filter.keyword, "项目关键词", 120)?;
+    let keyword_like = if keyword.is_empty() {
+        String::new()
+    } else {
+        format!("%{}%", keyword)
+    };
 
-    Ok(NormalizedProjectFilter { status })
+    Ok(NormalizedProjectFilter {
+        status,
+        keyword,
+        keyword_like,
+    })
 }
 
 fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<NormalizedWorkItemFilter> {
@@ -6779,9 +6801,11 @@ async fn count_project_summaries(
         SELECT COUNT(*)
         FROM projects p
         WHERE (?1 = '' OR p.status = ?1)
+          AND (?2 = '' OR p.name LIKE ?2 OR p.project_key LIKE ?2)
         "#,
     )
     .bind(&normalized.status)
+    .bind(&normalized.keyword_like)
     .fetch_one(pool)
     .await?)
 }
@@ -6798,10 +6822,12 @@ async fn count_project_summaries_for_user(
         JOIN project_members pm ON pm.project_id = p.id
             AND pm.user_id = ?1
         WHERE (?2 = '' OR p.status = ?2)
+          AND (?3 = '' OR p.name LIKE ?3 OR p.project_key LIKE ?3)
         "#,
     )
     .bind(user_id)
     .bind(&normalized.status)
+    .bind(&normalized.keyword_like)
     .fetch_one(pool)
     .await?)
 }

@@ -251,7 +251,7 @@ button:disabled {
 @media (max-width: 1100px) { .system-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .system-grid { grid-template-columns: 1fr; } }
 
-.page-stack { display: grid; gap: 16px; }
+.page-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .page-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px; border-radius: var(--yc-card-radius); background: var(--yc-panel); box-shadow: var(--yc-card-shadow); }
 .page-hero h1 { margin: 2px 0 6px; font-size: 24px; line-height: 30px; letter-spacing: 0; }
 .page-hero p { margin: 0; color: var(--yc-muted); line-height: 22px; }
@@ -1157,7 +1157,7 @@ html[data-theme="dark"] .project-stats div {
   color: var(--yc-text);
 }
 
-.page-stack { min-width: 0; display: grid; gap: 16px; }
+.page-stack { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .time-management-page > .shell-card { min-width: 0; width: 100%; }
 .time-management-changes-modal-body { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
 .time-management-changes-list { min-height: 0; display: grid; gap: 10px; }
@@ -1233,22 +1233,36 @@ html[data-theme="dark"] .project-stats div {
 .token-panel-actions > span { color: var(--yc-muted); font-size: 12px; white-space: nowrap; }
 .api-token-panel { overflow: hidden; }
 .profile-security-panel { overflow: hidden; }
-.project-list-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.project-list-metrics { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--yc-sp-16); }
 .project-list-panel { overflow: hidden; }
 .project-list-panel > .panel-head { align-items: center; }
 .project-list-panel > .panel-head .yc-content-tabs { flex: 0 1 auto; }
-.project-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 16px; }
-.project-card { min-width: 0; min-height: 190px; display: grid; align-content: space-between; gap: 13px; padding: 16px; border: 0; border-radius: var(--yc-card-radius); background: var(--yc-panel); color: var(--yc-text); box-shadow: 0 8px 22px rgb(22 34 50 / 6%), 0 1px 5px rgb(22 34 50 / 4%); }
-.project-card:hover { background: var(--yc-panel-soft); box-shadow: var(--yc-card-shadow); }
-.project-card-topline, .project-card-stats { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.project-card-title { overflow: hidden; color: var(--yc-text); font-size: 17px; font-weight: 800; line-height: 24px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+/* 项目卡片：设计稿为「标识 + 名称编号 + 状态 / 待处理拆分 / 负责人与操作」三段 */
+.project-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--yc-sp-16); }
+.project-card { min-width: 0; display: grid; gap: var(--yc-sp-12); padding: var(--yc-sp-16); border: 1px solid var(--yc-line); border-radius: var(--yc-card-radius); background: var(--yc-panel); color: var(--yc-text); box-shadow: var(--yc-shadow-sm); transition: transform var(--yc-motion-base) var(--yc-ease-out), box-shadow var(--yc-motion-base) var(--yc-ease-out); }
+.project-card:hover { transform: translateY(-2px); box-shadow: var(--yc-shadow-md); }
+.project-card.current { border-color: var(--yc-brand-line); background: var(--yc-brand-soft); }
+.project-card-topline { display: flex; align-items: flex-start; gap: var(--yc-sp-10); }
+.project-card-mark { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: var(--yc-radius-md); background: var(--yc-brand-soft); color: var(--yc-brand-strong); font-size: var(--yc-fs-15); font-weight: var(--yc-fw-semibold); }
+.project-card-heading { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.project-card-title { overflow: hidden; color: var(--yc-text); font-size: var(--yc-fs-15); font-weight: var(--yc-fw-semibold); line-height: 22px; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .project-card-title:hover { color: var(--yc-brand); }
-.project-card-meta, .project-card-foot { color: var(--yc-muted); font-size: 13px; line-height: 18px; }
-.project-card-stats { justify-content: flex-start; gap: 26px; padding-top: 2px; }
-.project-card-stats > span { display: grid; gap: 2px; }
-.project-card-stats strong { color: var(--yc-brand); font-size: 22px; line-height: 26px; }
-.project-card-stats em { color: var(--yc-muted); font-size: 12px; font-style: normal; }
-.project-card > .yc-button { justify-self: end; }
+.project-card-key { font-family: var(--yc-font-mono); font-size: var(--yc-fs-11); color: var(--yc-text-tertiary); }
+.project-card-stats { display: flex; align-items: center; gap: var(--yc-sp-8); flex-wrap: wrap; }
+.project-card-total { margin-left: auto; display: inline-flex; align-items: baseline; gap: 4px; }
+.project-card-total strong { color: var(--yc-brand); font-size: var(--yc-fs-18); line-height: 22px; }
+.project-card-total em { color: var(--yc-text-tertiary); font-size: var(--yc-fs-12); font-style: normal; }
+.project-card-foot { display: flex; align-items: center; gap: var(--yc-sp-8); flex-wrap: wrap; color: var(--yc-text-tertiary); font-size: var(--yc-fs-12); line-height: 18px; }
+.project-card-foot .yc-button { margin-left: auto; }
+
+/* 项目列表筛选行：左侧分段筛选，右侧关键词 */
+.projects-filter-row { display: flex; align-items: center; gap: var(--yc-sp-12); flex-wrap: wrap; }
+.scope-group { display: inline-flex; min-width: 0; max-width: 100%; padding: 3px; border: 1px solid var(--yc-line); border-radius: var(--yc-radius-sm); background: var(--yc-surface-3); overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; }
+.scope-group::-webkit-scrollbar { display: none; }
+.scope-tab { flex: none; display: inline-flex; align-items: center; height: 28px; padding: 0 var(--yc-sp-12); border-radius: var(--yc-radius-xs); color: var(--yc-text-secondary); font-size: var(--yc-fs-13); text-decoration: none; white-space: nowrap; }
+.scope-tab:hover { background: var(--yc-surface-hover); color: var(--yc-text-primary); }
+.scope-tab[aria-current="true"] { background: var(--yc-surface); color: var(--yc-text-primary); box-shadow: var(--yc-shadow-xs); font-weight: var(--yc-fw-medium); }
+.projects-search { margin-left: auto; width: min(240px, 100%); }
 .project-detail-meta { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; color: var(--yc-muted); font-size: 12px; }
 .project-detail-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .project-tabs-card { overflow: hidden; border-radius: var(--yc-card-radius); background: var(--yc-panel); box-shadow: var(--yc-card-shadow); }

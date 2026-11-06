@@ -237,12 +237,15 @@ export function buildMessagesPath({ owner = 'web', filter = DEFAULT_FILTER, page
   return query ? `${basePath}?${query}` : basePath;
 }
 
-export function buildProjectsPath({ owner = 'app', status = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+export function buildProjectsPath({ owner = 'app', status = '', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
   const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
   if (typeof status === 'string' && status.trim() && status.trim() !== 'all') {
     params.set('status', status.trim());
+  }
+  if (typeof q === 'string' && q.trim()) {
+    params.set('q', q.trim());
   }
   if (normalizedPage > DEFAULT_PAGE) {
     params.set('page', String(normalizedPage));
@@ -475,6 +478,7 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       pathname,
       search,
       status: (query.get('status') || '').trim(),
+      q: (query.get('q') || '').trim(),
       page,
       perPage,
       title: '项目列表',

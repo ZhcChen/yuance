@@ -3628,6 +3628,22 @@ test('project list can switch current project inside the app shell', async ({ pa
   await expect(page.getByRole('link', { name: 'Bug' })).toHaveAttribute('href', /project_key=OPS/);
 });
 
+test('project list filters projects by keyword from the search field', async ({ page }) => {
+  await login(page, '/web/app/projects');
+
+  const search = page.getByRole('searchbox', { name: '搜索项目' });
+  await expect(search).toBeVisible();
+  await search.fill('运维');
+  await search.press('Enter');
+  await expect(page).toHaveURL(/[?&]q=/u);
+  await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
+  await expect(page.locator('.page-head__desc')).toContainText('关键词「运维」');
+  const cards = page.locator('.project-card');
+  if (await cards.count()) {
+    await expect(cards.first()).toContainText('运维');
+  }
+});
+
 test('project list preserves the main responsive card geometry', async ({ page }) => {
   await login(page, '/web/app/projects');
   for (const viewport of [
@@ -3644,12 +3660,12 @@ test('project list preserves the main responsive card geometry', async ({ page }
       return {
         mainWidth: main.clientWidth,
         mainScrollWidth: main.scrollWidth,
-        metricColumns: getComputedStyle(element.querySelector('.project-list-metrics')).gridTemplateColumns.split(' ').length,
-        cardColumns: getComputedStyle(element.querySelector('.project-card-grid')).gridTemplateColumns.split(' ').length,
+        metricColumns: getComputedStyle(element.querySelector('.project-list-metrics')).gridTemplateColumns.split(' ').filter((value) => value !== '0px').length,
+        cardColumns: getComputedStyle(element.querySelector('.project-card-grid')).gridTemplateColumns.split(' ').filter((value) => value !== '0px').length,
       };
     });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-    expect(geometry.metricColumns).toBe(viewport.width <= 720 ? 1 : 3);
+    expect(geometry.metricColumns).toBe(viewport.width <= 720 ? 1 : viewport.width <= 768 ? 3 : 4);
     expect(geometry.cardColumns).toBe(viewport.columns);
   }
 });

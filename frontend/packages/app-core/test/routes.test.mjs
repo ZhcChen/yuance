@@ -213,6 +213,7 @@ test('parseAppRoute supports projects route and owner-aware builders', () => {
       pathname: '/web/app/projects',
       search: '?status=on_hold&page=2&per_page=20',
       status: 'on_hold',
+      q: '',
       page: 2,
       perPage: 20,
       title: '项目列表',
@@ -221,6 +222,14 @@ test('parseAppRoute supports projects route and owner-aware builders', () => {
   assert.equal(
     buildProjectsPath({ owner: 'app', status: 'on_hold', page: 2, perPage: 20 }),
     '/web/app/projects?status=on_hold&page=2&per_page=20',
+  );
+  assert.equal(
+    buildProjectsPath({ owner: 'app', status: 'in_progress', q: '交付 运维台' }),
+    '/web/app/projects?status=in_progress&q=%E4%BA%A4%E4%BB%98+%E8%BF%90%E7%BB%B4%E5%8F%B0',
+  );
+  assert.equal(
+    parseAppRoute('/web/app/projects', '?q=%E4%BA%A4%E4%BB%98').q,
+    '交付',
   );
   assert.equal(
     buildWorkItemListPath(parseAppRoute('/web/bugs', '?status=pending&assignee_username=admin&project_key=YCE')),

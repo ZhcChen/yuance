@@ -133,8 +133,12 @@ pub struct ProjectPayload {
     pub name: String,
     pub status: String,
     pub owner: String,
+    pub owner_username: String,
     pub work_item_count: i64,
     pub active_work_item_count: i64,
+    pub pending_requirements: i64,
+    pub pending_tasks: i64,
+    pub pending_bugs: i64,
     pub updated_at: String,
 }
 
@@ -142,6 +146,8 @@ pub struct ProjectPayload {
 pub struct ProjectQuery {
     #[serde(default)]
     status: String,
+    #[serde(default)]
+    q: String,
     #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
@@ -624,6 +630,7 @@ pub struct DashboardProjectPayload {
     pub key: String,
     pub name: String,
     pub owner: String,
+    pub owner_username: String,
     pub status: String,
     pub work_item_count: i64,
     pub active_work_item_count: i64,
@@ -2661,6 +2668,7 @@ pub async fn list_projects(
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     let filter = projects::ProjectListFilter {
         status: normalize_api_project_status(&query.status)?,
+        keyword: query.q.trim().to_string(),
     };
     let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
     if token_project_scope.is_some() {
@@ -2695,7 +2703,23 @@ pub async fn list_projects(
     )
     .await?;
     let total_pages = page.total_pages();
-    let items = page.items.into_iter().map(project_payload).collect();
+    let pending_by_project = projects::list_project_pending_counts_for_user(pool, user.id)
+        .await?
+        .into_iter()
+        .map(|counts| (counts.project_id, counts))
+        .collect::<HashMap<_, _>>();
+    let items = page
+        .items
+        .into_iter()
+        .map(|project| {
+            let pending = pending_by_project.get(&project.id).cloned().unwrap_or_default();
+            let mut payload = project_payload(project);
+            payload.pending_requirements = pending.requirements;
+            payload.pending_tasks = pending.tasks;
+            payload.pending_bugs = pending.bugs;
+            payload
+        })
+        .collect();
 
     Ok(json(PaginatedPayload {
         items,
@@ -7008,6 +7032,7 @@ pub async fn get_dashboard(
                 key: project.project_key,
                 name: project.name,
                 owner: fallback_text(project.owner_display_name, "未分配"),
+                owner_username: project.owner_username.clone(),
                 status: project.status,
                 work_item_count: project.work_item_count,
                 active_work_item_count: project.active_work_item_count,
@@ -9658,8 +9683,12 @@ fn project_payload(project: projects::ProjectSummary) -> ProjectPayload {
         name: project.name,
         status: project.status,
         owner: project.owner_display_name,
+        owner_username: project.owner_username,
         work_item_count: project.work_item_count,
         active_work_item_count: project.active_work_item_count,
+        pending_requirements: 0,
+        pending_tasks: 0,
+        pending_bugs: 0,
         updated_at: project.updated_at,
     }
 }

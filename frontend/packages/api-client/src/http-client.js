@@ -26,7 +26,7 @@ import { createTimeManagementClient } from './time-management.js';
 /** @typedef {import('./resources.js').ResourceClient} ResourceClient */
 /** @typedef {import('./system.js').SystemClient & import('./system.js').SystemAuditClient & import('./system.js').SystemApiDocsClient} SystemClient */
 /** @typedef {import('./time-management.js').TimeManagementClient} TimeManagementClient */
-/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & SystemClient & TimeManagementClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
+/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & SystemClient & TimeManagementClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, q?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, owner_username: string, work_item_count: number, active_work_item_count: number, pending_requirements: number, pending_tasks: number, pending_bugs: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**
  * @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies
@@ -52,12 +52,15 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
     },
 
     /**
-     * @param {{ status?: string, page?: number, perPage?: number }} [query]
+     * @param {{ status?: string, q?: string, page?: number, perPage?: number }} [query]
      */
     getProjects(query = {}) {
       const params = new URLSearchParams();
       if (typeof query.status === 'string' && query.status.trim() && query.status.trim() !== 'all') {
         params.set('status', query.status.trim());
+      }
+      if (typeof query.q === 'string' && query.q.trim()) {
+        params.set('q', query.q.trim());
       }
       if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) {
         params.set('page', String(query.page));
