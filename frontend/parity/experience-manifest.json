@@ -555,7 +555,8 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md",
-          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md"
+          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-workbench.md"
         ]
       }
     },
@@ -612,7 +613,8 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md",
-          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md"
+          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-profile.md"
         ]
       }
     },
@@ -730,7 +732,8 @@
           "docs/reviews/2026-08-08-014-web-desktop-u6-message-actions-review.md",
           "docs/reviews/2026-08-08-015-web-desktop-u6-notification-focus-review.md",
           "docs/reviews/2026-08-08-016-web-desktop-u6-formal-message-cutover-review.md",
-          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
+          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-message-center.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -789,7 +792,8 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md",
-          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md"
+          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-search-and-messages.md"
         ]
       }
     },
@@ -847,7 +851,8 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md",
-          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md"
+          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-project-list.md"
         ]
       }
     },
@@ -1056,7 +1061,8 @@
           "docs/reviews/2026-08-07-015-web-desktop-u3-project-resource-inline-attachments-review.md",
           "docs/reviews/2026-08-07-016-web-desktop-u3-project-resource-create-attachments-review.md",
           "docs/reviews/2026-08-07-018-web-desktop-u3-formal-web-cutover-review.md",
-          "docs/reviews/2026-08-07-019-web-desktop-u3-closure-review.md"
+          "docs/reviews/2026-08-07-019-web-desktop-u3-closure-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-resource-pages.md"
         ]
       }
     },
@@ -1178,7 +1184,8 @@
           "docs/reviews/2026-08-07-021-web-desktop-u4-work-item-list-view-review.md",
           "docs/reviews/2026-08-07-024-web-desktop-u4-work-item-batch-review.md",
           "docs/reviews/2026-08-07-025-web-desktop-u4-formal-web-cutover-review.md",
-          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
+          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-work-item-list.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1248,7 +1255,8 @@
           "docs/reviews/2026-08-07-021-web-desktop-u4-work-item-list-view-review.md",
           "docs/reviews/2026-08-07-024-web-desktop-u4-work-item-batch-review.md",
           "docs/reviews/2026-08-07-025-web-desktop-u4-formal-web-cutover-review.md",
-          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
+          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-work-item-list.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1318,7 +1326,8 @@
           "docs/reviews/2026-08-07-021-web-desktop-u4-work-item-list-view-review.md",
           "docs/reviews/2026-08-07-024-web-desktop-u4-work-item-batch-review.md",
           "docs/reviews/2026-08-07-025-web-desktop-u4-formal-web-cutover-review.md",
-          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
+          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-work-item-list.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1406,7 +1415,8 @@
           "docs/reviews/2026-08-08-010-web-desktop-u5-formal-detail-cutover-review.md",
           "docs/reviews/2026-08-08-011-web-desktop-u5-detail-partial-retirement-review.md",
           "docs/reviews/2026-08-08-012-web-desktop-u5-closure-review.md",
-          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
+          "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-work-item-detail.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1474,7 +1484,8 @@
         "reviews": [
           "docs/reviews/2026-08-08-018-web-desktop-u7-system-dashboard-review.md",
           "docs/reviews/2026-08-08-019-web-desktop-u7-system-dashboard-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1551,7 +1562,8 @@
           "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md",
           "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md",
           "docs/reviews/2026-08-08-023-web-desktop-u7-system-users-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1624,7 +1636,8 @@
           "docs/reviews/2026-08-08-024-web-desktop-u7-system-roles-view-review.md",
           "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md",
           "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -1763,7 +1776,8 @@
         "reviews": [
           "docs/reviews/2026-08-08-036-web-desktop-u7-system-permissions-review.md",
           "docs/reviews/2026-08-08-037-web-desktop-u7-system-permissions-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -2022,7 +2036,8 @@
           "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md",
           "docs/reviews/2026-08-08-032-web-desktop-u7-system-release-assets-review.md",
           "docs/reviews/2026-08-08-033-web-desktop-u7-system-releases-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -2096,7 +2111,8 @@
         "reviews": [
           "docs/reviews/2026-08-08-038-web-desktop-u7-system-database-stats-review.md",
           "docs/reviews/2026-08-08-039-web-desktop-u7-system-database-stats-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
@@ -2168,7 +2184,8 @@
         "reviews": [
           "docs/reviews/2026-08-08-040-web-desktop-u7-system-audit-review.md",
           "docs/reviews/2026-08-08-041-web-desktop-u7-system-audit-cutover-review.md",
-          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md",
+          "docs/reviews/2026-11-06-ui-v3-react-p4-system-pages.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs"
       },
