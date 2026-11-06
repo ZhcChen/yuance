@@ -2740,8 +2740,8 @@ test('database stats and audit preserve the main responsive geometry', async ({ 
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
     for (const entry of [
-      { path: '/web/system/database-stats', selector: '.database-stats-panel' },
-      { path: '/web/system/audit', selector: '.audit-panel' },
+      { path: '/web/system/database-stats', selector: '.database-stats-page' },
+      { path: '/web/system/audit', selector: '.audit-page' },
     ]) {
       await page.goto(entry.path);
       const geometry = await page.locator(entry.selector).evaluate((element) => {
