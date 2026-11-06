@@ -3874,17 +3874,17 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(page.locator('.resource-summary-card')).toHaveCount(0);
   await expect(page.locator('.resource-hero')).toHaveCount(0);
   const readerHeader = page.locator('.resource-reader-header');
-  await expect(readerHeader.getByRole('link', { name: '返回资料库' })).toHaveCount(1);
+  await expect(page.locator('.resource-detail-page .breadcrumb').getByRole('link', { name: '返回资料库' })).toHaveCount(1);
   await expect(readerHeader).toContainText('集成');
-  await expect(readerHeader.locator('.resource-reader-meta')).toBeVisible();
-  await expect(readerHeader.locator('.resource-reader-meta')).toContainText('更新于 2026-08-07 16:00');
+  await expect(readerHeader.locator('.page-head__desc')).toBeVisible();
+  await expect(readerHeader.locator('.page-head__desc')).toContainText('更新于 2026-08-07 16:00');
   await expect(readerHeader.getByTitle('北京时间（东八区）')).toBeVisible();
   await expect(page.getByRole('button', { name: '编辑资料' })).toHaveCount(1);
   await expect(page.getByRole('heading', { level: 1, name: '客户端联调参数' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: '更多资料操作' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '重置保险箱密码' })).toBeVisible();
   await expect(page.getByRole('button', { name: '归档资料' })).toBeVisible();
-  await expect(page.locator('.resource-reader-actions button')).toHaveText(['编辑资料', '归档资料', '重置保险箱密码']);
+  await expect(page.locator('.resource-reader-header .page-head__actions button')).toHaveText(['编辑资料', '归档资料', '重置保险箱密码']);
   await expect(page.getByText('正文概览')).toBeVisible();
   const tableOfContents = page.getByRole('navigation', { name: '正文目录' });
   await expect(tableOfContents).toBeVisible();
@@ -3900,19 +3900,18 @@ test('shared project resources filter read and unlock protected details', async 
   expect(publicDetailRequests).toBe(1);
   for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
     await page.setViewportSize(viewport);
-    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const toolbar = element.querySelector('.resource-reader-toolbar'); const context = element.querySelector('.resource-reader-context'); const back = element.querySelector('.resource-reader-back'); const meta = element.querySelector('.resource-reader-meta'); const actions = element.querySelector('.resource-reader-actions'); const backRect = back.getBoundingClientRect(); const metaRect = meta.getBoundingClientRect(); const contextRect = context.getBoundingClientRect(); const actionsRect = actions.getBoundingClientRect(); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, toolbarWidth: toolbar.clientWidth, toolbarScrollWidth: toolbar.scrollWidth, contextWidth: context.clientWidth, contextScrollWidth: context.scrollWidth, backRight: backRect.right, backCenterY: (backRect.top + backRect.bottom) / 2, metaLeft: metaRect.left, metaRight: metaRect.right, metaWidth: meta.clientWidth, metaScrollWidth: meta.scrollWidth, metaCenterY: (metaRect.top + metaRect.bottom) / 2, contextBottom: contextRect.bottom, actionsTop: actionsRect.top, actionsLeft: actionsRect.left, actionsWidth: actions.clientWidth, actionsScrollWidth: actions.scrollWidth, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocScrollbarReservation: toc.offsetWidth - toc.clientWidth, contentScrollbarReservation: content.offsetWidth - content.clientWidth, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const card = element.querySelector('.resource-content-card'); const toc = element.querySelector('.yc-rich-text-toc'); const content = element.querySelector('.yc-rich-text-content'); const contentLayout = element.querySelector('.yc-rich-text-with-toc'); const layout = element.querySelector('.resource-detail-layout'); const aside = element.querySelector('.resource-detail-aside'); const head = element.querySelector('.resource-reader-header'); const actions = element.querySelector('.resource-reader-header .page-head__actions'); const tocIndentation = [...toc.querySelectorAll('li a')].map((link) => Number.parseFloat(getComputedStyle(link).paddingLeft)); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, mainHeight: main.clientHeight, mainScrollHeight: main.scrollHeight, mainBottom: main.getBoundingClientRect().bottom, cardHeight: card.getBoundingClientRect().height, cardBottom: card.getBoundingClientRect().bottom, layoutColumns: getComputedStyle(layout).gridTemplateColumns.split(' ').length, asideWidth: aside.getBoundingClientRect().width, asidePosition: getComputedStyle(aside).position, headWidth: head.clientWidth, headScrollWidth: head.scrollWidth, actionsWidth: actions.clientWidth, actionsScrollWidth: actions.scrollWidth, tocOverflowY: getComputedStyle(toc).overflowY, contentOverflowY: getComputedStyle(content).overflowY, tocScrollbarReservation: toc.offsetWidth - toc.clientWidth, contentScrollbarReservation: content.offsetWidth - content.clientWidth, tocDisplay: getComputedStyle(toc).display, contentColumns: getComputedStyle(contentLayout).gridTemplateColumns.split(' ').length, tocIndentation }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.mainScrollHeight).toBeLessThanOrEqual(geometry.mainHeight);
-    expect(geometry.toolbarScrollWidth, JSON.stringify({ viewport, geometry })).toBeLessThanOrEqual(geometry.toolbarWidth);
-    if (viewport.width <= 640) {
-      expect(geometry.actionsTop).toBeGreaterThanOrEqual(geometry.contextBottom);
+    expect(geometry.headScrollWidth, JSON.stringify({ viewport, geometry })).toBeLessThanOrEqual(geometry.headWidth);
+    expect(geometry.actionsScrollWidth, JSON.stringify({ viewport, geometry })).toBeLessThanOrEqual(geometry.actionsWidth);
+    if (viewport.width <= 1024) {
+      expect(geometry.layoutColumns).toBe(1);
+      expect(geometry.asidePosition).toBe('static');
     } else {
-      expect(geometry.backRight).toBeLessThanOrEqual(geometry.actionsLeft);
-      expect(geometry.metaRight).toBeLessThanOrEqual(geometry.actionsLeft);
-    }
-    if (viewport.width >= 1280) {
-      expect(geometry.metaLeft).toBeGreaterThanOrEqual(geometry.backRight);
-      expect(Math.abs(geometry.metaCenterY - geometry.backCenterY)).toBeLessThanOrEqual(1);
+      expect(geometry.layoutColumns).toBe(2);
+      expect(geometry.asidePosition).toBe('sticky');
+      expect(geometry.asideWidth).toBeCloseTo(300, 0);
     }
     expect(geometry.cardHeight).toBeGreaterThan(0);
     expect(geometry.cardBottom).toBeLessThanOrEqual(geometry.mainBottom + 1);
@@ -4517,7 +4516,7 @@ test('shared project resource mutation ignores a late response after navigation'
     dispatchEvent(new PopStateEvent('popstate'));
   });
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources$/);
-  await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '资料库' })).toBeVisible();
   await expect(page.getByRole('button', { name: '新建资料' })).toBeDisabled();
   releaseUpdate();
   await expect(page.getByRole('button', { name: '新建资料' })).toBeEnabled();

@@ -28,8 +28,9 @@ const narrowViewport = { name: 'narrow', width: 375, height: 812 };
 const allViewports = [...contractViewports, narrowViewport];
 
 /**
- * 共享应用里可直达的页面，与视觉合同条目一一对应。
- * 只覆盖证据模式为 runtime 的页面；boundary 与 no-baseline 页面由服务端单独渲染，不在此处断言。
+ * 共享应用里可直达的页面。
+ * 视觉合同里证据模式为 runtime 的页面一一登记；额外收录的页面同样做横向溢出与标题层级断言，
+ * 只是没有合同锚点。boundary 与 no-baseline 页面由服务端单独渲染，不在此处断言。
  *
  * `prepare` 用于把页面推进到「有数据」状态后再断言锚点：
  * 有些锚点只在该状态下出现（例如数据库统计的大表与工具条要刷新宿主快照后才渲染）。
@@ -42,6 +43,7 @@ const appPages = [
   { id: 'page.project.list', path: '/web/app/projects' },
   { id: 'page.project.detail', path: '/web/app/projects/YCE' },
   { id: 'page.project.personal-analysis', path: '/web/app/projects/YCE/my-analysis' },
+  { id: 'page.project.resource-library', path: '/web/app/projects/YCE/resources' },
   { id: 'page.work-item-list.requirements', path: '/web/app/requirements' },
   { id: 'page.work-item-list.tasks', path: '/web/app/tasks' },
   { id: 'page.work-item-list.bugs', path: '/web/app/bugs' },

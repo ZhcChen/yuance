@@ -569,6 +569,20 @@ function dashboardTimestamp(value) {
 }
 
 /**
+ * 资料库筛选条件：整理成一句可读的摘要。
+ *
+ * @param {{ q: string, category: string, status: string, tag: string }} filters
+ */
+function projectResourceFilterSummary(filters) {
+  const parts = [];
+  if (filters.q) parts.push(`关键词：${filters.q}`);
+  if (filters.category) parts.push(`分类：${projectResourceCategoryLabel(filters.category)}`);
+  if (filters.status) parts.push(`状态：${filters.status === 'archived' ? '已归档' : '生效中'}`);
+  if (filters.tag) parts.push(`标签：${filters.tag}`);
+  return parts.length ? parts.join(' · ') : '未设置筛选条件';
+}
+
+/**
  * 工作项列表：把当前筛选条件整理成一句可读的摘要。
  *
  * @param {{ q?: string, status?: string, priority?: string, assignee_username?: string, cycle_id?: string } | null | undefined} filters
@@ -1433,6 +1447,7 @@ export function SharedApp({ services }) {
     )),
     [projectResourceDetail, projectResourceLocked],
   );
+  const projectResourceRelatedWorkItem = projectResourceDetail?.related_work_item || null;
   const projectPersonalAnalysisRoute = route.id === 'project-personal-analysis' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemSelectionScope = workItemListRoute
@@ -5711,11 +5726,19 @@ export function SharedApp({ services }) {
   );
   const projectResourcesPanel = activeProjectDetail && route.id === 'project-resource-library' ? (
     <>
-      <section className="shell-card project-resource-library-filter-card" aria-label="项目资料筛选">
+      <div className="page-head">
+        <div className="page-head__text">
+          <h1 ref={headingRef} tabIndex={-1}>资料库</h1>
+          <p className="page-head__desc">当前项目「{activeProjectDetail.name}」下的全部资料，可与工作项双向关联。</p>
+        </div>
+        <div className="page-head__actions">
+          {canManageProjectContent ? <Button disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}
+        </div>
+      </div>
+      <Panel title="筛选条件" className="project-resource-library-filter-card" description={projectResourceFilterSummary(projectResourceFilters)} ariaLabel="项目资料筛选">
       <FilterBar className="resource-library-filter-bar" ariaLabel="项目资料筛选" onSubmit={submitProjectResourceFilters} actions={<>
         <Button type="submit" variant="secondary">筛选</Button>
         <Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button>
-        {canManageProjectContent ? <><span className="resource-library-action-divider" aria-hidden="true" /><Button disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button></> : null}
       </>}>
         <FilterField id="project-resource-filter-q" label="关键词"><TextInput value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></FilterField>
         <FilterField id="project-resource-filter-category" label="分类">
@@ -5733,8 +5756,8 @@ export function SharedApp({ services }) {
         </FilterField>
         <FilterField id="project-resource-filter-tag" label="标签"><TextInput value={projectResourceFilters.tag} placeholder="精确匹配标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></FilterField>
       </FilterBar>
-      </section>
-      <section className="shell-card project-resource-library-list-card" aria-label="项目资料列表">
+      </Panel>
+      <Panel title="资料目录" className="project-resource-library-list-card" description={`共 ${projectResourceLibraryRows.length} 份资料`} ariaLabel="项目资料列表" flush>
         {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
         {projectResourceLinkedError ? <Feedback tone="danger" title="来源内容加载失败">{projectResourceLinkedError}</Feedback> : null}
         {projectResourceStatus ? <p className="resource-library-status" aria-live="polite">{projectResourceStatus}</p> : null}
@@ -5825,7 +5848,7 @@ export function SharedApp({ services }) {
           tableClassName="resource-library-table"
           tableWrapClassName="project-resource-library-table-wrap"
         />
-      </section>
+      </Panel>
     </>
   ) : null;
 
@@ -6772,29 +6795,68 @@ export function SharedApp({ services }) {
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {!projectResourceDetail && !projectResourceError ? <ProjectResourceDetailSkeleton /> : null}
               {projectResourceDetail ? <>
-                <header className="resource-reader-header" aria-label="资料信息与操作">
-                  <div className="resource-reader-toolbar">
-                    <div className="resource-reader-context">
-                      <a className="resource-reader-back" aria-label="返回资料库" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>
-                        <span aria-hidden="true">←</span><span>返回资料库</span>
-                      </a>
-                      <div className="resource-reader-meta" aria-label="资料元信息">
-                        <span>{projectResourceCategoryLabel(projectResourceDetail.category)}</span>
-                        {projectResourceDetail.updated_at ? <span title="北京时间（东八区）">更新于 {formatBusinessTimestamp(projectResourceDetail.updated_at, { seconds: false })}</span> : null}
-                        {projectResourceDetail.status === 'archived' ? <Badge tone="neutral">已归档</Badge> : null}
-                      </div>
-                    </div>
-                    <div className="resource-reader-actions">
-                      {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="primary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}
-                      {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档资料</Button> : null}
-                      {user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}
-                    </div>
+                <nav className="breadcrumb" aria-label="面包屑导航">
+                  <a className="resource-reader-back" aria-label="返回资料库" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>
+                    <span aria-hidden="true">←</span>
+                  </a>
+                  <span className="breadcrumb__sep" aria-hidden="true">/</span>
+                  <a href={resourceFallbackPath}>资料库</a>
+                  <span className="breadcrumb__sep" aria-hidden="true">/</span>
+                  <span aria-current="page">{projectResourceDetail.title}</span>
+                </nav>
+                <header className="page-head resource-reader-header" aria-label="资料信息与操作">
+                  <div className="page-head__text">
+                    {projectResourceTitleIsInBody ? (
+                      <p className="page-head__title">
+                        {projectResourceDetail.title}
+                        <Badge tone="violet">{projectResourceCategoryLabel(projectResourceDetail.category)}</Badge>
+                      </p>
+                    ) : (
+                      <h1 className="page-head__title" ref={headingRef} tabIndex={-1}>
+                        {projectResourceDetail.title}
+                        <Badge tone="violet">{projectResourceCategoryLabel(projectResourceDetail.category)}</Badge>
+                      </h1>
+                    )}
+                    <p className="page-head__desc">
+                      {projectResourceDetail.updated_by ? `更新人 ${projectResourceDetail.updated_by}` : '资料库内容'}
+                      {projectResourceDetail.updated_at ? <span title="北京时间（东八区）"> · 更新于 {formatBusinessTimestamp(projectResourceDetail.updated_at, { seconds: false })}</span> : ''}
+                      {projectResourceDetail.status === 'archived' ? ' · 已归档' : ''}
+                    </p>
                   </div>
-                  {!projectResourceTitleIsInBody ? <div className="resource-reader-titlebar"><h1>{projectResourceDetail.title}</h1></div> : null}
+                  <div className="page-head__actions">
+                    {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="primary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑资料</Button> : null}
+                    {canManageProjectContent && projectResourceDetail.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档资料</Button> : null}
+                    {user?.is_super_admin && projectResourceDetail.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting || projectResourceAttachmentUploading} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置保险箱密码</Button> : null}
+                  </div>
                 </header>
-                <section className="project-tabs-card resource-content-card">
+                <div className="resource-detail-layout">
+                <div className="resource-detail-main">
+                <Panel flush className="resource-content-card">
                   {projectResourceLocked ? <OverlayScrollTarget axis="vertical" label="资料访问验证" className="resource-lock-panel"><div className="resource-lock-card"><span className="resource-lock-mark" aria-hidden="true">⌁</span><div><p className="shell-eyebrow">访问验证</p><h2>这条资料已设置访问密码</h2><p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p></div><form className="resource-unlock-form" onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><TextInput type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>验证并查看</Button></form></div></OverlayScrollTarget> : <article className="resource-rich-body discussion-rich-body"><RichTextContent html={projectResourceDetail.body_html || projectResourceDetail.body} format={projectResourceDetail.body_format} onAttachmentActivate={activateProjectResourceInlineAttachment} onFileAttachmentActivate={openProjectResourceFileMenu} resolveAttachmentSource={resolveProjectResourceInlineAttachmentSource} downloadingAttachmentId={projectResourceDownloadingId} showTableOfContents /></article>}
-                </section>
+                </Panel>
+                </div>
+                <aside className="resource-detail-aside" aria-label="资料属性">
+                  <Panel title="关联工作项">
+                    {projectResourceRelatedWorkItem ? (() => {
+                      const relatedPath = routePathForOwner(projectResourceRelatedWorkItem.url, route.owner);
+                      return <a className="work-item-related-item" href={relatedPath} onClick={(event) => handleNavigate(event, relatedPath, `已打开 ${projectResourceRelatedWorkItem.key}。`)}><span className="work-item-related-title">{projectResourceRelatedWorkItem.title}</span><span className="work-item-related-meta">{projectResourceRelatedWorkItem.key}</span></a>;
+                    })() : <p className="shell-muted">这份资料还没有关联工作项。</p>}
+                    {projectResourceDetail.related_cycle ? <p className="shell-muted">所属周期：{projectResourceDetail.related_cycle.name}</p> : null}
+                  </Panel>
+                  <Panel title="资料信息">
+                    <dl className="props">
+                      <dt className="props__label">分类</dt>
+                      <dd>{projectResourceCategoryLabel(projectResourceDetail.category)}</dd>
+                      <dt className="props__label">状态</dt>
+                      <dd><Badge tone={projectResourceDetail.status === 'archived' ? 'neutral' : 'success'}>{projectResourceDetail.status === 'archived' ? '已归档' : '生效中'}</Badge></dd>
+                      <dt className="props__label">标签</dt>
+                      <dd>{projectResourceDetail.tags.length ? projectResourceDetail.tags.join('、') : '—'}</dd>
+                      <dt className="props__label">创建时间</dt>
+                      <dd className="props__muted">{formatBusinessTimestamp(projectResourceDetail.created_at, { seconds: false }) || '未知'}</dd>
+                    </dl>
+                  </Panel>
+                </aside>
+                </div>
                 <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} contentType={projectAttachmentPreview?.attachment?.content_type || ''} loading={projectAttachmentPreview?.loading} downloading={projectResourceDownloadingId !== null && projectAttachmentPreview?.attachment?.id === projectResourceDownloadingId} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectResourceAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectResourceAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
                 <RichAttachmentMenu open={Boolean(projectResourceFileMenu)} title={projectResourceFileMenu?.title || '附件'} x={projectResourceFileMenu?.x || 0} y={projectResourceFileMenu?.y || 0} downloadUrl={projectResourceFileMenu ? appendProjectResourceAccess(projectResourceFileMenu.href) : ''} canPreview={projectResourceFileMenuCanPreview()} onClose={closeProjectResourceFileMenu} onDownload={projectResourceFileMenuDownloadHandler()} onStatus={({ tone, text }) => { if (tone === 'error') setProjectResourceError(text); else setStatusMessage(text); }} />
               </> : null}
