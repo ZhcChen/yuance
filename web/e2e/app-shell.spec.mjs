@@ -510,11 +510,11 @@ test('work item detail preserves the main responsive geometry', async ({ page })
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
     expect(geometry.columns).toBe(viewport.compact ? 1 : 2);
     if (viewport.compact) {
-      expect(geometry.railBeforeContent).toBe(true);
+      expect(geometry.railBeforeContent).toBe(false);
       expect(geometry.railPosition).toBe('static');
     } else {
       expect(geometry.railPosition).toBe('sticky');
-      expect(geometry.railWidth).toBeCloseTo(280, 0);
+      expect(geometry.railWidth).toBeCloseTo(300, 0);
     }
   }
 });
@@ -896,7 +896,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   });
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已推进并指派。');
   await expect(page.getByText('Web handoff 流转记录')).toBeVisible();
-  await expect(page.locator('.work-item-title-tags')).toContainText('待确认');
+  await expect(page.locator('.work-item-properties .props')).toContainText('待确认');
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /任务/ })).toContainText('8');
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
 });
@@ -2581,7 +2581,7 @@ test('app-owner message center opens semantic target inside app shell', async ({
   await expect(page).toHaveURL(/\/web\/app\/work-items\/[^#?]+(#comment-\d+)?$/);
   const appCommentHash = new URL(page.url()).hash;
   if (appCommentHash) await expect(page.locator(appCommentHash)).toBeFocused();
-  await expect(page.locator('.work-item-detail-center').getByRole('heading', { level: 2 })).toBeVisible();
+  await expect(page.locator('.work-item-detail-center').getByRole('heading', { level: 2, name: '描述' })).toBeVisible();
 });
 
 test('shared system dashboard renders the permission-filtered management entry set', async ({ page }) => {

@@ -1620,6 +1620,10 @@ export function SharedApp({ services }) {
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
   });
+  const workItemWorkbenchPath = workItemOwner === 'app' ? '/web/app' : '/web';
+  const workItemProjectPath = activeWorkItemDetail?.project_key
+    ? buildProjectDetailPath({ owner: workItemOwner, projectKey: activeWorkItemDetail.project_key })
+    : detailBackPath;
   const workItemAttachmentSubmitting = workItemAttachmentUploading || workItemCommentAttachmentUploadingId !== null || workItemNewCommentAttachmentUploading;
   const workItemMutationSubmitting = workItemEditSubmitting
     || workItemHandoffSubmitting
@@ -6939,6 +6943,7 @@ export function SharedApp({ services }) {
                     parentOptions={activeWorkItemDetailView?.parent_options || []}
                     priorityOptions={WORK_ITEM_PRIORITY_OPTIONS}
                     statusLabel={workItemStatusLabel}
+                    statusTone={workItemStatusPillTone}
                     mutationBusy={workItemMutationSubmitting || workItemCommentAttachmentDeletingId !== null}
                     editSubmitting={workItemEditSubmitting}
                     handoffSubmitting={workItemHandoffSubmitting}
@@ -6968,6 +6973,9 @@ export function SharedApp({ services }) {
                     onPasteFile={(file, options) => pasteWorkItemPrimaryPostFile(file, options)}
                     backHref={detailBackPath}
                     onOpenBack={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}
+                    workbenchHref={workItemWorkbenchPath}
+                    projectHref={workItemProjectPath}
+                    onNavigate={handleNavigate}
                   >
 
                   <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} strategy={projectAttachmentPreview?.strategy || null} fileType={projectAttachmentPreview?.fileType || null} contentType={projectAttachmentPreview?.attachment?.content_type || ''} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.previousId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); } }} onNext={() => { if (projectAttachmentPreview?.nextId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.nextId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); } }} onDownload={() => { if (projectAttachmentPreview?.attachment) { if (projectAttachmentPreview.commentId) void downloadWorkItemCommentAttachment(projectAttachmentPreview.commentId, projectAttachmentPreview.attachment); else void downloadWorkItemAttachment(projectAttachmentPreview.attachment); } }} onClose={() => void releaseProjectAttachmentPreview()} documentViewer={documentViewer} />

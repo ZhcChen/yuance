@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { RichTextContent, RichTextEditor } from './rich-text.jsx';
-import { Button, Modal, PriorityBadge, Select, TextArea, TextInput } from './primitives.jsx';
+import { Button, Modal, Panel, PriorityBadge, Select, StatusPill, TextArea, TextInput } from './primitives.jsx';
 import { UserAvatar } from './user-avatar.jsx';
 import { formatBusinessTimestamp } from './formatters.js';
 
@@ -42,6 +42,7 @@ import { formatBusinessTimestamp } from './formatters.js';
  *   parentOptions: { key: string, title: string }[],
  *   priorityOptions: string[],
  *   statusLabel: (status: string) => string,
+ *   statusTone?: (status: string) => 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info' | 'violet' | 'teal',
  *   mutationBusy: boolean,
  *   editSubmitting: boolean,
  *   handoffSubmitting: boolean,
@@ -73,6 +74,9 @@ import { formatBusinessTimestamp } from './formatters.js';
  *   onAttachmentActivate?: (attachmentId: number) => void,
  *   backHref: string,
  *   onOpenBack: (event: import('react').MouseEvent<HTMLAnchorElement>) => void,
+ *   workbenchHref?: string,
+ *   projectHref?: string,
+ *   onNavigate?: (event: import('react').MouseEvent<HTMLAnchorElement>, href: string, message: string) => void,
  *   children?: React.ReactNode,
  * }} props
  */
@@ -86,6 +90,7 @@ export function WorkItemDetail({
   parentOptions,
   priorityOptions,
   statusLabel,
+  statusTone,
   mutationBusy,
   editSubmitting,
   handoffSubmitting,
@@ -117,6 +122,9 @@ export function WorkItemDetail({
   onAttachmentActivate,
   backHref,
   onOpenBack,
+  workbenchHref = backHref,
+  projectHref = backHref,
+  onNavigate,
   children,
 }) {
   const [activePanel, setActivePanel] = useState(/** @type {'edit' | 'handoff' | 'history' | null} */ (null));
@@ -125,46 +133,83 @@ export function WorkItemDetail({
   const next = navigation.next;
   const isDeleted = Boolean(item.deleted_at.trim());
   const closePanel = () => setActivePanel(null);
+  const typeLabel = item.item_type === 'requirement' ? '需求' : item.item_type === 'bug' ? 'Bug' : '任务';
   return (
     <section className="work-item-page">
-      <header className="work-item-hero">
-        <a className="work-item-back" href={backHref} onClick={onOpenBack}><span className="work-item-back-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg></span><span>返回 {item.project_name}</span></a>
-        <div className="work-item-title-row">
-          <div><h1 aria-label={`${item.key} · ${item.title}`}><span className="work-kind" data-kind={item.item_type}>{item.item_type === 'requirement' ? '需求' : item.item_type === 'bug' ? 'Bug' : '任务'}</span><span>{item.title}</span><span className="work-item-key">(ID: {item.key})</span></h1></div>
-          <div className="work-item-title-tags"><PriorityBadge priority={item.priority} /><span className={`status status-${item.status}`}>{statusLabel(item.status)}</span></div>
+      <nav className="breadcrumb" aria-label="面包屑导航">
+        <a className="work-item-back" href={backHref} onClick={onOpenBack} aria-label="返回工作项列表">
+          <span className="work-item-back-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></svg></span>
+        </a>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <a href={workbenchHref} onClick={onNavigate ? (event) => onNavigate(event, workbenchHref, '已返回工作台。') : undefined}>工作台</a>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <a href={projectHref} onClick={onNavigate ? (event) => onNavigate(event, projectHref, '已打开项目详情。') : undefined}>{item.project_name}</a>
+        <span className="breadcrumb__sep" aria-hidden="true">/</span>
+        <span aria-current="page">{typeLabel}</span>
+      </nav>
+      <header className="page-head work-item-head">
+        <div className="page-head__text">
+          <h1 className="page-head__title" aria-label={`${item.key} · ${item.title}`}>
+            <span className="work-kind" data-kind={item.item_type}>{typeLabel}</span>
+            <span className="work-item-title-text">{item.title}</span>
+          </h1>
+          <p className="page-head__desc"><code>{item.key}</code> · 更新于 {formatBusinessTimestamp(item.updated_at) || '未知'} · 负责人 {item.assignee || '未分配'}</p>
+        </div>
+        <div className="page-head__actions">
+          {canEditPrimaryPost && !isDeleted ? <Button variant="secondary" onClick={() => setActivePanel('edit')}>编辑内容</Button> : null}
+          {canManageWorkItems && !isDeleted ? <Button onClick={() => setActivePanel('handoff')}>指派 / 流转</Button> : null}
+          {canReopenWorkItem ? <Button variant="secondary" onClick={() => onRequestLifecycleAction('reopen')}>重新打开</Button> : null}
         </div>
       </header>
       {isDeleted ? <section className="work-item-deleted-panel"><div><strong>历史工作项</strong><span>该工作项已于 {formatBusinessTimestamp(item.deleted_at)} 删除，当前仅供审计查看。</span></div>{canRestoreWorkItem ? <Button onClick={() => onRequestLifecycleAction('restore')}>恢复工作项</Button> : null}</section> : null}
       <div className="work-item-layout">
         <main className="work-item-content">
-        <section className="work-item-description" aria-label="详情说明">
-          <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><UserAvatar name={item.reporter || ''} fallback="?" className="work-item-publisher-avatar" /><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {formatBusinessTimestamp(item.updated_at) || '未知'}</span></div>
+        <Panel title="描述" className="work-item-description work-item-description-panel" ariaLabel="详情说明">
+          <div className="work-item-description-head"><div className="work-item-publisher"><UserAvatar name={item.reporter || ''} fallback="?" className="work-item-publisher-avatar" /><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {formatBusinessTimestamp(item.updated_at) || '未知'}</span></div>
           <div className="work-item-description-body">
           <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" resolveAttachmentSource={resolveAttachmentSource} onAttachmentActivate={onAttachmentActivate} />
           </div>
-        </section>
+        </Panel>
         {children}
         {!canManageWorkItems && !isDeleted ? <p className="shell-muted">当前项目权限为只读。</p> : null}
         {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
         </main>
-        <aside className="work-item-action-rail" aria-label="工作项操作"><section className="work-item-action-panel">
-          <div className="action-panel-head"><span className="section-kicker">当前负责人</span><strong>{item.assignee || '未分配'}</strong></div>
-          <nav className="action-panel-sequence-nav" aria-label="工作项前后项导航">
-            {previous ? <a className="yc-button yc-button-secondary" href={buildDetailHref(previous.item_key)} title={previous.title} onClick={(event) => onOpenDetail(event, previous.item_key)}>← 上一个{item.item_type === 'bug' ? ' Bug' : '工作项'}</a> : <span className="yc-button yc-button-secondary disabled">已是第一项</span>}
-            {next ? <a className="yc-button yc-button-secondary" href={buildDetailHref(next.item_key)} title={next.title} onClick={(event) => onOpenDetail(event, next.item_key)}>下一个{item.item_type === 'bug' ? ' Bug' : '工作项'} →</a> : <span className="yc-button yc-button-secondary disabled">已是最后一项</span>}
-          </nav>
-          <div className="action-panel-buttons">
-            {canManageWorkItems && !isDeleted ? <Button onClick={() => setActivePanel('handoff')}>指派 / 流转</Button> : null}
-            {canEditPrimaryPost && !isDeleted ? <Button variant="secondary" onClick={() => setActivePanel('edit')}>编辑内容</Button> : null}
-            {canManageWorkItems && !isDeleted ? <a className="yc-button yc-button-secondary" href="#work-item-comments">发表新评论</a> : null}
-            {resourceLibraryLinked ? <span className="work-item-resource-library-status">已链接到资料库</span> : null}
-            {canManageResourceLibraryLink && !isDeleted ? <Button variant="secondary" disabled={mutationBusy || resourceLibrarySubmitting} onClick={() => setResourceLibraryAction(resourceLibraryLinked ? 'unlink' : 'link')}>{resourceLibraryLinked ? '取消资料库链接' : '链接到资料库'}</Button> : null}
-            <Button variant="secondary" onClick={() => setActivePanel('history')}>查看操作记录</Button>
-            {canCloseWorkItem ? <Button variant="danger" onClick={() => onRequestLifecycleAction('close')}>关闭工作项</Button> : null}
-            {canReopenWorkItem ? <Button variant="secondary" onClick={() => onRequestLifecycleAction('reopen')}>重新打开</Button> : null}
-          </div>
-          <dl className="action-panel-context"><div><dt>报告人</dt><dd>{item.reporter || '未知'}</dd></div>{item.parent_item_key ? <div><dt>父级需求</dt><dd><a href={parentHref} onClick={onOpenParent}>{item.parent_item_key} · {item.parent_title}</a></dd></div> : null}{cycleLabel ? <div><dt>所属周期</dt><dd>{cycleLabel}</dd></div> : null}<div><dt>创建时间</dt><dd>{formatBusinessTimestamp(item.created_at) || '未知'}</dd></div><div><dt>截止日期</dt><dd>{item.due_date || '未设置'}</dd></div></dl>
-        </section></aside>
+        <aside className="work-item-action-rail" aria-label="工作项属性">
+          <Panel title="属性" className="work-item-properties">
+            <dl className="props">
+              <dt className="props__label">状态</dt>
+              <dd><StatusPill tone={statusTone ? statusTone(item.status) : 'neutral'}>{statusLabel(item.status)}</StatusPill></dd>
+              <dt className="props__label">优先级</dt>
+              <dd><PriorityBadge priority={item.priority} /></dd>
+              <dt className="props__label">负责人</dt>
+              <dd>{item.assignee || '未分配'}</dd>
+              <dt className="props__label">报告人</dt>
+              <dd>{item.reporter || '未知'}</dd>
+              <dt className="props__label">所属项目</dt>
+              <dd><a href={projectHref}>{item.project_name}</a></dd>
+              <dt className="props__label">截止日期</dt>
+              <dd>{item.due_date || '未设置'}</dd>
+              <dt className="props__label">创建时间</dt>
+              <dd className="props__muted">{formatBusinessTimestamp(item.created_at) || '未知'}</dd>
+              <dt className="props__label">最近更新</dt>
+              <dd className="props__muted">{formatBusinessTimestamp(item.updated_at) || '未知'}</dd>
+              {cycleLabel ? <><dt className="props__label">所属周期</dt><dd>{cycleLabel}</dd></> : null}
+            </dl>
+            <div className="work-item-property-actions">
+              {resourceLibraryLinked ? <span className="work-item-resource-library-status">已链接到资料库</span> : null}
+              {canManageResourceLibraryLink && !isDeleted ? <Button variant="secondary" disabled={mutationBusy || resourceLibrarySubmitting} onClick={() => setResourceLibraryAction(resourceLibraryLinked ? 'unlink' : 'link')}>{resourceLibraryLinked ? '取消资料库链接' : '链接到资料库'}</Button> : null}
+              <Button variant="secondary" onClick={() => setActivePanel('history')}>查看操作记录</Button>
+              {canCloseWorkItem ? <Button variant="danger" onClick={() => onRequestLifecycleAction('close')}>关闭工作项</Button> : null}
+            </div>
+          </Panel>
+          <Panel title="关联工作项" className="work-item-related">
+            {item.parent_item_key ? <a className="work-item-related-item" href={parentHref} onClick={onOpenParent}><span className="work-item-related-title">{item.parent_title || item.parent_item_key}</span><span className="work-item-related-meta">{item.parent_item_key}</span></a> : <p className="shell-muted">没有关联的父级需求。</p>}
+            <nav className="work-item-related-nav" aria-label="工作项前后项导航">
+              {previous ? <a className="yc-button yc-button-secondary" href={buildDetailHref(previous.item_key)} title={previous.title} onClick={(event) => onOpenDetail(event, previous.item_key)}>← 上一个{item.item_type === 'bug' ? ' Bug' : '工作项'}</a> : <span className="yc-button yc-button-secondary disabled">已是第一项</span>}
+              {next ? <a className="yc-button yc-button-secondary" href={buildDetailHref(next.item_key)} title={next.title} onClick={(event) => onOpenDetail(event, next.item_key)}>下一个{item.item_type === 'bug' ? ' Bug' : '工作项'} →</a> : <span className="yc-button yc-button-secondary disabled">已是最后一项</span>}
+            </nav>
+          </Panel>
+        </aside>
       </div>
 
       <Modal open={resourceLibraryAction !== null} title={resourceLibraryAction === 'unlink' ? '取消资料库链接' : '链接到资料库'} onClose={() => { if (!resourceLibrarySubmitting) setResourceLibraryAction(null); }} footer={<><Button variant="secondary" disabled={resourceLibrarySubmitting} onClick={() => setResourceLibraryAction(null)}>取消</Button><Button loading={resourceLibrarySubmitting} disabled={resourceLibrarySubmitting} onClick={async () => { if (!resourceLibraryAction) return; const completed = await onRequestResourceLibraryLink(resourceLibraryAction); if (completed) setResourceLibraryAction(null); }}>{resourceLibraryAction === 'unlink' ? '确认取消' : '确认链接'}</Button></>}>

@@ -40,8 +40,8 @@ for (const timezoneId of ['UTC', 'Asia/Shanghai', 'America/Los_Angeles']) {
         await page.route('**/api/v1/work-items/YCE-TASK-2/comments/98701/attachments', route => route.fulfill({ json: { data: [{ id: 98702, filename: 'timezone.txt', content_type: 'text/plain', byte_size: 1, status: 'uploaded', created_by: '时区验收', created_at: '2026-10-09T02:30:01Z' }] } }));
         await page.goto('/web/app/work-items/YCE-TASK-2');
         await expect(page.locator('.content-updated')).toHaveText('更新于 2026-10-09 10:30:01');
-        await expect(page.locator('.action-panel-context')).toContainText('2026-10-09 10:30:01');
-        await expect(page.locator('.action-panel-context').getByText('2026-10-09', { exact: true })).toBeVisible();
+        await expect(page.locator('.work-item-properties .props')).toContainText('2026-10-09 10:30:01');
+        await expect(page.locator('.work-item-properties .props').getByText('2026-10-09', { exact: true })).toBeVisible();
         await expect(page.getByText('发表于 2026-10-09 10:30:01', { exact: true })).toBeVisible();
         await expect(page.getByText('编辑于 2026-10-09 10:31:01', { exact: true })).toBeVisible();
         await expect(page.getByRole('list', { name: '评论附件', exact: true })).toContainText('2026-10-09 10:30:01');
