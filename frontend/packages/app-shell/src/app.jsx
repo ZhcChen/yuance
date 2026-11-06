@@ -6550,14 +6550,45 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'profile' ? (
             <section className="page-stack profile-page" aria-labelledby="profile-title">
-              <section className="page-hero profile-hero">
-                <div className="profile-hero-main"><div className="profile-hero-overview"><UserAvatar name={profile?.display_name || profile?.username || ''} fallback="我" className="profile-hero-avatar" /><div className="profile-hero-copy"><p className="shell-eyebrow">个人工作区</p><div className="profile-hero-identity"><h1 id="profile-title" ref={headingRef} tabIndex={-1}>{profile?.display_name || user?.display_name || user?.username}</h1><span>@{profile?.username || user?.username}</span></div><div className="profile-hero-meta"><Badge>{profile?.roles || '普通成员'}</Badge><Badge tone="success">{profile?.status === 'active' ? '正常' : profile?.status}</Badge>{profile?.is_super_admin ? <Badge tone="danger">超级管理员</Badge> : null}<span>加入 {profile?.created_at ? dashboardTimestamp(profile.created_at) : '-'}</span></div></div></div><dl className="profile-hero-details" aria-label="账号资料"><div><dt>邮箱</dt><dd>{profile?.email || '未填写'}</dd></div><div><dt>手机号</dt><dd>{profile?.mobile || '未填写'}</dd></div><div><dt>最近更新</dt><dd>{profile?.updated_at ? dashboardTimestamp(profile.updated_at) : '-'}</dd></div></dl></div>
-                <div className="toolbar-actions profile-hero-actions"><Button variant="secondary" onClick={() => { setProfileError(''); setProfileModalOpen(true); }}>编辑资料</Button><Button variant="secondary" onClick={() => { setAccountSecurityError(''); setPasswordModalOpen(true); }}>修改密码</Button><Button variant="secondary" disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建访问 Token</Button></div>
+              <div className="page-head profile-head">
+                <div className="page-head__text profile-head__identity">
+                  <UserAvatar name={profile?.display_name || profile?.username || ''} fallback="我" className="profile-head-avatar" />
+                  <div>
+                    <h1 id="profile-title" ref={headingRef} tabIndex={-1}>{profile?.display_name || user?.display_name || user?.username}</h1>
+                    <p className="page-head__desc">@{profile?.username || user?.username} · {profile?.roles || '普通成员'} · {profile?.email || '未填写邮箱'}</p>
+                  </div>
+                </div>
+                <div className="page-head__actions">
+                  <Button variant="secondary" onClick={() => { setProfileError(''); setProfileModalOpen(true); }}>编辑资料</Button>
+                  <Button variant="secondary" onClick={() => { setAccountSecurityError(''); setPasswordModalOpen(true); }}>修改密码</Button>
+                  <Button variant="secondary" disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建访问 Token</Button>
+                </div>
+              </div>
+              <section className="metric-grid profile-metrics" aria-label="我的概览">
+                <Metric label="参与项目" value={dashboard?.projects?.length || 0} delta="我可见的项目" icon={<Icon name="folder" />} variant="brand" />
+                <Metric label="指派给我" value={dashboard?.metrics?.assigned_total || 0} delta="未完成工作项" icon={<Icon name="task" />} variant="warning" />
+                <Metric label="高优先级" value={dashboard?.metrics?.high_priority || 0} delta="P0 / P1" icon={<Icon name="alert" />} variant="danger" />
               </section>
-              <section className="metric-grid profile-metrics" aria-label="我的概览"><article className="metric metric-info"><span>参与项目</span><strong>{dashboard?.projects?.length || 0}</strong></article><article className="metric metric-warning"><span>指派给我</span><strong>{dashboard?.metrics?.assigned_total || 0}</strong></article><article className="metric metric-danger"><span>高优先级</span><strong>{dashboard?.metrics?.high_priority || 0}</strong></article></section>
               {accountSecurityError ? <Feedback tone="danger" title="账户安全操作失败">{accountSecurityError}</Feedback> : null}
               {createdRawToken ? <Feedback tone="success" title="访问 Token 仅显示一次"><code>{createdRawToken}</code><Button variant="secondary" onClick={() => setCreatedRawToken('')}>我已保存</Button></Feedback> : null}
-              <section className="profile-detail-grid"><div className="profile-detail-main"><section className="panel api-token-panel">
+              <section className="profile-detail-grid"><div className="profile-detail-main"><Panel title="账号信息" description="账号资料与当前状态">
+                <dl className="props">
+                  <dt className="props__label">用户名</dt>
+                  <dd><code>{profile?.username || user?.username}</code></dd>
+                  <dt className="props__label">角色</dt>
+                  <dd>{profile?.roles || '普通成员'}{profile?.is_super_admin ? <Badge tone="danger">超级管理员</Badge> : null}</dd>
+                  <dt className="props__label">账号状态</dt>
+                  <dd><Badge tone="success">{profile?.status === 'active' ? '正常' : profile?.status}</Badge></dd>
+                  <dt className="props__label">邮箱</dt>
+                  <dd>{profile?.email || '未填写'}</dd>
+                  <dt className="props__label">手机号</dt>
+                  <dd>{profile?.mobile || '未填写'}</dd>
+                  <dt className="props__label">加入时间</dt>
+                  <dd className="props__muted">{profile?.created_at ? dashboardTimestamp(profile.created_at) : '-'}</dd>
+                  <dt className="props__label">最近更新</dt>
+                  <dd className="props__muted">{profile?.updated_at ? dashboardTimestamp(profile.updated_at) : '-'}</dd>
+                </dl>
+              </Panel><section className="panel api-token-panel">
                 <div className="panel-head"><div><h2>Personal Access Token</h2><p>用于 OpenAPI、Codex Skill 或外部脚本调用。</p></div><div className="token-panel-actions"><span>可用 Token {apiTokens.filter((token) => !token.revoked_at).length}/100</span><Button disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建 Token</Button></div></div>
                 {apiTokens.length ? <div className="account-security-list">{apiTokens.map((token) => <div className="account-security-row" key={token.id}><div><strong>{token.name}</strong><p className="shell-muted">尾号 {token.token_suffix} · {token.scopes.join('、')}</p></div><div className="shell-actions-inline"><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => { setTokenForm({ id: token.id, name: token.name, scopes: token.scopes, projectScope: token.project_scope, expiresAt: '' }); setTokenModalOpen(true); }}>编辑</Button><Button variant="danger" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation({ kind: 'token', id: token.id, label: token.name })}>删除</Button></div></div>)}</div> : <div className="empty-state"><strong>暂无访问 Token</strong><span>如需让 AI Agent 或脚本访问元策 API，可以创建最小权限 Token。</span></div>}
               </section></div><aside className="profile-detail-side"><section className="panel"><div className="panel-head compact"><h2>我的项目</h2></div>{dashboard?.projects?.length ? <ol className="activity-list">{dashboard.projects.map((project) => { const path = buildProjectDetailPath({ owner: route.owner, projectKey: project.key }); return <li key={project.key}><span className="activity-dot" aria-hidden="true" /><strong><a href={path} onClick={(event) => handleNavigate(event, path, `已打开 ${project.key}。`)}>{project.name}</a></strong><span>{project.key} · {project.status} · {project.active_work_item_count} 个活跃工作项</span></li>; })}</ol> : <div className="empty-state"><strong>暂无项目</strong><span>加入项目后会出现在这里。</span></div>}</section></aside></section>

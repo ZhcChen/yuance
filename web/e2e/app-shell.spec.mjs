@@ -364,7 +364,7 @@ test('profile page preserves the main responsive geometry', async ({ page }) => 
   ]) {
     await page.setViewportSize(viewport);
     await page.goto('/web/app/me');
-    await expect(page.locator('.profile-hero').getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('.profile-head').getByRole('heading', { level: 1 })).toBeVisible();
     const geometry = await page.locator('.profile-page').evaluate((element) => {
       const main = element.closest('.main');
       return {

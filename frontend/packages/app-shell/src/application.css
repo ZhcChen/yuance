@@ -1163,6 +1163,12 @@ html[data-theme="dark"] .project-stats div {
 }
 
 .page-stack { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+
+/* 个人中心：页头身份区 */
+.profile-head__identity { display: flex; align-items: center; gap: 16px; }
+.profile-head-avatar { flex: 0 0 auto; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; font-size: 18px; font-weight: 800; }
+.profile-head .page-head__title { margin: 0; font-size: 24px; line-height: 32px; }
+.profile-metrics { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .time-management-page > .shell-card { min-width: 0; width: 100%; }
 .time-management-changes-modal-body { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
 .time-management-changes-list { min-height: 0; display: grid; gap: 10px; }
