@@ -234,7 +234,8 @@ test('browser shell supports root navigation and logout on /web owner route', as
 
   await expect(page).toHaveURL(/\/web$/);
   await expect(page).toHaveTitle('元策浏览器工作台 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '项目推进' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '工作台' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '项目推进' })).toBeVisible();
 
   await page.getByRole('button', { name: '打开消息通知' }).click();
   await page.getByRole('dialog', { name: '最近消息' }).getByRole('link', { name: '进入消息中心' }).click();
@@ -4919,7 +4920,7 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await page.keyboard.press('Escape');
   await expect(page.locator('.shell-header')).toHaveCount(0);
   await expect(page.getByLabel('顶部状态摘要')).toHaveCount(0);
-  await expect(page.locator('.metric-grid > .metric')).toHaveCount(4);
+  await expect(page.locator('.metric-grid > .yc-metric')).toHaveCount(4);
   await expect(page.locator('.compact-table')).toBeVisible();
   await expect(page.locator('.workspace-side')).toContainText('待我处理讨论');
   await expect(page.locator('.workspace-side')).toContainText('最近动态');
@@ -4961,7 +4962,10 @@ test('shared global shell remains usable at canonical responsive widths', async 
       }
     }
     expect(geometry.workspaceColumns.trim().split(/\s+/u)).toHaveLength(width <= 1280 ? 1 : 2);
-    expect(geometry.metricColumns.trim().split(/\s+/u)).toHaveLength(width <= 960 ? 1 : 4);
+    // 指标磁贴按可用宽度自适应折行：390 单列、768 三列、更宽四列
+    // auto-fit 会把空轨道折叠成 0px，计数时需要排除
+    const metricColumns = geometry.metricColumns.trim().split(/\s+/u).filter((value) => value !== '0px');
+    expect(metricColumns).toHaveLength(width <= 390 ? 1 : width <= 768 ? 3 : 4);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`global-shell-${width}.png`), fullPage: true });
   }

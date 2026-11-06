@@ -235,6 +235,10 @@ export function PriorityBadge({ priority, children }) {
 /** @param {{ children?: React.ReactNode, ariaLabel: string }} props */
 export function ContentTabs({ children, ariaLabel }) {
   const tabsRef = useRef(/** @type {HTMLElement | null} */ (null));
+  // 角标悬在标签右上角，最后一个标签的角标会探出标签条；给标签条留出等宽的右侧余量。
+  const hasBadge = React.Children.toArray(children).some(
+    (child) => React.isValidElement(child) && Number(/** @type {{ badge?: number }} */ (child).props?.badge || 0) > 0,
+  );
   const scrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: tabsRef, label: ariaLabel, refreshKey: children });
   const hasSyncedRef = useRef(false);
 
@@ -259,7 +263,7 @@ export function ContentTabs({ children, ariaLabel }) {
     return () => observer?.disconnect();
   }, [children]);
 
-  return <><nav ref={tabsRef} className="yc-content-tabs yc-overlay-scroll-target" aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>{scrollbar.scrollbar}</>;
+  return <><nav ref={tabsRef} className={`yc-content-tabs yc-overlay-scroll-target${hasBadge ? ' yc-content-tabs--badge' : ''}`} aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>{scrollbar.scrollbar}</>;
 }
 
 /** @param {{ children?: React.ReactNode, href?: string, active?: boolean, badge?: number, onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement> }} props */
@@ -480,7 +484,7 @@ export function Panel({ title, description, actions, children, footer, flush = f
       {hasHead ? (
         <header className="yc-panel__head">
           <div>
-            <div className="yc-panel__title">{title}</div>
+            <h2 className="yc-panel__title">{title}</h2>
             {description ? <div className="yc-panel__desc">{description}</div> : null}
           </div>
           {actions ? <div className="yc-panel__actions">{actions}</div> : null}

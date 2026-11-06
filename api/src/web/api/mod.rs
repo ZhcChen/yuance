@@ -649,6 +649,7 @@ pub struct DashboardPayload {
     pub pending_discussions: Vec<NotificationPayload>,
     pub pending_discussion_count: i64,
     pub activities: Vec<DashboardActivityPayload>,
+    pub assigned_items: Vec<WorkItemPayload>,
     pub can_manage_projects: bool,
 }
 
@@ -6937,6 +6938,9 @@ pub async fn get_system_dashboard(
     Ok(json(SystemDashboardPayload { links }))
 }
 
+/// 工作台「我的待处理」最多返回多少条工作项。
+const DASHBOARD_ASSIGNED_ITEM_LIMIT: usize = 6;
+
 pub async fn get_dashboard(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -7047,6 +7051,17 @@ pub async fn get_dashboard(
     } else {
         Vec::new()
     };
+    let assigned_items: Vec<WorkItemPayload> = assigned_items
+        .into_iter()
+        .filter(|item| {
+            !matches!(
+                item.status.as_str(),
+                "done" | "closed" | "resolved" | "verified" | "cancelled"
+            )
+        })
+        .take(DASHBOARD_ASSIGNED_ITEM_LIMIT)
+        .map(work_item_payload)
+        .collect();
     Ok(no_store_json(DashboardPayload {
         metrics: DashboardMetricsPayload {
             active_projects,
@@ -7060,6 +7075,7 @@ pub async fn get_dashboard(
         pending_discussions,
         pending_discussion_count,
         activities,
+        assigned_items,
         can_manage_projects: rbac::user_has_permission(pool, user.id, "project.manage").await?,
     }))
 }

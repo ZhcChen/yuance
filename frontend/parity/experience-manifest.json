@@ -524,6 +524,7 @@
       "controls": [
         "topbar",
         "project-progress",
+        "my-queue",
         "pending-discussions",
         "recent-activity",
         "create-project"
@@ -532,6 +533,7 @@
         "loading",
         "ready",
         "no-projects",
+        "empty-queue",
         "empty-activity",
         "error"
       ],
