@@ -44,11 +44,42 @@
 | 前端全量检查 | `npm --prefix frontend run check` | 通过 |
 | Web 全量检查 | `npm --prefix web run check` | 通过 |
 | 生产构建 | `make web-build` | 通过 |
+| 前端全量检查 | `make frontend-check` | 通过（补齐桌面端依赖后，desktop 段也能执行） |
+| 桌面端 renderer | `npm --prefix desktop run build:renderer` / `check:renderer` | 通过（98 个模块，产物 812 kB） |
+| 桌面端 renderer 用例 | `node --test desktop/test/renderer-*.test.mjs` | 40 通过 / 0 失败 |
+| 桌面端全量用例 | `npm --prefix desktop test` | 499 项中 493 通过 / 3 失败（见下） |
 | 视觉护栏 | `npm --prefix web run test:visual` | 结构层 5/5、像素层 4/4 通过 |
 | 原型主题开关 | 浏览器实测 | 切换后 `data-theme="dark"` 生效，控制台无报错 |
 
+## 桌面端补齐依赖后的验证
+
+桌面端此前因为 `desktop/node_modules` 为空（缺 `vite` 与 `typescript`）完全无法验证，
+本轮补装依赖后重新跑通：
+
+| 项目 | 结果 |
+|---|---|
+| `npm --prefix desktop install` | 561 个包安装完成（`node_modules` 已被 gitignore） |
+| `npm --prefix desktop run build:renderer` | 通过 |
+| `npm --prefix desktop run check:renderer` | 通过（`tsc` 与 `eslint` 均无问题） |
+| `node --test desktop/test/renderer-*.test.mjs` | 40 通过 |
+| `npm --prefix desktop test` | 499 项中 493 通过 / 3 失败 |
+
+三条失败逐条归因：
+
+1. `branding.test.mjs`「bundles release and development Dock PNGs」：
+   断言 `desktop/build/yuance-dock.png` 等资源存在，
+   而这些文件是工作区里**用户未提交的删除**，本轮没有恢复，也未纳入任何提交。
+2. `desktop-business-api-integration.test.mjs` 的两条 Electron 用例：
+   在回迁前的基线提交 `69dc1a2` 上用同一环境复跑，**同样失败**，属既有问题。
+
+同时修掉了桌面端路由断言：项目列表新增关键词筛选后项目路由多出 `q` 字段，
+桌面端渲染进程用例没同步（本轮之前桌面端用例跑不起来，所以没暴露）。
+
 ## 遗留
 
-- 桌面端 renderer 仍无法构建（`desktop/node_modules` 为空，缺少 `vite` 与 `typescript`），
-  桌面端的暗浅两色走查与两端截图对照无法执行，`make frontend-check` 的 desktop 段同样无法运行。
+- 桌面端**逐视口截图对照**仍未产出：桌面端没有截图能力，smoke 脚本只产出 JSON 报告；
+  要拿到真实窗口截图需要先 electron-builder 打包再驱动窗口，超出本轮范围。
 - 暗色像素基线尚未纳入视觉护栏：护栏目前只跑浅色，暗色以人工走查加截图记录。
+- 桌面端与 Web 端共用同一个 `SharedApp` 与同一份令牌，
+  渲染进程入口同样写 `document.documentElement.dataset.theme`，
+  暗色取值天然一致，但「两端逐视口截图」这条验收仍缺证据。
