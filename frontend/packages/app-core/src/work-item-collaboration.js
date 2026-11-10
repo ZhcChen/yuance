@@ -122,7 +122,7 @@ export function updateWorkItemComment({ api, itemKey, commentId, payload, lifecy
  *   create: (payload: AttachmentCreatePayload) => Promise<T>,
  *   sign: (attachment: T) => Promise<{ request: unknown, expires_in_seconds: number, checksum_sha256?: string, encryption?: unknown }>,
  *   confirm: (attachment: T, encryptedChecksumSha256?: string) => Promise<T>,
- *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
+ *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'>,
  *   file: SelectedFile,
  *   existing?: T,
  *   expectedChecksumSha256?: string,
@@ -198,7 +198,7 @@ async function uploadAttachment({ create, sign, confirm, platform, file, existin
  *     getWorkItemAttachmentUploadUrl(itemKey: string, attachmentId: number): Promise<{ request: unknown, expires_in_seconds: number }>,
  *     markWorkItemAttachmentUploaded(itemKey: string, attachmentId: number): Promise<T>,
  *   },
- *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
+ *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'>,
  *   itemKey: string,
  *   file: SelectedFile,
  *   existingAttachment?: T | null,
@@ -206,17 +206,6 @@ async function uploadAttachment({ create, sign, confirm, platform, file, existin
  * }} options
  */
 export function uploadWorkItemAttachment({ api, platform, itemKey, file, existingAttachment = null, lifecycle }) {
-  const attachments = platform.attachments;
-  if (typeof attachments?.uploadWorkItemAttachment === 'function') {
-    return uploadDelegatedAttachment({
-      execute: (onStage) => attachments.uploadWorkItemAttachment({
-        itemKey,
-        fileCapability: file.capability,
-        ...(existingAttachment ? { attachmentId: existingAttachment.id } : {}),
-      }, onStage),
-      lifecycle,
-    });
-  }
   return uploadAttachment({
     create: (payload) => api.createWorkItemAttachment(itemKey, payload),
     sign: (attachment) => api.getWorkItemAttachmentUploadUrl(itemKey, attachment.id),
@@ -233,13 +222,6 @@ export function uploadWorkItemAttachment({ api, platform, itemKey, file, existin
  * @param {{ api: any, platform: any, projectKey: string, file: SelectedFile, existingAttachment?: T | null, lifecycle: AttachmentLifecycle<T> }} options
  */
 export function uploadProjectAttachment({ api, platform, projectKey, file, existingAttachment = null, lifecycle }) {
-  const attachments = platform.attachments;
-  if (typeof attachments?.uploadProjectAttachment === 'function') {
-    return uploadDelegatedAttachment({
-      execute: (onStage) => attachments.uploadProjectAttachment({ projectKey, fileCapability: file.capability, ...(existingAttachment ? { attachmentId: existingAttachment.id } : {}) }, onStage),
-      lifecycle,
-    });
-  }
   return uploadAttachment({
     create: (payload) => api.createProjectAttachment(projectKey, { ...payload, ...(file.checksumSha256 ? { checksumSha256: file.checksumSha256 } : {}) }),
     sign: (attachment) => api.getProjectAttachmentUploadUrl(projectKey, attachment.id),
@@ -253,13 +235,6 @@ export function uploadProjectAttachment({ api, platform, projectKey, file, exist
  * @param {{ api: any, platform: any, projectKey: string, resourceId: number, file: SelectedFile, existingAttachment?: T | null, lifecycle: AttachmentLifecycle<T> }} options
  */
 export function uploadProjectResourceAttachment({ api, platform, projectKey, resourceId, file, existingAttachment = null, lifecycle }) {
-  const attachments = platform.attachments;
-  if (typeof attachments?.uploadProjectResourceAttachment === 'function') {
-    return uploadDelegatedAttachment({
-      execute: (onStage) => attachments.uploadProjectResourceAttachment({ projectKey, resourceId, fileCapability: file.capability, ...(existingAttachment ? { attachmentId: existingAttachment.id } : {}) }, onStage),
-      lifecycle,
-    });
-  }
   return uploadAttachment({
     create: (payload) => api.createProjectResourceAttachment(projectKey, resourceId, { ...payload, ...(file.checksumSha256 ? { checksumSha256: file.checksumSha256 } : {}) }),
     sign: (attachment) => api.getProjectResourceAttachmentUploadUrl(projectKey, resourceId, attachment.id),
@@ -276,7 +251,7 @@ export function uploadProjectResourceAttachment({ api, platform, projectKey, res
  *     getWorkItemCommentAttachmentUploadUrl(itemKey: string, commentId: number, attachmentId: number): Promise<{ request: unknown, expires_in_seconds: number }>,
  *     markWorkItemCommentAttachmentUploaded(itemKey: string, commentId: number, attachmentId: number): Promise<T>,
  *   },
- *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
+ *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'>,
  *   itemKey: string,
  *   commentId: number,
  *   file: SelectedFile,
@@ -284,17 +259,6 @@ export function uploadProjectResourceAttachment({ api, platform, projectKey, res
  * }} options
  */
 export function uploadWorkItemCommentAttachment({ api, platform, itemKey, commentId, file, lifecycle }) {
-  const attachments = platform.attachments;
-  if (typeof attachments?.uploadWorkItemCommentAttachment === 'function') {
-    return uploadDelegatedAttachment({
-      execute: (onStage) => attachments.uploadWorkItemCommentAttachment({
-        itemKey,
-        commentId,
-        fileCapability: file.capability,
-      }, onStage),
-      lifecycle,
-    });
-  }
   return uploadAttachment({
     create: (payload) => api.createWorkItemCommentAttachment(itemKey, commentId, payload),
     sign: (attachment) => api.getWorkItemCommentAttachmentUploadUrl(itemKey, commentId, attachment.id),
@@ -308,7 +272,7 @@ export function uploadWorkItemCommentAttachment({ api, platform, itemKey, commen
 /**
  * @param {{
  *   getSignedRequest: () => Promise<{ request: unknown, expires_in_seconds: number, encryption?: unknown }>,
- *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
+ *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'>,
  *   suggestedFilename: string,
  *   isCurrent: () => boolean,
  * }} options
@@ -331,7 +295,7 @@ async function downloadAttachment({ getSignedRequest, platform, suggestedFilenam
 /**
  * @param {{
  *   api: { getWorkItemAttachmentDownloadUrl(itemKey: string, attachmentId: number): Promise<{ request: unknown, expires_in_seconds: number }> },
- *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
+ *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'>,
  *   itemKey: string,
  *   attachmentId: number,
  *   suggestedFilename: string,
@@ -339,11 +303,6 @@ async function downloadAttachment({ getSignedRequest, platform, suggestedFilenam
  * }} options
  */
 export function downloadWorkItemAttachment({ api, platform, itemKey, attachmentId, suggestedFilename, isCurrent }) {
-  if (typeof platform.attachments?.downloadWorkItemAttachment === 'function') {
-    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
-    return platform.attachments.downloadWorkItemAttachment({ itemKey, attachmentId, suggestedFilename })
-      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
-  }
   return downloadAttachment({
     getSignedRequest: () => api.getWorkItemAttachmentDownloadUrl(itemKey, attachmentId),
     platform,
@@ -353,11 +312,6 @@ export function downloadWorkItemAttachment({ api, platform, itemKey, attachmentI
 }
 
 export function downloadProjectAttachment({ api, platform, projectKey, attachmentId, suggestedFilename, isCurrent }) {
-  if (typeof platform.attachments?.downloadProjectAttachment === 'function') {
-    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
-    return platform.attachments.downloadProjectAttachment({ projectKey, attachmentId, suggestedFilename })
-      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
-  }
   return downloadAttachment({
     getSignedRequest: () => api.getProjectAttachmentDownloadUrl(projectKey, attachmentId),
     platform, suggestedFilename, isCurrent,
@@ -365,11 +319,6 @@ export function downloadProjectAttachment({ api, platform, projectKey, attachmen
 }
 
 export function downloadProjectResourceAttachment({ api, platform, projectKey, resourceId, attachmentId, accessToken, suggestedFilename, isCurrent }) {
-  if (typeof platform.attachments?.downloadProjectResourceAttachment === 'function') {
-    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
-    return platform.attachments.downloadProjectResourceAttachment({ projectKey, resourceId, attachmentId, accessToken, suggestedFilename })
-      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
-  }
   return downloadAttachment({
     getSignedRequest: () => api.getProjectResourceAttachmentDownloadUrl(projectKey, resourceId, attachmentId, accessToken),
     platform, suggestedFilename, isCurrent,
@@ -379,7 +328,7 @@ export function downloadProjectResourceAttachment({ api, platform, projectKey, r
 /**
  * @param {{
  *   api: { getWorkItemCommentAttachmentDownloadUrl(itemKey: string, commentId: number, attachmentId: number): Promise<{ request: unknown, expires_in_seconds: number }> },
- *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
+ *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'>,
  *   itemKey: string,
  *   commentId: number,
  *   attachmentId: number,
@@ -388,49 +337,10 @@ export function downloadProjectResourceAttachment({ api, platform, projectKey, r
  * }} options
  */
 export function downloadWorkItemCommentAttachment({ api, platform, itemKey, commentId, attachmentId, suggestedFilename, isCurrent }) {
-  if (typeof platform.attachments?.downloadWorkItemCommentAttachment === 'function') {
-    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
-    return platform.attachments.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId, suggestedFilename })
-      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
-  }
   return downloadAttachment({
     getSignedRequest: () => api.getWorkItemCommentAttachmentDownloadUrl(itemKey, commentId, attachmentId),
     platform,
     suggestedFilename,
     isCurrent,
   });
-}
-
-/**
- * @template T
- * @param {{
- *   execute: (onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: T, uploaded: T }>,
- *   lifecycle: AttachmentLifecycle<T>,
- * }} options
- */
-async function uploadDelegatedAttachment({ execute, lifecycle }) {
-  if (!lifecycle.isCurrent()) {
-    return { completed: false, created: null, uploaded: null, refreshError: null };
-  }
-  let createdPublished = false;
-  const result = await execute((stage, created) => {
-    if (!lifecycle.isCurrent()) return;
-    lifecycle.onStage(stage);
-    if (created && !createdPublished) {
-      createdPublished = true;
-      lifecycle.onCreated(created);
-    }
-  });
-  if (!lifecycle.isCurrent()) {
-    return { completed: false, created: result.created, uploaded: result.uploaded, refreshError: null };
-  }
-  if (!createdPublished) lifecycle.onCreated(result.created);
-  lifecycle.onUploaded(result.uploaded);
-  let refreshError = null;
-  try {
-    await lifecycle.refresh?.();
-  } catch (error) {
-    refreshError = error;
-  }
-  return { completed: lifecycle.isCurrent(), created: result.created, uploaded: result.uploaded, refreshError };
 }

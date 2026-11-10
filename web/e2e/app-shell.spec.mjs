@@ -380,22 +380,15 @@ test('profile page preserves the main responsive geometry', async ({ page }) => 
   }
 });
 
-test('shared account security manages password tokens and device sessions once', async ({ page }) => {
+test('shared account security manages password and tokens once', async ({ page }) => {
   await login(page, '/web/app');
   const mutations = [];
   const tokenFixture = { id: 7, name: 'E2E Agent', scopes: ['project:read', 'work_item:read'], project_scope: 'all', token_suffix: 'abcd', expires_at: '', revoked_at: '', last_used_at: '', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
-  const deviceFixture = { family_id: 'family-e2e', device_id: 'device-e2e', device_name: 'E2E Desktop', platform: 'darwin', client_version: '0.1.0', status: 'active', generation: 1, last_seen_at: '2026-08-07T00:00:00Z', created_at: '2026-08-07T00:00:00Z', is_current: false };
   await page.route('**/api/v1/me/tokens**', async (route) => {
     const request = route.request();
     if (request.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
     mutations.push({ method: request.method(), url: request.url(), headers: request.headers(), payload: request.postDataJSON() });
     return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: { token: tokenFixture, raw_token: 'yuance_pat_e2e-once' } }) });
-  });
-  await page.route('**/api/v1/me/device-sessions**', async (route) => {
-    const request = route.request();
-    if (request.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [deviceFixture] }) });
-    mutations.push({ method: request.method(), url: request.url(), headers: request.headers() });
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...deviceFixture, status: 'revoked' } }) });
   });
   await page.route('**/api/v1/me/password', async (route) => {
     const request = route.request();
@@ -420,13 +413,8 @@ test('shared account security manages password tokens and device sessions once',
   await tokenDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByText('yuance_pat_e2e-once')).toBeVisible();
 
-  await page.locator('.account-security-row', { hasText: 'E2E Desktop' }).getByRole('button', { name: '撤销' }).click();
-  const confirmation = page.getByRole('dialog', { name: '撤销设备会话' });
-  await confirmation.getByRole('button', { name: '确认' }).click();
-  await expect(confirmation).not.toBeVisible();
-
-  expect(mutations).toHaveLength(3);
-  expect(mutations.map(({ method }) => method)).toEqual(['PATCH', 'POST', 'DELETE']);
+  expect(mutations).toHaveLength(2);
+  expect(mutations.map(({ method }) => method)).toEqual(['PATCH', 'POST']);
   expect(mutations.every(({ headers }) => Boolean(headers['x-yuance-csrf-token']))).toBe(true);
   expect(mutations[1].payload.scopes).toEqual(['project:read', 'work_item:read']);
 });
@@ -2758,11 +2746,11 @@ test('shared system API docs render bounded endpoint navigation without remote S
   const methods = [];
   const document = {
     openapi: '3.1.0',
-    info: { title: '元策系统 API', version: '1.1.0', description: '面向版本发布自动化的系统契约。' },
+    info: { title: '元策系统 API', version: '1.1.0', description: '面向自动化的系统契约。' },
     paths: {
-      '/api/v1/system/releases': {
-        get: { tags: ['releases'], summary: '分页获取版本列表', parameters: [{ $ref: '#/components/parameters/Page' }], responses: { 200: { description: '版本列表' } } },
-        post: { tags: ['releases'], summary: '创建版本草稿', requestBody: { required: true }, responses: { 201: { description: '创建成功' } } },
+      '/api/v1/system/users': {
+        get: { tags: ['users'], summary: '分页获取用户列表', parameters: [{ $ref: '#/components/parameters/Page' }], responses: { 200: { description: '用户列表' } } },
+        post: { tags: ['users'], summary: '创建用户', requestBody: { required: true }, responses: { 201: { description: '创建成功' } } },
       },
     },
     components: { parameters: { Page: { name: 'page', in: 'query', schema: { type: 'integer' } } } },
@@ -2779,11 +2767,11 @@ test('shared system API docs render bounded endpoint navigation without remote S
   await expect(navigation.getByRole('link')).toHaveCount(2);
   await expect(navigation).toContainText('GET');
   await expect(navigation).toContainText('POST');
-  await expect(navigation).toContainText('/api/v1/system/releases');
-  await expect(navigation).toContainText('创建版本草稿');
+  await expect(navigation).toContainText('/api/v1/system/users');
+  await expect(navigation).toContainText('创建用户');
 
   const operations = page.getByLabel('API 操作契约');
-  await expect(operations).toContainText('分页获取版本列表');
+  await expect(operations).toContainText('分页获取用户列表');
   await operations.locator('details').first().getByText('查看完整操作契约').click();
   await expect(operations.locator('pre').first()).toContainText('#/components/parameters/Page');
   await page.getByText('查看 Components').click();
@@ -3098,222 +3086,6 @@ test('shared system OpenAPI tokens preserve one-time plaintext and confirmed lif
   ]);
 });
 
-test('shared system releases view renders one atomic policy version and asset snapshot', async ({ page }) => {
-  const requests = [];
-  await page.route('**/api/v1/system/releases-view*', async (route) => {
-    const url = new URL(route.request().url());
-    requests.push(url.pathname + url.search);
-    const currentPage = Number(url.searchParams.get('page') || 1);
-    const perPage = Number(url.searchParams.get('per_page') || 10);
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
-      settings: { retention_count: 5, updated_by: '发布管理员', updated_at: '2026-08-08T01:00:00Z' },
-      items: [{
-        release: {
-          id: currentPage, version_name: `v2.0.${currentPage}`, title: '共享桌面版本', notes: '统一 Browser 与 Desktop 发布视图。',
-          status: 'draft', channel: 'internal', verification_status: 'pending', manifest_sha256: '', signing_key_id: '',
-          source_commit: '', source_tag: '', published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '',
-          github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员',
-          created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z', asset_count: 1, platform_count: 1,
-        },
-        assets: [{ id: currentPage, release_id: currentPage, platform: 'macos', architecture: 'arm64', artifact_kind: 'installer', filename: `yuance-${currentPage}.dmg`, content_type: 'application/x-apple-diskimage', byte_size: 4096, status: 'uploaded', checksum_sha256: 'abc123', created_at: '2026-08-08T00:30:00Z' }],
-      }],
-      pagination: { page: currentPage, per_page: perPage, total_items: 41, total_pages: Math.ceil(41 / perPage) },
-      can_manage_releases: true,
-    } }) });
-  });
-
-  await login(page, '/web/system/releases?page=2&per_page=20');
-  await expect(page).toHaveTitle('版本管理 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '版本管理' })).toBeVisible();
-  await expect(page.getByRole('region', { name: '发布工作台' })).toContainText('发布管理员');
-  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.2');
-  await expect(page.getByRole('table', { name: '系统版本资产' })).toContainText('yuance-2.dmg');
-  await expect(page.locator('body')).not.toContainText('release/private/object-key');
-  await expect.poll(() => requests).toContain('/api/v1/system/releases-view?page=2&per_page=20');
-
-  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
-    await page.setViewportSize(viewport);
-    const geometry = await page.locator('.system-release-page').evaluate((element) => {
-      const main = element.closest('.main');
-      const layout = element.querySelector('.system-release-policy-layout');
-      return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, columns: getComputedStyle(layout).gridTemplateColumns, pageRight: element.getBoundingClientRect().right, mainRight: main.getBoundingClientRect().right };
-    });
-    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-    expect(geometry.pageRight).toBeLessThanOrEqual(geometry.mainRight + 1);
-    expect(geometry.columns.trim().split(/\s+/u).length).toBe(viewport.width > 1280 ? 2 : 1);
-  }
-
-  await page.getByRole('button', { name: '下一页' }).click();
-  await expect(page).toHaveURL('/web/system/releases?page=3&per_page=20');
-  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.3');
-});
-
-test('shared system release management preserves state transitions, locks, and final refresh semantics', async ({ page }) => {
-  const mutations = [];
-  let retentionCount = 5;
-  let viewRequests = 0;
-  let failNextView = false;
-  let releaseSettingsMutation;
-  const releaseSettingsGate = new Promise((resolve) => { releaseSettingsMutation = resolve; });
-  let holdSettingsMutation = true;
-  const releases = [
-    { id: 7, version_name: 'v2.1.0', title: '待校验版本', notes: '内部桌面发布', status: 'draft', channel: 'internal', verification_status: 'pending', manifest_sha256: 'a'.repeat(64), signing_key_id: 'release-key-1', source_commit: 'b'.repeat(40), source_tag: 'desktop-v2.1.0', published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z', asset_count: 6, platform_count: 3 },
-    { id: 8, version_name: 'v2.0.0', title: '线上版本', notes: '稳定版本', status: 'published', channel: 'legacy', verification_status: 'not_required', manifest_sha256: '', signing_key_id: '', source_commit: '', source_tag: '', published_at: '2026-08-07T01:00:00Z', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T01:00:00Z', asset_count: 1, platform_count: 1 },
-  ];
-  const view = () => ({
-    settings: { retention_count: retentionCount, updated_by: '发布管理员', updated_at: '2026-08-08T01:00:00Z' },
-    items: releases.map((release) => ({ release, assets: [] })),
-    pagination: { page: 1, per_page: 10, total_items: releases.length, total_pages: 1 },
-    can_manage_releases: true,
-  });
-
-  await page.route('**/api/v1/system/releases-view*', async (route) => {
-    viewRequests += 1;
-    if (failNextView) {
-      failNextView = false;
-      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'temporarily_unavailable', message: '发布视图暂不可用' } }) });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) });
-  });
-  await page.route('**/api/v1/system/releases/settings', async (route) => {
-    const body = route.request().postDataJSON();
-    mutations.push(['settings', body]);
-    if (holdSettingsMutation) await releaseSettingsGate;
-    retentionCount = body.retention_count;
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view().settings }) });
-  });
-  await page.route('**/api/v1/system/releases', async (route) => {
-    const body = route.request().postDataJSON();
-    mutations.push(['create', body]);
-    releases.unshift({ id: 9, version_name: body.version_name, title: body.title, notes: body.notes, status: 'draft', channel: body.channel, verification_status: body.channel === 'internal' ? 'pending' : 'not_required', manifest_sha256: body.manifest_sha256, signing_key_id: body.signing_key_id, source_commit: body.source_commit, source_tag: body.source_tag, published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-08T02:00:00Z', updated_at: '2026-08-08T02:00:00Z', asset_count: 0, platform_count: 0 });
-    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: {} }) });
-  });
-  await page.route(/\/api\/v1\/system\/releases\/\d+(?:\/verify|\/withdraw)?$/u, async (route) => {
-    const url = new URL(route.request().url());
-    const [, releaseIdText, action] = url.pathname.match(/\/releases\/(\d+)(?:\/(verify|withdraw))?$/u);
-    const release = releases.find((item) => item.id === Number(releaseIdText));
-    const body = route.request().postData() ? route.request().postDataJSON() : undefined;
-    mutations.push([action || 'update', Number(releaseIdText), body]);
-    if (action === 'verify') release.verification_status = 'verified';
-    else if (action === 'withdraw') { release.status = 'withdrawn'; release.withdrawal_reason = body.reason; release.github_withdrawal_status = body.github_withdrawal_status; }
-    else { release.version_name = body.version_name; release.title = body.title; release.notes = body.notes; if (body.publish) release.status = 'published'; }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {} }) });
-  });
-
-  await login(page, '/web/app/system/releases');
-  const settingsInput = page.getByLabel('已发布版本保留数');
-  await settingsInput.fill('8');
-  const saveSettings = page.locator('form').filter({ has: settingsInput }).getByRole('button');
-  await saveSettings.evaluate((button) => { button.click(); button.click(); });
-  await expect(saveSettings).toBeDisabled();
-  expect(mutations.filter(([kind]) => kind === 'settings')).toHaveLength(1);
-  holdSettingsMutation = false;
-  releaseSettingsMutation();
-  await expect(page.getByRole('status')).toHaveText('发布保留策略已更新。');
-  await expect(settingsInput).toHaveValue('8');
-
-  await page.getByRole('button', { name: '新建版本' }).click();
-  const createDialog = page.getByRole('dialog', { name: '新建版本草稿' });
-  await createDialog.getByLabel('版本号').fill('v2.2.0');
-  await createDialog.getByLabel('版本标题').fill('下一版本');
-  await createDialog.getByLabel('版本说明').fill('跨宿主一致发布');
-  await createDialog.locator('#system-release-channel-native').selectOption('internal');
-  await createDialog.getByLabel('Manifest SHA-256').fill('c'.repeat(64));
-  await createDialog.getByLabel('签名 Key ID').fill('release-key-2');
-  await createDialog.getByLabel('Source Commit').fill('d'.repeat(40));
-  await createDialog.getByLabel('Source Tag').fill('desktop-v2.2.0');
-  await createDialog.getByRole('button', { name: '保存草稿' }).click();
-  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.2.0');
-
-  const createdRow = page.getByRole('row').filter({ hasText: 'v2.2.0' });
-  await createdRow.getByRole('button', { name: '编辑' }).click();
-  const editDialog = page.getByRole('dialog', { name: '编辑版本草稿' });
-  await editDialog.getByLabel('版本标题').fill('下一版本修订');
-  await editDialog.getByRole('button', { name: '保存草稿' }).click();
-  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('下一版本修订');
-
-  const verifyRow = page.getByRole('row').filter({ hasText: 'v2.1.0' });
-  await expect(verifyRow.getByRole('button', { name: '发布' })).toHaveCount(0);
-  await verifyRow.getByRole('button', { name: '校验' }).click();
-  await page.getByRole('dialog', { name: '校验内部版本' }).getByRole('button', { name: '确认' }).click();
-  await expect(verifyRow).toContainText('verified');
-  await expect(verifyRow.getByRole('button', { name: '发布' })).toBeVisible();
-  await verifyRow.getByRole('button', { name: '发布' }).click();
-  await page.getByRole('dialog', { name: '发布版本' }).getByRole('button', { name: '确认' }).click();
-  await expect(verifyRow).toContainText('published');
-
-  const publishedRow = page.getByRole('row').filter({ hasText: 'v2.0.0' });
-  await publishedRow.getByRole('button', { name: '撤回' }).click();
-  const withdrawDialog = page.getByRole('dialog', { name: '撤回版本' });
-  await expect(withdrawDialog.getByRole('button', { name: '确认' })).toBeDisabled();
-  await withdrawDialog.getByLabel('撤回原因').fill('发现阻断缺陷');
-  await withdrawDialog.getByRole('button', { name: '确认' }).click();
-  await expect(publishedRow).toContainText('withdrawn');
-
-  failNextView = true;
-  await settingsInput.fill('9');
-  await saveSettings.click();
-  await expect(page.getByRole('status')).toHaveText('发布保留策略已更新。');
-  await expect(page.getByRole('alert').getByText(/操作已成功，但发布工作台刷新失败/u)).toBeVisible();
-  expect(viewRequests).toBeGreaterThanOrEqual(8);
-  expect(mutations).toEqual([
-    ['settings', { retention_count: 8 }],
-    ['create', { version_name: 'v2.2.0', title: '下一版本', notes: '跨宿主一致发布', channel: 'internal', manifest_sha256: 'c'.repeat(64), signing_key_id: 'release-key-2', source_commit: 'd'.repeat(40), source_tag: 'desktop-v2.2.0' }],
-    ['update', 9, { version_name: 'v2.2.0', title: '下一版本修订', notes: '跨宿主一致发布', publish: false }],
-    ['verify', 7, undefined],
-    ['update', 7, { version_name: 'v2.1.0', title: '待校验版本', notes: '内部桌面发布', publish: true }],
-    ['withdraw', 8, { reason: '发现阻断缺陷', github_withdrawal_status: 'pending' }],
-    ['settings', { retention_count: 9 }],
-  ]);
-});
-
-test('shared system release assets complete browser upload download and confirmed deletion', async ({ page }) => {
-  const requests = [];
-  const release = { id: 7, version_name: 'v2.3.0', title: '资产生命周期', notes: 'Browser 直传', status: 'draft', channel: 'internal', verification_status: 'pending', manifest_sha256: 'a'.repeat(64), signing_key_id: 'release-key-1', source_commit: 'b'.repeat(40), source_tag: 'desktop-v2.3.0', published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z', asset_count: 0, platform_count: 0 };
-  const assets = [];
-  const view = () => ({ settings: { retention_count: 5, updated_by: '发布管理员', updated_at: '2026-08-08T01:00:00Z' }, items: [{ release: { ...release, asset_count: assets.length, platform_count: new Set(assets.map((asset) => asset.platform)).size }, assets: [...assets] }], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, can_manage_releases: true });
-  await page.route('**/api/v1/system/releases-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) }));
-  await page.route('**/api/v1/system/releases/7/assets', async (route) => {
-    const body = route.request().postDataJSON();
-    requests.push(['create', body]);
-    const asset = { id: 19, release_id: 7, platform: body.platform, architecture: body.architecture, artifact_kind: body.artifact_kind, filename: body.original_filename, content_type: body.content_type, byte_size: body.byte_size, status: 'pending', checksum_sha256: body.checksum_sha256, created_at: '2026-08-08T02:00:00Z' };
-    assets.push(asset);
-    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: asset }) });
-  });
-  await page.route('**/api/v1/system/releases/7/assets/19/upload-url*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: { id: 19, file_object_id: 99, object_key: 'private/release', filename: 'desktop.exe', content_type: 'application/octet-stream', byte_size: 12, status: 'pending', created_by: '', created_at: '2026-08-08T02:00:00Z' }, request: { method: 'PUT', url: '/e2e-release-upload', headers: [['content-type', 'application/octet-stream']] }, expires_in_seconds: 60, expires_at: new Date(Date.now() + 60_000).toISOString(), checksum_sha256: '' } }) }));
-  await page.route('**/e2e-release-upload', async (route) => { requests.push(['upload', route.request().method(), route.request().postDataBuffer()?.length]); await route.fulfill({ status: 200, body: '' }); });
-  await page.route('**/api/v1/system/releases/7/assets/19/uploaded', async (route) => { requests.push(['confirm']); assets[0] = { ...assets[0], status: 'uploaded' }; await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: assets[0] }) }); });
-  await page.route('**/api/v1/system/releases/7/assets/19/download-url*', (route) => { requests.push(['download-sign']); return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: { id: 19, file_object_id: 99, object_key: 'private/release', filename: 'desktop.exe', content_type: 'application/octet-stream', byte_size: 12, status: 'uploaded', created_by: '', created_at: '2026-08-08T02:00:00Z' }, request: { method: 'GET', url: '/e2e-release-download', headers: [] }, expires_in_seconds: 60, expires_at: new Date(Date.now() + 60_000).toISOString(), checksum_sha256: assets[0].checksum_sha256 } }) }); });
-  await page.route('**/e2e-release-download', (route) => route.fulfill({ status: 200, contentType: 'application/octet-stream', body: 'desktop-data' }));
-  await page.route('**/api/v1/system/releases/7/assets/19', async (route) => { requests.push(['delete']); const deleted = assets.shift(); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: deleted }) }); });
-
-  await login(page, '/web/app/system/releases');
-  await page.getByRole('row').filter({ hasText: 'v2.3.0' }).getByRole('button', { name: '编辑' }).click();
-  const editor = page.getByRole('dialog', { name: '编辑版本草稿' });
-  await editor.locator('#system-release-asset-platform-native').selectOption('windows');
-  await editor.locator('#system-release-asset-architecture-native').selectOption('x64');
-  await editor.locator('#system-release-asset-kind-native').selectOption('installer');
-  await chooseFile(page, editor.getByRole('button', { name: '选择并上传' }), { name: 'desktop.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('desktopdata') });
-  await expect(page.locator('p.shell-live-region[role="status"]')).toHaveText('desktop.exe 已上传。');
-  await editor.getByRole('button', { name: '取消' }).click();
-  const assetRow = page.getByRole('row').filter({ hasText: 'desktop.exe' });
-  await expect(assetRow).toContainText('uploaded');
-  const popupPromise = page.waitForEvent('popup');
-  await assetRow.getByRole('button', { name: '下载' }).click();
-  const popup = await popupPromise;
-  await popup.close();
-  await expect(page.locator('p.shell-live-region[role="status"]')).toHaveText('desktop.exe 下载已开始。');
-  await assetRow.getByRole('button', { name: '删除' }).click();
-  const deletion = page.getByRole('dialog', { name: '删除版本资产' });
-  await expect(deletion).toContainText('desktop.exe');
-  await deletion.getByRole('button', { name: '确认删除' }).click();
-  await expect(page.getByRole('table', { name: '系统版本资产' })).toContainText('当前页版本暂无资产。');
-  expect(requests.map(([kind]) => kind)).toEqual(['create', 'upload', 'confirm', 'download-sign', 'delete']);
-  expect(requests[0][1]).toMatchObject({ platform: 'windows', architecture: 'x64', artifact_kind: 'installer', original_filename: 'desktop.exe', byte_size: 11 });
-  expect(requests[0][1].checksum_sha256).toMatch(/^[0-9a-f]{64}$/u);
-});
-
 test('shared system storage mutations preserve confirmation lock and final refresh semantics', async ({ page }) => {
   const mutations = [];
   let version = 3;
@@ -3506,7 +3278,7 @@ test('shared system users core mutations use the same confirmed interaction cont
 
   await table.getByRole('button', { name: '停用' }).click();
   const statusDialog = page.getByRole('dialog', { name: '停用用户' });
-  await expect(statusDialog).toContainText('Browser/Desktop 会话、Token 和设备访问');
+  await expect(statusDialog).toContainText('登录会话和 Token');
   await statusDialog.getByRole('button', { name: '确认停用' }).click();
   await expect(statusDialog).not.toBeVisible();
 

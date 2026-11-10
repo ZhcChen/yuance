@@ -17,9 +17,9 @@ import { Button } from './primitives.jsx';
  */
 
 /**
- * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, revealableId?: number | null, onDownload: (attachment: Attachment) => void, onPreview?: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void, renderExtraAction?: (attachment: Attachment) => React.ReactNode, showCreator?: boolean, className?: string }} props
+ * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, onDownload: (attachment: Attachment) => void, onPreview?: (attachment: Attachment) => void, renderExtraAction?: (attachment: Attachment) => React.ReactNode, showCreator?: boolean, className?: string }} props
  */
-export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, revealableId = null, onDownload, onPreview, onReveal, renderExtraAction, showCreator = false, className = '' }) {
+export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, onDownload, onPreview, renderExtraAction, showCreator = false, className = '' }) {
   return (
     <ul className={`work-item-attachment-list ${className}`.trim()} aria-label={ariaLabel}>
       {attachments.map((attachment) => (
@@ -38,11 +38,6 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
                 <Button variant="secondary" type="button" ariaLabel={`下载${downloadLabel} ${attachment.filename || attachment.id}`} onClick={() => onDownload(attachment)} disabled={downloadingId === attachment.id}>
                   {downloadingId === attachment.id ? '处理中…' : '下载'}
                 </Button>
-                {revealableId === attachment.id && onReveal ? (
-                  <Button variant="secondary" type="button" onClick={() => onReveal(attachment)} disabled={downloadingId === attachment.id}>
-                    在文件夹中显示
-                  </Button>
-                ) : null}
               </>
             ) : <span className="attachment-action-hint">上传完成后可下载</span>}
             {renderExtraAction?.(attachment)}
@@ -54,9 +49,9 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
 }
 
 /**
- * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, canUpload: boolean, downloadingId: number | null, revealableId?: number | null, onChooseUpload: () => void, onRetryUpload: (attachment: Attachment) => void, onPreview?: (attachment: Attachment) => void, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void }} props
+ * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, canUpload: boolean, downloadingId: number | null, onChooseUpload: () => void, onRetryUpload: (attachment: Attachment) => void, onPreview?: (attachment: Attachment) => void, onDownload: (attachment: Attachment) => void }} props
  */
-export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, canUpload, downloadingId, revealableId = null, onChooseUpload, onRetryUpload, onPreview, onDownload, onReveal }) {
+export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, canUpload, downloadingId, onChooseUpload, onRetryUpload, onPreview, onDownload }) {
   return (
     <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
       <div className="content-section-head work-item-attachments-head">
@@ -76,7 +71,7 @@ export function WorkItemAttachments({ attachments, status, warning, error, uploa
       {warning ? <p className="work-item-attachment-warning" aria-live="polite">{warning}</p> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {attachments.length ? (
-        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} revealableId={revealableId} onPreview={onPreview} onDownload={onDownload} onReveal={onReveal} showCreator renderExtraAction={(attachment) => canUpload && ['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" type="button" onClick={() => onRetryUpload(attachment)} disabled={uploading || mutationBusy}>继续上传</Button> : null} />
+        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} onPreview={onPreview} onDownload={onDownload} showCreator renderExtraAction={(attachment) => canUpload && ['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" type="button" onClick={() => onRetryUpload(attachment)} disabled={uploading || mutationBusy}>继续上传</Button> : null} />
       ) : <p className="yuance-ui-empty">当前没有工作项附件。</p>}
     </section>
   );

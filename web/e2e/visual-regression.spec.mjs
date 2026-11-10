@@ -54,7 +54,6 @@ const appPages = [
   { id: 'page.system.permissions', path: '/web/app/system/permissions' },
   { id: 'page.system.storage', path: '/web/app/system/storage' },
   { id: 'page.system.openapi', path: '/web/app/system/openapi' },
-  { id: 'page.system.releases', path: '/web/app/system/releases' },
   {
     id: 'page.system.database-stats',
     path: '/web/app/system/database-stats',

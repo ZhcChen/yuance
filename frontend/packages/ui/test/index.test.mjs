@@ -48,7 +48,6 @@ test('shared scrollbars use fixed overlay tracks with 30% thumb opacity', async 
 test('host styles do not define shared business tokens', async () => {
   const hostStyles = await Promise.all([
     readFile(new URL('../../../../web/src/app.css', import.meta.url), 'utf8'),
-    readFile(new URL('../../../../desktop/src/renderer/app.css', import.meta.url), 'utf8'),
   ]);
   for (const source of hostStyles) {
     assert.doesNotMatch(source, /--yc-[a-z-]+\s*:/u);

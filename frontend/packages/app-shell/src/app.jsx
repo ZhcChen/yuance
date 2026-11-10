@@ -22,7 +22,6 @@ import {
   buildSystemApiDocsPath,
   buildSystemOpenApiPath,
   buildSystemPermissionsPath,
-  buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemPath,
   buildSystemStoragePath,
@@ -34,7 +33,6 @@ import {
   downloadProjectResourceAttachment as downloadProjectResourceAttachmentUseCase,
   downloadWorkItemAttachment as downloadWorkItemAttachmentUseCase,
   downloadWorkItemCommentAttachment as downloadWorkItemCommentAttachmentUseCase,
-  downloadSystemReleaseAsset as downloadSystemReleaseAssetUseCase,
   handoffWorkItem as handoffWorkItemUseCase,
   notificationTargetPath,
   parseAppRoute,
@@ -43,7 +41,6 @@ import {
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
   uploadProjectResourceAttachment,
-  uploadSystemReleaseAsset,
 } from '@yuance/frontend-app-core';
 import {
   AppSidebar,
@@ -101,7 +98,7 @@ import { AppShellSkeleton, ProjectResourceDetailSkeleton } from './app-skeleton.
 /** @typedef {ReturnType<typeof import('@yuance/frontend-api-client').createApiClient> & { restorePendingReturnToHash(): void }} AppApiService */
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} AppRichTextAttachmentOption */
 /** @typedef {{ inline?: boolean, onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, onDeferred?: (message: string) => void, isCurrent?: () => boolean }} RichTextPasteUploadOptions */
-/** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities, releaseAssets?: import('@yuance/frontend-platform-contract').HostDelegatedReleaseAssetCapabilities, selectPastedFile?: (file: import('@yuance/frontend-platform-contract').PastedFile) => Promise<import('@yuance/frontend-platform-contract').SelectedFile | null> }} AppFileService */
+/** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { selectPastedFile?: (file: import('@yuance/frontend-platform-contract').PastedFile) => Promise<import('@yuance/frontend-platform-contract').SelectedFile | null> }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
 /**
@@ -949,7 +946,7 @@ function routeDescription(route) {
     case 'projects':
       return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
     case 'project-detail':
-      return '项目资料和成员管理由 Browser 与 Desktop 共用同一页面、表单和确认流程。';
+      return '项目资料和成员管理使用同一页面、表单和确认流程。';
     case 'project-cycle-detail':
       return '周期指标、状态看板和工作项入口由两个宿主共用同一派生视图。';
     case 'project-resource-detail':
@@ -967,11 +964,11 @@ function routeDescription(route) {
     case 'work-item-detail':
       return '工作项详情已在浏览器壳中接入只读信息、评论浏览、核心字段编辑和推进并指派。';
     case 'system-dashboard':
-      return '系统入口严格按当前主体的服务端权限返回，Browser 与 Desktop 共用同一管理导航事实。';
+      return '系统入口严格按当前主体的服务端权限返回，共用同一管理导航事实。';
     case 'system-users':
       return '用户、角色候选、项目关系和分页由服务端原子读取，两个宿主不拼接管理事实。';
     case 'system-roles':
-      return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
+      return '角色分页、选中角色和权限集合由服务端原子读取，共用同一角色工作台。';
     case 'system-permissions':
       return '权限点由服务端固定目录提供，两个宿主共用同一搜索和只读展示。';
     case 'system-database-stats':
@@ -983,9 +980,7 @@ function routeDescription(route) {
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
     case 'system-openapi':
-      return '系统 Token 的创建、scope 和生命周期由两个宿主共用，明文只在创建成功后展示一次。';
-    case 'system-releases':
-      return '保留策略、版本状态和平台资产由服务端原子读取，两个宿主共用同一发布工作台。';
+      return '系统 Token 的创建、scope 和生命周期统一管理，明文只在创建成功后展示一次。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -1025,7 +1020,6 @@ function routeEyebrow(route) {
     case 'system-api-docs':
     case 'system-storage':
     case 'system-openapi':
-    case 'system-releases':
       return 'System';
     default:
       return 'Web App';
@@ -1189,7 +1183,6 @@ export function SharedApp({ services }) {
   const projectResourceAttachmentActionRef = useRef(0);
   const projectResourceAttachmentMutationRef = useRef(false);
   const projectAttachmentPreviewRequestRef = useRef(0);
-  const projectAttachmentPreviewCapabilityRef = useRef('');
   const projectResourceActionRef = useRef(0);
   const projectResourceMutationRef = useRef(0);
   const projectPersonalAnalysisSelectionRef = useRef(/** @type {{ projectKey: string, promise: Promise<unknown> } | null} */ (null));
@@ -1289,7 +1282,6 @@ export function SharedApp({ services }) {
   const [profileSubmitting, setProfileSubmitting] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [apiTokens, setApiTokens] = useState(/** @type {any[]} */ ([]));
-  const [deviceSessions, setDeviceSessions] = useState(/** @type {any[]} */ ([]));
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', newPasswordConfirm: '' });
   const [tokenModalOpen, setTokenModalOpen] = useState(false);
@@ -1297,7 +1289,7 @@ export function SharedApp({ services }) {
   const [accountSecuritySubmitting, setAccountSecuritySubmitting] = useState(false);
   const [accountSecurityError, setAccountSecurityError] = useState('');
   const [createdRawToken, setCreatedRawToken] = useState('');
-  const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
+  const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [dashboard, setDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getDashboard']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
@@ -1319,19 +1311,6 @@ export function SharedApp({ services }) {
   const [systemApiTokenError, setSystemApiTokenError] = useState('');
   const [createdSystemApiToken, setCreatedSystemApiToken] = useState('');
   const systemApiTokenMutationRef = useRef(false);
-  const [systemReleasesView, setSystemReleasesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemReleasesView']>> | null} */ (null));
-  const [systemReleaseSettingsCount, setSystemReleaseSettingsCount] = useState(5);
-  const [systemReleaseEditor, setSystemReleaseEditor] = useState(/** @type {{ mode: 'create' | 'edit', releaseId?: number } | null} */ (null));
-  const [systemReleaseForm, setSystemReleaseForm] = useState({ versionName: '', title: '', notes: '', channel: 'legacy', manifestSha256: '', signingKeyId: '', sourceCommit: '', sourceTag: '' });
-  const [systemReleaseConfirmation, setSystemReleaseConfirmation] = useState(/** @type {{ kind: 'publish' | 'verify' | 'withdraw', release: any, reason?: string } | null} */ (null));
-  const [systemReleaseSubmitting, setSystemReleaseSubmitting] = useState(false);
-  const [systemReleaseError, setSystemReleaseError] = useState('');
-  const [systemReleaseAssetForm, setSystemReleaseAssetForm] = useState({ platform: 'windows', architecture: 'x64', artifactKind: 'installer' });
-  const [systemReleaseAssetStage, setSystemReleaseAssetStage] = useState('');
-  const [systemReleaseAssetDownloadingId, setSystemReleaseAssetDownloadingId] = useState(/** @type {number | null} */ (null));
-  const [systemReleaseAssetDeleteTarget, setSystemReleaseAssetDeleteTarget] = useState(/** @type {any | null} */ (null));
-  const systemReleaseMutationRef = useRef(false);
-  const systemReleaseAssetGenerationRef = useRef(0);
   const [systemStorageEditOpen, setSystemStorageEditOpen] = useState(false);
   const [systemStorageForm, setSystemStorageForm] = useState({ endpoint: '', region: '', bucket: '', accessKeyId: '', accessKeySecret: '' });
   const [systemStorageConfirmation, setSystemStorageConfirmation] = useState(/** @type {{ kind: 'save', payload: any } | { kind: 'initialize' } | { kind: 'rollback', version: number, bucket: string } | null} */ (null));
@@ -1416,10 +1395,8 @@ export function SharedApp({ services }) {
   const [workItemAttachmentStatus, setWorkItemAttachmentStatus] = useState('');
   const [workItemAttachmentUploading, setWorkItemAttachmentUploading] = useState(false);
   const [workItemAttachmentDownloadingId, setWorkItemAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
-  const [workItemAttachmentReveal, setWorkItemAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [workItemCommentAttachmentUploadingId, setWorkItemCommentAttachmentUploadingId] = useState(/** @type {number | null} */ (null));
   const [workItemCommentAttachmentDownloadingKey, setWorkItemCommentAttachmentDownloadingKey] = useState('');
-  const [workItemCommentAttachmentReveal, setWorkItemCommentAttachmentReveal] = useState(/** @type {{ key: string, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [workItemCommentAttachmentStatus, setWorkItemCommentAttachmentStatus] = useState(/** @type {Record<string, string>} */ ({}));
   const [workItemCommentAttachmentDeleteTarget, setWorkItemCommentAttachmentDeleteTarget] = useState(/** @type {{ commentId: number, attachment: AppAttachment, editorContext: 'comment-edit' | 'primary-post' } | null} */ (null));
   const [workItemCommentAttachmentDeletingId, setWorkItemCommentAttachmentDeletingId] = useState(/** @type {number | null} */ (null));
@@ -1561,7 +1538,6 @@ export function SharedApp({ services }) {
       label: '工具',
       items: [
         { id: 'time-management', label: '时间管理', href: timeManagementPath, icon: 'clock', badge: '现网', title: '时间管理（沿用现有实现）', active: route.id === 'time-management' },
-        { id: 'downloads', label: '桌面端下载', href: route.owner === 'app' ? 'https://yuance.quanxinfu.com/web/downloads' : '/web/downloads', icon: 'download', badge: '现网', external: true, title: '桌面端下载（沿用现有实现，另开标签页）' },
       ],
     },
     {
@@ -1821,10 +1797,8 @@ export function SharedApp({ services }) {
         setWorkItemAttachmentStatus('');
         setWorkItemAttachmentUploading(false);
         setWorkItemAttachmentDownloadingId(null);
-        setWorkItemAttachmentReveal(null);
         setWorkItemCommentAttachmentUploadingId(null);
         setWorkItemCommentAttachmentDownloadingKey('');
-        setWorkItemCommentAttachmentReveal(null);
         setWorkItemCommentAttachmentStatus({});
         setWorkItemCommentAttachmentDeleteTarget(null);
         setWorkItemCommentAttachmentDeletingId(null);
@@ -1855,7 +1829,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextProjectResourceLibraryBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs, nextTimeManagement] = await Promise.all([
+      const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextProjectResourceLibraryBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemAuditPage, nextSystemApiDocs, nextTimeManagement] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         ['home', 'profile', 'projects'].includes(targetRoute.id)
@@ -1925,7 +1899,7 @@ export function SharedApp({ services }) {
           })()
           : Promise.resolve(null),
         targetRoute.id === 'profile'
-          ? Promise.all([api.getApiTokens(), api.getDeviceSessions()])
+          ? Promise.all([api.getApiTokens()])
           : Promise.resolve(null),
         targetRoute.id === 'project-detail'
           ? Promise.all([
@@ -2011,9 +1985,6 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-openapi'
           ? api.getSystemOpenApiView()
           : Promise.resolve(null),
-        targetRoute.id === 'system-releases'
-          ? api.getSystemReleasesView({ page: targetRoute.page, perPage: targetRoute.perPage })
-          : Promise.resolve(null),
         targetRoute.id === 'system-audit'
           ? api.getSystemAuditLogs({ actor: targetRoute.actor, action: targetRoute.action, targetType: targetRoute.targetType, targetId: targetRoute.targetId, page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
@@ -2073,7 +2044,6 @@ export function SharedApp({ services }) {
         setProfile(nextProfile);
         setProfileForm({ displayName: nextProfile.display_name, email: nextProfile.email, mobile: nextProfile.mobile });
         setApiTokens(nextSecurity?.[0] || []);
-        setDeviceSessions(nextSecurity?.[1] || []);
       }
       if (targetRoute.id === 'messages') {
         setMessageFeed(nextFeed);
@@ -2139,10 +2109,6 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'system-openapi') {
         setSystemOpenApiView(nextSystemOpenApiView);
         if (mode === 'load') setCreatedSystemApiToken('');
-      }
-      if (targetRoute.id === 'system-releases') {
-        setSystemReleasesView(nextSystemReleasesView);
-        setSystemReleaseSettingsCount(nextSystemReleasesView?.settings.retention_count || 5);
       }
       if (targetRoute.id === 'system-audit') setSystemAuditPage(nextSystemAuditPage);
       if (targetRoute.id === 'system-api-docs') setSystemApiDocs(nextSystemApiDocs);
@@ -2517,14 +2483,9 @@ export function SharedApp({ services }) {
     } catch { return; }
   }
 
-  async function releaseProjectAttachmentPreview() {
+  function releaseProjectAttachmentPreview() {
     projectAttachmentPreviewRequestRef.current += 1;
-    const capability = projectAttachmentPreviewCapabilityRef.current;
-    projectAttachmentPreviewCapabilityRef.current = '';
     setProjectAttachmentPreview(null);
-    if (capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') {
-      try { await files.attachments.releaseProjectAttachmentPreview(capability); } catch { /* Capability cleanup is best-effort after host invalidation. */ }
-    }
   }
 
   /** @param {AppAttachment} attachment */
@@ -2533,25 +2494,15 @@ export function SharedApp({ services }) {
     const itemKey = activeWorkItemDetail.key;
     const requestId = projectAttachmentPreviewRequestRef.current + 1;
     projectAttachmentPreviewRequestRef.current = requestId;
-    const previousCapability = projectAttachmentPreviewCapabilityRef.current;
-    projectAttachmentPreviewCapabilityRef.current = '';
-    if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
     setProjectAttachmentPreview({ open: true, loading: true, error: '', attachment, source: '', kind: null, strategy: null, fileType: null, position: 0, total: 0, previousId: null, nextId: null });
     try {
-      /** @type {{ capability: string, source: string, attachment: AppAttachment, preview: any, navigation: any }} */
+      /** @type {{ source: string, attachment: AppAttachment, preview: any, navigation: any }} */
       let result;
-      if (typeof files.attachments?.openWorkItemAttachmentPreview === 'function') {
-        const hostResult = await files.attachments.openWorkItemAttachmentPreview({ itemKey, attachmentId: attachment.id });
-        result = { capability: hostResult.capability, source: hostResult.source, attachment: hostResult.attachment, preview: hostResult.preview, navigation: hostResult.navigation };
-      } else {
-        const browserResult = await api.getWorkItemAttachmentPreview(itemKey, attachment.id);
-        result = { capability: '', source: browserResult.content_url, attachment: browserResult.attachment, preview: browserResult.preview, navigation: browserResult.navigation };
-      }
+      const browserResult = await api.getWorkItemAttachmentPreview(itemKey, attachment.id);
+      result = { source: browserResult.content_url, attachment: browserResult.attachment, preview: browserResult.preview, navigation: browserResult.navigation };
       if (projectAttachmentPreviewRequestRef.current !== requestId || !isCurrentWorkItemDetailRoute(itemKey)) {
-        if (result.capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(result.capability).catch(() => {});
         return;
       }
-      projectAttachmentPreviewCapabilityRef.current = result.capability || '';
       setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: result.attachment, source: result.source, kind: result.preview.kind, strategy: result.preview.strategy, fileType: result.preview.file_type, position: result.navigation.position, total: result.navigation.total, previousId: result.navigation.previous?.id || null, nextId: result.navigation.next?.id || null });
     } catch (caught) {
       if (projectAttachmentPreviewRequestRef.current === requestId && isCurrentWorkItemDetailRoute(itemKey)) setProjectAttachmentPreview((current) => current ? { ...current, loading: false, error: errorMessage(caught instanceof Error ? caught : new Error('预览加载失败。')) } : current);
@@ -2569,24 +2520,14 @@ export function SharedApp({ services }) {
     const itemKey = activeWorkItemDetail.key;
     const requestId = projectAttachmentPreviewRequestRef.current + 1;
     projectAttachmentPreviewRequestRef.current = requestId;
-    const previousCapability = projectAttachmentPreviewCapabilityRef.current;
-    projectAttachmentPreviewCapabilityRef.current = '';
-    if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
     setProjectAttachmentPreview({ open: true, loading: true, error: '', attachment, source: '', kind: null, strategy: null, fileType: null, position: 0, total: 0, previousId: null, nextId: null, commentId });
     try {
       let result;
-      if (typeof files.attachments?.openWorkItemCommentAttachmentPreview === 'function') {
-        const hostResult = await files.attachments.openWorkItemCommentAttachmentPreview({ itemKey, commentId, attachmentId: attachment.id });
-        result = { ...hostResult, capability: hostResult.capability || '' };
-      } else {
-        const browserResult = await api.getWorkItemCommentAttachmentPreview(itemKey, commentId, attachment.id);
-        result = { ...browserResult, source: browserResult.preview.content_enabled ? browserResult.content_url : '', capability: '' };
-      }
+      const browserResult = await api.getWorkItemCommentAttachmentPreview(itemKey, commentId, attachment.id);
+      result = { ...browserResult, source: browserResult.preview.content_enabled ? browserResult.content_url : '' };
       if (projectAttachmentPreviewRequestRef.current !== requestId || !isCurrentWorkItemDetailRoute(itemKey)) {
-        if (result.capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(result.capability).catch(() => {});
         return;
       }
-      projectAttachmentPreviewCapabilityRef.current = result.capability || '';
       setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: result.attachment, source: result.source, kind: result.preview.kind, strategy: result.preview.strategy, fileType: result.preview.file_type, position: result.navigation.position, total: result.navigation.total, previousId: result.navigation.previous?.id || null, nextId: result.navigation.next?.id || null, commentId });
     } catch (caught) {
       if (projectAttachmentPreviewRequestRef.current === requestId && isCurrentWorkItemDetailRoute(itemKey)) setProjectAttachmentPreview((current) => current ? { ...current, loading: false, error: errorMessage(caught instanceof Error ? caught : new Error('评论附件预览加载失败。')) } : current);
@@ -2608,25 +2549,15 @@ export function SharedApp({ services }) {
     const accessToken = projectResourceDetail.access_token || '';
     const requestId = projectAttachmentPreviewRequestRef.current + 1;
     projectAttachmentPreviewRequestRef.current = requestId;
-    const previousCapability = projectAttachmentPreviewCapabilityRef.current;
-    projectAttachmentPreviewCapabilityRef.current = '';
-    if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
     setProjectAttachmentPreview({ open: true, loading: true, error: '', attachment, source: '', kind: null, strategy: null, fileType: null, position: 0, total: 0, previousId: null, nextId: null });
     try {
-      /** @type {{ capability: string, source: string, attachment: AppAttachment, preview: any, navigation: any }} */
+      /** @type {{ source: string, attachment: AppAttachment, preview: any, navigation: any }} */
       let result;
-      if (typeof files.attachments?.openProjectResourceAttachmentPreview === 'function') {
-        const hostResult = await files.attachments.openProjectResourceAttachmentPreview({ projectKey, resourceId, attachmentId: attachment.id, accessToken });
-        result = { capability: hostResult.capability, source: hostResult.source, attachment: hostResult.attachment, preview: hostResult.preview, navigation: hostResult.navigation };
-      } else {
-        const browserResult = await api.getProjectResourceAttachmentPreview(projectKey, resourceId, attachment.id, accessToken);
-        result = { capability: '', source: browserResult.content_url, attachment: browserResult.attachment, preview: browserResult.preview, navigation: browserResult.navigation };
-      }
+      const browserResult = await api.getProjectResourceAttachmentPreview(projectKey, resourceId, attachment.id, accessToken);
+      result = { source: browserResult.content_url, attachment: browserResult.attachment, preview: browserResult.preview, navigation: browserResult.navigation };
       if (projectAttachmentPreviewRequestRef.current !== requestId || !isCurrentProjectResourceAttachmentRoute(projectKey, resourceId)) {
-        if (result.capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(result.capability).catch(() => {});
         return;
       }
-      projectAttachmentPreviewCapabilityRef.current = result.capability || '';
       setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: result.attachment, source: result.source, kind: result.preview.kind, strategy: result.preview.strategy, fileType: result.preview.file_type, position: result.navigation.position, total: result.navigation.total, previousId: result.navigation.previous?.id || null, nextId: result.navigation.next?.id || null });
     } catch (caught) {
       if (projectAttachmentPreviewRequestRef.current === requestId && isCurrentProjectResourceAttachmentRoute(projectKey, resourceId)) setProjectAttachmentPreview((value) => value ? { ...value, loading: false, error: errorMessage(caught instanceof Error ? caught : new Error('预览加载失败。')) } : value);
@@ -2641,9 +2572,6 @@ export function SharedApp({ services }) {
   /** @param {number} attachmentId @param {{ source?: string, title?: string } | undefined} [inlineImage] */
   function activateProjectResourceInlineAttachment(attachmentId, inlineImage) {
     if (attachmentId === 0 && inlineImage?.source?.startsWith('data:image/svg+xml;base64,')) {
-      const previousCapability = projectAttachmentPreviewCapabilityRef.current;
-      projectAttachmentPreviewCapabilityRef.current = '';
-      if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
       setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: null, source: inlineImage.source, kind: 'image', strategy: null, fileType: 'svg', position: 0, total: 0, previousId: null, nextId: null });
       return;
     }
@@ -2686,15 +2614,10 @@ export function SharedApp({ services }) {
 
   async function resolveProjectResourceInlineAttachmentSource(attachmentId) {
     const current = routeRef.current;
-    const attachmentPlatform = files.attachments;
     if (current.id !== 'project-resource-detail' || !projectResourceDetail) throw new Error('inline preview unavailable');
     const projectKey = String(current.projectKey || '');
     const resourceId = current.resourceId;
     const accessToken = String(projectResourceDetail.access_token || '');
-    if (typeof attachmentPlatform?.openProjectResourceAttachmentPreview === 'function' && typeof attachmentPlatform.releaseProjectAttachmentPreview === 'function') {
-      const result = await attachmentPlatform.openProjectResourceAttachmentPreview({ projectKey, resourceId, attachmentId, accessToken });
-      return { source: result.source, release: async () => { await attachmentPlatform.releaseProjectAttachmentPreview(result.capability); } };
-    }
     if (typeof previewSourceResolver !== 'function') throw new Error('inline preview unavailable');
     const result = await api.getProjectResourceAttachmentPreview(projectKey, resourceId, attachmentId, accessToken);
     if (!result.preview.content_enabled || !['image', 'video'].includes(result.preview.kind || '') || !result.content_url) throw new Error('inline preview unavailable');
@@ -2710,12 +2633,7 @@ export function SharedApp({ services }) {
   /** @param {number} commentId @param {number} attachmentId */
   async function resolveWorkItemCommentInlineAttachmentSource(commentId, attachmentId) {
     const itemKey = activeWorkItemDetail?.key;
-    const attachmentPlatform = files.attachments;
     if (!itemKey) throw new Error('inline preview unavailable');
-    if (typeof attachmentPlatform?.openWorkItemCommentAttachmentPreview === 'function' && typeof attachmentPlatform.releaseProjectAttachmentPreview === 'function') {
-      const result = await attachmentPlatform.openWorkItemCommentAttachmentPreview({ itemKey, commentId, attachmentId });
-      return { source: result.source, release: async () => { await attachmentPlatform.releaseProjectAttachmentPreview(result.capability); } };
-    }
     const browserResult = await api.getWorkItemCommentAttachmentPreview(itemKey, commentId, attachmentId);
     return { source: browserResult.preview.content_enabled ? browserResult.content_url : '' };
   }
@@ -2747,8 +2665,8 @@ export function SharedApp({ services }) {
     setAccountSecurityError('');
     try {
       const result = await action();
-      const [tokens, sessions] = await Promise.all([api.getApiTokens(), api.getDeviceSessions()]);
-      setApiTokens(tokens); setDeviceSessions(sessions); setStatusMessage(successMessage);
+      const tokens = await api.getApiTokens();
+      setApiTokens(tokens); setStatusMessage(successMessage);
       return result;
     } catch (caught) {
       setAccountSecurityError(errorMessage(caught instanceof Error ? caught : new Error('操作失败。')));
@@ -2995,150 +2913,6 @@ export function SharedApp({ services }) {
     if (deleted) setSystemApiTokenDeleteTarget(null);
   }
 
-  async function refreshSystemReleasesAfterMutation() {
-    const current = routeRef.current;
-    if (current.id !== 'system-releases') return null;
-    const view = await api.getSystemReleasesView({ page: current.page, perPage: current.perPage });
-    if (routeRef.current.id === 'system-releases' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) {
-      setSystemReleasesView(view);
-      setSystemReleaseSettingsCount(view.settings.retention_count);
-    }
-    return view;
-  }
-
-  async function runSystemReleaseMutation(action, successMessage) {
-    if (systemReleaseMutationRef.current) return false;
-    systemReleaseMutationRef.current = true;
-    setSystemReleaseSubmitting(true);
-    setSystemReleaseError('');
-    try {
-      await action();
-      setStatusMessage(successMessage);
-      try { await refreshSystemReleasesAfterMutation(); }
-      catch (caught) { setSystemReleaseError(`操作已成功，但发布工作台刷新失败：${errorMessage(caught instanceof Error ? caught : new Error('刷新失败。'))}`); }
-      return true;
-    } catch (caught) {
-      let detail = errorMessage(caught instanceof Error ? caught : new Error('发布操作失败。'));
-      try { await refreshSystemReleasesAfterMutation(); }
-      catch (refreshError) { detail = `${detail}；最终状态刷新失败：${errorMessage(refreshError instanceof Error ? refreshError : new Error('刷新失败。'))}`; }
-      setSystemReleaseError(detail);
-      return false;
-    } finally {
-      systemReleaseMutationRef.current = false;
-      setSystemReleaseSubmitting(false);
-    }
-  }
-
-  function openSystemReleaseCreate() {
-    setSystemReleaseError('');
-    setSystemReleaseForm({ versionName: '', title: '', notes: '', channel: 'legacy', manifestSha256: '', signingKeyId: '', sourceCommit: '', sourceTag: '' });
-    setSystemReleaseEditor({ mode: 'create' });
-  }
-
-  function openSystemReleaseEdit(release) {
-    setSystemReleaseError('');
-    setSystemReleaseForm({
-      versionName: release.version_name, title: release.title, notes: release.notes, channel: release.channel,
-      manifestSha256: release.manifest_sha256, signingKeyId: release.signing_key_id,
-      sourceCommit: release.source_commit, sourceTag: release.source_tag,
-    });
-    setSystemReleaseEditor({ mode: 'edit', releaseId: release.id });
-  }
-
-  async function submitSystemReleaseSettings(event) {
-    event.preventDefault();
-    await runSystemReleaseMutation(() => api.updateSystemReleaseSettings(systemReleaseSettingsCount), '发布保留策略已更新。');
-  }
-
-  async function submitSystemReleaseEditor(event) {
-    event.preventDefault();
-    const releaseId = systemReleaseEditor?.mode === 'edit' ? systemReleaseEditor.releaseId : undefined;
-    if (systemReleaseEditor?.mode === 'edit' && !releaseId) return;
-    const editing = releaseId !== undefined;
-    const saved = await runSystemReleaseMutation(
-      () => editing
-        ? api.updateSystemRelease(releaseId, { versionName: systemReleaseForm.versionName, title: systemReleaseForm.title, notes: systemReleaseForm.notes, publish: false })
-        : api.createSystemRelease(systemReleaseForm),
-      editing ? '版本草稿已更新。' : '版本草稿已创建。',
-    );
-    if (saved) setSystemReleaseEditor(null);
-  }
-
-  async function confirmSystemReleaseAction() {
-    const confirmation = systemReleaseConfirmation;
-    if (!confirmation) return;
-    const release = confirmation.release;
-    let action;
-    let message;
-    if (confirmation.kind === 'publish') {
-      action = () => api.updateSystemRelease(release.id, { versionName: release.version_name, title: release.title, notes: release.notes, publish: true });
-      message = `${release.version_name} 已发布。`;
-    } else if (confirmation.kind === 'verify') {
-      action = () => api.verifySystemRelease(release.id);
-      message = `${release.version_name} 已通过发布校验。`;
-    } else {
-      action = () => api.withdrawSystemRelease(release.id, confirmation.reason || '');
-      message = `${release.version_name} 已撤回。`;
-    }
-    const completed = await runSystemReleaseMutation(action, message);
-    if (completed) setSystemReleaseConfirmation(null);
-  }
-
-  async function uploadSelectedSystemReleaseAsset() {
-    const releaseId = systemReleaseEditor?.mode === 'edit' ? systemReleaseEditor.releaseId : undefined;
-    if (!releaseId || systemReleaseSubmitting) return;
-    setSystemReleaseError('');
-    let file;
-    try { file = await files.files.chooseFile(); }
-    catch (caught) { setSystemReleaseError(errorMessage(caught instanceof Error ? caught : new Error('文件选择失败。'))); return; }
-    if (!file) return;
-    const generation = ++systemReleaseAssetGenerationRef.current;
-    systemReleaseMutationRef.current = true;
-    setSystemReleaseSubmitting(true);
-    setSystemReleaseAssetStage('registering');
-    try {
-      const result = await uploadSystemReleaseAsset({
-        api, platform: files, releaseId, platformName: systemReleaseAssetForm.platform,
-        architecture: systemReleaseAssetForm.architecture, artifactKind: systemReleaseAssetForm.artifactKind, file,
-        lifecycle: {
-          isCurrent: () => generation === systemReleaseAssetGenerationRef.current && routeRef.current.id === 'system-releases',
-          onStage: setSystemReleaseAssetStage,
-          onCreated() {}, onUploaded() {}, refresh: refreshSystemReleasesAfterMutation,
-        },
-      });
-      if (result.completed) setStatusMessage(`${file.filename} 已上传。`);
-      if (result.refreshError) setSystemReleaseError(`文件已上传，但发布工作台刷新失败：${errorMessage(result.refreshError instanceof Error ? result.refreshError : new Error('刷新失败。'))}`);
-    } catch (caught) {
-      setSystemReleaseError(errorMessage(caught instanceof Error ? caught : new Error('版本资产上传失败。')));
-      try { await refreshSystemReleasesAfterMutation(); }
-      catch (_refreshError) { /* 原上传错误优先展示。 */ }
-    } finally {
-      if (generation === systemReleaseAssetGenerationRef.current) {
-        systemReleaseMutationRef.current = false;
-        setSystemReleaseSubmitting(false);
-        setSystemReleaseAssetStage('');
-      }
-    }
-  }
-
-  async function downloadSystemReleaseAsset(asset) {
-    if (systemReleaseAssetDownloadingId !== null) return;
-    const generation = systemReleaseAssetGenerationRef.current;
-    setSystemReleaseAssetDownloadingId(asset.id);
-    setSystemReleaseError('');
-    try {
-      const result = await downloadSystemReleaseAssetUseCase({ api, platform: files, releaseId: asset.release_id, assetId: asset.id, suggestedFilename: asset.filename, isCurrent: () => generation === systemReleaseAssetGenerationRef.current && routeRef.current.id === 'system-releases' });
-      if (result.status === 'completed') setStatusMessage(`${asset.filename} 下载已开始。`);
-    } catch (caught) { setSystemReleaseError(errorMessage(caught instanceof Error ? caught : new Error('版本资产下载失败。'))); }
-    finally { setSystemReleaseAssetDownloadingId(null); }
-  }
-
-  async function deleteSystemReleaseAsset() {
-    const asset = systemReleaseAssetDeleteTarget;
-    if (!asset) return;
-    const completed = await runSystemReleaseMutation(() => api.deleteSystemReleaseAsset(asset.release_id, asset.id), `${asset.filename} 已删除。`);
-    if (completed) setSystemReleaseAssetDeleteTarget(null);
-  }
 
   async function runSystemStorageMutation(action, successMessage) {
     if (systemStorageMutationRef.current) return false;
@@ -3694,8 +3468,7 @@ export function SharedApp({ services }) {
   async function confirmAccountAction() {
     if (!accountConfirmation) return;
     try {
-      if (accountConfirmation.kind === 'token') await runAccountSecurity(() => api.deleteApiToken(Number(accountConfirmation.id)), '访问 Token 已删除。');
-      else await runAccountSecurity(() => api.revokeDeviceSession(String(accountConfirmation.id)), '设备会话已撤销。');
+      await runAccountSecurity(() => api.deleteApiToken(Number(accountConfirmation.id)), '访问 Token 已删除。');
       setAccountConfirmation(null);
     } catch { return; }
   }
@@ -3721,8 +3494,6 @@ export function SharedApp({ services }) {
         ? '对象存储 - 元策'
       : route.id === 'system-openapi'
         ? '系统 OpenAPI - 元策'
-      : route.id === 'system-releases'
-        ? '版本管理 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
         : route.id === 'profile'
@@ -3782,12 +3553,6 @@ export function SharedApp({ services }) {
   useEffect(() => {
     if (workItemPage && !workItemPage.can_manage_work_items) setWorkItemSelection(new Set());
   }, [workItemPage?.can_manage_work_items]);
-
-  useEffect(() => () => {
-    const capability = projectAttachmentPreviewCapabilityRef.current;
-    projectAttachmentPreviewCapabilityRef.current = '';
-    if (capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(capability).catch(() => {});
-  }, [files]);
 
   useEffect(() => {
     if (!activeWorkItemDetail || workItemFormKey === activeWorkItemDetail.key) {
@@ -4751,7 +4516,6 @@ export function SharedApp({ services }) {
       return;
     }
     const itemKey = activeWorkItemDetail.key;
-    setWorkItemAttachmentReveal(null);
     setWorkItemAttachmentDownloadingId(attachment.id);
     setWorkItemAttachmentActionError('');
     setWorkItemAttachmentStatus(`正在获取 ${attachment.filename || '附件'} 的下载链接。`);
@@ -4765,7 +4529,6 @@ export function SharedApp({ services }) {
         isCurrent: () => isCurrentWorkItemDetailRoute(itemKey),
       });
       if (result.completed) {
-        setWorkItemAttachmentReveal(result.revealCapability ? { attachmentId: attachment.id, capability: result.revealCapability } : null);
         setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载完成。`);
       }
     } catch (caught) {
@@ -4775,22 +4538,6 @@ export function SharedApp({ services }) {
       }
     } finally {
       setWorkItemAttachmentDownloadingId((current) => (current === attachment.id ? null : current));
-    }
-  }
-
-  /** @param {AppAttachment} attachment */
-  async function revealWorkItemAttachment(attachment) {
-    const reveal = workItemAttachmentReveal;
-    if (!reveal || reveal.attachmentId !== attachment.id || typeof files.attachments?.revealDownload !== 'function') return;
-    setWorkItemAttachmentReveal(null);
-    setWorkItemAttachmentDownloadingId(attachment.id);
-    try {
-      await files.attachments.revealDownload(reveal.capability);
-      setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 已在文件夹中定位。`);
-    } catch (caught) {
-      setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('定位附件失败。')));
-    } finally {
-      setWorkItemAttachmentDownloadingId(null);
     }
   }
 
@@ -4804,7 +4551,6 @@ export function SharedApp({ services }) {
     }
     const itemKey = activeWorkItemDetail.key;
     const busyKey = `${commentId}:${attachment.id}`;
-    setWorkItemCommentAttachmentReveal(null);
     setWorkItemCommentAttachmentDownloadingKey(busyKey);
     setWorkItemAttachmentActionError('');
     setWorkItemCommentAttachmentStatus((current) => ({
@@ -4822,7 +4568,6 @@ export function SharedApp({ services }) {
         isCurrent: () => isCurrentWorkItemDetailRoute(itemKey),
       });
       if (result.completed) {
-        setWorkItemCommentAttachmentReveal(result.revealCapability ? { key: busyKey, capability: result.revealCapability } : null);
         setWorkItemCommentAttachmentStatus((current) => ({
           ...current,
           [String(commentId)]: `${attachment.filename || '附件'} 下载完成。`,
@@ -4838,23 +4583,6 @@ export function SharedApp({ services }) {
       }
     } finally {
       setWorkItemCommentAttachmentDownloadingKey((current) => (current === busyKey ? '' : current));
-    }
-  }
-
-  /** @param {number} commentId @param {AppAttachment} attachment */
-  async function revealWorkItemCommentAttachment(commentId, attachment) {
-    const key = `${commentId}:${attachment.id}`;
-    const reveal = workItemCommentAttachmentReveal;
-    if (!reveal || reveal.key !== key || typeof files.attachments?.revealDownload !== 'function') return;
-    setWorkItemCommentAttachmentReveal(null);
-    setWorkItemCommentAttachmentDownloadingKey(key);
-    try {
-      await files.attachments.revealDownload(reveal.capability);
-      setWorkItemCommentAttachmentStatus((current) => ({ ...current, [String(commentId)]: `${attachment.filename || '附件'} 已在文件夹中定位。` }));
-    } catch (caught) {
-      setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('定位评论附件失败。')));
-    } finally {
-      setWorkItemCommentAttachmentDownloadingKey('');
     }
   }
 
@@ -5959,7 +5687,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-resource-library', 'project-personal-analysis', 'time-management', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases', 'work-item-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
+      {!isWorkItemListRouteId(route.id) && !['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-resource-library', 'project-personal-analysis', 'time-management', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'work-item-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -6233,88 +5961,6 @@ export function SharedApp({ services }) {
               </Modal>
               <Modal open={Boolean(systemApiTokenDeleteTarget)} title="删除系统 Token" onClose={() => { if (!systemApiTokenSubmitting) { setSystemApiTokenDeleteTarget(null); setSystemApiTokenError(''); } }} footer={<><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => setSystemApiTokenDeleteTarget(null)}>取消</Button><Button variant="danger" loading={systemApiTokenSubmitting} onClick={() => void confirmSystemApiTokenDelete()}>确认删除</Button></>}><p>确认删除 {systemApiTokenDeleteTarget?.name || ''}？使用该 Token 的自动化会立即失去访问权限。</p>{systemApiTokenError ? <Feedback tone="danger" title="删除失败">{systemApiTokenError}</Feedback> : null}</Modal>
             </section>
-          ) : route.id === 'system-releases' ? (
-            <section className="page-stack system-release-page" aria-label="发布工作台">
-              <div className="page-head">
-                <div className="page-head__text">
-                  <h1 id="system-releases-title" ref={headingRef} tabIndex={-1}>版本管理</h1>
-                  <p className="page-head__desc">维护桌面端与移动端发布版本，安装包统一走当前已激活的对象存储。</p>
-                </div>
-                <div className="page-head__actions">
-                  {systemReleasesView?.can_manage_releases ? <Button disabled={systemReleaseSubmitting} onClick={openSystemReleaseCreate}>新建版本</Button> : null}
-                </div>
-              </div>
-              <section className="storage-layout system-release-policy-layout"><section className="shell-card system-release-policy-panel"><div className="shell-panel-header system-release-panel-head"><div><h2>保留策略</h2><p className="shell-muted">仅对已发布版本生效。超过保留数的旧版本会自动删除数据库记录和 OSS 对象。</p></div></div>
-              {systemReleaseError && !systemReleaseEditor && !systemReleaseConfirmation ? <Feedback tone="danger" title="发布操作需要处理">{systemReleaseError}</Feedback> : null}
-              {systemReleasesView ? <dl className="config-summary-grid storage-meta"><div className="config-summary-item"><dt>当前保留数</dt><dd>{systemReleasesView.settings.retention_count}</dd></div><div className="config-summary-item"><dt>最近更新人</dt><dd>{systemReleasesView.settings.updated_by || '系统'}</dd></div><div className="config-summary-item"><dt>更新时间</dt><dd>{formatTimestamp(systemReleasesView.settings.updated_at)}</dd></div></dl> : null}
-              {systemReleasesView?.can_manage_releases ? <form className="system-release-settings-form" onSubmit={submitSystemReleaseSettings}>
-                <Field id="system-release-retention" label="已发布版本保留数"><TextInput type="number" min="1" max="50" required value={systemReleaseSettingsCount} onChange={(event) => setSystemReleaseSettingsCount(Number(event.target.value))} /></Field>
-                <Button type="submit" variant="secondary" loading={systemReleaseSubmitting}>更新保留策略</Button>
-              </form> : null}</section><aside className="shell-card storage-side"><h2>发布约束</h2><ul className="check-list"><li>新建版本默认是草稿，满足通道校验后才能发布。</li><li>一个版本可以包含 Windows、macOS、Linux、Android 和 iOS 等平台产物。</li><li>安装包通过临时签名地址上传，不在页面暴露长期 OSS 凭证。</li><li>internal 桌面版本仅代表项目完整性签名：macOS ad-hoc、Windows 未签名、Linux minisign，不代表生产系统信任。</li><li>已撤回版本不再作为 latest，也不会再签发新下载地址；旧预签名 URL 最长残余 5 分钟。</li></ul></aside></section>
-              <section className="shell-card system-release-list-panel" aria-labelledby="system-release-list-title">
-                <div className="shell-panel-header system-release-panel-head"><div><h2 id="system-release-list-title">版本列表</h2><p className="shell-muted">已发布版本优先，其余按更新时间倒序。</p></div></div>
-                <DataTable caption="系统版本列表" rows={systemReleasesView?.items || []} rowKey={(item) => item.release.id} emptyText="暂无版本记录。" columns={[
-                  { key: 'version', label: '版本', render: (item) => <><strong>{item.release.version_name}</strong><br /><span className="shell-muted">{item.release.channel}</span></> },
-                  { key: 'title', label: '标题 / 说明', render: (item) => <><strong>{item.release.title || '未填写标题'}</strong><br /><span className="shell-muted">{item.release.notes || '暂无版本说明'}</span></> },
-                  { key: 'status', label: '状态', render: (item) => <>{item.release.status}<br /><span className="shell-muted">{item.release.verification_status || '未校验'}</span></> },
-                  { key: 'signing', label: '签名 / 来源', render: (item) => item.release.channel === 'internal' ? <><code>{item.release.signing_key_id || '-'}</code><br /><span className="shell-muted">{item.release.source_tag || '-'} · {item.release.manifest_sha256?.slice(0, 12) || '-'}…</span></> : '-' },
-                  { key: 'withdrawal', label: '撤回状态', render: (item) => item.release.withdrawn_at ? <><strong>已撤回</strong><br /><span className="shell-muted">{item.release.withdrawal_reason || '-'} · GitHub {item.release.github_withdrawal_status || '-'}</span></> : <span className="shell-muted">未撤回</span> },
-                  { key: 'assets', label: '平台 / 资产', render: (item) => <>{item.release.platform_count} 个平台 · {item.release.asset_count} 个文件<br /><span className="shell-muted">{item.assets.map((asset) => `${asset.platform} ${asset.architecture}`).join('，') || '暂无安装包'}</span></> },
-                  { key: 'updated', label: '更新', render: (item) => <>{item.release.updated_by || '系统'}<br /><span className="shell-muted">{formatTimestamp(item.release.updated_at)}</span></> },
-                  { key: 'actions', label: '操作', render: (item) => systemReleasesView?.can_manage_releases ? <div className="shell-actions-inline">
-                    {item.release.status === 'draft' ? <Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => openSystemReleaseEdit(item.release)}>编辑</Button> : null}
-                    {item.release.status === 'draft' && item.release.channel === 'internal' && item.release.verification_status === 'pending' ? <Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'verify', release: item.release })}>校验</Button> : null}
-                    {item.release.status === 'draft' && (item.release.channel === 'legacy' || item.release.verification_status === 'verified') ? <Button disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'publish', release: item.release })}>发布</Button> : null}
-                    {item.release.status === 'published' ? <Button variant="danger" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'withdraw', release: item.release, reason: '' })}>撤回</Button> : null}
-                  </div> : null },
-                ]} />
-              <section aria-labelledby="system-release-assets-title">
-                <div className="shell-panel-header"><div><h3 id="system-release-assets-title">版本资产</h3></div></div>
-                <DataTable caption="系统版本资产" rows={(systemReleasesView?.items || []).flatMap((item) => item.assets.map((asset) => ({ ...asset, version_name: item.release.version_name, release_status: item.release.status })))} rowKey={(item) => item.id} emptyText="当前页版本暂无资产。" columns={[
-                  { key: 'version', label: '版本', render: (item) => item.version_name },
-                  { key: 'platform', label: '平台', render: (item) => `${item.platform} · ${item.architecture}` },
-                  { key: 'filename', label: '文件', render: (item) => <><strong>{item.filename}</strong><br /><span className="shell-muted">{item.content_type}</span></> },
-                  { key: 'kind', label: '类型', render: (item) => item.artifact_kind },
-                  { key: 'size', label: '字节数', render: (item) => item.byte_size.toLocaleString() },
-                  { key: 'status', label: '状态', render: (item) => item.status },
-                  { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) },
-                  { key: 'actions', label: '操作', render: (item) => <div className="shell-actions-inline">{item.status === 'uploaded' ? <Button variant="secondary" loading={systemReleaseAssetDownloadingId === item.id} disabled={systemReleaseAssetDownloadingId !== null || systemReleaseSubmitting} onClick={() => void downloadSystemReleaseAsset(item)}>下载</Button> : null}{systemReleasesView?.can_manage_releases && item.release_status === 'draft' ? <Button variant="danger" disabled={systemReleaseSubmitting || systemReleaseAssetDownloadingId !== null} onClick={() => setSystemReleaseAssetDeleteTarget(item)}>删除</Button> : null}</div> },
-                ]} />
-              </section>
-              {systemReleasesView ? <div className="shell-panel-header"><Pagination page={systemReleasesView.pagination.page} totalPages={systemReleasesView.pagination.total_pages} totalItems={systemReleasesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemReleasesPath({ owner: route.owner, page, perPage: systemReleasesView.pagination.per_page }), `正在加载第 ${page} 页版本。`)} /><label className="shell-page-size">每页<select value={systemReleasesView.pagination.per_page} onChange={(event) => navigate(buildSystemReleasesPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
-              </section>
-              <Modal open={Boolean(systemReleaseEditor)} title={systemReleaseEditor?.mode === 'edit' ? '编辑版本草稿' : '新建版本草稿'} onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseEditor(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseEditor(null)}>取消</Button><Button type="submit" form="system-release-editor-form" loading={systemReleaseSubmitting}>保存草稿</Button></>}>
-                <form id="system-release-editor-form" onSubmit={submitSystemReleaseEditor}>
-                  <Field id="system-release-version" label="版本号" required><TextInput required value={systemReleaseForm.versionName} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, versionName: event.target.value }))} /></Field>
-                  <Field id="system-release-title" label="版本标题"><TextInput value={systemReleaseForm.title} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, title: event.target.value }))} /></Field>
-                  <Field id="system-release-notes" label="版本说明"><TextArea rows={6} value={systemReleaseForm.notes} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, notes: event.target.value }))} /></Field>
-                  {systemReleaseEditor?.mode === 'create' ? <Field id="system-release-channel" label="发布通道"><Select value={systemReleaseForm.channel} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, channel: event.target.value }))}><option value="legacy">常规发布</option><option value="internal">内部桌面发布</option></Select></Field> : <p className="shell-muted">发布通道：{systemReleaseForm.channel}</p>}
-                  {systemReleaseEditor?.mode === 'create' && systemReleaseForm.channel === 'internal' ? <>
-                    <Field id="system-release-manifest" label="Manifest SHA-256" required><TextInput required value={systemReleaseForm.manifestSha256} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, manifestSha256: event.target.value }))} /></Field>
-                    <Field id="system-release-signing-key" label="签名 Key ID" required><TextInput required value={systemReleaseForm.signingKeyId} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, signingKeyId: event.target.value }))} /></Field>
-                    <Field id="system-release-source-commit" label="Source Commit" required><TextInput required value={systemReleaseForm.sourceCommit} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, sourceCommit: event.target.value }))} /></Field>
-                    <Field id="system-release-source-tag" label="Source Tag" required><TextInput required value={systemReleaseForm.sourceTag} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, sourceTag: event.target.value }))} /></Field>
-                  </> : null}
-                  {systemReleaseError ? <Feedback tone="danger" title="版本保存失败">{systemReleaseError}</Feedback> : null}
-                </form>
-                {systemReleaseEditor?.mode === 'edit' ? <section aria-labelledby="system-release-upload-title">
-                  <div className="shell-panel-header"><div><h3 id="system-release-upload-title">版本资产</h3><p className="shell-muted">选择资产坐标后由当前宿主安全上传。</p></div></div>
-                  <div className="shell-actions-inline">
-                    <Field id="system-release-asset-platform" label="平台"><Select value={systemReleaseAssetForm.platform} onChange={(event) => setSystemReleaseAssetForm((current) => ({ ...current, platform: event.target.value }))}><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option><option value="android">Android</option><option value="ios">iOS</option></Select></Field>
-                    <Field id="system-release-asset-architecture" label="架构"><Select value={systemReleaseAssetForm.architecture} onChange={(event) => setSystemReleaseAssetForm((current) => ({ ...current, architecture: event.target.value }))}><option value="x64">x64</option><option value="arm64">ARM64</option><option value="universal">通用</option></Select></Field>
-                    <Field id="system-release-asset-kind" label="资产类型"><Select value={systemReleaseAssetForm.artifactKind} onChange={(event) => setSystemReleaseAssetForm((current) => ({ ...current, artifactKind: event.target.value }))}><option value="installer">安装包</option><option value="signature">签名</option><option value="sbom">SBOM</option><option value="manifest">Manifest</option><option value="checksums">Checksums</option></Select></Field>
-                    <Button type="button" variant="secondary" loading={systemReleaseSubmitting} onClick={() => void uploadSelectedSystemReleaseAsset()}>选择并上传</Button>
-                  </div>
-                  {systemReleaseAssetStage ? <p role="status" className="shell-muted">上传阶段：{systemReleaseAssetStage}</p> : null}
-                </section> : null}
-              </Modal>
-              <Modal open={Boolean(systemReleaseConfirmation)} title={systemReleaseConfirmation?.kind === 'publish' ? '发布版本' : systemReleaseConfirmation?.kind === 'verify' ? '校验内部版本' : '撤回版本'} onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseConfirmation(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation(null)}>取消</Button><Button variant={systemReleaseConfirmation?.kind === 'withdraw' ? 'danger' : 'primary'} loading={systemReleaseSubmitting} disabled={systemReleaseConfirmation?.kind === 'withdraw' && !systemReleaseConfirmation.reason?.trim()} onClick={() => void confirmSystemReleaseAction()}>确认</Button></>}>
-                <p>{systemReleaseConfirmation?.kind === 'publish' ? `确认发布 ${systemReleaseConfirmation.release.version_name}？发布后版本元数据和资产不可修改。` : systemReleaseConfirmation?.kind === 'verify' ? `确认校验 ${systemReleaseConfirmation.release.version_name} 的平台资产、签名和供应链证据？` : `确认撤回 ${systemReleaseConfirmation?.release.version_name || ''}？下载入口将立即失效。`}</p>
-                {systemReleaseConfirmation?.kind === 'withdraw' ? <Field id="system-release-withdraw-reason" label="撤回原因" required><TextArea required rows={4} value={systemReleaseConfirmation.reason || ''} onChange={(event) => setSystemReleaseConfirmation((current) => current ? { ...current, reason: event.target.value } : current)} /></Field> : null}
-                {systemReleaseError ? <Feedback tone="danger" title="操作失败">{systemReleaseError}</Feedback> : null}
-              </Modal>
-              <Modal open={Boolean(systemReleaseAssetDeleteTarget)} title="删除版本资产" onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseAssetDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseAssetDeleteTarget(null)}>取消</Button><Button variant="danger" loading={systemReleaseSubmitting} onClick={() => void deleteSystemReleaseAsset()}>确认删除</Button></>}><p>确认删除 {systemReleaseAssetDeleteTarget?.filename || ''}？对象存储中的文件也会被删除。</p></Modal>
-            </section>
           ) : route.id === 'system-storage' ? (
             <section className="storage-page" aria-label="存储工作台">
               <section className="storage-layout">
@@ -6448,7 +6094,7 @@ export function SharedApp({ services }) {
               <Modal open={systemUserAction?.kind === 'password'} title="重置用户密码" onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button variant="danger" loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-password-form')); form?.requestSubmit(); }}>确认重置</Button></>}>
                 <form id="system-user-password-form" onSubmit={submitSystemUserPassword}>{systemUserError ? <Feedback tone="danger" title="重置失败">{systemUserError}</Feedback> : null}<p>重置“{systemUserAction?.user.display_name}”的密码后，该用户现有会话将立即撤销，新密码不会再次显示。</p><Field id="system-user-new-password" label="新密码" required><TextInput type="password" autoComplete="new-password" maxLength={256} value={systemUserPasswordForm.password} onChange={(event) => setSystemUserPasswordForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field id="system-user-new-password-confirm" label="确认新密码" required><TextInput type="password" autoComplete="new-password" maxLength={256} value={systemUserPasswordForm.passwordConfirm} onChange={(event) => setSystemUserPasswordForm((current) => ({ ...current, passwordConfirm: event.target.value }))} /></Field></form>
               </Modal>
-              <Modal open={systemUserAction?.kind === 'status'} title={systemUserAction?.user.status === 'active' ? '停用用户' : '启用用户'} onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button variant={systemUserAction?.user.status === 'active' ? 'danger' : 'primary'} loading={systemUserSubmitting} onClick={() => void confirmSystemUserStatus()}>确认{systemUserAction?.user.status === 'active' ? '停用' : '启用'}</Button></>}><p>{systemUserAction?.user.status === 'active' ? `停用“${systemUserAction?.user.display_name}”将立即撤销其 Browser/Desktop 会话、Token 和设备访问。` : `确认重新启用“${systemUserAction?.user.display_name}”？`}</p>{systemUserError ? <Feedback tone="danger" title="状态更新失败">{systemUserError}</Feedback> : null}</Modal>
+              <Modal open={systemUserAction?.kind === 'status'} title={systemUserAction?.user.status === 'active' ? '停用用户' : '启用用户'} onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button variant={systemUserAction?.user.status === 'active' ? 'danger' : 'primary'} loading={systemUserSubmitting} onClick={() => void confirmSystemUserStatus()}>确认{systemUserAction?.user.status === 'active' ? '停用' : '启用'}</Button></>}><p>{systemUserAction?.user.status === 'active' ? `停用“${systemUserAction?.user.display_name}”将立即撤销其登录会话和 Token。` : `确认重新启用“${systemUserAction?.user.display_name}”？`}</p>{systemUserError ? <Feedback tone="danger" title="状态更新失败">{systemUserError}</Feedback> : null}</Modal>
               <Modal open={systemUserProjectDialog?.kind === 'manage'} title="管理用户项目" onClose={() => { if (systemUserProjectDialog?.kind === 'manage') closeSystemUserProjects(); }} footer={<Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserProjects}>关闭</Button>}>
                 {systemUserError ? <Feedback tone="danger" title="项目关系操作失败">{systemUserError}</Feedback> : null}
                 <div className="system-user-projects">
@@ -6645,10 +6291,9 @@ export function SharedApp({ services }) {
                 <div className="panel-head"><div><h2>Personal Access Token</h2><p>用于 OpenAPI、Codex Skill 或外部脚本调用。</p></div><div className="token-panel-actions"><span>可用 Token {apiTokens.filter((token) => !token.revoked_at).length}/100</span><Button disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建 Token</Button></div></div>
                 {apiTokens.length ? <div className="account-security-list">{apiTokens.map((token) => <div className="account-security-row" key={token.id}><div><strong>{token.name}</strong><p className="shell-muted">尾号 {token.token_suffix} · {token.scopes.join('、')}</p></div><div className="shell-actions-inline"><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => { setTokenForm({ id: token.id, name: token.name, scopes: token.scopes, projectScope: token.project_scope, expiresAt: '' }); setTokenModalOpen(true); }}>编辑</Button><Button variant="danger" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation({ kind: 'token', id: token.id, label: token.name })}>删除</Button></div></div>)}</div> : <div className="empty-state"><strong>暂无访问 Token</strong><span>如需让 AI Agent 或脚本访问元策 API，可以创建最小权限 Token。</span></div>}
               </section></div><aside className="profile-detail-side"><section className="panel"><div className="panel-head compact"><h2>我的项目</h2></div>{dashboard?.projects?.length ? <ol className="activity-list">{dashboard.projects.map((project) => { const path = buildProjectDetailPath({ owner: route.owner, projectKey: project.key }); return <li key={project.key}><span className="activity-dot" aria-hidden="true" /><strong><a href={path} onClick={(event) => handleNavigate(event, path, `已打开 ${project.key}。`)}>{project.name}</a></strong><span>{project.key} · {project.status} · {project.active_work_item_count} 个活跃工作项</span></li>; })}</ol> : <div className="empty-state"><strong>暂无项目</strong><span>加入项目后会出现在这里。</span></div>}</section></aside></section>
-              <section className="panel profile-security-panel"><div className="panel-head"><div><h2>账户安全</h2><p>修改登录密码并管理 Desktop 授权设备。</p></div></div>
-                {deviceSessions.length ? <div className="account-security-list">{deviceSessions.map((session) => <div className="account-security-row" key={session.family_id}><div><strong>{session.device_name}{session.is_current ? '（当前设备）' : ''}</strong><p className="shell-muted">{session.platform} · {session.client_version} · {session.status}</p></div><Button variant="danger" disabled={accountSecuritySubmitting || session.status !== 'active'} onClick={() => setAccountConfirmation({ kind: 'device', id: session.family_id, label: session.device_name })}>撤销</Button></div>)}</div> : <div className="empty-state"><strong>暂无已授权设备</strong><span>通过 Desktop 登录后，设备会显示在这里。</span></div>}
+              <section className="panel profile-security-panel"><div className="panel-head"><div><h2>账户安全</h2><p>修改登录密码并管理访问 Token。</p></div></div>
               </section>
-              <Modal open={Boolean(accountConfirmation)} title={accountConfirmation?.kind === 'token' ? '删除访问 Token' : '撤销设备会话'} onClose={() => { if (!accountSecuritySubmitting) setAccountConfirmation(null); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation(null)}>取消</Button><Button variant="danger" loading={accountSecuritySubmitting} onClick={() => void confirmAccountAction()}>确认</Button></>}><p>确认处理“{accountConfirmation?.label}”？此操作会立即失效且不可撤销。</p></Modal>
+              <Modal open={Boolean(accountConfirmation)} title="删除访问 Token" onClose={() => { if (!accountSecuritySubmitting) setAccountConfirmation(null); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation(null)}>取消</Button><Button variant="danger" loading={accountSecuritySubmitting} onClick={() => void confirmAccountAction()}>确认</Button></>}><p>确认处理“{accountConfirmation?.label}”？此操作会立即失效且不可撤销。</p></Modal>
               <Modal open={passwordModalOpen} title="修改密码" onClose={() => { if (!accountSecuritySubmitting) setPasswordModalOpen(false); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setPasswordModalOpen(false)}>取消</Button><Button loading={accountSecuritySubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('password-form')); form?.requestSubmit(); }}>保存</Button></>}>
                 <form id="password-form" onSubmit={submitPassword}><Field id="current-password" label="当前密码" required><TextInput id="current-password" type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} /></Field><Field id="new-password" label="新密码" required><TextInput id="new-password" type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} /></Field><Field id="new-password-confirm" label="确认新密码" required><TextInput id="new-password-confirm" type="password" value={passwordForm.newPasswordConfirm} onChange={(event) => setPasswordForm((current) => ({ ...current, newPasswordConfirm: event.target.value }))} /></Field></form>
               </Modal>
@@ -7187,7 +6832,6 @@ export function SharedApp({ services }) {
                     attachmentStatusByComment={workItemCommentAttachmentStatus}
                     uploadingCommentId={workItemCommentAttachmentUploadingId}
                     downloadingKey={workItemCommentAttachmentDownloadingKey}
-                    revealableKey={workItemCommentAttachmentReveal?.key || ''}
                     mutationBusy={workItemMutationSubmitting}
                     canWriteComments={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
                     currentUsername={user?.username || ''}
@@ -7231,7 +6875,6 @@ export function SharedApp({ services }) {
                     onUploadAttachment={(commentId) => void uploadSelectedWorkItemCommentAttachment(commentId)}
                     onPreviewAttachment={(commentId, attachment) => void openWorkItemCommentAttachmentPreview(commentId, attachment)}
                     onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
-                    onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}
                     onRequestDeleteAttachment={requestWorkItemCommentAttachmentDelete}
                     onPasteFile={pasteWorkItemCommentFile}
                     resolveAttachmentSource={resolveWorkItemCommentInlineAttachmentSource}
@@ -7248,12 +6891,10 @@ export function SharedApp({ services }) {
                       mutationBusy={workItemMutationSubmitting}
                       canUpload={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
                       downloadingId={workItemAttachmentDownloadingId}
-                      revealableId={workItemAttachmentReveal?.attachmentId || null}
                       onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
                       onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
                       onPreview={(attachment) => void openWorkItemAttachmentPreview(attachment)}
                       onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
-                      onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
                     />
                   ) : null}
                   </WorkItemDetail>

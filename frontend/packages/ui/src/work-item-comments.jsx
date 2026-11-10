@@ -43,15 +43,13 @@ function attachmentMediaKind(attachment) {
  *   attachments: Attachment[],
  *   commentId: number,
  *   downloadingId: number | null,
- *   revealableId: number | null,
  *   onPreview: (attachment: Attachment) => void,
  *   onDownload: (attachment: Attachment) => void,
- *   onReveal?: (attachment: Attachment) => void,
  *   renderExtraAction?: (attachment: Attachment) => React.ReactNode,
  *   buildThumbnailUrl?: (commentId: number, attachment: Attachment) => string,
  * }} props
  */
-function DiscussionAttachmentList({ attachments, commentId, downloadingId, revealableId, onPreview, onDownload, onReveal, renderExtraAction, buildThumbnailUrl }) {
+function DiscussionAttachmentList({ attachments, commentId, downloadingId, onPreview, onDownload, renderExtraAction, buildThumbnailUrl }) {
   return (
     <ul className="discussion-attachments work-item-comment-attachments" aria-label="评论附件">
       {attachments.map((attachment) => {
@@ -95,7 +93,6 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
                 <>
                   {onPreview ? <Button variant="secondary" type="button" ariaLabel={`预览评论附件 ${attachment.filename || attachment.id}`} onClick={() => onPreview(attachment)} disabled={downloadingId === attachment.id}>预览</Button> : null}
                   <Button variant="secondary" type="button" ariaLabel={`下载评论附件 ${attachment.filename || attachment.id}`} onClick={() => onDownload(attachment)} disabled={downloadingId === attachment.id}>{downloadingId === attachment.id ? '处理中…' : '下载'}</Button>
-                  {revealableId === attachment.id && onReveal ? <Button variant="secondary" type="button" onClick={() => onReveal(attachment)} disabled={downloadingId === attachment.id}>在文件夹中显示</Button> : null}
                 </>
               ) : <span className="attachment-action-hint">{attachmentStatusLabel(attachment.status)}</span>}
               {renderExtraAction?.(attachment)}
@@ -114,7 +111,6 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
  *   attachmentStatusByComment: Record<string, string>,
  *   uploadingCommentId: number | null,
  *   downloadingKey: string,
- *   revealableKey: string,
  *   mutationBusy: boolean,
  *   canWriteComments: boolean,
  *   currentUsername: string,
@@ -158,7 +154,6 @@ function DiscussionAttachmentList({ attachments, commentId, downloadingId, revea
  *   onUploadAttachment: (commentId: number) => void,
  *   onPreviewAttachment: (commentId: number, attachment: Attachment) => void,
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
- *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRequestDeleteAttachment: (commentId: number, attachment: Attachment) => void,
  *   onPasteFile?: (context: 'new' | 'edit' | 'reply', commentId: number | null, file: File, options?: { onProgress?: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void, onError?: (message: string) => void, isCurrent?: () => boolean }) => Promise<{ id: number, filename: string, contentType: string, url: string } | null | typeof import('./rich-text.jsx').DEFER_RICH_TEXT_PASTE>,
  *   resolveAttachmentSource?: (commentId: number, attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
@@ -173,7 +168,6 @@ export function WorkItemComments(props) {
     attachmentStatusByComment,
     uploadingCommentId,
     downloadingKey,
-    revealableKey,
     mutationBusy,
     canWriteComments,
     currentUsername,
@@ -217,7 +211,6 @@ export function WorkItemComments(props) {
     onUploadAttachment,
     onPreviewAttachment,
     onDownloadAttachment,
-    onRevealAttachment,
     onRequestDeleteAttachment,
     onPasteFile,
     resolveAttachmentSource,
@@ -248,10 +241,8 @@ export function WorkItemComments(props) {
                 ariaLabel="新评论附件"
                 downloadLabel="评论附件"
                 downloadingId={newCommentDraftId !== null && downloadingKey.startsWith(`${newCommentDraftId}:`) ? Number(downloadingKey.split(':')[1]) : null}
-                revealableId={newCommentDraftId !== null && revealableKey.startsWith(`${newCommentDraftId}:`) ? Number(revealableKey.split(':')[1]) : null}
                 onPreview={(attachment) => { if (newCommentDraftId !== null) onPreviewAttachment(newCommentDraftId, attachment); }}
                 onDownload={(attachment) => { if (newCommentDraftId !== null) onDownloadAttachment(newCommentDraftId, attachment); }}
-                onReveal={(attachment) => { if (newCommentDraftId !== null) onRevealAttachment(newCommentDraftId, attachment); }}
                 className="work-item-comment-attachment-list"
               />
             ) : null}
@@ -274,7 +265,6 @@ export function WorkItemComments(props) {
             const attachmentStatus = attachmentStatusByComment[String(comment.id)] || '';
             const commentUploading = uploadingCommentId === comment.id;
             const downloadingId = downloadingKey.startsWith(`${comment.id}:`) ? Number(downloadingKey.split(':')[1]) : null;
-            const revealableId = revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null;
             return (
               <li key={comment.id} id={`comment-${comment.id}`} tabIndex={-1} className={`work-item-comment-row discussion-post ${comment.is_flow ? 'is-flow' : ''}`}>
                 <UserAvatar name={comment.author} className="discussion-avatar work-item-comment-avatar" />
@@ -305,10 +295,8 @@ export function WorkItemComments(props) {
                         attachments={attachments}
                         commentId={comment.id}
                         downloadingId={downloadingId}
-                        revealableId={revealableId}
                         onPreview={(attachment) => onPreviewAttachment(comment.id, attachment)}
                         onDownload={(attachment) => onDownloadAttachment(comment.id, attachment)}
-                        onReveal={onRevealAttachment ? (attachment) => onRevealAttachment(comment.id, attachment) : undefined}
                         renderExtraAction={(attachment) => editingCommentId === comment.id && comment.author_username === currentUsername ? (
                           <Button variant="danger" type="button" onClick={() => onRequestDeleteAttachment(comment.id, attachment)} disabled={mutationBusy || deletingAttachmentId !== null}>
                             {deletingAttachmentId === attachment.id ? '删除中…' : '删除'}

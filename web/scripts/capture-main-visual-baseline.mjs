@@ -26,7 +26,7 @@ const pages = [
   ['tasks', '/web/tasks'], ['bugs', '/web/bugs'], ['work-item-detail', '/web/work-items/YCE-TASK-2'],
   ['system', '/web/system'], ['system-users', '/web/system/users'], ['system-roles', '/web/system/roles'],
   ['system-permissions', '/web/system/permissions'], ['system-storage', '/web/system/storage'],
-  ['system-openapi', '/web/system/openapi'], ['system-releases', '/web/system/releases'],
+  ['system-openapi', '/web/system/openapi'],
   ['system-database-stats', '/web/system/database-stats'], ['system-audit', '/web/system/audit'],
   ['system-api-docs', '/web/system/api-docs'],
 ];

@@ -4,9 +4,6 @@ import assert from 'node:assert/strict';
 import {
   defineDownloadCapabilities,
   defineFileCapabilities,
-  defineHostDelegatedAttachmentCapabilities,
-  defineHostDelegatedReleaseAssetCapabilities,
-  defineHostDelegatedFileCapabilities,
   definePlatformCapabilities,
   defineRouterCapabilities,
   defineStatusCapabilities,
@@ -41,61 +38,6 @@ test('platform capability definitions preserve injected adapters', () => {
   assert.equal(platform.transfers, transfers);
   assert.equal(platform.router, router);
   assert.equal(platform.status, status);
-});
-
-test('host-delegated file capabilities preserve opaque desktop operations', () => {
-  const capabilities = defineHostDelegatedFileCapabilities({
-    chooseFile: async () => null,
-    uploadCanary: async () => ({ status: 'completed' }),
-    downloadCanary: async () => ({ status: 'cancelled' }),
-  });
-  assert.deepEqual(Object.keys(capabilities).sort(), ['chooseFile', 'downloadCanary', 'uploadCanary']);
-  assert.throws(() => defineHostDelegatedFileCapabilities({ chooseFile: async () => null }), /uploadCanary/);
-});
-
-test('host-delegated attachment capabilities require the complete business matrix', () => {
-  const capabilities = defineHostDelegatedAttachmentCapabilities({
-    uploadWorkItemAttachment: async () => ({ created: {}, uploaded: {} }),
-    uploadWorkItemCommentAttachment: async () => ({ created: {}, uploaded: {} }),
-    downloadWorkItemAttachment: async () => ({ status: 'completed' }),
-    downloadWorkItemCommentAttachment: async () => ({ status: 'cancelled' }),
-    uploadProjectAttachment: async () => ({ created: {}, uploaded: {} }),
-    uploadProjectResourceAttachment: async () => ({ created: {}, uploaded: {} }),
-    downloadProjectAttachment: async () => ({ status: 'completed' }),
-    downloadProjectResourceAttachment: async () => ({ status: 'completed' }),
-    openProjectAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
-    openWorkItemAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
-    openWorkItemCommentAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
-    openProjectResourceAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
-    releaseProjectAttachmentPreview: async () => ({ status: 'released' }),
-    revealDownload: async () => ({ status: 'revealed' }),
-  });
-  assert.deepEqual(Object.keys(capabilities).sort(), [
-    'downloadProjectAttachment',
-    'downloadProjectResourceAttachment',
-    'downloadWorkItemAttachment',
-    'downloadWorkItemCommentAttachment',
-    'openProjectAttachmentPreview',
-    'openProjectResourceAttachmentPreview',
-    'openWorkItemAttachmentPreview',
-    'openWorkItemCommentAttachmentPreview',
-    'releaseProjectAttachmentPreview',
-    'revealDownload',
-    'uploadProjectAttachment',
-    'uploadProjectResourceAttachment',
-    'uploadWorkItemAttachment',
-    'uploadWorkItemCommentAttachment',
-  ]);
-  assert.throws(() => defineHostDelegatedAttachmentCapabilities({}), /uploadWorkItemAttachment/);
-});
-
-test('host-delegated release asset capabilities require upload and download operations', () => {
-  const capabilities = defineHostDelegatedReleaseAssetCapabilities({
-    uploadSystemReleaseAsset: async () => ({ created: {}, uploaded: {} }),
-    downloadSystemReleaseAsset: async () => ({ status: 'completed' }),
-  });
-  assert.deepEqual(Object.keys(capabilities).sort(), ['downloadSystemReleaseAsset', 'uploadSystemReleaseAsset']);
-  assert.throws(() => defineHostDelegatedReleaseAssetCapabilities({ uploadSystemReleaseAsset: async () => ({ created: {}, uploaded: {} }) }), /downloadSystemReleaseAsset/);
 });
 
 test('platform capability definitions reject missing operations', () => {

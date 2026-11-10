@@ -18,7 +18,6 @@ import {
   buildSystemDatabaseStatsPath,
   buildSystemAuditPath,
   buildSystemPermissionsPath,
-  buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemStoragePath,
   buildSystemUsersPath,
@@ -28,7 +27,7 @@ import {
   routePathForOwner,
 } from '@yuance/frontend-app-core';
 
-test('system dashboard preserves Browser and Desktop owners', () => {
+test('system dashboard preserves page owners', () => {
   assert.equal(buildSystemPath('web'), '/web/system');
   assert.equal(buildSystemPath('app'), '/web/app/system');
   assert.equal(parseAppRoute('/web/system').id, 'system-dashboard');
@@ -67,7 +66,7 @@ test('system storage route preserves owner and version pagination', () => {
   });
 });
 
-test('system OpenAPI route preserves Browser and Desktop owners', () => {
+test('system OpenAPI route preserves page owners', () => {
   assert.equal(buildSystemOpenApiPath('web'), '/web/system/openapi');
   assert.equal(buildSystemOpenApiPath('app'), '/web/app/system/openapi');
   assert.deepEqual(parseAppRoute('/web/system/openapi'), {
@@ -76,14 +75,14 @@ test('system OpenAPI route preserves Browser and Desktop owners', () => {
   assert.equal(parseAppRoute('/web/app/system/openapi').owner, 'app');
 });
 
-test('system API docs route preserves Browser and Desktop owners', () => {
+test('system API docs route preserves page owners', () => {
   assert.equal(buildSystemApiDocsPath('web'), '/web/system/api-docs');
   assert.equal(buildSystemApiDocsPath('app'), '/web/app/system/api-docs');
   assert.equal(parseAppRoute('/web/system/api-docs').id, 'system-api-docs');
   assert.equal(parseAppRoute('/web/app/system/api-docs').owner, 'app');
 });
 
-test('system database stats route preserves Browser and Desktop owners', () => {
+test('system database stats route preserves page owners', () => {
   assert.equal(buildSystemDatabaseStatsPath('web'), '/web/system/database-stats');
   assert.equal(buildSystemDatabaseStatsPath('app'), '/web/app/system/database-stats');
   assert.deepEqual(parseAppRoute('/web/system/database-stats'), {
@@ -106,15 +105,6 @@ test('system permissions route preserves owner and compact search', () => {
   assert.equal(buildSystemPermissionsPath({ owner: 'app', q: '系统 管理' }), '/web/app/system/permissions?q=%E7%B3%BB%E7%BB%9F+%E7%AE%A1%E7%90%86');
   assert.deepEqual(parseAppRoute('/web/system/permissions', '?q=system.roles'), {
     id: 'system-permissions', owner: 'web', pathname: '/web/system/permissions', search: '?q=system.roles', q: 'system.roles', title: '权限目录',
-  });
-});
-
-test('system releases route preserves owner and version pagination', () => {
-  assert.equal(buildSystemReleasesPath({ owner: 'web' }), '/web/system/releases');
-  assert.equal(buildSystemReleasesPath({ owner: 'app', page: 2, perPage: 20 }), '/web/app/system/releases?page=2&per_page=20');
-  assert.deepEqual(parseAppRoute('/web/system/releases', '?page=2&per_page=20'), {
-    id: 'system-releases', owner: 'web', pathname: '/web/system/releases', search: '?page=2&per_page=20',
-    page: 2, perPage: 20, title: '版本管理',
   });
 });
 
@@ -337,7 +327,7 @@ test('search route parser and result targets preserve owner semantics', () => {
   assert.equal(routePathForOwner('/web/app/projects', 'app'), '/web/app');
 });
 
-test('profile route parser preserves Browser and Desktop owners', () => {
+test('profile route parser preserves page owners', () => {
   assert.deepEqual(parseAppRoute('/web/app/me', ''), {
     id: 'profile', owner: 'app', pathname: '/web/app/me', search: '', title: '个人中心',
   });

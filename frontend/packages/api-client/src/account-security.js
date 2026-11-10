@@ -3,7 +3,7 @@
 /** @typedef {{ method?: string, headers?: Record<string, string>, body?: string }} ApiRequestOptions */
 /** @typedef {(url: string, options?: ApiRequestOptions) => Promise<any>} ApiRequest */
 /** @typedef {() => Promise<void>} PrepareWrite */
-/** @typedef {{ updateOwnPassword(payload: { currentPassword: string, newPassword: string, newPasswordConfirm: string }): Promise<any>, getApiTokens(): Promise<any>, createApiToken(payload: { name: string, scopes: string[], projectScope: string, expiresAt?: string }): Promise<any>, updateApiToken(tokenId: number, payload: { name: string, scopes: string[], projectScope: string }): Promise<any>, deleteApiToken(tokenId: number): Promise<any>, getDeviceSessions(): Promise<any>, revokeDeviceSession(familyId: string): Promise<any> }} AccountSecurityClient */
+/** @typedef {{ updateOwnPassword(payload: { currentPassword: string, newPassword: string, newPasswordConfirm: string }): Promise<any>, getApiTokens(): Promise<any>, createApiToken(payload: { name: string, scopes: string[], projectScope: string, expiresAt?: string }): Promise<any>, updateApiToken(tokenId: number, payload: { name: string, scopes: string[], projectScope: string }): Promise<any>, deleteApiToken(tokenId: number): Promise<any> }} AccountSecurityClient */
 
 /** @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies @returns {AccountSecurityClient} */
 export function createAccountSecurityClient({ request, prepareWrite = async () => {} }) {
@@ -39,8 +39,5 @@ export function createAccountSecurityClient({ request, prepareWrite = async () =
     },
     /** @param {number} tokenId */
     deleteApiToken(tokenId) { return write(`/api/v1/me/tokens/${encodeURIComponent(String(tokenId))}`, 'DELETE'); },
-    getDeviceSessions() { return request('/api/v1/me/device-sessions'); },
-    /** @param {string} familyId */
-    revokeDeviceSession(familyId) { return write(`/api/v1/me/device-sessions/${encodeURIComponent(familyId)}`, 'DELETE'); },
   };
 }

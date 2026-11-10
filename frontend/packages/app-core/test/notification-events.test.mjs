@@ -17,9 +17,9 @@ test('相同事件序列产生稳定快照并丢弃连接内重复和乱序事�
   ];
 
   const browser = events.reduce(reduceNotificationEvent, createNotificationEventState());
-  const desktop = events.reduce(reduceNotificationEvent, createNotificationEventState());
+  const replay = events.reduce(reduceNotificationEvent, createNotificationEventState());
 
-  assert.deepEqual(browser, desktop);
+  assert.deepEqual(browser, replay);
   assert.deepEqual(browser, {
     connectionId: 'browser-1',
     lastSequence: 3,

@@ -63,14 +63,6 @@ test('work item attachments render an explicit empty state', () => {
   assert.match(html, /当前没有工作项附件/);
 });
 
-test('work item attachments expose reveal only for the capability-bound row', () => {
-  const html = renderToStaticMarkup(createElement(WorkItemAttachments, {
-    attachments: [attachment], status: '下载完成。', warning: '', error: '', uploading: false, mutationBusy: false, canUpload: true,
-    downloadingId: null, revealableId: attachment.id, onChooseUpload: () => {}, onRetryUpload: () => {}, onDownload: () => {}, onReveal: () => {},
-  }));
-  assert.match(html, /在文件夹中显示/);
-});
-
 test('work item attachments expose retries only to writers', () => {
   const pending = { ...attachment, status: 'pending' };
   const writable = renderToStaticMarkup(createElement(WorkItemAttachments, {
