@@ -234,7 +234,7 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 .app-sidebar__link.active .app-sidebar__icon { opacity: 1; }
 .app-sidebar__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .app-sidebar__badge { margin-left: auto; min-width: 20px; height: 19px; padding: 0 var(--yc-sp-6); display: inline-flex; align-items: center; justify-content: center; border-radius: var(--yc-radius-full); background: var(--yc-nav-badge); color: var(--yc-nav-badge-text); font-size: var(--yc-fs-11); font-variant-numeric: tabular-nums; }
-.app-sidebar__link.active .app-sidebar__badge { background: rgb(195 205 255 / 18%); color: var(--yc-nav-active-text); }
+.app-sidebar__link.active .app-sidebar__badge { background: rgb(175 210 245 / 18%); color: var(--yc-nav-active-text); }
 .app-sidebar__footer { margin-top: auto; padding-top: var(--yc-sp-12); }
 .app-sidebar__scrim { position: fixed; inset: 0; z-index: calc(var(--yc-z-sticky) - 1); background: var(--yc-surface-scrim); }
 
