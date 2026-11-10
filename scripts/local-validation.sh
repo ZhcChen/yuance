@@ -47,7 +47,6 @@ load_runtime() {
   export YUANCE_HTTP_ADDR="${API_ORIGIN#http://}"
   export YUANCE_DATABASE_URL="sqlite://$DATABASE_PATH"
   export YUANCE_DATA_DIR="$DATA_DIR"
-  export YUANCE_SERVER_INSTANCE_ID=yuance-local-validation
 }
 
 assert_api_stopped() {

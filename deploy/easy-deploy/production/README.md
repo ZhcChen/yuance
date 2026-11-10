@@ -73,7 +73,7 @@ YUANCE_DEPLOY_HOST=qfy-test \
 
 - 正式运行目录 `/srv/yuance/backend` 和公网服务器都禁止源码编译或镜像构建；远程构建只允许使用独立的 `/srv/yuance/build`。
 - `.env`、SQLite、OSS AccessKey、FRP token 和签名私钥不得提交或输出。
-- `YUANCE_SECURITY_MASTER_KEY` 与 `YUANCE_SERVER_INSTANCE_ID` 必须长期稳定。
+- `YUANCE_SECURITY_MASTER_KEY` 必须长期稳定。
 - 正式环境不执行 `seed demo` 或 `seed local-admin`。
 - 新旧环境不得同时提供写服务。
 - FRP Web 管理正式域名路由，不得手工创建第二个同域名 Nginx 或 Caddy 站点。

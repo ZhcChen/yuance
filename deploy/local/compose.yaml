@@ -12,7 +12,6 @@ services:
       YUANCE_SESSION_SECRET: ${YUANCE_SESSION_SECRET:?缺少本地密钥}
       YUANCE_SECURITY_MASTER_KEY: ${YUANCE_SECURITY_MASTER_KEY:?缺少本地密钥}
       YUANCE_FILE_MASTER_KEY: ""
-      YUANCE_SERVER_INSTANCE_ID: yuance-local-development-docker
     volumes:
       - type: bind
         source: ${YUANCE_LOCAL_DATA_DIR:?使用本地开发入口初始化}

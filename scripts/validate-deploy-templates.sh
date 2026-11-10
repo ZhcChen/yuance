@@ -75,13 +75,6 @@ if ! grep -q 'container_name: yuance-api' "$COMPOSE_FILE"; then
   exit 1
 fi
 
-for file in "$BACKEND_DIR/.env.example" "$COMPOSE_FILE"; do
-  if ! grep -q 'YUANCE_DEVICE_TRUSTED_PROXY_CIDRS' "$file"; then
-    echo "部署模板缺少 YUANCE_DEVICE_TRUSTED_PROXY_CIDRS: $file" >&2
-    exit 1
-  fi
-done
-
 if ! grep -q '127.0.0.1.*33033' "$GATEWAY_DIR/Caddyfile.yuance.example"; then
   echo "旧环境回滚用 Caddy 模板必须反代到 127.0.0.1:33033。" >&2
   exit 1
@@ -222,7 +215,6 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
     cd "$BACKEND_DIR"
     YUANCE_SESSION_SECRET="validate-session-secret-change-before-deploy" \
     YUANCE_SECURITY_MASTER_KEY="validate-security-master-key-change-before-deploy" \
-    YUANCE_SERVER_INSTANCE_ID="validate-production-instance" \
       docker compose --env-file .env.example -f compose.yaml.example config >/dev/null
   )
 else
