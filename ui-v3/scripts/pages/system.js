@@ -9,7 +9,6 @@ import {
   systemPermissions,
   systemStorage,
   systemAudit,
-  systemReleases,
   systemDatabaseStats,
 } from '../mock/data.js';
 
@@ -20,7 +19,6 @@ const SUB_PAGES = [
   { id: 'permissions', label: '权限目录', href: '#/system/permissions' },
   { id: 'storage', label: '对象存储', href: '#/system/storage' },
   { id: 'audit', label: '审计日志', href: '#/system/audit' },
-  { id: 'releases', label: '发布记录', href: '#/system/releases' },
   { id: 'database-stats', label: '数据库统计', href: '#/system/database-stats' },
 ];
 
@@ -220,29 +218,6 @@ export function renderSystem(subPage, params, query) {
         flush: true,
       }),
     );
-  } else if (active === 'releases') {
-    content = panel({
-      title: '发布记录',
-      desc: '桌面端安装包与预览版本',
-      body: dataTable(
-        [
-          { key: 'version', label: '版本', cellClass: 'table__key' },
-          { key: 'channel', label: '通道', render: (row) => badge(row.channel, row.channel === '正式' ? 'brand' : 'sand') },
-          { key: 'status', label: '状态', render: (row) => status(row.status, row.status === '已发布' ? 'success' : 'warning') },
-          { key: 'note', label: '说明' },
-          { key: 'size', label: '大小', align: 'right', cellClass: 'table__muted' },
-          { key: 'published_at', label: '发布时间', cellClass: 'table__muted' },
-          {
-            key: 'action',
-            label: '操作',
-            align: 'right',
-            render: () => h('button', { class: 'btn btn--sm btn--secondary', type: 'button' }, icon('i-download'), '下载'),
-          },
-        ],
-        systemReleases,
-      ),
-      flush: true,
-    });
   } else if (active === 'database-stats') {
     content = panel({
       title: '数据库统计',
@@ -290,16 +265,18 @@ export function renderSystem(subPage, params, query) {
           ),
         }),
         panel({
-          title: '发布状态',
+          title: '数据库概览',
+          desc: '数据量最大的 5 张表',
+          actions: h('a', { class: 'btn btn--sm btn--ghost', href: '#/system/database-stats' }, '全部'),
           body: h(
             'div',
             { class: 'stack stack--sm' },
-            systemReleases.map((release) =>
+            systemDatabaseStats.slice(0, 5).map((table) =>
               h(
                 'div',
                 { class: 'list-row', style: { padding: '6px 0', borderBottom: '0' } },
-                h('span', { class: 'list-row__main' }, release.version, h('span', { class: 'table__muted' }, ` · ${release.note}`)),
-                h('span', { class: 'list-row__side' }, badge(release.status, release.status === '已发布' ? 'success' : 'warning')),
+                h('span', { class: 'list-row__main' }, table.name, h('span', { class: 'table__muted' }, ` · ${table.rows} 行`)),
+                h('span', { class: 'list-row__side table__muted' }, table.size),
               ),
             ),
           ),
@@ -318,7 +295,7 @@ export function renderSystem(subPage, params, query) {
         'div',
         { class: 'page-head__text' },
         h('h1', { class: 'page-head__title' }, '系统管理'),
-        h('p', { class: 'page-head__desc' }, '用户、角色、对象存储、审计与发布的统一入口。'),
+        h('p', { class: 'page-head__desc' }, '用户、角色、对象存储与审计的统一入口。'),
       ),
     ),
     nav,

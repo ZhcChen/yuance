@@ -213,12 +213,6 @@ export const systemAudit = [
   { id: 9905, actor: '赵敏', action: '修改角色', target_type: 'role', target_id: '只读成员', created_at: '2026-11-01 10:02:44', ip: '10.20.5.18' },
 ];
 
-export const systemReleases = [
-  { version: 'v2.8.0', channel: '正式', status: '已发布', published_at: '2026-11-02 20:10:00', size: '86.4 MB', note: '零售系统多门店调拨上线' },
-  { version: 'v2.7.4', channel: '正式', status: '已发布', published_at: '2026-10-18 20:10:00', size: '85.9 MB', note: '修复收银端金额舍入偏差' },
-  { version: 'v2.8.1-rc2', channel: '预览', status: '待发布', published_at: '', size: '86.8 MB', note: '会员储值卡跨店核销灰度' },
-];
-
 export const systemDatabaseStats = [
   { name: 'projects', rows: 11, size: '48 KB' },
   { name: 'work_items', rows: 1284, size: '2.1 MB' },

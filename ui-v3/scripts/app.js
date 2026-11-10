@@ -57,7 +57,6 @@ route('/system/roles', 'system', (params, query) => renderSystem('roles', params
 route('/system/permissions', 'system', (params, query) => renderSystem('permissions', params, query));
 route('/system/storage', 'system', (params, query) => renderSystem('storage', params, query));
 route('/system/audit', 'system', (params, query) => renderSystem('audit', params, query));
-route('/system/releases', 'system', (params, query) => renderSystem('releases', params, query));
 route('/system/database-stats', 'system', (params, query) => renderSystem('database-stats', params, query));
 
 let activePageId = '';

@@ -8,11 +8,11 @@
 |---|---|
 | 是什么 | 纯 HTML + CSS + 原生 JavaScript 的可交互设计稿，零构建、零第三方依赖 |
 | 数据 | 全部为静态 mock（`scripts/mock/data.js`），不发起任何后端请求 |
-| 不做什么 | 不改动 `frontend/packages/`、`web/`、`desktop/`、`api/` 的任何现有代码 |
+| 不做什么 | 不改动 `frontend/packages/`、`web/`、`api/` 的任何现有代码 |
 | 时间管理 | 沿用现网实现。侧边栏「时间管理」入口带「现网」标记，跳转现网页面，v3 不提供其重设计版本 |
-| 生产链路 | 不参与 `web/` 与 `desktop/` 的 Vite 构建，不进入正式环境产物 |
+| 生产链路 | 不参与 `web/` 的 Vite 构建，不进入正式环境产物 |
 
-设计定稿后需要把设计回迁到 `frontend/packages/ui` 组件层（`web/` 与 `desktop/` 共用同一套 UI 包）。
+设计定稿后需要把设计回迁到 `frontend/packages/ui` 组件层（`web/` 使用该 UI 包）。
 回迁属于另立规格的工作，本模块只负责把设计规则定下来。
 
 ## 启动
@@ -44,7 +44,6 @@ python3 -m http.server 4183 --directory .
 | | | `#/system/permissions` | 权限目录 |
 | | | `#/system/storage` | 对象存储 |
 | | | `#/system/audit` | 审计日志 |
-| | | `#/system/releases` | 发布记录 |
 | | | `#/system/database-stats` | 数据库统计 |
 
 ## 目录结构
