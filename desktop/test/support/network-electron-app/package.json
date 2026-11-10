@@ -1,6 +1,0 @@
-{
-  "name": "yuance-network-electron-test-driver",
-  "private": true,
-  "type": "module",
-  "main": "main.mjs"
-}

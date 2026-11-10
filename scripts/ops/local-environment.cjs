@@ -8,8 +8,8 @@ function developmentEnvironment(environment, state) {
 }
 
 function validationOrigins(env) {
-  const keys = ['API', 'WEB', 'DESKTOP_RENDERER'];
-  const defaults = [33133, 33134, 33135];
+  const keys = ['API', 'WEB'];
+  const defaults = [33133, 33134];
   const ports = keys.map((key, index) => {
     const origin = env[`YUANCE_VALIDATION_${key}_ORIGIN`] || `http://127.0.0.1:${defaults[index]}`;
     const match = /^http:\/\/127\.0\.0\.1:([1-9][0-9]*)$/.exec(origin);
@@ -17,7 +17,7 @@ function validationOrigins(env) {
     if (!match || port > 65535) throw new Error(`${key} 地址必须为 http://127.0.0.1:<有效端口>。`);
     return port;
   });
-  if (new Set(ports).size !== ports.length) throw new Error('API、Web 和 Desktop renderer 端口不得重叠。');
+  if (new Set(ports).size !== ports.length) throw new Error('API 和 Web 端口不得重叠。');
   return ports;
 }
 

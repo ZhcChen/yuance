@@ -9,7 +9,6 @@ RUNTIME_ENV="$STATE_DIR/runtime.env"
 DATABASE_PATH="$DATA_DIR/yuance.sqlite3"
 API_ORIGIN="${YUANCE_VALIDATION_API_ORIGIN:-http://127.0.0.1:33133}"
 WEB_ORIGIN="${YUANCE_VALIDATION_WEB_ORIGIN:-http://127.0.0.1:33134}"
-DESKTOP_RENDERER_ORIGIN="${YUANCE_VALIDATION_DESKTOP_RENDERER_ORIGIN:-http://127.0.0.1:33135}"
 
 node "$ROOT_DIR/scripts/ops/local-environment.cjs"
 
@@ -115,21 +114,12 @@ run_web() {
   exec npm --prefix web run dev -- --base / --host 127.0.0.1 --port "${WEB_ORIGIN##*:}" --strictPort
 }
 
-run_desktop() {
-  prepare_state
-  cd "$ROOT_DIR"
-  export YUANCE_DESKTOP_WEB_URL="$API_ORIGIN/web"
-  export YUANCE_DESKTOP_RENDERER_URL="$DESKTOP_RENDERER_ORIGIN"
-  exec npm --prefix desktop run dev
-}
-
 show_status() {
   prepare_state
   printf '状态目录：%s\n' "$STATE_DIR"
   printf '数据库：%s (%s)\n' "$DATABASE_PATH" "$([ -f "$DATABASE_PATH" ] && printf '已就绪' || printf '未初始化')"
   printf 'API：%s\n' "$API_ORIGIN"
   printf 'Web：%s/web\n' "$WEB_ORIGIN"
-  printf 'Desktop renderer：%s\n' "$DESKTOP_RENDERER_ORIGIN"
   if curl --max-time 2 --fail --silent "$API_ORIGIN/api/healthz" >/dev/null 2>&1; then
     printf 'API 状态：运行中\n'
   else
@@ -155,14 +145,11 @@ case "${1:-}" in
   web)
     run_web
     ;;
-  desktop)
-    run_desktop
-    ;;
   status)
     show_status
     ;;
   *)
-    printf '用法：%s {prepare|import-db <sqlite快照>|seed|api|web|desktop|status}\n' "$0" >&2
+    printf '用法：%s {prepare|import-db <sqlite快照>|seed|api|web|status}\n' "$0" >&2
     exit 2
     ;;
 esac

@@ -1,9 +1,9 @@
-.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-cleanup-deleted api-files-deletion-jobs api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-cleanup-deleted api-files-deletion-jobs api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
 
 export SPEC_KIT_FEATURE = $(FEATURE)
 export SPEC_KIT_STAGE = $(STAGE)
 
-DEV_COMMANDS := help doctor setup prepare seed api web desktop status check docker-doctor docker-build docker-up docker-down docker-logs docker-status docker-smoke
+DEV_COMMANDS := help doctor setup prepare seed api web status check docker-doctor docker-build docker-up docker-down docker-logs docker-status docker-smoke
 DEV_TARGETS := $(addprefix dev-,$(DEV_COMMANDS))
 .PHONY: $(DEV_TARGETS) dev-verify
 
@@ -15,7 +15,7 @@ help:
 	@echo "元策开发命令"
 	@echo "  make dev-help（本地开发与本机 Docker 的统一入口）"
 	@echo "  make dev-doctor / dev-setup / dev-seed"
-	@echo "  make dev-api / dev-web / dev-desktop"
+	@echo "  make dev-api / dev-web"
 	@echo "  make dev-docker-doctor / dev-docker-build / dev-docker-up / dev-docker-down"
 	@echo "  make dev-verify"
 	@echo "  make spec-kit-init FEATURE=specs/<feature>"
@@ -41,7 +41,6 @@ help:
 	@echo "  make validation-prepare"
 	@echo "  make validation-api"
 	@echo "  make validation-web"
-	@echo "  make validation-desktop"
 	@echo "  make validation-status"
 	@echo "  make deploy-production"
 	@echo "  make deploy-validate"
@@ -147,9 +146,6 @@ validation-api:
 validation-web:
 	./scripts/local-validation.sh web
 
-validation-desktop:
-	./scripts/local-validation.sh desktop
-
 validation-status:
 	./scripts/local-validation.sh status
 
@@ -166,17 +162,12 @@ cache-status:
 	@echo "[make] 仓库构建缓存与生成物占用"
 	@for path in \
 		target \
-		desktop/native/file-guard/target \
 		frontend/node_modules \
 		web/node_modules \
-		desktop/node_modules \
 		frontend/node_modules/.cache \
 		web/node_modules/.cache \
-		desktop/node_modules/.cache \
 		dist \
 		web/dist \
-		desktop/dist \
-		desktop/renderer-dist \
 		frontend/packages/*/dist \
 		.artifacts \
 		.context \
@@ -196,15 +187,15 @@ docker-cache-status:
 	tail -4 "$$tmp"
 
 clean-rust:
-	@if [ -L target ] || [ -L desktop/native/file-guard/target ]; then \
+	@if [ -L target ]; then \
 		echo "[make] 拒绝清理 symlink target，请先确认其指向范围" >&2; \
 		exit 1; \
 	fi
-	rm -rf -- target desktop/native/file-guard/target
+	rm -rf -- target
 	@echo "[make] clean-rust 完成：Rust 构建产物已清理"
 
 clean-generated:
-	rm -rf dist desktop/dist web/dist desktop/renderer-dist
+	rm -rf dist web/dist
 	@echo "[make] clean-generated 完成：前端与发布生成物已清理"
 
 clean-frontend-dist:
@@ -214,12 +205,12 @@ clean-frontend-dist:
 	@echo "[make] clean-frontend-dist 完成：共享前端 package 生成物已清理"
 
 clean-node-cache:
-	rm -rf frontend/node_modules/.cache web/node_modules/.cache desktop/node_modules/.cache
+	rm -rf frontend/node_modules/.cache web/node_modules/.cache
 	@echo "[make] clean-node-cache 完成：前端工具缓存已清理，依赖目录保留"
 
 clean: clean-rust clean-generated
 	@echo "[make] clean 完成：Rust 构建产物与发布产物已清理"
 
 clean-deep: clean clean-frontend-dist clean-node-cache
-	rm -rf .artifacts .context desktop/node_modules web/node_modules frontend/node_modules test-results .tmp-docx-harness
+	rm -rf .artifacts .context web/node_modules frontend/node_modules test-results .tmp-docx-harness
 	@echo "[make] clean-deep 完成：依赖与验证产物已清理，需要时执行 npm ci 恢复"

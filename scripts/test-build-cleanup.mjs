@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const makefile = await readFile(new URL('../Makefile', import.meta.url), 'utf8');
 
 test('清理目标只作用于仓库内明确生成物', () => {
-  assert.match(makefile, /clean-rust:[\s\S]*rm -rf -- target desktop\/native\/file-guard\/target/);
+  assert.match(makefile, /clean-rust:[\s\S]*rm -rf -- target/);
   assert.match(makefile, /clean-frontend-dist:[\s\S]*frontend\/packages\/\*\/dist/);
   assert.doesNotMatch(makefile, /cargo clean/);
   assert.doesNotMatch(makefile, /docker (?:system|volume|builder) prune/);

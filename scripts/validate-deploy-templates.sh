@@ -154,8 +154,7 @@ for contract in \
   'docker buildx inspect --bootstrap' \
   'YUANCE_REMOTE_BUILD_DIR' \
   'npm --prefix frontend ci' \
-  'npm --prefix web ci' \
-  'ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm --prefix desktop ci'
+  'npm --prefix web ci'
 do
   if ! grep -q "$contract" "$ROOT_DIR/scripts/deploy-production.sh"; then
     echo "正式部署脚本缺少同机编译安全契约: $contract" >&2

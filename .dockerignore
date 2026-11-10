@@ -15,9 +15,6 @@ web/dist
 frontend/node_modules
 frontend/packages/*/node_modules
 frontend/packages/*/dist
-desktop/node_modules
-desktop/renderer-dist
-desktop/release
 frontend/packages/*/.cache
 .artifacts
 .context

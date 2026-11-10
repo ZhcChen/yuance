@@ -11,7 +11,6 @@
     "dev:seed": "node scripts/ops/local-dev.cjs seed",
     "dev:api": "node scripts/ops/local-dev.cjs api",
     "dev:web": "node scripts/ops/local-dev.cjs web",
-    "dev:desktop": "node scripts/ops/local-dev.cjs desktop",
     "dev:status": "node scripts/ops/local-dev.cjs status",
     "dev:check": "node scripts/ops/local-dev.cjs check",
     "dev:verify": "node --test scripts/test/local-development.test.cjs",
@@ -22,11 +21,10 @@
     "dev:docker:logs": "node scripts/ops/local-dev.cjs docker-logs",
     "dev:docker:status": "node scripts/ops/local-dev.cjs docker-status",
     "dev:docker:smoke": "node scripts/ops/local-dev.cjs docker-smoke",
-    "check:frontend": "npm --prefix web run check && npm --prefix frontend run check && npm --prefix desktop run check:renderer",
+    "check:frontend": "npm --prefix web run check && npm --prefix frontend run check",
     "validation:prepare": "./scripts/local-validation.sh prepare",
     "validation:api": "./scripts/local-validation.sh api",
     "validation:web": "./scripts/local-validation.sh web",
-    "validation:desktop": "./scripts/local-validation.sh desktop",
     "validation:status": "./scripts/local-validation.sh status"
   }
 }

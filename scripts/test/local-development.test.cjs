@@ -51,7 +51,7 @@ test('禁止通过参数绕过本机选择，但可显式选择本机 context', 
 });
 
 test('开发 origin 拒绝远程、通配、路径、认证、非法端口及端口重叠', () => {
-  assert.deepEqual(validationOrigins({}), [33133, 33134, 33135]);
+  assert.deepEqual(validationOrigins({}), [33133, 33134]);
   for (const origin of ['https://127.0.0.1:33133', 'http://remote:33133', 'http://0.0.0.0:33133', 'http://127.0.0.1:0', 'http://127.0.0.1:65536', 'http://127.0.0.1:33133/path', 'http://user@127.0.0.1:33133']) {
     assert.throws(() => validationOrigins({ YUANCE_VALIDATION_API_ORIGIN: origin }));
   }

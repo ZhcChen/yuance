@@ -106,10 +106,10 @@ function doctor() {
       }
     }
   }
-  for (const directory of ['frontend', 'web', 'desktop']) {
+  for (const directory of ['frontend', 'web']) {
     if (!fs.existsSync(path.join(root, directory, 'node_modules'))) { console.error(`${directory} 依赖未安装，请执行 make dev-setup。`); failed = true; }
   }
-  console.log(`API ${origin}；Web http://127.0.0.1:${ports[1]}/web；Desktop renderer http://127.0.0.1:${ports[2]}`);
+  console.log(`API ${origin}；Web http://127.0.0.1:${ports[1]}/web`);
   console.log('Docker 为可选开发方式；使用 make dev-docker-doctor 独立检查。');
   if (failed) throw new Error('开发依赖检查未通过。');
 }
@@ -120,9 +120,9 @@ async function main() {
   switch (command) {
     case 'doctor': doctor(); break;
     case 'setup':
-      for (const directory of ['frontend', 'web', 'desktop']) run('npm', ['--prefix', directory, 'ci']);
+      for (const directory of ['frontend', 'web']) run('npm', ['--prefix', directory, 'ci']);
       break;
-    case 'prepare': case 'seed': case 'api': case 'web': case 'desktop': case 'status':
+    case 'prepare': case 'seed': case 'api': case 'web': case 'status':
       run('bash', [validation, command]);
       break;
     case 'check': run('npm', ['run', 'check:frontend']); break;
@@ -169,7 +169,7 @@ async function main() {
       run('sh', ['scripts/smoke-web-app-image.sh'], { env: { ...env, YUANCE_LOCAL_DOCKER: '1', YUANCE_API_IMAGE: image, YUANCE_WEB_SMOKE_CONTAINER_PREFIX: `${project}-smoke`, YUANCE_WEB_SMOKE_ROOT: '.artifacts/local-dev-image-smoke', YUANCE_WEB_SMOKE_SESSION_SECRET: 'local-image-smoke-session', YUANCE_WEB_SMOKE_MASTER_KEY: 'local-image-smoke-storage-key' } });
       break;
     case 'help':
-      console.log('本地开发：doctor | setup | prepare | seed | api | web | desktop | status | check');
+      console.log('本地开发：doctor | setup | prepare | seed | api | web | status | check');
       console.log('本机 Docker：docker-doctor | docker-build | docker-up | docker-down | docker-logs | docker-status | docker-smoke');
       break;
     default: throw new Error(`未知开发命令：${command}`);
