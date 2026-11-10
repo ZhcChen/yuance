@@ -8,6 +8,7 @@ import { route, resolve, navigate } from './router.js';
 import { renderSidebar, renderTopbar, toggleSidebar } from './shell.js';
 import { currentProject } from './mock/data.js';
 import { readTheme, toggleTheme } from './theme.js';
+import { mountPageScrollbar } from './scrollbar.js';
 
 import { renderWorkbench } from './pages/workbench.js';
 import { renderProjects, renderProjectDetail } from './pages/projects.js';
@@ -122,6 +123,7 @@ document.documentElement.setAttribute('data-theme', readTheme());
 
 window.addEventListener('hashchange', renderRoute);
 renderRoute();
+mountPageScrollbar();
 
 // 便于在浏览器控制台里跳转：__v3.navigate('#/requirements')
 window.__v3 = { navigate: navigateTo, render: renderRoute };

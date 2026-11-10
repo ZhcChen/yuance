@@ -176,6 +176,55 @@ samp {
   background-clip: padding-box;
 }
 
+/* 页面滚动条改为悬浮滑块（scripts/scrollbar.js），不占内容宽度，避免页面切换时抖动 */
+html {
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
+}
+
+.page-scrollbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-toast, 1000);
+  width: calc(var(--yc-scrollbar-size) + 4px);
+  opacity: 0;
+  transition: opacity var(--motion-base) var(--ease-standard);
+}
+
+.page-scrollbar[hidden] {
+  display: none;
+}
+
+.page-scrollbar.is-active {
+  opacity: 1;
+}
+
+.page-scrollbar__thumb {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--text-tertiary) var(--yc-scrollbar-thumb-alpha), transparent);
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+}
+
+.page-scrollbar__thumb:hover,
+.page-scrollbar.is-dragging .page-scrollbar__thumb {
+  background: color-mix(in srgb, var(--text-secondary) var(--yc-scrollbar-thumb-hover-alpha), transparent);
+}
+
+.page-scrollbar.is-dragging .page-scrollbar__thumb {
+  cursor: grabbing;
+}
+
 /* ---------- 动效降级 ---------- */
 
 @media (prefers-reduced-motion: reduce) {
