@@ -83,7 +83,7 @@ test("desktop router translates shared app paths and rejects absolute or encoded
   assert.equal(router.currentPath(), "/web/app/projects?page=2");
   assert.deepEqual(router.currentRoute(), {
     id: "projects", owner: "app", pathname: "/web/app/projects", search: "?page=2",
-    status: "", page: 2, perPage: 10, title: "项目列表",
+    status: "", q: "", page: 2, perPage: 10, title: "项目列表",
   });
   router.navigate("/web/app/messages?filter=unread");
   router.navigate("/web/app/projects/YCE/resources/9");
