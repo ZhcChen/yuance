@@ -153,6 +153,9 @@
   --control-h-md: var(--yc-control-h-md);
   --control-h-lg: var(--yc-control-h-lg);
   --control-h-input: var(--yc-control-h-input);
+  --scrollbar-size: var(--yc-scrollbar-size);
+  --scrollbar-thumb-alpha: var(--yc-scrollbar-thumb-alpha);
+  --scrollbar-thumb-hover-alpha: var(--yc-scrollbar-thumb-hover-alpha);
   --control-px: var(--yc-control-px);
   --control-fs: var(--yc-control-fs);
   /* ---------- 图标磁贴：默认单色，只有语义色才上色 ---------- */

@@ -191,7 +191,7 @@ html::-webkit-scrollbar {
   right: 0;
   bottom: 0;
   z-index: var(--z-toast, 1000);
-  width: calc(var(--yc-scrollbar-size) + 4px);
+  width: calc(var(--scrollbar-size) + 4px);
   opacity: 0;
   transition: opacity var(--motion-base) var(--ease-standard);
 }
@@ -210,7 +210,7 @@ html::-webkit-scrollbar {
   right: 2px;
   top: 0;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--text-tertiary) var(--yc-scrollbar-thumb-alpha), transparent);
+  background: color-mix(in srgb, var(--text-tertiary) var(--scrollbar-thumb-alpha), transparent);
   cursor: grab;
   touch-action: none;
   will-change: transform;
@@ -218,7 +218,7 @@ html::-webkit-scrollbar {
 
 .page-scrollbar__thumb:hover,
 .page-scrollbar.is-dragging .page-scrollbar__thumb {
-  background: color-mix(in srgb, var(--text-secondary) var(--yc-scrollbar-thumb-hover-alpha), transparent);
+  background: color-mix(in srgb, var(--text-secondary) var(--scrollbar-thumb-hover-alpha), transparent);
 }
 
 .page-scrollbar.is-dragging .page-scrollbar__thumb {
