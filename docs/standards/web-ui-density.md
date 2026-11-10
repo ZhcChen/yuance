@@ -9,7 +9,7 @@ date: 2026-08-11
 
 ## 架构
 
-- Web 与 Desktop 共用同一套 React 共享前端：
+- Web 使用 React 共享前端：
   - `frontend/packages/ui`：基础组件与设计 token（`styles.css`）。
   - `frontend/packages/app-shell`：页面组合、路由与业务表单。
   - `frontend/packages/app-core`：路由、契约与用例。

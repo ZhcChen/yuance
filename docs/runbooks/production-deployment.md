@@ -62,7 +62,6 @@ SQLite 数据必须位于 WSL Linux 文件系统，不得迁到 `/mnt/c`。`.env
 - `/web`、`/web/app`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
-- 必须显式配置并保持 `YUANCE_SERVER_INSTANCE_ID` 稳定；它绑定 Desktop device credential，变更后现有设备必须重新授权。
 - 资料库新附件采用静态加密：文件级 DEK 由服务端主密钥信封封装，OSS 只保存密文。
   主密钥优先使用 `YUANCE_FILE_MASTER_KEY`；未设置时首次启动自动生成到
   `/data/secrets/file_master_key`（0600）。生成后必须保持稳定并单独备份，
@@ -101,12 +100,10 @@ Docker Compose、`ssh` 传输所需的系统工具。源码归档传输前，目
 后端运行目录的物理路径，拒绝符号链接别名进入运行目录；随后执行
 `docker buildx inspect --bootstrap`，确认 builder 可初始化后才建立远程源码工作区。
 脚本会在
-`/srv/yuance/build/<commit>` 中解压提交归档，先按三个 lockfile 执行 `npm ci`，
+`/srv/yuance/build/<commit>` 中解压提交归档，先按 lockfile 执行 `npm ci`，
 再执行 `npm run check:frontend`、`docker buildx build --platform linux/amd64`
 和 `docker save`。这样归档工作区自包含，不依赖发布机的 `node_modules`；构建产物先写入
 该编译目录，完成运行目录当前镜像备份后才复制到 `/srv/yuance/releases`。
-桌面端依赖安装时设置 `ELECTRON_SKIP_BINARY_DOWNLOAD=1`，正式 API 镜像只需要桌面端
-源码检查和 renderer 构建，不下载与服务端无关的 Electron 平台二进制。
 
 构建目录与 `/srv/yuance/backend`、`/srv/yuance/backend/data` 有明确隔离，
 构建失败不会加载镜像、执行迁移或重启服务。发布成功后删除该提交的临时源码和
@@ -220,20 +217,10 @@ YUANCE_WEB_DIST_DIR=/app/web/dist
 YUANCE_SSE_DRAIN_TIMEOUT=30s
 YUANCE_STOP_GRACE_PERIOD=45s
 YUANCE_MAX_RELEASE_WINDOW=10m
-YUANCE_SERVER_INSTANCE_ID=<稳定且唯一的生产实例标识>
 YUANCE_FILE_MASTER_KEY=<可选，留空则自动生成到 /data/secrets/file_master_key>
-YUANCE_DEVICE_TRUSTED_PROXY_CIDRS=127.0.0.0/8,172.16.0.0/12
-YUANCE_DEVICE_AUTHORIZATION_TTL=10m
-YUANCE_DEVICE_ACCESS_TTL=15m
-YUANCE_DEVICE_REFRESH_SLIDING_TTL=30d
-YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL=90d
-YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
-YUANCE_DEVICE_POLL_INTERVAL=5s
 ```
 
 `YUANCE_STOP_GRACE_PERIOD` 按 Compose 时长格式填写，范围为 `1s` 至 `24h`，支持 `.env` 的 `KEY=VALUE` 和 `KEY: VALUE` 格式。生产 `YUANCE_DATA_DIR` 只能留空或设为 `/data`；其他值及发布进程传入的非 `/data` 覆盖会在停机前拒绝，发布脚本校验后会清除进程环境覆盖。数据库 URL 与文件主密钥也按 Compose 的两种赋值格式校验，快照 manifest 会正确识别冒号格式主密钥。发布脚本安全读取目标机 `.env`，并清除数据库 URL 的进程环境覆盖以保证迁移和快照使用同一生产数据库；如需临时覆盖停机宽限期，显式设置发布机环境变量，例如 `YUANCE_STOP_GRACE_PERIOD=90s ./scripts/deploy-production.sh`。外层 `timeout` 会在该值上增加 60 秒余量。
-
-Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。
 
 公网检查：
 

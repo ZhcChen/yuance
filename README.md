@@ -29,15 +29,13 @@
 | 📎 | 资料与附件 | 管理项目资料，支持文件上传及常见文档在线预览 |
 | 📊 | 进度洞察 | 提供项目看板、个人视图、周期管理与进度分析 |
 | 🤖 | AI 协作 | 通过 OpenAPI 与 Codex Skill 查询和操作项目工作项 |
-| 🖥️ | 多端体验 | 提供 Web 工作台与桌面客户端发布能力 |
 
 ## 项目结构
 
 | 目录 | 用途 |
 |---|---|
 | [`api/`](api/) | Rust API、Web 页面、数据库迁移、模板与静态资源 |
-| [`frontend/`](frontend/) | Web 与桌面端共享的前端工程 |
-| [`desktop/`](desktop/) | Electron 桌面客户端及发布工具 |
+| [`frontend/`](frontend/) | Web 前端工程 |
 | [`skills/yuance-agent/`](skills/yuance-agent/) | 面向 Codex 的元策协作 Skill |
 | [`tools/yuance-agent-cli/`](tools/yuance-agent-cli/) | Skill 内置的 Rust OpenAPI CLI |
 | [`specs/`](specs/) | 新需求的活动 Spec Kit 规格、计划与任务 |
@@ -48,12 +46,11 @@
 
 | | 文档 | 内容 |
 |:--:|---|---|
-| 🚀 | [本地开发与启动](docs/runbooks/local-development.md) | 依赖诊断、独立开发库、API/Web/Desktop 与本机 Docker |
+| 🚀 | [本地开发与启动](docs/runbooks/local-development.md) | 依赖诊断、独立开发库、API/Web 与本机 Docker |
 | 📦 | [正式环境部署](docs/runbooks/production-deployment.md) | 构建、发布、健康检查与回滚流程 |
 | 🔌 | [API v1 契约](docs/runbooks/api-v1-contract.md) | 鉴权、分页、项目上下文与接口约定 |
 | 🤖 | [Codex Skill 安装](docs/runbooks/yuance-agent-codex-installation.md) | 跨平台安装、凭证配置与升级方式 |
 | 🧭 | [Spec Kit 工作流](docs/runbooks/spec-kit-workflow.md) | 新需求规格、计划、任务、验证和旧任务续接 |
-| 🖥️ | [桌面端发布](docs/runbooks/desktop-release-publication.md) | 桌面客户端构建与发布流程 |
 | 📐 | [工程规范](docs/standards/) | Git、数据访问、UI 与运行配置约定 |
 
-核心技术栈：**Rust · Axum · Askama · SQLite · TypeScript · Electron**
+核心技术栈：**Rust · Axum · Askama · SQLite · React**

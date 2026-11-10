@@ -7,12 +7,12 @@
 安装 Node.js 22.12+ / npm、Rust 1.94+ / Cargo、OpenSSL、SQLite CLI、curl、lsof 和 make。Rust 最低版本以 `api/Cargo.toml` 为准；镜像构建使用 Dockerfile 中的 Node 22 和 Rust 1.94，本次宿主实测 Node 26、npm 11。doctor 会检查宿主版本下限。本机容器额外需要 Docker Engine、Buildx 和 Compose；macOS 可以使用已安装的 OrbStack。
 
 ```bash
-make dev-setup       # 按三个 lockfile 安装前端和 Desktop 依赖
+make dev-setup       # 按 lockfile 安装前端依赖
 make dev-doctor      # 原生工具、依赖目录和配置诊断，不要求 Docker
 make dev-docker-doctor  # 可选：核验本机 Docker、builder 和 Compose
 ```
 
-不自动安装系统工具，不执行 sudo，不修改全局 Docker context/builder。Desktop 的完整依赖安装会下载当前平台 Electron；只做 API 镜像验证时可显式设置 `ELECTRON_SKIP_BINARY_DOWNLOAD=1 make dev-setup`，但之后需补齐 Electron 才能运行桌面开发态。
+不自动安装系统工具，不执行 sudo，不修改全局 Docker context/builder。
 
 ## 原生开发
 
@@ -25,28 +25,26 @@ make dev-seed
 
 `seed` 执行 migration、core seed 和 local-admin seed；必须在 API 停止时执行。它会创建或重置开发管理员，不应对导入的正式数据库副本执行。默认账号 `yuance_admin`，密码 `Yuance@2026Dev!`，仅用于本地开发。demo seed 不自动执行。
 
-分别在三个终端按需启动：
+分别在两个终端按需启动：
 
 ```bash
 make dev-api
 make dev-web
-make dev-desktop
 ```
 
-前台进程用 Ctrl+C 停止；不会按端口批量杀进程。API 每次启动先执行开发库 migration，Web/桌面端连接本地 API。Desktop 显示为“元策 Dev”，其 Electron profile 仍与正式应用隔离在操作系统的开发应用目录，不保存在仓库数据目录。
+前台进程用 Ctrl+C 停止；不会按端口批量杀进程。API 每次启动先执行开发库 migration，Web 连接本地 API。
 
 | 组件 | 默认地址或目录 |
 | --- | --- |
 | API / 服务端页面 | `http://127.0.0.1:33133/web` |
 | Vite Web | `http://127.0.0.1:33134/web` |
-| Desktop renderer | `http://127.0.0.1:33135` |
 | 原生开发库 | `.local/development/data/yuance.sqlite3` |
 | 本地 session/storage 密钥 | `.local/development/runtime.env`（0600） |
 | 原生文件主密钥 | `.local/development/data/secrets/file_master_key`（0600） |
 
 `make dev-status` 查看配置和 API 健康状态；`make dev-check` 执行前端检查；`make dev-verify` 验证套件隔离边界。需要 Rust 业务测试时使用 `make api-test`。
 
-端口可通过 `YUANCE_VALIDATION_API_ORIGIN`、`YUANCE_VALIDATION_WEB_ORIGIN` 和 `YUANCE_VALIDATION_DESKTOP_RENDERER_ORIGIN` 覆盖，只接受 `http://127.0.0.1:<端口>`，三个端口必须不同。为同一次开发的各终端设置相同配置；禁止使用正式 API、远程地址或 `0.0.0.0`。
+端口可通过 `YUANCE_VALIDATION_API_ORIGIN` 和 `YUANCE_VALIDATION_WEB_ORIGIN` 覆盖，只接受 `http://127.0.0.1:<端口>`，两个端口必须不同。为同一次开发的各终端设置相同配置；禁止使用正式 API、远程地址或 `0.0.0.0`。
 
 ## 本机 Docker
 

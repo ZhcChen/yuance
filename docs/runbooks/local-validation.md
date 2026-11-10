@@ -1,8 +1,8 @@
-# 本地 Web 与 Desktop 验收
+# 本地 Web 验收
 
 从零开发与本机 Docker 的唯一操作说明为 `docs/runbooks/local-development.md`。本页只处理数据库快照副本验收，保留 `validation-*` 兼容入口；不要对导入库执行 local-admin/demo seed。
 
-本地验收使用独立的 `.local/validation/` 状态目录，不覆盖默认的 `data/yuance.sqlite3`，也不直接连接正式 API。API、Web 和 Desktop 统一连接本地验收 API。
+本地验收使用独立的 `.local/validation/` 状态目录，不覆盖默认的 `data/yuance.sqlite3`，也不直接连接正式 API。API 与 Web 统一连接本地验收 API。
 
 ## 端口与目录
 
@@ -11,11 +11,10 @@
 | 验收数据库 | `.local/validation/data/yuance.sqlite3` |
 | 本地 API | `http://127.0.0.1:33133` |
 | 本地 Web | `http://127.0.0.1:33134/web` |
-| Desktop renderer | `http://127.0.0.1:33135` |
 
-`.local/` 已加入 `.gitignore`。API 的运行期 session/storage 密钥保存在权限为 `600` 的 `.local/validation/runtime.env`；Desktop 凭证存储仍由桌面端实现管理。
+`.local/` 已加入 `.gitignore`。API 的运行期 session/storage 密钥保存在权限为 `600` 的 `.local/validation/runtime.env`。
 
-API 启动明确禁止继承父进程或 `api/.env` 的 `YUANCE_FILE_MASTER_KEY`；独立文件主密钥由 API 持久化在 `.local/validation/data/secrets/file_master_key`。这些密钥不能解密正式加密附件。Desktop 仍使用隔离的“元策 Dev”应用 profile，不能把运行脚本中的 runtime.env 等同于 Electron 凭证存储。
+API 启动明确禁止继承父进程或 `api/.env` 的 `YUANCE_FILE_MASTER_KEY`；独立文件主密钥由 API 持久化在 `.local/validation/data/secrets/file_master_key`。这些密钥不能解密正式加密附件。
 
 ## 准备与导入
 
@@ -35,15 +34,14 @@ API 启动明确禁止继承父进程或 `api/.env` 的 `YUANCE_FILE_MASTER_KEY`
 
 ## 启动
 
-分别在三个终端执行：
+分别在两个终端执行：
 
 ```bash
 ./scripts/local-validation.sh api
 ./scripts/local-validation.sh web
-./scripts/local-validation.sh desktop
 ```
 
-`api` 会先对验收副本执行当前分支 migration，再启动服务。Web 和 Desktop 只连接 `http://127.0.0.1:33133`。
+`api` 会先对验收副本执行当前分支 migration，再启动服务。Web 只连接 `http://127.0.0.1:33133`。
 
 检查当前配置和 API 状态：
 

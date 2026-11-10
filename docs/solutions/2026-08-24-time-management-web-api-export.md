@@ -2,12 +2,12 @@
 
 ## 问题
 
-给 `@yuance/frontend-api-client` 的 `createApiClient` 增加新方法后，Desktop 通过 `...apiClient` 自动获得该方法，但 web 宿主 `web/src/lib/api.js` 使用显式 `webApi` 对象逐项导出，新方法不会自动出现在 Browser 页面中。运行时报错为 `api.getTimeManagementOverview is not a function`。
+给 `@yuance/frontend-api-client` 的 `createApiClient` 增加新方法后，web 宿主 `web/src/lib/api.js` 使用显式 `webApi` 对象逐项导出，新方法不会自动出现在页面中。运行时报错为 `api.getTimeManagementOverview is not a function`。
 
 ## 排查路径
 
 1. 先在 `frontend/packages/api-client/src/http-client.js` 确认 `createApiClient` 已合并新 client；
-2. 再检查宿主入口：`desktop/src/renderer/main.jsx` 直接展开 `apiClient`，而 `web/src/lib/api.js` 需要显式 `export const` + 加入 `webApi` 对象；
+2. 再检查宿主入口：`web/src/lib/api.js` 需要显式 `export const` + 加入 `webApi` 对象；
 3. 浏览器端验证页面加载时会暴露缺失方法，单元检查不会覆盖宿主导出拼装。
 
 ## 可复用规则
