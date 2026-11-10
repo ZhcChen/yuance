@@ -12,53 +12,53 @@
   color-scheme: light;
   font-family: var(--yc-font);
   /* ---------- 承载面 surface ---------- */
-  --yc-bg: #f2f3f9;
+  --yc-bg: #f2f4f7;
   --yc-surface: #ffffff;
-  --yc-surface-2: #fafbfe;
-  --yc-surface-3: #f0f2f8;
-  --yc-surface-hover: #f7f8fc;
+  --yc-surface-2: #f9fafc;
+  --yc-surface-3: #eef1f5;
+  --yc-surface-hover: #f5f7fa;
   --yc-surface-overlay: #ffffff;
   --yc-surface-scrim: rgb(21 24 39 / 45%);
 
   /* ---------- 侧栏（深色） ---------- */
-  --yc-nav-bg: #171a2c;
-  --yc-nav-bg-2: #1f2340;
+  --yc-nav-bg: #111a27;
+  --yc-nav-bg-2: #182536;
   --yc-nav-border: rgb(255 255 255 / 6%);
-  --yc-nav-text: #9ba2c0;
+  --yc-nav-text: #9aa8ba;
   --yc-nav-text-strong: #ffffff;
-  --yc-nav-text-muted: #7d84a6;
+  --yc-nav-text-muted: #7a8aa0;
   --yc-nav-hover: rgb(255 255 255 / 7%);
-  --yc-nav-active-bg: rgb(99 102 241 / 20%);
-  --yc-nav-active-text: #c7cffb;
+  --yc-nav-active-bg: rgb(74 144 217 / 20%);
+  --yc-nav-active-text: #cfe3f7;
   --yc-nav-badge: rgb(255 255 255 / 10%);
-  --yc-nav-badge-text: #b9c1e0;
+  --yc-nav-badge-text: #b4c3d6;
 
   /* ---------- 分隔线 border ---------- */
-  --yc-line: #e9ebf3;
-  --yc-line-soft: #f0f1f8;
-  --yc-line-strong: #cdd2e6;
-  --yc-line-strong-hover: #b7bdd6;
-  --yc-line-focus: #4f46e5;
+  --yc-line: #e6e9ee;
+  --yc-line-soft: #eff1f5;
+  --yc-line-strong: #cfd5de;
+  --yc-line-strong-hover: #b8c0cd;
+  --yc-line-focus: #1d5fa8;
 
   /* ---------- 文字 text ---------- */
-  --yc-text-primary: #171a2b;
-  --yc-text-secondary: #4e5568;
-  --yc-text-tertiary: #656c80;
+  --yc-text-primary: #121a26;
+  --yc-text-secondary: #475264;
+  --yc-text-tertiary: #5f6b7c;
   --yc-text-disabled: #aab0c0;
   --yc-text-inverse: #ffffff;
-  --yc-text-link: #4149b5;
+  --yc-text-link: #1a559a;
 
   /* ---------- 品牌 brand ---------- */
-  --yc-brand: #4a52c8;
-  --yc-brand-strong: #3d45ab;
-  --yc-brand-hover: #3d45ab;
-  --yc-brand-soft: #eef0fd;
-  --yc-brand-line: #d7dbf7;
+  --yc-brand: #1d5fa8;
+  --yc-brand-strong: #164b88;
+  --yc-brand-hover: #164b88;
+  --yc-brand-soft: #eaf1f9;
+  --yc-brand-line: #cddcee;
   --yc-brand-contrast: #ffffff;
-  --yc-brand-ring: rgb(74 82 200 / 24%);
-  --yc-brand-lift: #6470e0;
-  --yc-nav-accent: #8b96f0;
-  --yc-brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --yc-brand-ring: rgb(29 95 168 / 24%);
+  --yc-brand-lift: #3b82c4;
+  --yc-nav-accent: #6fb0e6;
+  --yc-brand-gradient: linear-gradient(135deg, #1f5fa8 0%, #2a84b0 100%);
 
   /* ---------- 状态 status ---------- */
   --yc-success: #0e8a63;
@@ -77,10 +77,10 @@
   --yc-info-soft: #ebf1fd;
   --yc-info-line: #c8d8fa;
   --yc-info-text: #2653bb;
-  --yc-violet: #6f45c9;
-  --yc-violet-soft: #f2edfd;
-  --yc-violet-line: #dccff8;
-  --yc-violet-text: #5d3aa9;
+  --yc-violet: #5a6c92;
+  --yc-violet-soft: #eef1f6;
+  --yc-violet-line: #d3dae6;
+  --yc-violet-text: #46567a;
   --yc-teal: #0d8f83;
   --yc-teal-soft: #e8f6f4;
   --yc-teal-line: #c1e5e0;
@@ -145,7 +145,7 @@
   --yc-shadow-sm: 0 1px 2px rgb(21 24 39 / 5%), 0 2px 6px rgb(21 24 39 / 4%);
   --yc-shadow-md: 0 2px 4px rgb(21 24 39 / 4%), 0 8px 20px rgb(21 24 39 / 7%);
   --yc-shadow-lg: 0 4px 10px rgb(21 24 39 / 6%), 0 20px 44px rgb(21 24 39 / 12%);
-  --yc-shadow-brand: 0 6px 16px rgb(79 70 229 / 26%);
+  --yc-shadow-brand: 0 6px 16px rgb(29 95 168 / 24%);
 
   /* ---------- 动效 motion ---------- */
   --yc-motion-instant: 0ms;
@@ -231,24 +231,24 @@ html[data-theme="dark"] {
   --yc-surface-scrim: rgb(3 6 12 / 62%);
 
   /* ---------- 侧栏（深色） ---------- */
-  --yc-nav-bg: #0b0e1a;
-  --yc-nav-bg-2: #131830;
+  --yc-nav-bg: #080d15;
+  --yc-nav-bg-2: #0f1826;
   --yc-nav-border: rgb(255 255 255 / 8%);
-  --yc-nav-text: #9ba2c0;
+  --yc-nav-text: #9aa8ba;
   --yc-nav-text-strong: #ffffff;
-  --yc-nav-text-muted: #6f7797;
+  --yc-nav-text-muted: #6f7f95;
   --yc-nav-hover: rgb(255 255 255 / 8%);
-  --yc-nav-active-bg: rgb(99 102 241 / 26%);
-  --yc-nav-active-text: #c7cffb;
+  --yc-nav-active-bg: rgb(74 144 217 / 26%);
+  --yc-nav-active-text: #cfe3f7;
   --yc-nav-badge: rgb(255 255 255 / 12%);
-  --yc-nav-badge-text: #b9c1e0;
+  --yc-nav-badge-text: #b4c3d6;
 
   /* ---------- 分隔线 border ---------- */
   --yc-line: #293548;
   --yc-line-soft: #1f2a3a;
   --yc-line-strong: #3a485d;
   --yc-line-strong-hover: #4c5b72;
-  --yc-line-focus: #6470e0;
+  --yc-line-focus: #5da0dc;
 
   /* ---------- 文字 text ---------- */
   --yc-text-primary: #e6edf5;
@@ -266,9 +266,9 @@ html[data-theme="dark"] {
   --yc-brand-line: #36556f;
   --yc-brand-contrast: #0f1723;
   --yc-brand-ring: rgb(120 167 207 / 26%);
-  --yc-brand-lift: #8b96f0;
-  --yc-nav-accent: #8b96f0;
-  --yc-brand-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  --yc-brand-lift: #5da0dc;
+  --yc-nav-accent: #7db4e6;
+  --yc-brand-gradient: linear-gradient(135deg, #2b6cb0 0%, #2a8bb0 100%);
 
   /* ---------- 状态 status ---------- */
   --yc-success: #5ad09a;
@@ -287,10 +287,10 @@ html[data-theme="dark"] {
   --yc-info-soft: #16223a;
   --yc-info-line: #263a5c;
   --yc-info-text: #a6c4fa;
-  --yc-violet: #b49ae8;
-  --yc-violet-soft: #1e1930;
-  --yc-violet-line: #342a4f;
-  --yc-violet-text: #cbb9f2;
+  --yc-violet: #9fb0d0;
+  --yc-violet-soft: #1a2232;
+  --yc-violet-line: #2f3b52;
+  --yc-violet-text: #bccae4;
   --yc-teal: #4fc7bb;
   --yc-teal-soft: #102623;
   --yc-teal-line: #1e4440;
@@ -355,7 +355,7 @@ html[data-theme="dark"] {
   --yc-shadow-sm: 0 1px 2px rgb(0 0 0 / 30%), 0 2px 6px rgb(0 0 0 / 24%);
   --yc-shadow-md: 0 2px 4px rgb(0 0 0 / 26%), 0 8px 20px rgb(0 0 0 / 34%);
   --yc-shadow-lg: 0 4px 10px rgb(0 0 0 / 30%), 0 20px 44px rgb(0 0 0 / 46%);
-  --yc-shadow-brand: 0 6px 16px rgb(79 70 229 / 34%);
+  --yc-shadow-brand: 0 6px 16px rgb(10 40 80 / 45%);
 
   /* ---------- 动效 motion ---------- */
   --yc-motion-instant: 0ms;

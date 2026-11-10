@@ -1493,7 +1493,7 @@
   color: #fff;
   font-size: var(--fs-14);
   font-weight: var(--fw-bold);
-  box-shadow: 0 3px 8px rgb(99 102 241 / 26%);
+  box-shadow: 0 3px 8px rgb(29 95 168 / 26%);
 }
 
 .project-card__name {

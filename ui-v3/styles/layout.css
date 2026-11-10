@@ -45,7 +45,7 @@
   background: var(--brand-gradient);
   color: #fff;
   flex: none;
-  box-shadow: 0 3px 10px rgb(99 102 241 / 38%);
+  box-shadow: 0 3px 10px rgb(29 95 168 / 38%);
 }
 
 .sidebar__logo svg {
@@ -164,7 +164,7 @@
   gap: var(--sp-12);
   height: var(--topbar-h);
   padding: 0 var(--sp-24);
-  background: rgb(255 255 255 / 82%);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
   backdrop-filter: saturate(180%) blur(14px);
   border-bottom: 1px solid var(--line);
 }
