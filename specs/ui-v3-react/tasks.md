@@ -157,7 +157,10 @@
   `npm --prefix web run test:visual` 9/9 通过（20 个页面 × 5 档宽度无横向溢出，含主区内部溢出检查）；
   全量 e2e（干净数据库）92 通过 / 30 失败 / 4 跳过，回迁前基线为 77 通过 / 40 失败 / 4 跳过，
   本轮多出的 2 条失败在隔离复跑中通过，属用例间数据依赖；
-  桌面端 renderer 因 `desktop/node_modules` 为空无法构建，走查未完成，列为未验证项。
+  桌面端此前因 `desktop/node_modules` 为空无法构建；补装依赖后 renderer 构建、`check:renderer`
+  与渲染进程用例（40 项）全部通过，桌面端全量用例 499 项中 493 通过；
+  但桌面端逐视口截图对照仍未产出（桌面端无截图能力，需先打包再驱动窗口），
+  深浅两色走查在 Web 端已人工完成、桌面端待补，故 T015 仍未勾选。
 
 **Checkpoint**：壳层形态切换完成。
 
@@ -222,8 +225,9 @@
   **结果：设计决策记录补齐暗色主题规格与回迁记录两节，复核记录见 `docs/reviews/2026-11-06-ui-v3-react-p5-dark-theme.md`。**
 - [ ] T031 验证：全量 `make frontend-check`、`make web-build`；两端逐视口截图；暗浅两色对照。
   验收：全部通过；对比度在两色下均不低于 4.5:1。
-  **当前：`make web-build` 通过，`make frontend-check` 的 web 与 frontend 段通过、desktop 段因本地缺少依赖无法执行；
-  Web 端逐视口截图与暗浅两色对照已完成，桌面端仍待本地依赖补齐后补做。**
+  **当前：`make web-build` 与 `make frontend-check` 全部通过（含 desktop 段）；
+  桌面端 renderer 构建、`check:renderer`、渲染进程用例 40 项全通过，桌面端全量用例 493/499 通过；
+  Web 端逐视口截图与暗浅两色对照已完成，桌面端逐视口截图仍待补（桌面端无截图能力，需先打包再驱动窗口）。**
 
 ## 复核与交付
 
