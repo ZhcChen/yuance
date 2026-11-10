@@ -1600,6 +1600,16 @@
   animation: select-in var(--motion-fast) var(--ease-out) both;
 }
 
+/* 菜单与触发按钮之间有 8px 间距，用透明桥接区避免鼠标移过去时 hover 中断 */
+.dropdown__menu::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -9px;
+  height: 9px;
+}
+
 .dropdown:hover .dropdown__menu,
 .dropdown:focus-within .dropdown__menu {
   display: block;
