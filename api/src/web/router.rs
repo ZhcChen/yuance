@@ -10,14 +10,9 @@ use axum::{
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
     fs,
-    net::{IpAddr, SocketAddr},
     path::{Path as StdPath, PathBuf},
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
 };
-use tokio::sync::{Semaphore, watch};
 
 use crate::{
     domains::auth,
@@ -32,27 +27,11 @@ static FILE_VIEWER_VENDOR_DIR: Dir<'_> =
 pub struct AppState {
     pub settings: Settings,
     pub pool: Option<sqlx::SqlitePool>,
-    device_auth_limiter: Arc<DeviceAuthLimiter>,
-    device_stream_shutdown: Arc<watch::Sender<bool>>,
-    device_stream_concurrency: Arc<Semaphore>,
-    active_device_stream_families: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AppState {
     pub fn new(settings: Settings, pool: Option<sqlx::SqlitePool>) -> Self {
-        let device_auth_limiter = Arc::new(DeviceAuthLimiter::new(&settings));
-        let max_active_streams = settings
-            .device_sessions
-            .control_max_active_streams()
-            .unwrap_or(16);
-        Self {
-            settings,
-            pool,
-            device_auth_limiter,
-            device_stream_shutdown: Arc::new(watch::channel(false).0),
-            device_stream_concurrency: Arc::new(Semaphore::new(max_active_streams)),
-            active_device_stream_families: Arc::new(Mutex::new(HashSet::new())),
-        }
+        Self { settings, pool }
     }
 
     pub fn for_tests() -> Self {
@@ -69,14 +48,9 @@ impl AppState {
                 env: "test".to_string(),
                 security_master_key: "test-master-key-that-is-long-enough".to_string(),
                 file_master_key: "test-file-master-key-that-is-long-enough".to_string(),
-                device_sessions: Default::default(),
                 experimental_legacy_preview_enabled: false,
             },
             pool: None,
-            device_auth_limiter: Arc::new(DeviceAuthLimiter::default()),
-            device_stream_shutdown: Arc::new(watch::channel(false).0),
-            device_stream_concurrency: Arc::new(Semaphore::new(16)),
-            active_device_stream_families: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -85,150 +59,17 @@ impl AppState {
             crate::platform::error::AppError::Config("SQLite pool is not configured".to_string())
         })
     }
-
-    pub(crate) fn try_device_auth_permit(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
-        self.device_auth_limiter
-            .concurrency
-            .clone()
-            .try_acquire_owned()
-            .ok()
-    }
-
-    pub(crate) fn subscribe_device_stream_shutdown(&self) -> watch::Receiver<bool> {
-        self.device_stream_shutdown.subscribe()
-    }
-
-    pub fn shutdown_device_streams(&self) {
-        self.device_stream_shutdown.send_replace(true);
-    }
-
-    pub(crate) fn try_device_stream_permit(&self, family_id: &str) -> Option<DeviceStreamPermit> {
-        let global = self
-            .device_stream_concurrency
-            .clone()
-            .try_acquire_owned()
-            .ok()?;
-        let mut active = self.active_device_stream_families.lock().ok()?;
-        if !active.insert(family_id.to_string()) {
-            return None;
-        }
-        drop(active);
-        Some(DeviceStreamPermit {
-            family_id: family_id.to_string(),
-            active: self.active_device_stream_families.clone(),
-            _global: global,
-        })
-    }
-}
-
-pub(crate) struct DeviceStreamPermit {
-    family_id: String,
-    active: Arc<Mutex<HashSet<String>>>,
-    _global: tokio::sync::OwnedSemaphorePermit,
-}
-
-impl Drop for DeviceStreamPermit {
-    fn drop(&mut self) {
-        if let Ok(mut active) = self.active.lock() {
-            active.remove(&self.family_id);
-        }
-    }
-}
-
-#[derive(Debug)]
-struct DeviceAuthLimiter {
-    attempts: Mutex<HashMap<String, VecDeque<Instant>>>,
-    concurrency: Arc<Semaphore>,
-    trusted_proxy_networks: Vec<ipnet::IpNet>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct DeviceAuthClientIp(pub Option<IpAddr>);
-
-impl Default for DeviceAuthLimiter {
-    fn default() -> Self {
-        Self {
-            attempts: Mutex::new(HashMap::new()),
-            concurrency: Arc::new(Semaphore::new(16)),
-            trusted_proxy_networks: vec!["127.0.0.0/8".parse().expect("loopback CIDR is valid")],
-        }
-    }
-}
-
-impl DeviceAuthLimiter {
-    fn new(settings: &Settings) -> Self {
-        Self {
-            trusted_proxy_networks: settings
-                .device_sessions
-                .trusted_proxy_networks()
-                .unwrap_or_default(),
-            ..Self::default()
-        }
-    }
-
-    fn allow_pair(
-        &self,
-        peer_key: String,
-        peer_limit: usize,
-        global_key: String,
-        global_limit: usize,
-    ) -> bool {
-        let now = Instant::now();
-        let cutoff = now - Duration::from_secs(60);
-        let Ok(mut attempts) = self.attempts.lock() else {
-            return false;
-        };
-        for key in [&peer_key, &global_key] {
-            let bucket = attempts.entry(key.clone()).or_default();
-            while bucket.front().is_some_and(|attempt| *attempt <= cutoff) {
-                bucket.pop_front();
-            }
-        }
-        if attempts
-            .get(&peer_key)
-            .is_some_and(|bucket| bucket.len() >= peer_limit)
-            || attempts
-                .get(&global_key)
-                .is_some_and(|bucket| bucket.len() >= global_limit)
-        {
-            return false;
-        }
-        attempts.entry(peer_key).or_default().push_back(now);
-        attempts.entry(global_key).or_default().push_back(now);
-        if attempts.len() > 4096 {
-            attempts.retain(|_, bucket| bucket.back().is_some_and(|attempt| *attempt > cutoff));
-        }
-        true
-    }
 }
 
 pub fn build_router(state: AppState) -> Router {
     let middleware_state = state.clone();
-    let device_boundary_state = state.clone();
     Router::new()
         .route("/", get(root))
         .route("/web", get(web::user::dashboard))
         .route("/web/app", get(static_web_app_entry))
         .route("/web/app/", get(static_web_app_entry))
         .route("/web/app/{*path}", get(static_web_app_asset))
-        .route("/web/downloads", get(web::user::desktop_downloads_page))
-        .route(
-            "/web/downloads/{release_id}/assets/{asset_id}",
-            get(web::user::desktop_download_asset),
-        )
         .route("/web/me", get(web::user::me_page))
-        .route(
-            "/web/device-authorization",
-            get(web::device_auth::authorization_page),
-        )
-        .route(
-            "/web/device-authorization/approve",
-            post(web::device_auth::approve_authorization),
-        )
-        .route(
-            "/web/device-authorization/deny",
-            post(web::device_auth::deny_authorization),
-        )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
         .route(
@@ -337,14 +178,6 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::system_openapi_page),
         )
         .route(
-            "/web/system/releases",
-            get(web::user::system_releases_page),
-        )
-        .route(
-            "/web/system/releases/{release_id}/assets/{asset_id}/download",
-            get(web::user::system_release_asset_download),
-        )
-        .route(
             "/web/system/database-stats",
             get(web::user::system_database_stats_page),
         )
@@ -356,54 +189,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/openapi.json", get(openapi_json))
         .route("/api/system/openapi.json", get(system_openapi_json))
-        .route(
-            "/.well-known/yuance-desktop",
-            get(web::desktop_enrollment::desktop_enrollment),
-        )
         .route("/api/healthz", get(web::api::healthz))
         .route("/api/readyz", get(web::api::readyz))
         .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
         .route("/api/v1/auth/login", post(web::api::login))
-        .route(
-            "/api/v1/device-authorizations",
-            post(web::device_auth::start_authorization),
-        )
-        .route(
-            "/api/v1/device-authorizations/exchange",
-            post(web::device_auth::exchange_authorization),
-        )
-        .route(
-            "/api/v1/device-sessions/refresh",
-            post(web::device_auth::rotate_refresh),
-        )
-        .route(
-            "/api/v1/device-session",
-            get(web::device_auth::probe_device_session),
-        )
-        .route(
-            "/api/v1/device-session/logout",
-            post(web::device_auth::logout_device_session),
-        )
-        .route(
-            "/api/v1/device-session/events",
-            get(web::device_auth::device_session_control),
-        )
-        .route(
-            "/api/v1/device-file-transfer/canary/upload-request",
-            post(web::device_file_transfer::canary_upload_request),
-        )
-        .route(
-            "/api/v1/device-file-transfer/canary/download-request",
-            get(web::device_file_transfer::canary_download_request),
-        )
-        .route(
-            "/api/v1/device-file-transfer/canary/upload",
-            put(web::device_file_transfer::canary_upload),
-        )
-        .route(
-            "/api/v1/device-file-transfer/canary/download",
-            get(web::device_file_transfer::canary_download),
-        )
         .route("/api/v1/auth/me", get(web::api::me))
         .route(
             "/api/v1/me/profile",
@@ -422,14 +211,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/me/tokens/{token_id}",
             patch(web::api::update_api_token).delete(web::api::delete_api_token),
-        )
-        .route(
-            "/api/v1/me/device-sessions",
-            get(web::api::list_device_sessions),
-        )
-        .route(
-            "/api/v1/me/device-sessions/{family_id}",
-            delete(web::api::revoke_device_session),
         )
         .route(
             "/api/v1/bootstrap/init",
@@ -521,55 +302,6 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/system/api-tokens/{token_id}",
             axum::routing::patch(web::api::update_system_api_token)
                 .delete(web::api::delete_system_api_token),
-        )
-        .route(
-            "/api/v1/system/releases/settings",
-            get(web::api::get_system_release_settings)
-                .patch(web::api::update_system_release_settings),
-        )
-        .route(
-            "/api/v1/system/releases-view",
-            get(web::api::get_system_releases_view),
-        )
-        .route(
-            "/api/v1/system/releases",
-            get(web::api::list_system_releases).post(web::api::create_system_release),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}",
-            get(web::api::get_system_release).patch(web::api::update_system_release),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/verify",
-            post(web::api::verify_system_release),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/withdraw",
-            post(web::api::withdraw_system_release),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/withdrawal",
-            patch(web::api::update_system_release_withdrawal),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/assets",
-            post(web::api::create_system_release_asset),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url",
-            get(web::api::system_release_asset_upload_url),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/assets/{asset_id}/download-url",
-            get(web::api::system_release_asset_download_url),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded",
-            post(web::api::system_release_asset_mark_uploaded),
-        )
-        .route(
-            "/api/v1/system/releases/{release_id}/assets/{asset_id}",
-            delete(web::api::delete_system_release_asset),
         )
         .route(
             "/api/v1/storage/config",
@@ -947,10 +679,6 @@ pub fn build_router(state: AppState) -> Router {
             get(static_overlay_scrollbar),
         )
         .route(
-            "/static/desktop-downloads.css",
-            get(static_desktop_downloads_css),
-        )
-        .route(
             "/static/document-preview.css",
             get(static_document_preview_css),
         )
@@ -975,107 +703,7 @@ pub fn build_router(state: AppState) -> Router {
             middleware_state,
             session_refresh_middleware,
         ))
-        .layer(axum::middleware::from_fn_with_state(
-            device_boundary_state,
-            device_auth_boundary_middleware,
-        ))
         .with_state(state)
-}
-
-async fn device_auth_boundary_middleware(
-    State(state): State<AppState>,
-    mut request: Request,
-    next: Next,
-) -> Response {
-    let path = request.uri().path();
-    let is_account_device_revoke = request.method() == Method::DELETE
-        && path
-            .strip_prefix("/api/v1/me/device-sessions/")
-            .is_some_and(|family_id| !family_id.is_empty() && !family_id.contains('/'));
-    let boundary = match path {
-        "/api/v1/device-authorizations" => (120, 20, true, true, false),
-        "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
-        "/api/v1/device-sessions/refresh" => (600, 120, true, true, false),
-        "/api/v1/device-session"
-        | "/api/v1/device-session/logout"
-        | "/api/v1/device-session/events"
-        | "/api/v1/device-file-transfer/canary/upload-request"
-        | "/api/v1/device-file-transfer/canary/download-request" => (1200, 120, true, false, false),
-        "/api/v1/device-file-transfer/canary/upload"
-        | "/api/v1/device-file-transfer/canary/download" => (1200, 120, true, true, false),
-        "/web/device-authorization"
-        | "/web/device-authorization/approve"
-        | "/web/device-authorization/deny" => (600, 30, false, false, true),
-        _ if is_account_device_revoke => (600, 30, false, false, false),
-        _ => return next.run(request).await,
-    };
-    let (global_limit, peer_limit, reject_cookie, reject_authorization, browser_response) =
-        boundary;
-    if (reject_cookie && request.headers().contains_key(header::COOKIE))
-        || (reject_authorization && request.headers().contains_key(header::AUTHORIZATION))
-    {
-        return web::device_auth::credential_not_allowed_response();
-    }
-    let client_ip = trusted_client_ip(&request, &state.device_auth_limiter.trusted_proxy_networks);
-    let peer = client_ip.map_or_else(|| "unknown".to_string(), |ip| ip.to_string());
-    let rate_limit_path = if is_account_device_revoke {
-        "/api/v1/me/device-sessions/{family_id}"
-    } else {
-        path
-    };
-    if !state.device_auth_limiter.allow_pair(
-        format!("peer:{peer}:{rate_limit_path}"),
-        peer_limit,
-        format!("global:{rate_limit_path}"),
-        global_limit,
-    ) {
-        return if browser_response {
-            web::device_auth::browser_rate_limited_response()
-        } else {
-            web::device_auth::rate_limited_response(60)
-        };
-    }
-    request
-        .extensions_mut()
-        .insert(DeviceAuthClientIp(client_ip));
-    let mut response = next.run(request).await;
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        header::HeaderValue::from_static("private, no-store"),
-    );
-    response
-}
-
-fn trusted_client_ip(request: &Request, trusted_proxies: &[ipnet::IpNet]) -> Option<IpAddr> {
-    let direct_peer = request
-        .extensions()
-        .get::<axum::extract::ConnectInfo<SocketAddr>>()?
-        .0
-        .ip();
-    if !trusted_proxies
-        .iter()
-        .any(|network| network.contains(&direct_peer))
-    {
-        return Some(direct_peer);
-    }
-    request
-        .headers()
-        .get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| {
-            let forwarded = value
-                .split(',')
-                .map(str::trim)
-                .map(str::parse::<IpAddr>)
-                .collect::<Result<Vec<_>, _>>()
-                .ok()?;
-            forwarded.into_iter().rev().find(|address| {
-                !trusted_proxies
-                    .iter()
-                    .any(|network| network.contains(address))
-            })
-        })
-        .or(Some(direct_peer))
 }
 
 async fn session_refresh_middleware(
@@ -1244,16 +872,10 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
             | "/web/bootstrap/init"
             | "/api/openapi.json"
             | "/api/system/openapi.json"
-            | "/.well-known/yuance-desktop"
             | "/api/healthz"
             | "/api/readyz"
             | "/api/v1/bootstrap/status"
             | "/api/v1/auth/login"
-            | "/api/v1/device-authorizations"
-            | "/api/v1/device-authorizations/exchange"
-            | "/api/v1/device-sessions/refresh"
-            | "/api/v1/device-session"
-            | "/api/v1/device-session/logout"
             | "/api/v1/bootstrap/init"
     )
 }
@@ -1706,10 +1328,6 @@ async fn static_overlay_scrollbar() -> impl IntoResponse {
         ],
         include_str!("../../static/overlay-scrollbar.mjs"),
     )
-}
-
-async fn static_desktop_downloads_css() -> impl IntoResponse {
-    static_boundary_css(include_str!("../../static/desktop-downloads.css"))
 }
 
 async fn static_document_preview_css() -> impl IntoResponse {

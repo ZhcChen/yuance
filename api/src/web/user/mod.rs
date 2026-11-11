@@ -12,7 +12,7 @@ use crate::{
     domains::{
         audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        files, project_resources, projects, rbac, storage, system_releases,
+        files, project_resources, projects, rbac, storage,
     },
     platform::security::csrf,
     platform::{
@@ -80,34 +80,6 @@ struct LoginTemplate {
 struct BootstrapTemplate {
     environment: String,
     csrf_token: String,
-}
-
-#[derive(Debug, Clone)]
-struct DesktopDownloadLinkView {
-    available: bool,
-    url: String,
-    filename: String,
-    byte_size: String,
-}
-
-#[derive(Debug, Clone)]
-struct DesktopDownloadPlatformView {
-    name: &'static str,
-    x64: DesktopDownloadLinkView,
-    arm64: DesktopDownloadLinkView,
-}
-
-#[derive(Template)]
-#[template(path = "web/desktop_downloads.html")]
-struct DesktopDownloadsTemplate {
-    has_release: bool,
-    version_name: String,
-    title: String,
-    notes: String,
-    published_at: String,
-    is_internal: bool,
-    signing_key_id: String,
-    platforms: Vec<DesktopDownloadPlatformView>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1219,106 +1191,6 @@ pub async fn system_openapi_page(
     shared_system_web_app_response(&state, &headers, &original_uri, "system.api_tokens.view").await
 }
 
-pub async fn system_releases_page(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    OriginalUri(original_uri): OriginalUri,
-) -> AppResult<Response> {
-    shared_system_web_app_response(&state, &headers, &original_uri, "system.releases.view").await
-}
-
-pub async fn system_release_asset_download(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((release_id, asset_id)): Path<(i64, i64)>,
-) -> AppResult<Response> {
-    let pool = state.pool()?;
-    if bootstrap::bootstrap_required(pool).await? {
-        return bootstrap_redirect(&headers);
-    }
-    let Some(user) = auth::user_from_headers(pool, &headers).await? else {
-        return login_redirect(&headers);
-    };
-    ensure_view_permission(pool, &headers, user.id, "system.releases.view").await?;
-    system_releases::ensure_release_allows_download(state.pool()?, release_id).await?;
-    let asset = system_releases::get_release_asset(state.pool()?, release_id, asset_id).await?;
-    let mut request = storage::presign_download_url(
-        state.pool()?,
-        &state.settings,
-        &asset.object_key,
-        system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS,
-    )
-    .await?;
-    bind_test_storage_download_grant(
-        &state,
-        &asset.object_key,
-        &asset.content_type,
-        user.id,
-        system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS,
-        &mut request,
-    )?;
-    if !request.headers.is_empty() {
-        return Err(AppError::BadRequest(
-            "当前版本包下载签名包含额外请求头，暂不支持浏览器直接跳转".to_string(),
-        ));
-    }
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        state.pool()?,
-        Some(user.id),
-        "system.release.asset.download",
-        "system_release",
-        &release_id.to_string(),
-        &format!(
-            r#"{{"asset_id":{},"filename":"{}"}}"#,
-            asset_id,
-            asset.original_filename.replace('"', "\\\"")
-        ),
-        &request_context,
-    )
-    .await?;
-    Ok(Redirect::temporary(&request.url).into_response())
-}
-
-pub async fn desktop_downloads_page(State(state): State<AppState>) -> AppResult<Response> {
-    let latest_release =
-        system_releases::get_latest_published_release_detail(state.pool()?).await?;
-    Ok(response::html(desktop_downloads_template(latest_release))?.into_response())
-}
-
-pub async fn desktop_download_asset(
-    State(state): State<AppState>,
-    Path((release_id, asset_id)): Path<(i64, i64)>,
-) -> AppResult<Response> {
-    let asset =
-        system_releases::get_published_release_asset(state.pool()?, release_id, asset_id).await?;
-
-    if let Some((content_type, content)) =
-        storage::read_test_memory_object(state.pool()?, &state.settings, &asset.object_key).await?
-    {
-        let mut response = content.into_response();
-        let headers = response.headers_mut();
-        headers.insert(header::CONTENT_TYPE, content_type.parse()?);
-        headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
-        headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
-        return Ok(response);
-    }
-
-    let request = storage::presign_download_url(
-        state.pool()?,
-        &state.settings,
-        &asset.object_key,
-        system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS,
-    )
-    .await?;
-    if !request.headers.is_empty() {
-        return Err(AppError::BadRequest(
-            "当前版本包下载签名包含额外请求头，暂不支持浏览器直接跳转".to_string(),
-        ));
-    }
-    Ok(Redirect::temporary(&request.url).into_response())
-}
-
 pub async fn system_users_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1625,101 +1497,6 @@ fn is_htmx(headers: &HeaderMap) -> bool {
         .get("HX-Request")
         .and_then(|value| value.to_str().ok())
         == Some("true")
-}
-
-fn desktop_downloads_template(
-    detail: Option<system_releases::SystemReleaseDetail>,
-) -> DesktopDownloadsTemplate {
-    let Some(detail) = detail else {
-        return DesktopDownloadsTemplate {
-            has_release: false,
-            version_name: String::new(),
-            title: String::new(),
-            notes: String::new(),
-            published_at: String::new(),
-            is_internal: false,
-            signing_key_id: String::new(),
-            platforms: desktop_download_platforms(&[], 0),
-        };
-    };
-
-    let release = detail.release;
-    let platforms = desktop_download_platforms(&detail.assets, release.id);
-    DesktopDownloadsTemplate {
-        has_release: true,
-        version_name: release.version_name,
-        title: fallback_text(release.title, "元策桌面端"),
-        notes: fallback_text(release.notes, "此版本包含桌面端安装包。"),
-        published_at: display_timestamp(release.published_at),
-        is_internal: release.channel == system_releases::RELEASE_CHANNEL_INTERNAL,
-        signing_key_id: release.signing_key_id,
-        platforms,
-    }
-}
-
-fn desktop_download_platforms(
-    assets: &[system_releases::SystemReleaseAssetSummary],
-    release_id: i64,
-) -> Vec<DesktopDownloadPlatformView> {
-    [
-        (system_releases::RELEASE_PLATFORM_MACOS, "macOS"),
-        (system_releases::RELEASE_PLATFORM_WINDOWS, "Windows"),
-        (system_releases::RELEASE_PLATFORM_LINUX, "Linux"),
-    ]
-    .into_iter()
-    .map(|(platform, name)| DesktopDownloadPlatformView {
-        name,
-        x64: desktop_download_link_view(
-            assets,
-            release_id,
-            platform,
-            system_releases::RELEASE_ARCHITECTURE_X64,
-        ),
-        arm64: desktop_download_link_view(
-            assets,
-            release_id,
-            platform,
-            system_releases::RELEASE_ARCHITECTURE_ARM64,
-        ),
-    })
-    .collect()
-}
-
-fn desktop_download_link_view(
-    assets: &[system_releases::SystemReleaseAssetSummary],
-    release_id: i64,
-    platform: &str,
-    architecture: &str,
-) -> DesktopDownloadLinkView {
-    let matching_asset = assets.iter().find(|asset| {
-        asset.status == "uploaded"
-            && asset.artifact_kind == system_releases::RELEASE_ARTIFACT_INSTALLER
-            && asset.platform == platform
-            && asset.architecture == architecture
-    });
-    let matching_asset = matching_asset.or_else(|| {
-        assets.iter().find(|asset| {
-            asset.status == "uploaded"
-                && asset.artifact_kind == system_releases::RELEASE_ARTIFACT_INSTALLER
-                && asset.platform == platform
-                && asset.architecture == system_releases::RELEASE_ARCHITECTURE_UNIVERSAL
-        })
-    });
-
-    match matching_asset {
-        Some(asset) => DesktopDownloadLinkView {
-            available: true,
-            url: format!("/web/downloads/{release_id}/assets/{}", asset.id),
-            filename: asset.original_filename.clone(),
-            byte_size: display_byte_size(asset.byte_size),
-        },
-        None => DesktopDownloadLinkView {
-            available: false,
-            url: String::new(),
-            filename: "暂未提供".to_string(),
-            byte_size: String::new(),
-        },
-    }
 }
 
 async fn attachment_download_redirect(
@@ -2305,47 +2082,6 @@ fn is_document_preview_entry_enabled(
     strategy.is_enabled(legacy_preview_enabled)
 }
 
-fn fallback_text(value: String, fallback: &str) -> String {
-    if value.trim().is_empty() {
-        fallback.to_string()
-    } else {
-        value
-    }
-}
-
-fn display_byte_size(value: i64) -> String {
-    if value < 1024 {
-        return format!("{value} B");
-    }
-    if value < 1024 * 1024 {
-        return format!("{:.1} KB", value as f64 / 1024.0);
-    }
-    if value < 1024 * 1024 * 1024 {
-        return format!("{:.1} MB", value as f64 / 1024.0 / 1024.0);
-    }
-    format!("{:.1} GB", value as f64 / 1024.0 / 1024.0 / 1024.0)
-}
-
-fn display_timestamp(value: String) -> String {
-    let parsed = chrono::DateTime::parse_from_rfc3339(&value)
-        .map(|date| date.with_timezone(&chrono::Utc))
-        .or_else(|_| {
-            chrono::NaiveDateTime::parse_from_str(&value, "%Y-%m-%d %H:%M:%S%.f")
-                .or_else(|_| chrono::NaiveDateTime::parse_from_str(&value, "%Y-%m-%dT%H:%M:%S%.f"))
-                .map(|date| date.and_utc())
-        });
-    let Some(offset) = chrono::FixedOffset::east_opt(8 * 3600) else {
-        return value;
-    };
-    match parsed {
-        Ok(date) => date
-            .with_timezone(&offset)
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string(),
-        Err(_) => value,
-    }
-}
-
 fn format_byte_size(byte_size: i64) -> String {
     if byte_size < 1024 {
         return format!("{byte_size} B");
@@ -2355,27 +2091,10 @@ fn format_byte_size(byte_size: i64) -> String {
     }
     format!("{:.1} MB", byte_size as f64 / 1024.0 / 1024.0)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn display_timestamp_uses_east_eight_without_double_conversion() {
-        for value in [
-            "2026-10-09 02:30:00",
-            "2026-10-09T02:30:00Z",
-            "2026-10-09T10:30:00+08:00",
-        ] {
-            assert_eq!(display_timestamp(value.to_owned()), "2026-10-09 10:30:00");
-        }
-        assert_eq!(
-            display_timestamp("2026-12-31 20:30:01.123".to_owned()),
-            "2027-01-01 04:30:01"
-        );
-        for value in ["", "invalid", "2026-10-09"] {
-            assert_eq!(display_timestamp(value.to_owned()), value);
-        }
-    }
 
     #[test]
     fn attachment_preview_strategy_supports_frontend_document_types() {

@@ -166,9 +166,8 @@ async fn system_openapi_json_is_served_for_system_api_reference() {
     let spec: serde_json::Value =
         serde_json::from_str(&body).expect("system openapi document should be valid json");
     assert_eq!(spec["openapi"], "3.1.0");
-    assert!(body.contains(r#""/api/v1/system/releases""#));
     assert!(body.contains(r#""systemBearerAuth""#));
-    assert!(!body.contains(r#""/api/v1/system/releases/settings""#));
+    assert!(!body.contains("/api/v1/system/releases"));
 }
 
 #[tokio::test]
@@ -296,7 +295,6 @@ async fn auth_css_is_bundled_without_retired_business_selectors() {
     assert!(!body.contains("overflow: overlay;"));
     assert!(body.contains(".visual-workspace-grid"));
     assert!(body.contains(".setup-dashboard"));
-    assert!(body.contains(".device-authorization-actions"));
     assert!(!body.contains(".work-item"));
     assert!(!body.contains(".system-"));
     assert!(!body.contains(".project-"));
@@ -351,35 +349,25 @@ async fn overlay_scrollbar_module_is_bundled() {
 async fn server_rendered_boundaries_use_versioned_styles_without_inline_css() {
     let app = build_router(AppState::for_tests());
 
-    for (uri, marker) in [
-        ("/static/desktop-downloads.css", ".platform-grid"),
-        ("/static/document-preview.css", ".preview-page"),
-    ] {
-        let response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .uri(uri)
-                    .body(Body::empty())
-                    .expect("request should build"),
-            )
-            .await
-            .expect("router should respond");
-        assert_eq!(response.status(), StatusCode::OK, "{uri}");
-        assert_eq!(
-            response.headers().get(header::CONTENT_TYPE).unwrap(),
-            "text/css; charset=utf-8"
-        );
-        assert!(response_body(response).await.contains(marker));
-    }
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/document-preview.css")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/css; charset=utf-8"
+    );
+    assert!(response_body(response).await.contains(".preview-page"));
 
-    for template in [
-        include_str!("../templates/web/desktop_downloads.html"),
-        include_str!("../templates/web/document_preview.html"),
-    ] {
-        assert!(!template.contains("<style>"));
-        assert!(template.contains("/static/auth.css"));
-    }
+    let template = include_str!("../templates/web/document_preview.html");
+    assert!(!template.contains("<style>"));
+    assert!(template.contains("/static/auth.css"));
 }
 
 #[tokio::test]
@@ -491,7 +479,6 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/system/audit?actor=admin&action=auth.login&target_type=user&target_id=7&page=2&per_page=20",
             "/web/system/storage?page=2&per_page=20",
             "/web/system/openapi",
-            "/web/system/releases?page=2&per_page=20",
         ] {
             migrated_route_responses.push(
                 app.clone()
@@ -873,7 +860,6 @@ async fn retired_web_business_pages_share_one_app_entry() {
             "/web/system/permissions",
             "/web/system/storage?page=2",
             "/web/system/openapi",
-            "/web/system/releases?page=2",
             "/web/system/database-stats",
             "/web/system/audit?actor=admin",
         ] {
@@ -939,9 +925,6 @@ async fn retired_system_web_mutation_routes_are_not_registered() {
         ("/web/system/storage/initialize", StatusCode::NOT_FOUND),
         ("/web/system/openapi", StatusCode::METHOD_NOT_ALLOWED),
         ("/web/system/openapi/tokens/7/edit", StatusCode::NOT_FOUND),
-        ("/web/system/releases", StatusCode::METHOD_NOT_ALLOWED),
-        ("/web/system/releases/settings", StatusCode::NOT_FOUND),
-        ("/web/system/releases/7/edit", StatusCode::NOT_FOUND),
     ] {
         let response = app
             .clone()
@@ -1061,7 +1044,6 @@ fn test_settings() -> Settings {
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
         file_master_key: "test-file-master-key-that-is-long-enough".to_string(),
-        device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
     }
 }

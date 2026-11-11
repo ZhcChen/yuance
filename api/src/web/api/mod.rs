@@ -1,7 +1,7 @@
 use axum::{
     Json,
     body::Bytes,
-    extract::{Extension, Path, Query, State, rejection::JsonRejection},
+    extract::{Path, Query, State, rejection::JsonRejection},
     http::{HeaderMap, Method, StatusCode, header},
     response::{
         AppendHeaders, IntoResponse, Response,
@@ -18,8 +18,8 @@ use std::{
 
 use crate::{
     domains::{
-        api_tokens, audit, auth, bootstrap, database_stats, device_sessions, files, notifications,
-        project_resources, projects, rbac, storage, system_api_tokens, system_releases, users,
+        api_tokens, audit, auth, bootstrap, database_stats, files, notifications,
+        project_resources, projects, rbac, storage, system_api_tokens, users,
     },
     platform::{
         error::{AppError, AppResult},
@@ -29,7 +29,7 @@ use crate::{
     web::{
         attachment_preview, audit_context,
         response::{ApiEnvelope, json},
-        router::{AppState, DeviceAuthClientIp, app_release_version},
+        router::{AppState, app_release_version},
         test_storage::{
             TestStorageDownloadQuery, TestStorageUploadQuery, bind_test_storage_download_grant,
             bind_test_storage_upload_grant, verify_test_storage_download_grant,
@@ -709,20 +709,6 @@ pub struct UpdateOwnPasswordRequest {
     new_password_confirm: String,
 }
 
-#[derive(Debug, Serialize)]
-pub struct DeviceSessionPayload {
-    pub family_id: String,
-    pub device_id: String,
-    pub device_name: String,
-    pub platform: String,
-    pub client_version: String,
-    pub status: String,
-    pub generation: i64,
-    pub last_seen_at: String,
-    pub created_at: String,
-    pub is_current: bool,
-}
-
 #[derive(Debug, Deserialize)]
 pub struct NotificationQuery {
     #[serde(default)]
@@ -769,7 +755,7 @@ pub async fn list_notifications(
     headers: HeaderMap,
     Query(query): Query<NotificationQuery>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
@@ -822,7 +808,7 @@ pub async fn get_notification_target(
     headers: HeaderMap,
     Path(notification_id): Path<i64>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
@@ -837,7 +823,7 @@ pub async fn mark_notification_read(
     headers: HeaderMap,
     Path(notification_id): Path<i64>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
@@ -852,7 +838,7 @@ pub async fn mark_all_notifications_read(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
@@ -865,7 +851,7 @@ pub async fn get_topbar_status(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
@@ -976,7 +962,6 @@ async fn topbar_system_links(
     user_id: i64,
 ) -> AppResult<Vec<SystemDashboardLinkPayload>> {
     if let Some(raw_token) = api_tokens::bearer_token(headers)
-        && !device_sessions::is_device_access_token(&raw_token)
         && !api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, "system:admin").await?
     {
         return Ok(Vec::new());
@@ -1020,13 +1005,6 @@ async fn topbar_system_links(
             "system.api_tokens.view",
         ),
         (
-            "releases",
-            "版本管理",
-            "维护桌面端、移动端版本与多平台安装包。",
-            "/web/system/releases",
-            "system.releases.view",
-        ),
-        (
             "database-stats",
             "数据库统计",
             "按需查看表设计、表备注和数据量。",
@@ -1058,7 +1036,7 @@ pub async fn topbar_events(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let user_id = user.id;
     let release_version = app_release_version();
@@ -1513,109 +1491,15 @@ pub struct UpdateSystemApiTokenRequest {
     scopes: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct SystemReleaseSettingsPayload {
-    pub retention_count: i64,
-    pub updated_by: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SystemReleaseAssetPayload {
-    pub id: i64,
-    pub release_id: i64,
-    pub file_object_id: i64,
-    pub platform: String,
-    pub architecture: String,
-    pub artifact_kind: String,
-    pub object_key: String,
-    pub filename: String,
-    pub content_type: String,
-    pub byte_size: i64,
-    pub status: String,
-    pub checksum_sha256: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SystemReleasePayload {
-    pub id: i64,
-    pub version_name: String,
-    pub title: String,
-    pub notes: String,
-    pub status: String,
-    pub channel: String,
-    pub verification_status: String,
-    pub manifest_sha256: String,
-    pub signing_key_id: String,
-    pub source_commit: String,
-    pub source_tag: String,
-    pub published_at: String,
-    pub verified_at: String,
-    pub withdrawn_at: String,
-    pub withdrawal_reason: String,
-    pub github_withdrawal_status: String,
-    pub created_by: String,
-    pub updated_by: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub asset_count: i64,
-    pub platform_count: i64,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SystemReleaseDetailPayload {
-    pub release: SystemReleasePayload,
-    pub assets: Vec<SystemReleaseAssetPayload>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SystemReleaseViewAssetPayload {
-    pub id: i64,
-    pub release_id: i64,
-    pub platform: String,
-    pub architecture: String,
-    pub artifact_kind: String,
-    pub filename: String,
-    pub content_type: String,
-    pub byte_size: i64,
-    pub status: String,
-    pub checksum_sha256: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SystemReleaseViewDetailPayload {
-    pub release: SystemReleasePayload,
-    pub assets: Vec<SystemReleaseViewAssetPayload>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct SystemReleasesViewPayload {
-    pub settings: SystemReleaseSettingsPayload,
-    pub items: Vec<SystemReleaseViewDetailPayload>,
-    pub pagination: PaginationPayload,
-    pub can_manage_releases: bool,
-}
-
 #[derive(Debug, Clone)]
 struct ApiTokenActor {
     display_name: String,
 }
 
 #[derive(Debug, Clone)]
-struct DeviceApiPrincipal {
-    device_id: String,
-    family_id: String,
-    generation: i64,
-    authorization_version: i64,
-}
-
-#[derive(Debug, Clone)]
 enum ApiPrincipalKind {
     Session,
     ApiToken(ApiTokenActor),
-    Device(DeviceApiPrincipal),
 }
 
 #[derive(Debug, Clone)]
@@ -1628,7 +1512,7 @@ impl ApiPrincipal {
     fn actor_display_name_snapshot(&self) -> String {
         match &self.kind {
             ApiPrincipalKind::ApiToken(actor) => actor.display_name.clone(),
-            ApiPrincipalKind::Session | ApiPrincipalKind::Device(_) => String::new(),
+            ApiPrincipalKind::Session => String::new(),
         }
     }
 
@@ -1636,14 +1520,6 @@ impl ApiPrincipal {
         match &self.kind {
             ApiPrincipalKind::Session => serde_json::json!({"source": "session"}).to_string(),
             ApiPrincipalKind::ApiToken(_) => serde_json::json!({"source": "api_token"}).to_string(),
-            ApiPrincipalKind::Device(device) => serde_json::json!({
-                "source": "device",
-                "device_id": device.device_id,
-                "family_id": device.family_id,
-                "generation": device.generation,
-                "authorization_version": device.authorization_version,
-            })
-            .to_string(),
         }
     }
 
@@ -1666,21 +1542,6 @@ fn principal_realtime_display_name(principal: &ApiPrincipal) -> String {
         return principal.user.display_name.trim().to_string();
     }
     principal.user.username.trim().to_string()
-}
-
-#[derive(Debug, Clone)]
-enum SystemReleaseApiPrincipal {
-    Session(auth::AuthUser),
-    Token(system_api_tokens::AuthenticatedSystemApiToken),
-}
-
-impl SystemReleaseApiPrincipal {
-    fn actor_user_id(&self) -> i64 {
-        match self {
-            Self::Session(user) => user.id,
-            Self::Token(token) => token.owner_user_id,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2171,14 +2032,6 @@ fn client_decrypt_requested(value: &str) -> bool {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SystemReleaseListQuery {
-    #[serde(default)]
-    page: Option<i64>,
-    #[serde(default)]
-    per_page: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct CreateSystemUserRequest {
     username: String,
     display_name: String,
@@ -2250,66 +2103,6 @@ pub struct SaveStorageConfigRequest {
     access_key_secret: String,
     #[serde(default = "default_activate_storage_config")]
     activate: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateSystemReleaseRequest {
-    version_name: String,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    notes: String,
-    #[serde(default = "default_release_channel")]
-    channel: String,
-    #[serde(default)]
-    manifest_sha256: String,
-    #[serde(default)]
-    signing_key_id: String,
-    #[serde(default)]
-    source_commit: String,
-    #[serde(default)]
-    source_tag: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateSystemReleaseRequest {
-    version_name: String,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    notes: String,
-    #[serde(default)]
-    publish: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct WithdrawSystemReleaseRequest {
-    reason: String,
-    #[serde(default = "default_github_withdrawal_status")]
-    github_withdrawal_status: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateSystemReleaseWithdrawalRequest {
-    github_withdrawal_status: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct UpdateSystemReleaseSettingsRequest {
-    retention_count: i64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateSystemReleaseAssetRequest {
-    platform: String,
-    architecture: String,
-    #[serde(default = "default_release_artifact_kind")]
-    artifact_kind: String,
-    original_filename: String,
-    content_type: String,
-    byte_size: i64,
-    #[serde(default)]
-    checksum_sha256: String,
 }
 
 pub async fn healthz() -> axum::Json<ApiEnvelope<HealthPayload<'static>>> {
@@ -2520,7 +2313,7 @@ pub async fn login(
 }
 
 pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> AppResult<impl IntoResponse> {
-    let user = require_d2_api_principal(&state, &headers).await?.user;
+    let user = require_api_principal(&state, &headers).await?.user;
 
     Ok(no_store_json(auth_user_payload(user)))
 }
@@ -2529,7 +2322,7 @@ pub async fn get_own_profile(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<OwnProfilePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     let profile = users::get_user_summary(state.pool()?, principal.user.id)
         .await?
@@ -2542,7 +2335,7 @@ pub async fn update_own_profile(
     headers: HeaderMap,
     Json(payload): Json<UpdateOwnProfileRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<OwnProfilePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2574,7 +2367,7 @@ pub async fn update_own_password(
     headers: HeaderMap,
     Json(payload): Json<UpdateOwnPasswordRequest>,
 ) -> AppResult<StatusCode> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     if payload.new_password != payload.new_password_confirm {
@@ -2589,9 +2382,6 @@ pub async fn update_own_password(
                 raw_refresh,
             }
         }
-        ApiPrincipalKind::Device(device) => users::CurrentPasswordSession::Device {
-            family_id: device.family_id.clone(),
-        },
         ApiPrincipalKind::ApiToken(_) => unreachable!("account principal was checked"),
     };
     users::change_own_password(
@@ -2662,7 +2452,7 @@ pub async fn list_projects(
     headers: HeaderMap,
     Query(query): Query<ProjectQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<ProjectPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -2739,7 +2529,7 @@ pub async fn search(
     headers: HeaderMap,
     Query(query): Query<SearchQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<SearchResultPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
@@ -2780,7 +2570,7 @@ pub async fn get_current_project(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Option<CurrentProjectPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -2802,7 +2592,7 @@ pub async fn update_current_project(
     headers: HeaderMap,
     Json(payload): Json<UpdateCurrentProjectRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CurrentProjectPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2830,7 +2620,7 @@ pub async fn create_project(
     headers: HeaderMap,
     Json(payload): Json<CreateProjectRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2867,7 +2657,7 @@ pub async fn get_project(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -2888,7 +2678,7 @@ pub async fn update_project(
     Path(project_key): Path<String>,
     Json(payload): Json<UpdateProjectRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2943,7 +2733,7 @@ pub async fn add_project_member(
     Path(project_key): Path<String>,
     Json(payload): Json<AddProjectMemberRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2982,7 +2772,7 @@ pub async fn list_project_members(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectMemberPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -3004,7 +2794,7 @@ pub async fn list_project_member_candidates(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectMemberCandidatePayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -3041,7 +2831,7 @@ pub async fn add_project_members(
     Path(project_key): Path<String>,
     Json(payload): Json<AddProjectMembersRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3086,7 +2876,7 @@ pub async fn update_project_member_role(
     Path((project_key, username)): Path<(String, String)>,
     Json(payload): Json<UpdateProjectMemberRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectMemberPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3125,7 +2915,7 @@ pub async fn remove_project_member(
     headers: HeaderMap,
     Path((project_key, username)): Path<(String, String)>,
 ) -> AppResult<StatusCode> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3154,7 +2944,7 @@ pub async fn list_project_cycles(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectCyclePayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -3176,7 +2966,7 @@ pub async fn get_project_cycle(
     headers: HeaderMap,
     Path((project_key, cycle_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -3195,7 +2985,7 @@ pub async fn get_project_personal_analysis(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectPersonalAnalysisPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -3213,7 +3003,7 @@ pub async fn create_project_cycle(
     Path(project_key): Path<String>,
     Json(payload): Json<ProjectCycleRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3247,7 +3037,7 @@ pub async fn update_project_cycle(
     Path((project_key, cycle_id)): Path<(String, i64)>,
     Json(payload): Json<ProjectCycleRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3277,7 +3067,7 @@ pub async fn close_project_cycle(
     headers: HeaderMap,
     Path((project_key, cycle_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3305,7 +3095,7 @@ pub async fn get_time_management_overview(
     headers: HeaderMap,
     Query(query): Query<TimeAllocationListQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<TimeAllocationPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
@@ -3330,7 +3120,7 @@ pub async fn get_time_management_members(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<TimeAllocationMemberPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
@@ -3357,7 +3147,7 @@ pub async fn list_project_time_allocations(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<TimeAllocationPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -3380,7 +3170,7 @@ pub async fn create_project_time_allocation(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateTimeAllocationRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3420,7 +3210,7 @@ pub async fn update_project_time_allocation(
     Path((project_key, allocation_id)): Path<(String, i64)>,
     Json(payload): Json<UpdateTimeAllocationRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<TimeAllocationPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3457,7 +3247,7 @@ pub async fn delete_project_time_allocation(
     headers: HeaderMap,
     Path((project_key, allocation_id)): Path<(String, i64)>,
 ) -> AppResult<StatusCode> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3484,7 +3274,7 @@ pub async fn list_time_allocation_changes(
     headers: HeaderMap,
     Query(query): Query<TimeAllocationChangeListQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<TimeAllocationChangePayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "time.management.view").await?;
@@ -3522,7 +3312,7 @@ pub async fn restore_time_allocation_change(
     headers: HeaderMap,
     Path(path): Path<TimeAllocationChangePath>,
 ) -> AppResult<axum::Json<ApiEnvelope<Option<TimeAllocationPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3553,7 +3343,7 @@ pub async fn list_work_items(
     headers: HeaderMap,
     Query(query): Query<WorkItemQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<WorkItemPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -3649,7 +3439,7 @@ pub async fn get_work_item_list_view(
     headers: HeaderMap,
     Query(query): Query<WorkItemQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemListViewPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -3801,7 +3591,7 @@ pub async fn create_work_item_saved_view(
     headers: HeaderMap,
     Json(payload): Json<CreateWorkItemSavedViewRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3842,7 +3632,7 @@ pub async fn rename_work_item_saved_view(
     Path(saved_view_id): Path<i64>,
     Json(payload): Json<RenameWorkItemSavedViewRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemSavedViewPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
@@ -3868,7 +3658,7 @@ pub async fn set_default_work_item_saved_view(
     headers: HeaderMap,
     Path(saved_view_id): Path<i64>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemSavedViewPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
@@ -3889,7 +3679,7 @@ pub async fn delete_work_item_saved_view(
     headers: HeaderMap,
     Path(saved_view_id): Path<i64>,
 ) -> AppResult<StatusCode> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
@@ -3909,7 +3699,7 @@ pub async fn create_work_item(
     headers: HeaderMap,
     Json(payload): Json<CreateWorkItemRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3955,7 +3745,7 @@ pub async fn batch_update_work_items(
     headers: HeaderMap,
     Json(payload): Json<BatchUpdateWorkItemsRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<BatchUpdateWorkItemsPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4086,7 +3876,7 @@ pub async fn get_work_item(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -4106,7 +3896,7 @@ pub async fn get_work_item_detail_view(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailViewPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -4248,7 +4038,7 @@ pub async fn get_work_item_resource_library_link(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemResourceLibraryLinkPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -4318,7 +4108,7 @@ pub async fn link_work_item_to_resource_library(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemResourceLibraryLinkPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4360,7 +4150,7 @@ pub async fn unlink_work_item_from_resource_library(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemResourceLibraryLinkPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4402,7 +4192,7 @@ pub async fn update_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<UpdateWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4461,7 +4251,7 @@ pub async fn update_work_item_primary_post(
     Path(item_key): Path<String>,
     Json(payload): Json<UpdateWorkItemPrimaryPostRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4523,7 +4313,7 @@ pub async fn handoff_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<HandoffWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4572,7 +4362,7 @@ pub async fn restore_work_item(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4605,7 +4395,7 @@ pub async fn close_work_item(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4638,7 +4428,7 @@ pub async fn create_work_item_comment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4683,7 +4473,7 @@ pub async fn create_work_item_comment_draft(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4716,7 +4506,7 @@ pub async fn publish_work_item_comment_draft(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4759,7 +4549,7 @@ pub async fn cancel_work_item_comment_draft(
     headers: HeaderMap,
     Path((item_key, comment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (item, project, comment) = require_api_comment_context_for_user(
         &state,
         &headers,
@@ -4819,7 +4609,7 @@ pub async fn update_work_item_comment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4863,7 +4653,7 @@ pub async fn create_work_item_comment_attachment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, item, project, comment) =
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     ensure_api_csrf(&headers)?;
@@ -5150,7 +4940,7 @@ pub async fn work_item_comment_attachment_delete(
     headers: HeaderMap,
     Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (item, project, comment) = require_api_comment_context_for_user(
         &state,
         &headers,
@@ -5226,7 +5016,7 @@ pub async fn create_project_attachment(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -5278,7 +5068,7 @@ pub async fn list_project_attachments(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<AttachmentPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -5301,7 +5091,7 @@ pub async fn project_attachment_upload_url(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
@@ -5332,7 +5122,7 @@ pub async fn project_attachment_mark_uploaded(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -5380,7 +5170,7 @@ pub async fn project_attachment_download_url(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -5420,7 +5210,7 @@ pub async fn project_attachment_preview(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -5491,7 +5281,7 @@ pub async fn project_attachment_preview_content(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<PreviewContentQuery>,
 ) -> AppResult<Response> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -5758,7 +5548,7 @@ pub async fn project_attachment_delete(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -5801,7 +5591,7 @@ pub async fn list_project_resources(
     Path(project_key): Path<String>,
     Query(query): Query<ResourceQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectResourcePayload>>>> {
-    let user = require_d2_api_principal(&state, &headers).await?.user;
+    let user = require_api_principal(&state, &headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
@@ -5835,7 +5625,7 @@ pub async fn list_project_resource_linked_work_item_posts(
     Path(project_key): Path<String>,
     Query(query): Query<LinkedWorkItemPostQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectResourceLinkedWorkItemPostPayload>>>> {
-    let user = require_d2_api_principal(&state, &headers).await?.user;
+    let user = require_api_principal(&state, &headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -5875,7 +5665,7 @@ pub async fn create_project_resource(
     payload: Result<Json<CreateProjectResourceRequest>, JsonRejection>,
 ) -> AppResult<impl IntoResponse> {
     let payload = resource_json(payload)?;
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -5944,7 +5734,7 @@ pub async fn update_project_resource(
     payload: Result<Json<UpdateProjectResourceRequest>, JsonRejection>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
     let payload = resource_json(payload)?;
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -6001,7 +5791,7 @@ pub async fn archive_project_resource(
     headers: HeaderMap,
     Path((project_key, resource_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -6081,7 +5871,7 @@ pub async fn reset_project_resource_password(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<ResetProjectResourcePasswordRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -6139,7 +5929,7 @@ pub async fn create_project_resource_attachment(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -6560,7 +6350,7 @@ pub async fn project_resource_attachment_delete(
     headers: HeaderMap,
     Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -6612,7 +6402,7 @@ pub async fn create_work_item_attachment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, item, project) = require_api_work_item_context(&state, &headers, &item_key).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -6972,7 +6762,7 @@ pub async fn get_dashboard(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     let user = &principal.user;
     let pool = state.pool()?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
@@ -7741,515 +7531,6 @@ pub async fn delete_system_api_token(
     Ok(no_store_json(system_api_token_payload(deleted)))
 }
 
-pub async fn get_system_release_settings(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseSettingsPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
-    let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
-    let settings = system_releases::get_settings(pool).await?;
-    Ok(json(system_release_settings_payload(settings)))
-}
-
-pub async fn update_system_release_settings(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<UpdateSystemReleaseSettingsRequest>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseSettingsPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
-    let updated =
-        system_releases::update_settings(pool, &state.settings, user.id, payload.retention_count)
-            .await?;
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        pool,
-        Some(user.id),
-        "system.release.settings.update",
-        "system_release_settings",
-        "1",
-        &format!(
-            r#"{{"source":"api","retention_count":{}}}"#,
-            updated.retention_count
-        ),
-        &request_context,
-    )
-    .await?;
-    Ok(json(system_release_settings_payload(updated)))
-}
-
-pub async fn list_system_releases(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<SystemReleaseListQuery>,
-) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<SystemReleasePayload>>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.view")
-        .await?;
-    let pagination = normalize_api_pagination(query.page, query.per_page)?;
-    let page = system_releases::list_releases_page(pool, pagination).await?;
-    let total_pages = page.total_pages();
-    Ok(json(PaginatedPayload {
-        items: page.items.into_iter().map(system_release_payload).collect(),
-        pagination: PaginationPayload {
-            page: page.page,
-            per_page: page.per_page,
-            total_items: page.total_items,
-            total_pages,
-        },
-    }))
-}
-
-pub async fn get_system_releases_view(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<SystemReleaseListQuery>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleasesViewPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
-    let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
-    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
-    let page = system_releases::list_releases_page(pool, pagination).await?;
-    let total_pages = page.total_pages();
-    let mut items = Vec::with_capacity(page.items.len());
-    for release in page.items {
-        let assets = system_releases::list_release_assets(pool, release.id).await?;
-        items.push(SystemReleaseViewDetailPayload {
-            release: system_release_payload(release),
-            assets: assets
-                .into_iter()
-                .map(system_release_view_asset_payload)
-                .collect(),
-        });
-    }
-    let settings = system_release_settings_payload(system_releases::get_settings(pool).await?);
-    let can_manage_releases =
-        rbac::user_has_permission(pool, user.id, "system.releases.manage").await?;
-
-    Ok(json(SystemReleasesViewPayload {
-        settings,
-        items,
-        pagination: PaginationPayload {
-            page: page.page,
-            per_page: page.per_page,
-            total_items: page.total_items,
-            total_pages,
-        },
-        can_manage_releases,
-    }))
-}
-
-pub async fn create_system_release(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<CreateSystemReleaseRequest>,
-) -> AppResult<impl IntoResponse> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let created = system_releases::create_release(
-        pool,
-        principal.actor_user_id(),
-        system_releases::CreateSystemReleaseInput {
-            version_name: payload.version_name,
-            title: payload.title,
-            notes: payload.notes,
-            channel: payload.channel,
-            manifest_sha256: payload.manifest_sha256,
-            signing_key_id: payload.signing_key_id,
-            source_commit: payload.source_commit,
-            source_tag: payload.source_tag,
-        },
-    )
-    .await?;
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        pool,
-        Some(principal.actor_user_id()),
-        "system.release.create",
-        "system_release",
-        &created.release.id.to_string(),
-        &format!(
-            r#"{{{},"version_name":"{}","status":"{}"}}"#,
-            system_release_audit_source(&principal),
-            created.release.version_name.replace('"', "\\\""),
-            created.release.status
-        ),
-        &request_context,
-    )
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        json(system_release_detail_payload(created)),
-    ))
-}
-
-pub async fn get_system_release(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(release_id): Path<i64>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.view")
-        .await?;
-    let detail = system_releases::get_release_detail(pool, release_id)
-        .await?
-        .ok_or_else(|| AppError::NotFound("版本不存在".to_string()))?;
-    Ok(json(system_release_detail_payload(detail)))
-}
-
-pub async fn update_system_release(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(release_id): Path<i64>,
-    Json(payload): Json<UpdateSystemReleaseRequest>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let updated = system_releases::update_release(
-        pool,
-        &state.settings,
-        principal.actor_user_id(),
-        release_id,
-        system_releases::UpdateSystemReleaseInput {
-            version_name: payload.version_name,
-            title: payload.title,
-            notes: payload.notes,
-            publish: payload.publish,
-        },
-    )
-    .await?;
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        pool,
-        Some(principal.actor_user_id()),
-        if payload.publish {
-            "system.release.publish"
-        } else {
-            "system.release.update"
-        },
-        "system_release",
-        &updated.release.id.to_string(),
-        &format!(
-            r#"{{{},"version_name":"{}","status":"{}","asset_count":{}}}"#,
-            system_release_audit_source(&principal),
-            updated.release.version_name.replace('"', "\\\""),
-            updated.release.status,
-            updated.release.asset_count
-        ),
-        &request_context,
-    )
-    .await?;
-    Ok(json(system_release_detail_payload(updated)))
-}
-
-pub async fn verify_system_release(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(release_id): Path<i64>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let verified =
-        system_releases::mark_release_verified(pool, principal.actor_user_id(), release_id).await?;
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        pool,
-        Some(principal.actor_user_id()),
-        "system.release.verify",
-        "system_release",
-        &release_id.to_string(),
-        &format!(r#"{{{}}}"#, system_release_audit_source(&principal)),
-        &request_context,
-    )
-    .await?;
-    Ok(json(system_release_detail_payload(verified)))
-}
-
-pub async fn withdraw_system_release(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(release_id): Path<i64>,
-    Json(payload): Json<WithdrawSystemReleaseRequest>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let withdrawn = system_releases::withdraw_release(
-        pool,
-        principal.actor_user_id(),
-        release_id,
-        system_releases::WithdrawSystemReleaseInput {
-            reason: payload.reason,
-            github_withdrawal_status: payload.github_withdrawal_status,
-        },
-    )
-    .await?;
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        pool,
-        Some(principal.actor_user_id()),
-        "system.release.withdraw",
-        "system_release",
-        &release_id.to_string(),
-        &format!(r#"{{{}}}"#, system_release_audit_source(&principal)),
-        &request_context,
-    )
-    .await?;
-    Ok(json(system_release_detail_payload(withdrawn)))
-}
-
-pub async fn update_system_release_withdrawal(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(release_id): Path<i64>,
-    Json(payload): Json<UpdateSystemReleaseWithdrawalRequest>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let updated = system_releases::update_withdrawal_status(
-        pool,
-        principal.actor_user_id(),
-        release_id,
-        &payload.github_withdrawal_status,
-    )
-    .await?;
-    let request_context = audit_context::from_headers(&headers);
-    audit::record_with_context(
-        pool,
-        Some(principal.actor_user_id()),
-        "system.release.withdrawal.update",
-        "system_release",
-        &release_id.to_string(),
-        &format!(
-            r#"{{{},"github_withdrawal_status":"{}"}}"#,
-            system_release_audit_source(&principal),
-            updated.release.github_withdrawal_status
-        ),
-        &request_context,
-    )
-    .await?;
-    Ok(json(system_release_detail_payload(updated)))
-}
-
-pub async fn create_system_release_asset(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(release_id): Path<i64>,
-    Json(payload): Json<CreateSystemReleaseAssetRequest>,
-) -> AppResult<impl IntoResponse> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let asset = system_releases::create_release_asset(
-        pool,
-        release_id,
-        system_releases::CreateSystemReleaseAssetInput {
-            platform: payload.platform,
-            architecture: payload.architecture,
-            artifact_kind: payload.artifact_kind,
-            original_filename: payload.original_filename,
-            content_type: payload.content_type,
-            byte_size: payload.byte_size,
-            checksum_sha256: payload.checksum_sha256,
-            created_by_user_id: principal.actor_user_id(),
-        },
-    )
-    .await?;
-    Ok((
-        StatusCode::CREATED,
-        json(system_release_asset_payload(asset)),
-    ))
-}
-
-pub async fn system_release_asset_upload_url(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((release_id, asset_id)): Path<(i64, i64)>,
-    Query(query): Query<SignedUrlQuery>,
-) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    if !query.access.trim().is_empty() {
-        return Err(AppError::BadRequest(
-            "上传签名请求不接受资料访问凭证".to_string(),
-        ));
-    }
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    system_releases::ensure_release_is_mutable(pool, release_id).await?;
-    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
-    if asset.status != "pending" {
-        return Err(AppError::Conflict(
-            "只有 pending 状态的版本资产可以生成上传签名".to_string(),
-        ));
-    }
-    let expires_in_seconds =
-        normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
-    let expiration = chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64);
-    let expires_at = expiration.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let mut request = storage::presign_upload_url(
-        pool,
-        &state.settings,
-        &asset.object_key,
-        &asset.content_type,
-        expires_in_seconds,
-    )
-    .await?;
-    bind_test_storage_upload_grant(
-        &state,
-        &asset.object_key,
-        principal.actor_user_id(),
-        expires_in_seconds,
-        &mut request,
-    )?;
-    files::extend_file_object_upload_url_expiration(
-        pool,
-        asset.file_object_id,
-        &expiration.format("%Y-%m-%d %H:%M:%S").to_string(),
-    )
-    .await?;
-    Ok(json(AttachmentSignedUrlPayload {
-        attachment: AttachmentPayload {
-            id: asset.id,
-            file_object_id: asset.file_object_id,
-            object_key: asset.object_key,
-            filename: asset.original_filename,
-            content_type: asset.content_type,
-            byte_size: asset.byte_size,
-            status: asset.status,
-            created_by: String::new(),
-            created_at: asset.created_at,
-        },
-        request,
-        expires_in_seconds,
-        expires_at,
-        checksum_sha256: String::new(),
-        encryption: None,
-    }))
-}
-
-pub async fn system_release_asset_download_url(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((release_id, asset_id)): Path<(i64, i64)>,
-    Query(query): Query<SignedUrlQuery>,
-) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    system_releases::ensure_release_allows_download(pool, release_id).await?;
-    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
-    if asset.status != "uploaded" {
-        return Err(AppError::BadRequest(
-            "版本资产尚未上传完成，不能回读".to_string(),
-        ));
-    }
-    let expires_in_seconds =
-        normalize_system_release_download_expiration(query.expires_in_seconds)?;
-    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let mut request =
-        storage::presign_download_url(pool, &state.settings, &asset.object_key, expires_in_seconds)
-            .await?;
-    bind_test_storage_download_grant(
-        &state,
-        &asset.object_key,
-        &asset.content_type,
-        principal.actor_user_id(),
-        expires_in_seconds,
-        &mut request,
-    )?;
-    Ok(json(AttachmentSignedUrlPayload {
-        attachment: AttachmentPayload {
-            id: asset.id,
-            file_object_id: asset.file_object_id,
-            object_key: asset.object_key,
-            filename: asset.original_filename,
-            content_type: asset.content_type,
-            byte_size: asset.byte_size,
-            status: asset.status,
-            created_by: String::new(),
-            created_at: asset.created_at,
-        },
-        request,
-        expires_in_seconds,
-        expires_at,
-        checksum_sha256: asset.checksum_sha256,
-        encryption: None,
-    }))
-}
-
-pub async fn system_release_asset_mark_uploaded(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((release_id, asset_id)): Path<(i64, i64)>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseAssetPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
-    if asset.status != "pending" {
-        return Err(AppError::Conflict(
-            "只有 pending 状态的版本资产可以确认上传".to_string(),
-        ));
-    }
-    let actual_checksum_sha256 = storage::verify_uploaded_object(
-        pool,
-        &state.settings,
-        &asset.object_key,
-        asset.byte_size,
-        &asset.content_type,
-    )
-    .await?;
-    let asset = system_releases::mark_release_asset_uploaded(
-        pool,
-        release_id,
-        asset_id,
-        &actual_checksum_sha256,
-    )
-    .await?;
-    Ok(json(system_release_asset_payload(asset)))
-}
-
-pub async fn delete_system_release_asset(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((release_id, asset_id)): Path<(i64, i64)>,
-) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseAssetPayload>>> {
-    let principal = require_system_release_api_principal(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
-        .await?;
-    let deleted =
-        system_releases::delete_release_asset(pool, &state.settings, release_id, asset_id).await?;
-    Ok(json(system_release_asset_payload(deleted)))
-}
-
 pub async fn get_storage_config(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -8518,7 +7799,7 @@ pub async fn list_api_tokens(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ApiTokenPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     let pool = state.pool()?;
     let tokens = api_tokens::list_tokens(pool, principal.user.id)
@@ -8535,7 +7816,7 @@ pub async fn create_api_token(
     headers: HeaderMap,
     Json(payload): Json<CreateApiTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -8576,7 +7857,7 @@ pub async fn update_api_token(
     Path(token_id): Path<i64>,
     Json(payload): Json<UpdateApiTokenRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ApiTokenPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -8609,7 +7890,7 @@ pub async fn delete_api_token(
     headers: HeaderMap,
     Path(token_id): Path<i64>,
 ) -> AppResult<axum::Json<ApiEnvelope<ApiTokenPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
     ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -8627,111 +7908,9 @@ pub async fn delete_api_token(
     Ok(json(api_token_payload(token)))
 }
 
-pub async fn list_device_sessions(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<axum::Json<ApiEnvelope<Vec<DeviceSessionPayload>>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
-    ensure_account_principal(&principal)?;
-    let current_family_id = match &principal.kind {
-        ApiPrincipalKind::Device(device) => Some(device.family_id.as_str()),
-        _ => None,
-    };
-    let sessions = device_sessions::list_device_families_for_user(
-        state.pool()?,
-        principal.user.id,
-        &state.settings.device_sessions.server_instance_id,
-    )
-    .await
-    .map_err(device_session_api_error)?
-    .into_iter()
-    .map(|session| DeviceSessionPayload {
-        is_current: current_family_id == Some(session.family_id.as_str()),
-        family_id: session.family_id,
-        device_id: session.device_id,
-        device_name: session.device_name,
-        platform: session.platform,
-        client_version: session.client_version,
-        status: session.family_status,
-        generation: session.generation,
-        last_seen_at: session.last_seen_at.to_rfc3339(),
-        created_at: session.created_at.to_rfc3339(),
-    })
-    .collect();
-    Ok(json(sessions))
-}
-
-pub(crate) async fn revoke_device_session(
-    State(state): State<AppState>,
-    Extension(DeviceAuthClientIp(client_ip)): Extension<DeviceAuthClientIp>,
-    headers: HeaderMap,
-    Path(family_id): Path<String>,
-) -> AppResult<axum::Json<ApiEnvelope<DeviceSessionPayload>>> {
-    let principal = require_d2_api_principal(&state, &headers).await?;
-    ensure_account_principal(&principal)?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    let session = device_sessions::list_device_families_for_user(
-        pool,
-        principal.user.id,
-        &state.settings.device_sessions.server_instance_id,
-    )
-    .await
-    .map_err(device_session_api_error)?
-    .into_iter()
-    .find(|session| session.family_id == family_id)
-    .ok_or_else(|| AppError::NotFound("设备会话不存在".to_string()))?;
-    if session.family_status != "revoked" {
-        device_sessions::revoke_family_for_user(
-            pool,
-            principal.user.id,
-            &family_id,
-            chrono::Utc::now(),
-            "user_revoke",
-        )
-        .await
-        .map_err(device_session_api_error)?;
-    }
-    audit::record_with_context(
-        pool,
-        Some(principal.user.id),
-        "device_session.revoke",
-        "device_credential_family",
-        &family_id,
-        &principal.audit_details(),
-        &audit_context::from_headers_with_client_ip(&headers, client_ip),
-    )
-    .await?;
-    Ok(json(DeviceSessionPayload {
-        is_current: matches!(&principal.kind, ApiPrincipalKind::Device(device) if device.family_id == family_id),
-        family_id: session.family_id,
-        device_id: session.device_id,
-        device_name: session.device_name,
-        platform: session.platform,
-        client_version: session.client_version,
-        status: "revoked".to_string(),
-        generation: session.generation,
-        last_seen_at: session.last_seen_at.to_rfc3339(),
-        created_at: session.created_at.to_rfc3339(),
-    }))
-}
-
-fn device_session_api_error(error: device_sessions::DeviceSessionError) -> AppError {
-    match error {
-        device_sessions::DeviceSessionError::StorageFailure(error) => AppError::Database(error),
-        device_sessions::DeviceSessionError::InvalidRequest(message) => {
-            AppError::BadRequest(message)
-        }
-        device_sessions::DeviceSessionError::FamilyRevoked => {
-            AppError::Conflict("设备会话已撤销".to_string())
-        }
-        error => AppError::Conflict(error.to_string()),
-    }
-}
-
 fn ensure_account_principal(principal: &ApiPrincipal) -> AppResult<()> {
     match &principal.kind {
-        ApiPrincipalKind::Session | ApiPrincipalKind::Device(_) => Ok(()),
+        ApiPrincipalKind::Session => Ok(()),
         ApiPrincipalKind::ApiToken(_) => Err(AppError::Forbidden(
             "访问 Token 不能读取或修改账户资料".to_string(),
         )),
@@ -8752,11 +7931,6 @@ async fn require_api_user(state: &AppState, headers: &HeaderMap) -> AppResult<au
 async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResult<ApiPrincipal> {
     let pool = state.pool()?;
     if let Some(raw_token) = single_bearer_token(headers)? {
-        if device_sessions::is_device_access_token(&raw_token) {
-            return Err(AppError::Forbidden(
-                "设备 access token 未授权访问此业务 API".to_string(),
-            ));
-        }
         let authenticated = api_tokens::authenticated_token_from_bearer_token(pool, &raw_token)
             .await?
             .ok_or(AppError::Unauthorized)?;
@@ -8776,69 +7950,6 @@ async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResu
     })
 }
 
-async fn require_d2_api_principal(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> AppResult<ApiPrincipal> {
-    let Some(raw_token) = single_bearer_token(headers)? else {
-        return require_api_principal(state, headers).await;
-    };
-    if !device_sessions::is_device_access_token(&raw_token) {
-        return require_api_principal(state, headers).await;
-    }
-
-    let pool = state.pool()?;
-    let context = audit_context::from_headers(headers);
-    let access = device_sessions::authenticate_access_token(
-        pool,
-        &raw_token,
-        &state.settings.device_sessions.server_instance_id,
-        chrono::Utc::now(),
-        &context.ip,
-        &context.user_agent,
-    )
-    .await
-    .map_err(|_| AppError::Unauthorized)?;
-    Ok(ApiPrincipal {
-        user: auth::AuthUser {
-            id: access.user_id,
-            username: access.username,
-            display_name: access.display_name,
-            is_super_admin: access.is_super_admin,
-        },
-        kind: ApiPrincipalKind::Device(DeviceApiPrincipal {
-            device_id: access.device_id,
-            family_id: access.family_id,
-            generation: access.generation,
-            authorization_version: access.authorization_version,
-        }),
-    })
-}
-
-async fn require_system_release_api_principal(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> AppResult<SystemReleaseApiPrincipal> {
-    let pool = state.pool()?;
-    if let Some(raw_token) = single_bearer_token(headers)? {
-        if !system_api_tokens::is_system_token(&raw_token) {
-            return Err(AppError::Forbidden(
-                "系统版本管理接口仅支持系统访问 Token 或浏览器登录会话".to_string(),
-            ));
-        }
-        let authenticated =
-            system_api_tokens::authenticated_token_from_bearer_token(pool, &raw_token)
-                .await?
-                .ok_or(AppError::Unauthorized)?;
-        return Ok(SystemReleaseApiPrincipal::Token(authenticated));
-    }
-
-    let user = auth::user_from_headers(pool, headers)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-    Ok(SystemReleaseApiPrincipal::Session(user))
-}
-
 fn single_bearer_token(headers: &HeaderMap) -> AppResult<Option<String>> {
     if headers.get_all(header::AUTHORIZATION).iter().count() > 1 {
         return Err(AppError::Forbidden(
@@ -8846,48 +7957,6 @@ fn single_bearer_token(headers: &HeaderMap) -> AppResult<Option<String>> {
         ));
     }
     Ok(api_tokens::bearer_token(headers))
-}
-
-async fn ensure_system_release_api_permission(
-    pool: &sqlx::SqlitePool,
-    headers: &HeaderMap,
-    principal: &SystemReleaseApiPrincipal,
-    permission_key: &str,
-) -> AppResult<()> {
-    match principal {
-        SystemReleaseApiPrincipal::Session(user) => {
-            ensure_api_permission(pool, headers, user.id, permission_key).await
-        }
-        SystemReleaseApiPrincipal::Token(token) => {
-            let required_scope = match permission_key {
-                "system.releases.view" => system_api_tokens::SCOPE_SYSTEM_RELEASE_READ,
-                "system.releases.manage" => system_api_tokens::SCOPE_SYSTEM_RELEASE_WRITE,
-                _ => {
-                    return Err(AppError::Forbidden(
-                        "当前系统访问 Token 不支持该系统接口".to_string(),
-                    ));
-                }
-            };
-            if token.scopes.iter().any(|scope| scope == required_scope) {
-                Ok(())
-            } else {
-                Err(AppError::Forbidden(format!(
-                    "系统访问 Token 缺少 scope：{required_scope}"
-                )))
-            }
-        }
-    }
-}
-
-fn system_release_audit_source(principal: &SystemReleaseApiPrincipal) -> String {
-    match principal {
-        SystemReleaseApiPrincipal::Session(_) => r#""source":"api""#.to_string(),
-        SystemReleaseApiPrincipal::Token(token) => format!(
-            r#""source":"api-system-token","token_id":{},"token_name":"{}""#,
-            token.token_id,
-            token.token_name.replace('"', "\\\"")
-        ),
-    }
 }
 
 fn api_token_actor_display_name(user: &auth::AuthUser, token_name: &str) -> String {
@@ -8944,7 +8013,7 @@ async fn require_api_work_item_context(
     projects::WorkItemDetail,
     projects::ProjectDetail,
 )> {
-    let user = require_d2_api_principal(state, headers).await?.user;
+    let user = require_api_principal(state, headers).await?.user;
     let (item, project) =
         require_api_work_item_context_for_user(state, headers, &user, item_key).await?;
     Ok((user, item, project))
@@ -9065,7 +8134,7 @@ async fn require_api_project_resource_context(
     projects::ProjectDetail,
     project_resources::ProjectResourceDetail,
 )> {
-    let user = require_d2_api_principal(state, headers).await?.user;
+    let user = require_api_principal(state, headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, project_key)
@@ -9104,9 +8173,6 @@ async fn ensure_api_token_project_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(());
     };
-    if device_sessions::is_device_access_token(&raw_token) {
-        return Ok(());
-    }
     if api_tokens::token_allows_project(pool, &raw_token, user_id, project_id).await? {
         return Ok(());
     }
@@ -9124,9 +8190,6 @@ async fn api_token_project_scope_keys(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(None);
     };
-    if device_sessions::is_device_access_token(&raw_token) {
-        return Ok(None);
-    }
     api_tokens::token_project_scope_keys(pool, &raw_token, user_id).await
 }
 
@@ -9272,9 +8335,6 @@ async fn ensure_api_token_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(());
     };
-    if device_sessions::is_device_access_token(&raw_token) {
-        return Ok(());
-    }
     if api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, required_scope).await? {
         return Ok(());
     }
@@ -9293,9 +8353,6 @@ async fn api_token_allows_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(true);
     };
-    if device_sessions::is_device_access_token(&raw_token) {
-        return Ok(true);
-    }
     api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, required_scope).await
 }
 
@@ -9499,16 +8556,6 @@ fn normalize_signed_url_expiration(kind: SignedUrlKind, value: Option<u64>) -> A
     if !(60..=3600).contains(&value) {
         return Err(AppError::BadRequest(
             "签名有效期必须在 60-3600 秒之间".to_string(),
-        ));
-    }
-    Ok(value)
-}
-
-fn normalize_system_release_download_expiration(value: Option<u64>) -> AppResult<u64> {
-    let value = value.unwrap_or(system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS);
-    if !(60..=system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS).contains(&value) {
-        return Err(AppError::BadRequest(
-            "版本资产下载签名有效期必须在 60-300 秒之间".to_string(),
         ));
     }
     Ok(value)
@@ -10803,16 +9850,6 @@ fn storage_config_version_payload(
     }
 }
 
-fn system_release_settings_payload(
-    settings: system_releases::SystemReleaseSettings,
-) -> SystemReleaseSettingsPayload {
-    SystemReleaseSettingsPayload {
-        retention_count: settings.retention_count,
-        updated_by: settings.updated_by_display_name,
-        updated_at: settings.updated_at,
-    }
-}
-
 fn system_api_token_payload(
     token: system_api_tokens::SystemApiTokenSummary,
 ) -> SystemApiTokenPayload {
@@ -10829,100 +9866,8 @@ fn system_api_token_payload(
     }
 }
 
-fn system_release_asset_payload(
-    asset: system_releases::SystemReleaseAssetSummary,
-) -> SystemReleaseAssetPayload {
-    SystemReleaseAssetPayload {
-        id: asset.id,
-        release_id: asset.release_id,
-        file_object_id: asset.file_object_id,
-        platform: asset.platform,
-        architecture: asset.architecture,
-        artifact_kind: asset.artifact_kind,
-        object_key: asset.object_key,
-        filename: asset.original_filename,
-        content_type: asset.content_type,
-        byte_size: asset.byte_size,
-        status: asset.status,
-        checksum_sha256: asset.checksum_sha256,
-        created_at: asset.created_at,
-    }
-}
-
-fn system_release_view_asset_payload(
-    asset: system_releases::SystemReleaseAssetSummary,
-) -> SystemReleaseViewAssetPayload {
-    SystemReleaseViewAssetPayload {
-        id: asset.id,
-        release_id: asset.release_id,
-        platform: asset.platform,
-        architecture: asset.architecture,
-        artifact_kind: asset.artifact_kind,
-        filename: asset.original_filename,
-        content_type: asset.content_type,
-        byte_size: asset.byte_size,
-        status: asset.status,
-        checksum_sha256: asset.checksum_sha256,
-        created_at: asset.created_at,
-    }
-}
-
-fn system_release_payload(
-    release: system_releases::SystemReleaseVersionSummary,
-) -> SystemReleasePayload {
-    SystemReleasePayload {
-        id: release.id,
-        version_name: release.version_name,
-        title: release.title,
-        notes: release.notes,
-        status: release.status,
-        channel: release.channel,
-        verification_status: release.verification_status,
-        manifest_sha256: release.manifest_sha256,
-        signing_key_id: release.signing_key_id,
-        source_commit: release.source_commit,
-        source_tag: release.source_tag,
-        published_at: release.published_at,
-        verified_at: release.verified_at,
-        withdrawn_at: release.withdrawn_at,
-        withdrawal_reason: release.withdrawal_reason,
-        github_withdrawal_status: release.github_withdrawal_status,
-        created_by: release.created_by_display_name,
-        updated_by: release.updated_by_display_name,
-        created_at: release.created_at,
-        updated_at: release.updated_at,
-        asset_count: release.asset_count,
-        platform_count: release.platform_count,
-    }
-}
-
-fn system_release_detail_payload(
-    detail: system_releases::SystemReleaseDetail,
-) -> SystemReleaseDetailPayload {
-    SystemReleaseDetailPayload {
-        release: system_release_payload(detail.release),
-        assets: detail
-            .assets
-            .into_iter()
-            .map(system_release_asset_payload)
-            .collect(),
-    }
-}
-
 fn default_project_status() -> String {
     "not_started".to_string()
-}
-
-fn default_release_channel() -> String {
-    system_releases::RELEASE_CHANNEL_LEGACY.to_string()
-}
-
-fn default_release_artifact_kind() -> String {
-    system_releases::RELEASE_ARTIFACT_INSTALLER.to_string()
-}
-
-fn default_github_withdrawal_status() -> String {
-    "pending".to_string()
 }
 
 fn default_true() -> bool {

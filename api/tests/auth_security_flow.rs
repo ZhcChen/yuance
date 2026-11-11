@@ -249,29 +249,6 @@ async fn web_app_system_storage_owner_preserves_unauthenticated_return_path() {
 }
 
 #[tokio::test]
-async fn web_app_system_releases_owner_preserves_unauthenticated_return_path() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/releases?page=2&per_page=20")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/login?return_to=%2Fweb%2Fsystem%2Freleases%3Fpage%3D2%26per_page%3D20"
-    );
-}
-
-#[tokio::test]
 async fn web_app_system_openapi_owner_preserves_unauthenticated_return_path() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
@@ -1616,7 +1593,6 @@ fn test_settings() -> Settings {
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
         file_master_key: "test-file-master-key-that-is-long-enough".to_string(),
-        device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
     }
 }

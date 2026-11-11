@@ -304,9 +304,6 @@ pub enum CurrentPasswordSession {
         raw_session: String,
         raw_refresh: Option<String>,
     },
-    Device {
-        family_id: String,
-    },
 }
 
 pub async fn change_own_password(
@@ -329,21 +326,14 @@ pub async fn change_own_password(
     }
 
     let new_password_hash = auth::hash_password(new_password)?;
-    let (current_token_hash, current_refresh_hash, current_device_family) = match current_session {
-        CurrentPasswordSession::Browser {
-            raw_session,
-            raw_refresh,
-        } => (
-            Some(auth::hash_session_token(&raw_session)),
-            raw_refresh
-                .filter(|token| !token.trim().is_empty())
-                .map(|token| auth::hash_refresh_token(&token)),
-            None,
-        ),
-        CurrentPasswordSession::Device { family_id } => {
-            (None, None, Some(family_id.trim().to_string()))
-        }
-    };
+    let CurrentPasswordSession::Browser {
+        raw_session,
+        raw_refresh,
+    } = current_session;
+    let current_token_hash = auth::hash_session_token(&raw_session);
+    let current_refresh_hash = raw_refresh
+        .filter(|token| !token.trim().is_empty())
+        .map(|token| auth::hash_refresh_token(&token));
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
@@ -358,9 +348,8 @@ pub async fn change_own_password(
     .bind(new_password_hash)
     .execute(&mut *tx)
     .await?;
-    if let Some(current_token_hash) = current_token_hash {
-        sqlx::query(
-            r#"
+    sqlx::query(
+        r#"
         UPDATE sessions
         SET session_status = 'revoked',
             revoked_at = datetime('now'),
@@ -370,24 +359,11 @@ pub async fn change_own_password(
           AND session_status = 'active'
           AND session_token_hash <> ?2
         "#,
-        )
-        .bind(user_id)
-        .bind(current_token_hash)
-        .execute(&mut *tx)
-        .await?;
-    } else {
-        sqlx::query(
-            r#"
-            UPDATE sessions
-            SET session_status = 'revoked', revoked_at = datetime('now'),
-                revoke_reason = 'self_password_change', updated_at = datetime('now')
-            WHERE user_id = ?1 AND session_status = 'active'
-            "#,
-        )
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
-    }
+    )
+    .bind(user_id)
+    .bind(current_token_hash)
+    .execute(&mut *tx)
+    .await?;
     if let Some(refresh_hash) = current_refresh_hash {
         sqlx::query(
             r#"
@@ -422,34 +398,6 @@ pub async fn change_own_password(
         .await?;
     }
     auth::clear_browser_refresh_rotation_recovery(&mut tx, user_id).await?;
-    if let Some(family_id) = current_device_family {
-        sqlx::query(
-            r#"
-            UPDATE device_credential_families
-            SET family_status = 'revoked', authorization_version = authorization_version + 1,
-                revoked_at = datetime('now'), revoke_reason = 'self_password_change',
-                updated_at = datetime('now')
-            WHERE user_id = ?1 AND family_status = 'active' AND id <> ?2
-            "#,
-        )
-        .bind(user_id)
-        .bind(family_id)
-        .execute(&mut *tx)
-        .await?;
-    } else {
-        sqlx::query(
-            r#"
-            UPDATE device_credential_families
-            SET family_status = 'revoked', authorization_version = authorization_version + 1,
-                revoked_at = datetime('now'), revoke_reason = 'self_password_change',
-                updated_at = datetime('now')
-            WHERE user_id = ?1 AND family_status = 'active'
-            "#,
-        )
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
-    }
     tx.commit().await?;
 
     Ok(())

@@ -3,7 +3,7 @@
   "info": {
     "title": "元策 API",
     "summary": "元策项目、需求、任务、Bug、资料库和消息通知 API。",
-    "description": "元策 API 面向 Web 客户端、程序化集成、Codex Skill 和 Desktop。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。Device access token 只允许调用 x-yuance-device-business-allowlist 显式登记的 method + path，并继续执行相同 RBAC、项目成员和业务状态校验。",
+    "description": "元策 API 面向 Web 客户端、程序化集成和 Codex Skill。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。",
     "version": "1.0.0"
   },
   "externalDocs": {
@@ -58,119 +58,7 @@
       "cookieSession": []
     }
   ],
-  "x-yuance-device-business-allowlist": [
-    "GET /api/v1/auth/me",
-    "GET /api/v1/projects",
-    "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview",
-    "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
-    "HEAD /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
-    "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
-    "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
-    "HEAD /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
-    "GET /api/v1/projects/{project_key}/resource-library/linked-work-item-posts",
-    "GET /api/v1/current-project",
-    "PATCH /api/v1/current-project",
-    "GET /api/v1/topbar/status",
-    "GET /api/v1/topbar/events",
-    "GET /api/v1/notifications",
-    "GET /api/v1/notifications/{notification_id}/target",
-    "POST /api/v1/notifications/{notification_id}/read",
-    "POST /api/v1/notifications/read-all",
-    "GET /api/v1/work-item-list-view",
-    "GET /api/v1/work-item-detail-view/{item_key}",
-    "POST /api/v1/work-item-saved-views",
-    "PATCH /api/v1/work-item-saved-views/{saved_view_id}",
-    "DELETE /api/v1/work-item-saved-views/{saved_view_id}",
-    "POST /api/v1/work-item-saved-views/{saved_view_id}/default",
-    "GET /api/v1/work-items",
-    "POST /api/v1/work-items",
-    "POST /api/v1/work-items/batch",
-    "GET /api/v1/work-items/{item_key}",
-    "PATCH /api/v1/work-items/{item_key}",
-    "PATCH /api/v1/work-items/{item_key}/primary-post",
-    "GET /api/v1/work-items/{item_key}/resource-library-link",
-    "POST /api/v1/work-items/{item_key}/resource-library-link",
-    "DELETE /api/v1/work-items/{item_key}/resource-library-link",
-    "POST /api/v1/work-items/{item_key}/restore",
-    "POST /api/v1/work-items/{item_key}/handoff",
-    "GET /api/v1/work-items/{item_key}/events",
-    "GET /api/v1/work-items/{item_key}/comments",
-    "POST /api/v1/work-items/{item_key}/comments",
-    "POST /api/v1/work-items/{item_key}/comments/draft",
-    "PATCH /api/v1/work-items/{item_key}/comments/{comment_id}",
-    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/publish",
-    "DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/draft",
-    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
-    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
-    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url",
-    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded",
-    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url",
-    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview",
-    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
-    "HEAD /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
-    "GET /api/v1/work-items/{item_key}/attachments",
-    "POST /api/v1/work-items/{item_key}/attachments",
-    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url",
-    "POST /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded",
-    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
-    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview",
-    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content",
-    "HEAD /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"
-  ],
   "paths": {
-    "/.well-known/yuance-desktop": {
-      "get": {
-        "tags": [
-          "meta"
-        ],
-        "summary": "获取 Desktop enrollment 契约",
-        "description": "返回固定版本、服务实例和当前已启用的 Desktop capability ID，不返回 endpoint 或 credential。",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Desktop enrollment 契约",
-            "headers": {
-              "Cache-Control": {
-                "description": "禁止缓存 enrollment 响应。",
-                "schema": {
-                  "type": "string",
-                  "const": "no-store"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopEnrollment"
-                }
-              }
-            }
-          }
-        }
-      },
-      "head": {
-        "tags": [
-          "meta"
-        ],
-        "summary": "探测 Desktop enrollment 契约",
-        "description": "返回与 GET 相同的状态和响应头，但不返回响应体。",
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Desktop enrollment 契约可用",
-            "headers": {
-              "Cache-Control": {
-                "description": "禁止缓存 enrollment 响应。",
-                "schema": {
-                  "type": "string",
-                  "const": "no-store"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/openapi.json": {
       "get": {
         "tags": [
@@ -360,400 +248,6 @@
           "403": {
             "$ref": "#/components/responses/Error"
           }
-        }
-      }
-    },
-    "/api/v1/device-authorizations": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "发起设备授权",
-        "description": "为 Desktop 创建短期、单次使用的设备授权。此端点只接受 JSON body；请求携带 Cookie、PAT、device bearer 或混合凭证时确定性拒绝，不回退到其他认证方式。`verification_path` 是可信 origin 下的固定相对路径，客户端不得把它当作任意绝对 URL 打开。",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeviceAuthorizationStartRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "设备授权已创建",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/SensitiveNoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceAuthorizationStartEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "401": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "415": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "429": {
-            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          }
-        }
-      }
-    },
-    "/api/v1/device-authorizations/exchange": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "交换设备凭证",
-        "description": "使用一次性 device code、PKCE verifier 和预持久化 transaction ID 交换 generation 0 credential。相同 transaction 与 verifier 可恢复相同结果；此端点拒绝 Cookie、PAT、device bearer 和混合凭证。所有响应均禁止缓存。",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeviceAuthorizationExchangeRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "返回或恢复唯一的 generation 0 credential",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/SensitiveNoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceAuthorizationExchangeEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "401": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "409": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "415": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "429": {
-            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          }
-        }
-      }
-    },
-    "/api/v1/device-sessions/refresh": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "轮换设备 refresh credential",
-        "description": "使用当前 refresh token、source generation、设备/服务绑定和客户端预持久化 transaction ID 原子轮换凭证。相同 transaction 返回相同结果；旧 generation 使用不同 transaction 会撤销整个 credential family。此端点拒绝 Cookie 和 Authorization header。",
-        "security": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeviceRefreshRotationRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "返回或恢复下一 generation 的设备凭证",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/SensitiveNoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceRefreshRotationEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "401": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          },
-          "409": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          },
-          "415": {
-            "$ref": "#/components/responses/DeviceAuthorizationError"
-          },
-          "429": {
-            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          }
-        }
-      }
-    },
-    "/api/v1/device-session": {
-      "get": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "探测当前设备会话",
-        "description": "校验短期 device access token，并返回当前 user/device/family/generation、access 到期时间和 authorization version。不会返回 access、refresh 或 token hint。",
-        "security": [
-          {
-            "deviceAccess": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "设备会话有效",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/SensitiveNoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceSessionProbeEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          },
-          "429": {
-            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          }
-        }
-      }
-    },
-    "/api/v1/device-session/logout": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "注销当前设备会话",
-        "description": "使用当前 device access token 原子撤销绑定的 credential family 及其 access/refresh credential。此操作不接受 Cookie、PAT、system token 或 device refresh token。",
-        "security": [
-          {
-            "deviceAccess": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "当前 credential family 已撤销",
-            "headers": {
-              "Cache-Control": {
-                "$ref": "#/components/headers/SensitiveNoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeviceSessionLogoutEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          },
-          "429": {
-            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
-          },
-          "500": {
-            "$ref": "#/components/responses/DeviceSessionError"
-          }
-        }
-      }
-    },
-    "/api/v1/device-session/events": {
-      "get": {
-        "tags": ["auth"],
-        "summary": "订阅设备会话控制流",
-        "description": "使用短期 device access token 建立受持续 authorization lease 约束的 SSE 控制流。服务端至少每秒重验 user、device、family、generation、authorization version 与 access expiry；撤销、过期、重验超时或服务关闭时结束流。",
-        "security": [
-          { "deviceAccess": [] }
-        ],
-        "responses": {
-          "200": {
-            "description": "设备控制流已建立",
-            "headers": {
-              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
-            },
-            "content": {
-              "text/event-stream": {
-                "schema": { "type": "string" }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/DeviceSessionError" },
-          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
-          "500": { "$ref": "#/components/responses/DeviceSessionError" }
-        }
-      }
-    },
-    "/api/v1/device-file-transfer/canary/upload-request": {
-      "post": {
-        "tags": ["auth"],
-        "summary": "签发 Desktop 文件上传 canary 请求",
-        "description": "使用短期 device access token 为当前 credential family 签发固定 34 字节 canary 对象的 60 秒上传请求。不接受 request body、URL、object key、header 或其它调用方可控传输字段。",
-        "security": [
-          { "deviceAccess": [] }
-        ],
-        "responses": {
-          "200": {
-            "description": "固定上传 canary 请求",
-            "headers": {
-              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
-            },
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/DeviceFileTransferEnvelope" }
-              }
-            }
-          },
-          "400": { "$ref": "#/components/responses/Error" },
-          "401": { "$ref": "#/components/responses/DeviceSessionError" },
-          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
-          "500": { "$ref": "#/components/responses/DeviceSessionError" }
-        }
-      }
-    },
-    "/api/v1/device-file-transfer/canary/download-request": {
-      "get": {
-        "tags": ["auth"],
-        "summary": "签发 Desktop 文件下载 canary 请求",
-        "description": "使用短期 device access token 为当前 credential family 签发固定 canary 对象的 60 秒下载请求。不接受 URL、object key、header 或其它调用方可控传输字段。",
-        "security": [
-          { "deviceAccess": [] }
-        ],
-        "responses": {
-          "200": {
-            "description": "固定下载 canary 请求",
-            "headers": {
-              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
-            },
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/DeviceFileTransferEnvelope" }
-              }
-            }
-          },
-          "400": { "$ref": "#/components/responses/Error" },
-          "401": { "$ref": "#/components/responses/DeviceSessionError" },
-          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
-          "500": { "$ref": "#/components/responses/DeviceSessionError" }
-        }
-      }
-    },
-    "/api/v1/device-file-transfer/canary/upload": {
-      "put": {
-        "tags": ["auth"],
-        "summary": "执行已签发的 Desktop canary 上传",
-        "description": "仅接受 upload-request 返回的短期加密 grant 和固定 34 字节 canary 内容。此请求不接受 Cookie、Authorization 或其它 ambient credential。",
-        "security": [],
-        "parameters": [
-          {
-            "name": "grant",
-            "in": "query",
-            "required": true,
-            "schema": { "type": "string", "minLength": 32 }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "text/plain; charset=utf-8": {
-              "schema": { "type": "string", "minLength": 34, "maxLength": 34 }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": "固定 canary 内容已写入",
-            "headers": {
-              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
-            }
-          },
-          "400": { "$ref": "#/components/responses/Error" },
-          "401": { "$ref": "#/components/responses/DeviceSessionError" },
-          "403": { "$ref": "#/components/responses/Error" },
-          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" }
-        }
-      }
-    },
-    "/api/v1/device-file-transfer/canary/download": {
-      "get": {
-        "tags": ["auth"],
-        "summary": "执行已签发的 Desktop canary 下载",
-        "description": "仅接受 download-request 返回的短期加密 grant，返回当前 credential family 的固定 canary 内容。此请求不接受 Cookie、Authorization 或其它 ambient credential。",
-        "security": [],
-        "parameters": [
-          {
-            "name": "grant",
-            "in": "query",
-            "required": true,
-            "schema": { "type": "string", "minLength": 32 }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "固定 34 字节 canary 内容",
-            "headers": {
-              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" },
-              "Content-Type": {
-                "schema": { "type": "string", "const": "text/plain; charset=utf-8" }
-              }
-            },
-            "content": {
-              "text/plain; charset=utf-8": {
-                "schema": { "type": "string", "minLength": 34, "maxLength": 34 }
-              }
-            }
-          },
-          "400": { "$ref": "#/components/responses/Error" },
-          "401": { "$ref": "#/components/responses/DeviceSessionError" },
-          "403": { "$ref": "#/components/responses/Error" },
-          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" }
         }
       }
     },
@@ -1655,7 +1149,7 @@
       "get": {
         "tags": ["work-items"],
         "summary": "获取共享工作项列表完整视图",
-        "description": "供 Web 与 Desktop 共享页面原子读取列表、指标、已解析筛选、候选项、保存视图和管理权限。",
+        "description": "供 Web 页面原子读取列表、指标、已解析筛选、候选项、保存视图和管理权限。",
         "parameters": [
           {"name": "item_type", "in": "query", "required": true, "schema": {"type": "string", "enum": ["requirement", "task", "bug"]}},
           {"name": "project_key", "in": "query", "schema": {"type": "string"}},
@@ -1682,7 +1176,7 @@
       "get": {
         "tags": ["work-items"],
         "summary": "获取共享工作项详情完整视图",
-        "description": "供 Web 与 Desktop 原子读取详情、周期、候选项、权限、前后项导航和首屏流转历史。",
+        "description": "供 Web 原子读取详情、周期、候选项、权限、前后项导航和首屏流转历史。",
         "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
         "responses": {
           "200": {"description": "共享工作项详情完整视图", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemDetailViewEnvelope"}}}},
@@ -2107,7 +1601,7 @@
         "tags": ["projects"],
         "summary": "获取项目附件预览元数据",
         "description": "复用项目查看权限与附件归属校验，返回预览分类、legacy flag 结果和可预览附件前后项。",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/AttachmentId"}
@@ -2131,7 +1625,7 @@
       "get": {
         "tags": ["projects"],
         "summary": "读取项目附件预览内容",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2145,7 +1639,7 @@
       "head": {
         "tags": ["projects"],
         "summary": "读取项目附件预览内容响应头",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2162,7 +1656,7 @@
         "tags": ["work-items"],
         "summary": "获取工作项评论附件预览元数据",
         "description": "复用工作项项目成员权限、评论与附件归属校验，返回预览分类和同评论附件前后项。",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [
           {"$ref": "#/components/parameters/ItemKey"},
           {"name": "comment_id", "in": "path", "required": true, "schema": {"type": "integer", "format": "int64", "minimum": 1}},
@@ -2185,7 +1679,7 @@
       "get": {
         "tags": ["work-items"],
         "summary": "读取工作项评论附件预览内容",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2199,7 +1693,7 @@
       "head": {
         "tags": ["work-items"],
         "summary": "读取工作项评论附件预览内容响应头",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2216,7 +1710,7 @@
         "tags": ["work-items"],
         "summary": "获取工作项附件预览元数据",
         "description": "复用工作项项目成员权限与附件归属校验，返回预览分类和可预览附件前后项。",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [
           {"$ref": "#/components/parameters/WorkItemKey"},
           {"$ref": "#/components/parameters/AttachmentId"}
@@ -2237,7 +1731,7 @@
       "get": {
         "tags": ["work-items"],
         "summary": "读取工作项附件预览内容",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2251,7 +1745,7 @@
       "head": {
         "tags": ["work-items"],
         "summary": "读取工作项附件预览内容响应头",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2269,7 +1763,7 @@
         "operationId": "previewProjectResourceAttachment",
         "summary": "获取资料附件预览元数据",
         "description": "复用资料访问权限与短时 access grant，返回预览分类、受控内容地址和同资料附件前后项。image/svg+xml 通过浏览器图片预览展示，正文不开放任意内联 SVG。",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [
           {"$ref": "#/components/parameters/ProjectKey"},
           {"$ref": "#/components/parameters/ResourceId"},
@@ -2295,7 +1789,7 @@
         "tags": ["resources"],
         "operationId": "getProjectResourceAttachmentPreviewContent",
         "summary": "读取资料附件预览内容",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2309,7 +1803,7 @@
       "head": {
         "tags": ["resources"],
         "summary": "读取资料附件预览内容响应头",
-        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "security": [{"bearerAuth": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {
           "200": {"$ref": "#/components/responses/PreviewContent"},
@@ -2353,7 +1847,7 @@
           "shell"
         ],
         "summary": "订阅顶部状态刷新事件",
-        "description": "`text/event-stream`。当前事件类型包含 `release-version`（版本字符串）和 `topbar`（`connected` / `refresh`）。Browser 通过同源 Cookie 建立连接；Desktop 后续改为受控 Bearer fetch-stream。",
+        "description": "`text/event-stream`。当前事件类型包含 `release-version`（版本字符串）和 `topbar`（`connected` / `refresh`）。Browser 通过同源 Cookie 建立连接。",
         "responses": {
           "200": {
             "description": "SSE 刷新事件流",
@@ -2382,12 +1876,6 @@
         "scheme": "bearer",
         "bearerFormat": "Personal Access Token",
         "description": "使用个人中心创建的 yuance_pat_* token。"
-      },
-      "deviceAccess": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "Yuance Device Access Token",
-        "description": "使用 yuance_dat_* 短期设备 access token。除设备会话端点外，只允许调用顶层 x-yuance-device-business-allowlist 显式登记的 method + path；未登记业务 API 默认拒绝。"
       },
       "cookieSession": {
         "type": "apiKey",
@@ -2535,75 +2023,6 @@
           "Accept-Ranges": {"schema": {"type": "string", "const": "bytes"}},
           "Content-Range": {"schema": {"type": "string", "pattern": "^bytes \\*/[0-9]+$"}}
         }
-      },
-      "DeviceAuthorizationError": {
-        "description": "设备授权请求被拒绝或尚不可交换",
-        "headers": {
-          "Cache-Control": {
-            "$ref": "#/components/headers/SensitiveNoStore"
-          },
-          "Retry-After": {
-            "description": "当授权仍在等待批准时，客户端再次轮询前至少等待的秒数。",
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        },
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
-            }
-          }
-        }
-      },
-      "DeviceSessionError": {
-        "description": "设备 access 无效、已过期、已撤销，或设备会话服务暂时不可用",
-        "headers": {
-          "Cache-Control": {
-            "$ref": "#/components/headers/SensitiveNoStore"
-          }
-        },
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
-            }
-          }
-        }
-      },
-      "DeviceAuthorizationRateLimited": {
-        "description": "设备授权请求过于频繁",
-        "headers": {
-          "Cache-Control": {
-            "$ref": "#/components/headers/SensitiveNoStore"
-          },
-          "Retry-After": {
-            "required": true,
-            "description": "再次请求前至少等待的秒数。",
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        },
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
-            }
-          }
-        }
-      }
-    },
-    "headers": {
-      "SensitiveNoStore": {
-        "description": "敏感设备授权响应不得被客户端或中间缓存保存。",
-        "schema": {
-          "type": "string",
-          "const": "private, no-store"
-        }
       }
     },
     "requestBodies": {
@@ -2716,592 +2135,6 @@
       }
     },
     "schemas": {
-      "DesktopEnrollment": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "schema_version",
-          "api_protocol_version",
-          "server_instance_id",
-          "capabilities"
-        ],
-        "properties": {
-          "schema_version": {
-            "type": "integer",
-            "const": 1
-          },
-          "api_protocol_version": {
-            "type": "integer",
-            "const": 1
-          },
-          "server_instance_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "capabilities": {
-            "type": "array",
-            "prefixItems": [
-              {
-                "const": "device-authorization.v1"
-              },
-              {
-                "const": "device-session.probe.v1"
-              },
-              {
-                "const": "device-file-transfer.canary.v1"
-              }
-            ],
-            "minItems": 3,
-            "maxItems": 3
-          }
-        }
-      },
-      "DeviceAuthorizationStartRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "code_challenge",
-          "code_challenge_method",
-          "installation_id",
-          "device_name",
-          "platform",
-          "client_version"
-        ],
-        "properties": {
-          "code_challenge": {
-            "type": "string",
-            "description": "RFC 7636 S256 code challenge，使用不带填充的 Base64URL 编码。",
-            "pattern": "^[A-Za-z0-9_-]{43}$"
-          },
-          "code_challenge_method": {
-            "type": "string",
-            "const": "S256"
-          },
-          "installation_id": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "device_name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "platform": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "client_version": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          }
-        }
-      },
-      "DeviceAuthorizationStartEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "device_code",
-              "user_code",
-              "verification_path",
-              "expires_in",
-              "interval",
-              "server_instance_id"
-            ],
-            "properties": {
-              "device_code": {
-                "type": "string",
-                "minLength": 32
-              },
-              "user_code": {
-                "type": "string",
-                "minLength": 6,
-                "maxLength": 32
-              },
-              "verification_path": {
-                "type": "string",
-                "description": "可信服务 origin 下的固定相对路径。",
-                "pattern": "^/[^?#]*$"
-              },
-              "expires_in": {
-                "type": "integer",
-                "minimum": 300,
-                "maximum": 900
-              },
-              "interval": {
-                "type": "integer",
-                "minimum": 2,
-                "maximum": 15
-              },
-              "server_instance_id": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        }
-      },
-      "DeviceAuthorizationExchangeRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "device_code",
-          "code_verifier",
-          "exchange_transaction_id"
-        ],
-        "properties": {
-          "device_code": {
-            "type": "string",
-            "minLength": 32
-          },
-          "code_verifier": {
-            "type": "string",
-            "description": "RFC 7636 code verifier。",
-            "pattern": "^[A-Za-z0-9._~-]{43,128}$"
-          },
-          "exchange_transaction_id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      },
-      "DeviceAuthorizationExchangeEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "access_token",
-              "refresh_token",
-              "access_expires_in",
-              "refresh_expires_in",
-              "access",
-              "refresh"
-            ],
-            "properties": {
-              "access_token": {
-                "type": "string",
-                "pattern": "^yuance_dat_[A-Za-z0-9_-]+$"
-              },
-              "refresh_token": {
-                "type": "string",
-                "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
-              },
-              "access_expires_in": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "refresh_expires_in": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "access": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
-                  },
-                  {
-                    "properties": {
-                      "audience": {
-                        "const": "yuance-api"
-                      },
-                      "generation": {
-                        "const": 0
-                      }
-                    }
-                  }
-                ]
-              },
-              "refresh": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
-                  },
-                  {
-                    "properties": {
-                      "audience": {
-                        "const": "yuance-device-refresh"
-                      },
-                      "generation": {
-                        "const": 0
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      },
-      "DeviceRefreshRotationRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "refresh_token",
-          "generation",
-          "transaction_id",
-          "device_id",
-          "server_instance_id"
-        ],
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
-          },
-          "generation": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "transaction_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "device_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "server_instance_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      },
-      "DeviceRefreshRotationEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "access_token",
-              "refresh_token",
-              "access_expires_in",
-              "refresh_expires_in",
-              "access",
-              "refresh"
-            ],
-            "properties": {
-              "access_token": {
-                "type": "string",
-                "pattern": "^yuance_dat_[A-Za-z0-9_-]+$"
-              },
-              "refresh_token": {
-                "type": "string",
-                "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
-              },
-              "access_expires_in": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "refresh_expires_in": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "access": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
-                  },
-                  {
-                    "properties": {
-                      "audience": {
-                        "const": "yuance-api"
-                      },
-                      "generation": {
-                        "minimum": 1
-                      }
-                    }
-                  }
-                ]
-              },
-              "refresh": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
-                  },
-                  {
-                    "properties": {
-                      "audience": {
-                        "const": "yuance-device-refresh"
-                      },
-                      "generation": {
-                        "minimum": 1
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        }
-      },
-      "DeviceSessionProbeEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "user_id",
-              "username",
-              "display_name",
-              "device_id",
-              "family_id",
-              "generation",
-              "authorization_version",
-              "access_expires_at",
-              "server_instance_id"
-            ],
-            "properties": {
-              "user_id": {
-                "type": "integer"
-              },
-              "username": {
-                "type": "string"
-              },
-              "display_name": {
-                "type": "string"
-              },
-              "device_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "family_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "generation": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "authorization_version": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "access_expires_at": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "server_instance_id": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        }
-      },
-      "DeviceSessionLogoutEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "revoked",
-              "family_id"
-            ],
-            "properties": {
-              "revoked": {
-                "type": "boolean",
-                "const": true
-              },
-              "family_id": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          }
-        }
-      },
-      "DeviceFileTransferEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["data"],
-        "properties": {
-          "data": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "schema_version",
-              "purpose",
-              "request",
-              "expected_bytes",
-              "content_type",
-              "sha256",
-              "expires_in_seconds",
-              "expires_at"
-            ],
-            "properties": {
-              "schema_version": { "type": "integer", "const": 1 },
-              "purpose": { "type": "string", "enum": ["upload", "download"] },
-              "request": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["method", "url", "headers"],
-                "properties": {
-                  "method": { "type": "string", "enum": ["PUT", "GET"] },
-                  "url": {
-                    "type": "string",
-                    "minLength": 1,
-                    "pattern": "^(https://|/api/v1/device-file-transfer/canary/(upload|download)\\?)"
-                  },
-                  "headers": {
-                    "type": "array",
-                    "maxItems": 16,
-                    "items": {
-                      "type": "array",
-                      "prefixItems": [
-                        { "type": "string", "minLength": 1, "maxLength": 128 },
-                        { "type": "string", "maxLength": 4096 }
-                      ],
-                      "minItems": 2,
-                      "maxItems": 2
-                    }
-                  }
-                }
-              },
-              "expected_bytes": { "type": "integer", "const": 34 },
-              "content_type": { "type": "string", "const": "text/plain; charset=utf-8" },
-              "sha256": {
-                "type": "string",
-                "const": "b8cc33ab99db3adf840e78e7743d983527909af20a7a61d6e454dc15747c404b"
-              },
-              "expires_in_seconds": { "type": "integer", "const": 60 },
-              "expires_at": { "type": "string", "format": "date-time" }
-            }
-          }
-        }
-      },
-      "DeviceAuthorizationErrorCode": {
-        "type": "string",
-        "enum": [
-          "invalid_device_request",
-          "credential_not_allowed",
-          "rate_limited",
-          "device_authorization_unavailable",
-          "device_session_unavailable",
-          "invalid_device_access",
-          "device_access_expired",
-          "device_revoked",
-          "device_session_revoked",
-          "invalid_device_refresh",
-          "device_refresh_expired",
-          "device_refresh_replay",
-          "rotation_recovery_failed",
-          "invalid_code_challenge",
-          "invalid_device_code",
-          "invalid_code_verifier",
-          "authorization_pending",
-          "slow_down",
-          "authorization_denied",
-          "authorization_expired",
-          "authorization_consumed",
-          "exchange_transaction_conflict",
-          "idempotency_expired",
-          "user_inactive"
-        ]
-      },
-      "DeviceAuthorizationErrorEnvelope": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "error"
-        ],
-        "properties": {
-          "error": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "code",
-              "message"
-            ],
-            "properties": {
-              "code": {
-                "$ref": "#/components/schemas/DeviceAuthorizationErrorCode"
-              },
-              "message": {
-                "type": "string"
-              },
-              "retry_after": {
-                "type": "integer",
-                "minimum": 1,
-                "description": "authorization_pending 或 slow_down 时再次轮询前至少等待的秒数。"
-              }
-            }
-          }
-        }
-      },
-      "DeviceAuthorizationStatus": {
-        "type": "string",
-        "enum": ["pending", "approved", "denied", "expired", "consumed"]
-      },
-      "DeviceCredentialMetadata": {
-        "type": "object",
-        "description": "服务端在设备认证响应中返回的元数据；opaque token 本身不包含可由客户端声明或解码的 claims。",
-        "required": [
-          "token_type",
-          "issuer",
-          "audience",
-          "device_id",
-          "family_id",
-          "generation",
-          "authorization_version"
-        ],
-        "properties": {
-          "token_type": {
-            "type": "string",
-            "const": "Bearer"
-          },
-          "issuer": {
-            "type": "string",
-            "const": "yuance-device-session"
-          },
-          "audience": {
-            "type": "string",
-            "enum": ["yuance-api", "yuance-device-refresh"]
-          },
-          "device_id": {
-            "type": "string"
-          },
-          "family_id": {
-            "type": "string"
-          },
-          "generation": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "authorization_version": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      },
       "Envelope": {
         "type": "object",
         "required": [

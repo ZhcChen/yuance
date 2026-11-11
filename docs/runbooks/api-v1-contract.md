@@ -174,6 +174,7 @@ notification:read
 GET   /api/v1/current-project
 PATCH /api/v1/current-project
 GET   /api/v1/topbar/status
+GET   /api/v1/dashboard
 GET   /api/v1/topbar/events
 ```
 
