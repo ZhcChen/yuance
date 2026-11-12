@@ -4736,17 +4736,20 @@ test('shared global shell remains usable at canonical responsive widths', async 
         toolRects: toolRects.map((rect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
       };
     });
-    if (width <= 768) {
-      // 窄屏：侧栏变为抽屉，顶栏换行，控件不重叠即可
-      expect(geometry.searchWidth).toBeGreaterThan(0);
-      expect(geometry.projectWidth).toBeGreaterThan(0);
-    } else {
-      expect(geometry.navHeight).toBe(60);
+    // 顶栏在所有宽度都保持单行：高度固定、控件不出屏、不重叠
+    expect(geometry.navHeight).toBe(60);
+    expect(geometry.searchWidth).toBeGreaterThan(0);
+    expect(geometry.projectWidth).toBeGreaterThan(0);
+    for (const rect of geometry.toolRects) {
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(rect.right).toBeLessThanOrEqual(width);
+    }
+    for (let index = 1; index < geometry.toolRects.length; index += 1) {
+      expect(geometry.toolRects[index - 1].right).toBeLessThanOrEqual(geometry.toolRects[index].left);
+    }
+    if (width > 768) {
       expect(geometry.sidebarWidth).toBeGreaterThan(0);
       expect(geometry.sidebarRight).toBeLessThanOrEqual(geometry.navWidth);
-      for (let index = 1; index < geometry.toolRects.length; index += 1) {
-        expect(geometry.toolRects[index - 1].right).toBeLessThanOrEqual(geometry.toolRects[index].left);
-      }
     }
     expect(geometry.workspaceColumns.trim().split(/\s+/u)).toHaveLength(width <= 1280 ? 1 : 2);
     // 指标磁贴按可用宽度自适应折行：390 单列、768 三列、更宽四列
@@ -4767,4 +4770,86 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: '系统管理', exact: true }).click();
   await expect(page).toHaveURL(/\/web\/app\/system/u);
+});
+
+test('global top bar keeps one aligned row and avatars stay square in both themes', async ({ page }) => {
+  await login(page, '/web/app');
+  await expect(page.getByRole('heading', { level: 1, name: '工作台' })).toBeVisible();
+
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((value) => { window.localStorage.setItem('yuance-theme', value); }, theme);
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(page.locator('.global-nav')).toBeVisible();
+
+    for (const width of [390, 820, 1280, 1728]) {
+      await page.setViewportSize({ width, height: 900 });
+      const geometry = await page.evaluate(() => {
+        const rect = (selector) => { const element = document.querySelector(selector); return element ? element.getBoundingClientRect() : null; };
+        const nav = rect('.global-nav');
+        const search = rect('.global-nav-search');
+        const account = rect('.global-nav-account > summary');
+        const notifications = rect('.global-nav-notifications > summary');
+        const project = rect('.global-nav-project > summary');
+        const avatars = [...document.querySelectorAll('.user-avatar')].map((element) => {
+          const box = element.getBoundingClientRect();
+          return { className: element.className, width: box.width, height: box.height };
+        });
+        return {
+          navHeight: nav?.height ?? 0,
+          searchLeft: search?.left ?? -1, searchRight: search?.right ?? -1,
+          projectLeft: project?.left ?? -1, projectRight: project?.right ?? -1,
+          notificationsRight: notifications?.right ?? -1,
+          accountRight: account?.right ?? -1, accountWidth: account?.width ?? 0, accountHeight: account?.height ?? 0,
+          viewportWidth: window.innerWidth,
+          pageScrollWidth: document.documentElement.scrollWidth,
+          avatars,
+        };
+      });
+
+      expect(geometry.navHeight, `${theme} ${width} 顶栏高度`).toBe(60);
+      expect(geometry.pageScrollWidth, `${theme} ${width} 页面横向滚动`).toBeLessThanOrEqual(geometry.viewportWidth);
+      expect(geometry.accountRight, `${theme} ${width} 头像右缘不出屏`).toBeLessThanOrEqual(geometry.viewportWidth);
+      expect(geometry.viewportWidth - geometry.accountRight, `${theme} ${width} 右侧控件贴右`).toBeLessThanOrEqual(26);
+      expect(geometry.notificationsRight, `${theme} ${width} 通知在头像左侧`).toBeLessThanOrEqual(geometry.accountRight);
+      expect(geometry.projectRight, `${theme} ${width} 项目切换在通知左侧`).toBeLessThanOrEqual(geometry.notificationsRight);
+      expect(geometry.searchRight, `${theme} ${width} 搜索不压住项目切换`).toBeLessThanOrEqual(geometry.projectLeft);
+      expect(Math.abs(geometry.accountWidth - geometry.accountHeight), `${theme} ${width} 账户按钮为正方形`).toBeLessThanOrEqual(1);
+      if (width >= 1280) {
+        expect(geometry.searchRight - geometry.searchLeft, `${theme} ${width} 搜索不再占满整行`).toBeLessThanOrEqual(520);
+      }
+      expect(geometry.avatars.length).toBeGreaterThanOrEqual(2);
+      for (const avatar of geometry.avatars) {
+        expect(Math.abs(avatar.width - avatar.height), `${theme} ${width} ${avatar.className} 头像必须是正方形`).toBeLessThanOrEqual(1);
+        expect(avatar.width, `${theme} ${width} ${avatar.className} 头像尺寸`).toBeGreaterThanOrEqual(20);
+      }
+    }
+  }
+});
+
+test('dashboard project table keeps its horizontal scrollbar inside the table card', async ({ page }) => {
+  const viewportHeight = 760;
+  await page.setViewportSize({ width: 820, height: viewportHeight });
+  await login(page, '/web/app');
+  await expect(page.getByRole('heading', { level: 2, name: '项目推进' })).toBeVisible();
+
+  const wrap = page.locator('.table-wrap').filter({ has: page.locator('.compact-table') }).first();
+  await expect(wrap).toBeVisible();
+  const overflow = await wrap.evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
+  expect(overflow.scrollWidth).toBeGreaterThan(overflow.clientWidth);
+
+  const visibleTracks = page.locator('.yc-overlay-scrollbar-horizontal:not([hidden])');
+  // 表格底边还在视口外时不能显示横向滚动条，否则它会贴在视口底部，而不是表格底部
+  const before = await wrap.boundingBox();
+  expect(before.y + before.height).toBeGreaterThan(viewportHeight);
+  await expect(visibleTracks).toHaveCount(0);
+
+  await wrap.evaluate((element) => element.scrollIntoView({ block: 'end' }));
+  await expect(visibleTracks).toHaveCount(1);
+  const box = await wrap.boundingBox();
+  const trackBox = await visibleTracks.first().boundingBox();
+  expect(trackBox.y).toBeGreaterThanOrEqual(box.y);
+  expect(trackBox.y + trackBox.height).toBeLessThanOrEqual(box.y + box.height + 1);
+  expect(trackBox.x).toBeGreaterThanOrEqual(box.x - 1);
+  expect(trackBox.x + trackBox.width).toBeLessThanOrEqual(box.x + box.width + 1);
 });

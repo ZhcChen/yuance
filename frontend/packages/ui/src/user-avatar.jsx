@@ -2,15 +2,19 @@
 
 import React from 'react';
 
+/**
+ * 头像底色调色盘：与钢蓝主色协调的低饱和深色，白字对比度均不低于 4.5:1。
+ * 不使用紫色与高饱和红橙，避免和状态色、主色混淆。
+ */
 export const USER_AVATAR_COLORS = [
-  '#1f5fbf',
-  '#2d8a68',
-  '#a85b00',
-  '#b42318',
-  '#4656a8',
+  '#1d5fa8',
+  '#2f7d5b',
+  '#8a6420',
+  '#a0483f',
+  '#5a6c92',
   '#0f766e',
-  '#7c3aed',
-  '#be4b00',
+  '#2b6f8f',
+  '#6c7a2e',
 ];
 
 /** @param {string | null | undefined} name */

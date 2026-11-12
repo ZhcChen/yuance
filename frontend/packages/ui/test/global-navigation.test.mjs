@@ -86,3 +86,42 @@ test('global navigation exposes the mobile navigation toggle', () => {
   assert.match(html, /aria-label="关闭导航"/u);
   assert.match(html, /aria-expanded="true"/u);
 });
+
+/** @param {Record<string, unknown>} [overrides] */
+function renderNavigation(overrides = {}) {
+  return renderToStaticMarkup(createElement(GlobalNavigation, {
+    currentProject: { key: 'OPS', name: '交付运维台', pending_count: 0 },
+    projectOptions: [{ key: 'OPS', name: '交付运维台', pending_count: 3 }],
+    projectsHref: '/web/app/projects',
+    messagesHref: '/web/app/messages',
+    user: { username: 'alice', display_name: 'Alice', is_super_admin: false },
+    profileHref: '/web/me',
+    theme: 'light',
+    onNavigate() {}, onSearch() {}, onProjectChange() {}, onOpenNotification() {}, onMarkAllRead() {}, onThemeChange() {}, onLogout() {},
+    ...overrides,
+  }));
+}
+
+test('global navigation marks unread notifications with a dot and keeps the count in the accessible name', () => {
+  const unread = renderNavigation({ unreadCount: 8 });
+  assert.match(unread, /aria-label="打开消息通知（8 条未读）"/u);
+  assert.match(unread, /<span class="global-nav-dot" aria-hidden="true">/u);
+
+  const read = renderNavigation({ unreadCount: 0 });
+  assert.match(read, /aria-label="打开消息通知"/u);
+  assert.doesNotMatch(read, /global-nav-dot/u);
+});
+
+test('global navigation search submits from the leading icon button and hints Enter', () => {
+  const html = renderNavigation();
+  assert.match(html, /<button class="global-nav-search-submit" type="submit" aria-label="搜索">/u);
+  assert.match(html, /<kbd class="global-nav-search-hint" aria-hidden="true">Enter<\/kbd>/u);
+  assert.doesNotMatch(html, />搜索<\/button>/u);
+});
+
+test('global navigation keeps the project label outside the switch button and the pending count neutral', () => {
+  const html = renderNavigation({ projectOptions: [{ key: 'OPS', name: '交付运维台', pending_count: 108 }] });
+  assert.match(html, /<span class="global-nav-project-label" aria-hidden="true">当前项目<\/span><details class="global-nav-project"/u);
+  assert.match(html, /<span class="global-nav-divider" aria-hidden="true">/u);
+  assert.match(html, /global-nav-project-icon/u);
+});

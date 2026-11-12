@@ -502,7 +502,7 @@ export function Panel({ title, description, actions, children, footer, flush = f
  */
 export function Metric({ label, value, delta, icon, variant = 'brand', className = '' }) {
   return (
-    <article className={`yc-metric yc-metric-${variant}${className ? ` ${className}` : ''}`}>
+    <article className={`yc-metric yc-metric--${variant}${className ? ` ${className}` : ''}`}>
       {icon ? <span className="yc-metric__icon" aria-hidden="true">{icon}</span> : null}
       <div className="yc-metric__body">
         <div className="yc-metric__label">{label}</div>

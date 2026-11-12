@@ -119,42 +119,47 @@ export function GlobalNavigation({
       ) : null}
       <div className="global-nav-tools">
         <form className="global-nav-search" role="search" onSubmit={submitSearch}>
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10.8 5.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2ZM3.6 10.8a7.2 7.2 0 1 1 12.7 4.6l3.8 3.8-1 1-3.8-3.8A7.2 7.2 0 0 1 3.6 10.8Z" /></svg>
+          <button className="global-nav-search-submit" type="submit" aria-label="搜索">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10.8 5.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2ZM3.6 10.8a7.2 7.2 0 1 1 12.7 4.6l3.8 3.8-1 1-3.8-3.8A7.2 7.2 0 0 1 3.6 10.8Z" /></svg>
+          </button>
           <label className="shell-live-region" htmlFor="global-search">全局搜索</label>
           <input id="global-search" name="q" type="search" placeholder="搜索项目、需求、任务、Bug、资料库" autoComplete="off" />
-          <button type="submit">搜索</button>
+          <kbd className="global-nav-search-hint" aria-hidden="true">Enter</kbd>
         </form>
-        <details className="global-nav-project" onToggle={(event) => setProjectMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
-          <summary role="button" aria-label="切换当前项目">
-            <span className="global-nav-project-label">当前项目</span>
-            <strong title={currentProject?.name || '未选择项目'}>{currentProject?.name || '未选择项目'}</strong>
-            {projectBadge ? <span className="global-nav-badge" aria-label={`全部项目待处理 ${totalProjectPendingCount}`}>{projectBadge}</span> : null}
-            <span className="global-nav-caret global-nav-project-caret" aria-hidden="true" />
-          </summary>
-          <div className="global-nav-menu global-nav-project-menu">
-            <label className="global-nav-project-search">
-              <span className="shell-live-region">搜索项目</span>
-              <input type="search" value={projectQuery} placeholder="搜索项目名称" autoComplete="off" onChange={(event) => setProjectQuery(event.currentTarget.value)} />
-            </label>
-            <div ref={projectOptionsRef} className="global-nav-project-options yc-overlay-scroll-target" aria-label="可选项目">
-              {filteredProjects.map((project) => (
-                <button key={project.key} type="button" className={currentProject?.key === project.key ? 'active' : ''} disabled={Boolean(projectSwitchingKey)} onClick={(event) => { closeContainingNavigationMenu(event); setProjectQuery(''); onProjectChange(project); }}>
-                  <span>{project.name}</span>
-                  {formatNavigationBadge(project.pending_count || 0) ? <span className="global-nav-badge">{formatNavigationBadge(project.pending_count || 0)}</span> : null}
-                </button>
-              ))}
-              {!filteredProjects.length ? <p className="global-nav-project-empty">没有匹配项目</p> : null}
+        <div className="global-nav-project-group">
+          <span className="global-nav-project-label" aria-hidden="true">当前项目</span>
+          <details className="global-nav-project" onToggle={(event) => setProjectMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
+            <summary role="button" aria-label="切换当前项目">
+              <svg className="global-nav-project-icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2.5h6.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-10Z" /></svg>
+              <strong title={currentProject?.name || '未选择项目'}>{currentProject?.name || '未选择项目'}</strong>
+              {projectBadge ? <span className="global-nav-badge" aria-label={`全部项目待处理 ${totalProjectPendingCount}`}>{projectBadge}</span> : null}
+              <span className="global-nav-caret global-nav-project-caret" aria-hidden="true" />
+            </summary>
+            <div className="global-nav-menu global-nav-project-menu">
+              <label className="global-nav-project-search">
+                <span className="shell-live-region">搜索项目</span>
+                <input type="search" value={projectQuery} placeholder="搜索项目名称" autoComplete="off" onChange={(event) => setProjectQuery(event.currentTarget.value)} />
+              </label>
+              <div ref={projectOptionsRef} className="global-nav-project-options yc-overlay-scroll-target" aria-label="可选项目">
+                {filteredProjects.map((project) => (
+                  <button key={project.key} type="button" className={currentProject?.key === project.key ? 'active' : ''} disabled={Boolean(projectSwitchingKey)} onClick={(event) => { closeContainingNavigationMenu(event); setProjectQuery(''); onProjectChange(project); }}>
+                    <span>{project.name}</span>
+                    {formatNavigationBadge(project.pending_count || 0) ? <span className="global-nav-badge">{formatNavigationBadge(project.pending_count || 0)}</span> : null}
+                  </button>
+                ))}
+                {!filteredProjects.length ? <p className="global-nav-project-empty">没有匹配项目</p> : null}
+              </div>
+              {projectOptionsScrollbar.scrollbar}
+              <a href={projectsHref} onClick={(event) => { closeContainingNavigationMenu(event); onNavigate(event, projectsHref, '项目列表'); }}>查看全部项目</a>
             </div>
-            {projectOptionsScrollbar.scrollbar}
-            <a href={projectsHref} onClick={(event) => { closeContainingNavigationMenu(event); onNavigate(event, projectsHref, '项目列表'); }}>查看全部项目</a>
-          </div>
-        </details>
-
+          </details>
+        </div>
+        <span className="global-nav-divider" aria-hidden="true" />
 
         <details className="global-nav-notifications" onToggle={(event) => setNotificationMenuOpen(event.currentTarget.open)} onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
-          <summary role="button" aria-label="打开消息通知">
+          <summary role="button" aria-label={formatNavigationBadge(unreadCount) ? `打开消息通知（${unreadCount} 条未读）` : '打开消息通知'}>
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 11h4a2 2 0 0 1-4 0Z" /></svg>
-            {formatNavigationBadge(unreadCount) ? <span className="global-nav-badge">{formatNavigationBadge(unreadCount)}</span> : null}
+            {formatNavigationBadge(unreadCount) ? <span className="global-nav-dot" aria-hidden="true" /> : null}
           </summary>
           <div className="global-nav-menu global-nav-notification-panel" role="dialog" aria-label="最近消息">
             <div className="global-nav-notification-head"><div><strong>消息</strong><span>{unreadCount ? `${unreadCount} 条未读` : '暂无未读'}</span></div><button type="button" disabled={notificationBusy || unreadCount === 0} onClick={onMarkAllRead}>一键已读</button></div>

@@ -397,7 +397,7 @@ html[data-theme="dark"] {
   --yc-table-cell-px: 16px;
 
   /* ---------- 顶栏高度（P3 壳层改造时与 parity 合同同步） ---------- */
-  --yc-topbar-height: 58px;
+  --yc-topbar-height: 60px;
 
   /* ---------- 组件专用 component ---------- */
   --yc-tab-bg: #111c29;

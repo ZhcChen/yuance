@@ -26,14 +26,41 @@ function sameMetrics(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-/** @param {DOMRect} rect @param {Window} view @returns {OverlayScrollbarRect | null} */
-function visibleRectFor(rect, view) {
-  const top = Math.max(0, rect.top);
-  const right = Math.min(view.innerWidth, rect.right);
-  const bottom = Math.min(view.innerHeight, rect.bottom);
-  const left = Math.max(0, rect.left);
-  if (right <= left || bottom <= top) return null;
-  return { top, right, bottom, left, width: right - left, height: bottom - top };
+/**
+ * 计算滚动容器真正对用户可见的区域：与视口以及所有会裁剪它的祖先求交。
+ * 只和视口求交会让下半截被页面滚动裁掉的容器，把横向滚动条贴在视口底部而不是容器底部。
+ * `bottomClipped` 为 true 表示容器自己的下边缘不在可见区域内，此时横向滚动条没有正确的落点。
+ *
+ * @param {HTMLElement} target
+ * @param {Window} view
+ * @returns {{ rect: OverlayScrollbarRect | null, bottomClipped: boolean }}
+ */
+export function clippedRectFor(target, view) {
+  const own = target.getBoundingClientRect();
+  let top = Math.max(0, own.top);
+  let right = Math.min(view.innerWidth, own.right);
+  let bottom = Math.min(view.innerHeight, own.bottom);
+  let left = Math.max(0, own.left);
+  const root = target.ownerDocument.documentElement;
+  let position = view.getComputedStyle(target).position;
+  for (let node = target.parentElement; node && node !== root && position !== 'fixed'; node = node.parentElement) {
+    const style = view.getComputedStyle(node);
+    // absolute 元素只会被自己的包含块链上的祖先裁剪，中间未定位的祖先不起作用
+    if (position === 'absolute' && style.position === 'static' && style.transform === 'none') continue;
+    position = style.position;
+    if (style.overflowX === 'visible' && style.overflowY === 'visible') continue;
+    if (node.clientWidth === 0 && node.clientHeight === 0) continue;
+    const box = node.getBoundingClientRect();
+    const boxLeft = box.left + node.clientLeft;
+    const boxTop = box.top + node.clientTop;
+    left = Math.max(left, boxLeft);
+    top = Math.max(top, boxTop);
+    right = Math.min(right, boxLeft + node.clientWidth);
+    bottom = Math.min(bottom, boxTop + node.clientHeight);
+  }
+  const bottomClipped = own.bottom > bottom + 2;
+  if (right <= left || bottom <= top) return { rect: null, bottomClipped };
+  return { rect: { top, right, bottom, left, width: right - left, height: bottom - top }, bottomClipped };
 }
 
 /** @param {HTMLElement} target @returns {string} */
@@ -101,7 +128,7 @@ export function useOverlayScrollbar({ axis = 'both', targetRef, enabled = true, 
 
     const sync = () => {
       frame = 0;
-      const rect = visibleRectFor(target.getBoundingClientRect(), view);
+      const { rect, bottomClipped } = clippedRectFor(target, view);
       /** @type {OverlayScrollbarMetrics} */
       const next = {
         rect,
@@ -110,7 +137,7 @@ export function useOverlayScrollbar({ axis = 'both', targetRef, enabled = true, 
       };
       const nextRect = next.rect;
       const hasVerticalOverflow = Boolean(nextRect && (axis === 'vertical' || axis === 'both') && target.scrollHeight > target.clientHeight + 1);
-      const hasHorizontalOverflow = Boolean(nextRect && (axis === 'horizontal' || axis === 'both') && target.scrollWidth > target.clientWidth + 1);
+      const hasHorizontalOverflow = Boolean(nextRect && !bottomClipped && (axis === 'horizontal' || axis === 'both') && target.scrollWidth > target.clientWidth + 1);
       if (hasVerticalOverflow && nextRect) {
         const trackSize = Math.max(0, nextRect.height - (hasHorizontalOverflow ? SCROLLBAR_SIZE : 0));
         const thumbSize = Math.min(trackSize, Math.max(MIN_THUMB_SIZE, (target.clientHeight / target.scrollHeight) * trackSize));
@@ -306,8 +333,8 @@ function isDocumentTarget(target, documentRef) {
 }
 
 function targetRect(target, documentRef, view) {
-  if (isDocumentTarget(target, documentRef)) return { top: 0, right: view.innerWidth, bottom: view.innerHeight, left: 0, width: view.innerWidth, height: view.innerHeight };
-  return visibleRectFor(target.getBoundingClientRect(), view);
+  if (isDocumentTarget(target, documentRef)) return { rect: { top: 0, right: view.innerWidth, bottom: view.innerHeight, left: 0, width: view.innerWidth, height: view.innerHeight }, bottomClipped: false };
+  return clippedRectFor(target, view);
 }
 
 /** @param {HTMLElement} target @param {Document} ownerDocument */
@@ -435,7 +462,7 @@ function scheduleManagerRecord(record) {
 function syncManagerRecord(record) {
   const { target, ownerDocument: documentRef, view } = record;
   const style = view.getComputedStyle(target);
-  const rect = targetRect(target, documentRef, view);
+  const { rect, bottomClipped } = targetRect(target, documentRef, view);
   if (!rect) {
     record.metrics.vertical = null;
     record.metrics.horizontal = null;
@@ -453,7 +480,7 @@ function syncManagerRecord(record) {
   const verticalEnabled = rootTarget || isScrollOverflow(style.overflowY);
   const horizontalEnabled = rootTarget || isScrollOverflow(style.overflowX);
   const hasVertical = verticalEnabled && scrollHeight > clientHeight + 1;
-  const hasHorizontal = horizontalEnabled && scrollWidth > clientWidth + 1;
+  const hasHorizontal = horizontalEnabled && !bottomClipped && scrollWidth > clientWidth + 1;
   const width = Math.max(0, rect.width);
   const height = Math.max(0, rect.height);
   const verticalTrackSize = Math.max(0, height - (hasHorizontal ? SCROLLBAR_SIZE : 0));

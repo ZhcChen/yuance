@@ -23,9 +23,11 @@ export function AppShellSkeleton() {
       </div>
       <div className="app-shell__body">
       <div className="app-skeleton-nav" aria-hidden="true">
+        <span className="app-skeleton-block app-skeleton-search" />
         <div className="app-skeleton-nav-tools">
-          <span className="app-skeleton-block app-skeleton-search" />
-          <span className="app-skeleton-block app-skeleton-avatar" />
+          <span className="app-skeleton-block app-skeleton-project" />
+          <span className="app-skeleton-block app-skeleton-icon" />
+          <span className="app-skeleton-block app-skeleton-icon" />
         </div>
       </div>
       <div className="app-skeleton-main" aria-hidden="true">

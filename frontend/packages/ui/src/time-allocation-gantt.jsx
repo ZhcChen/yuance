@@ -133,13 +133,15 @@ export function TimeAllocationGantt({
   const ganttScrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: ganttScrollRef, label: '时间排期' });
   const selectionRef = useRef(/** @type {{ track: HTMLElement, username: string, startDay: number, element: HTMLElement } | null} */ (null));
   const blockDragRef = useRef(/** @type {{ block: HTMLElement, id: number, mode: 'move' | 'resize-l' | 'resize-r', startX: number, startIndex: number, endIndex: number, nextStart: number, nextEnd: number } | null} */ (null));
-  const pxPerDay = viewScale === 'day'
-    ? PIXELS_PER_DAY_BY_SCALE.day
-    : (stretchTrackWidth > 0 ? stretchTrackWidth / totalDays : PIXELS_PER_DAY_BY_SCALE[viewScale]);
+  const naturalPxPerDay = PIXELS_PER_DAY_BY_SCALE[viewScale];
+  const stretchPxPerDay = viewScale !== 'day' && stretchTrackWidth > 0 ? stretchTrackWidth / totalDays : 0;
+  // 容器放不下默认像素时不再压缩，改为横向滚动，否则周/月刻度标签会互相重叠。
+  const fillsContainer = viewScale !== 'day' && (stretchTrackWidth === 0 || stretchPxPerDay >= naturalPxPerDay);
+  const pxPerDay = Math.max(stretchPxPerDay, naturalPxPerDay);
   const totalWidth = totalDays * pxPerDay;
 
   useLayoutEffect(() => {
-    const node = ganttRef.current;
+    const node = ganttRef.current?.parentElement;
     if (!node || viewScale === 'day') {
       setStretchTrackWidth(0);
       return undefined;
@@ -815,7 +817,7 @@ export function TimeAllocationGantt({
           </label>
           <label className="time-management-field">
             <span>阶段任务名称</span>
-            <input type="text" maxLength={200} placeholder="例如：需求分析、开发、联调" value={manualTaskName} onChange={(event) => setManualTaskName(event.currentTarget.value)} />
+            <TextInput type="text" maxLength={200} placeholder="例如：需求分析、开发、联调" value={manualTaskName} onChange={(event) => setManualTaskName(event.currentTarget.value)} />
           </label>
           <label className="time-management-field">
             <span>手动添加成员</span>
@@ -825,13 +827,13 @@ export function TimeAllocationGantt({
           </label>
           <label className="time-management-field">
             <span>开始日期</span>
-            <input type="date" value={manualStart} onChange={(event) => setManualStart(event.currentTarget.value)} />
+            <TextInput type="date" value={manualStart} onChange={(event) => setManualStart(event.currentTarget.value)} />
           </label>
           <label className="time-management-field">
             <span>结束日期</span>
-            <input type="date" value={manualEnd} onChange={(event) => setManualEnd(event.currentTarget.value)} />
+            <TextInput type="date" value={manualEnd} onChange={(event) => setManualEnd(event.currentTarget.value)} />
           </label>
-          <button className="time-management-primary" type="submit" disabled={busy}>添加排期</button>
+          <Button type="submit" disabled={busy}>添加排期</Button>
         </form>
       ) : null}
 
@@ -877,17 +879,17 @@ export function TimeAllocationGantt({
                 </div>
               ) : null}
               {onOpenRecords ? (
-                <Button variant="secondary" size="sm" onClick={onOpenRecords}>记录</Button>
+                <Button variant="secondary" onClick={onOpenRecords}>记录</Button>
               ) : null}
             </>
           ) : null}
         </div>
         <div className="time-management-controls-right" role="group" aria-label={manualSave && !viewReadOnly ? '排期编辑操作' : '排期导出'}>
-          <Button variant="secondary" size="sm" disabled={exportDisabled} onClick={handleExportSvg}>导出 SVG</Button>
+          <Button variant="secondary" disabled={exportDisabled} onClick={handleExportSvg}>导出 SVG</Button>
           {manualSave && !viewReadOnly ? (
             <>
-              <Button variant="secondary" size="sm" disabled={!timeline.undoStack.length || busy} onClick={undo}>回退</Button>
-              <Button variant="secondary" size="sm" disabled={!timeline.redoStack.length || busy} onClick={redo}>前进</Button>
+              <Button variant="secondary" disabled={!timeline.undoStack.length || busy} onClick={undo}>回退</Button>
+              <Button variant="secondary" disabled={!timeline.redoStack.length || busy} onClick={redo}>前进</Button>
               <Button disabled={!timeline.undoStack.length || busy} onClick={() => setSaveConfirmOpen(true)}>保存</Button>
             </>
           ) : null}
@@ -914,7 +916,7 @@ export function TimeAllocationGantt({
       {error ? <div className="time-management-error" role="alert">{error}</div> : null}
 
       <div className="time-gantt-wrap yc-overlay-scroll-target" ref={ganttScrollbar.ref}>
-        <div className={`time-gantt${viewScale !== 'day' ? ' time-gantt-fill' : ''}`} ref={ganttRef}
+        <div className={`time-gantt${fillsContainer ? ' time-gantt-fill' : ''}`} ref={ganttRef}
           onPointerDown={handleGanttPointerDown}
           onPointerMove={handleGanttPointerMove}
           onPointerUp={handleGanttPointerUp}
