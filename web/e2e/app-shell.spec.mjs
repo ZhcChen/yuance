@@ -677,7 +677,7 @@ test('shared work item lists hide creation when the atomic contract is read only
   await expect(page.getByLabel(/选择 YCE-TASK/u)).toHaveCount(0);
 });
 
-test('shared work item lists render a stable empty state for filtered results', async ({ page }) => {
+test('shared work item lists distinguish empty projects from filtered empty results', async ({ page }) => {
   await login(page, '/web/app/requirements');
   await page.route('**/api/v1/work-item-list-view**', async (route) => {
     const response = await route.fetch();
@@ -691,8 +691,15 @@ test('shared work item lists render a stable empty state for filtered results', 
 
   const emptyState = page.locator('.yc-empty');
   await expect(emptyState).toContainText('暂无需求');
-  await expect(emptyState).toContainText('当前筛选条件下没有匹配项');
+  await expect(emptyState).toContainText('这个项目还没有需求');
+  await expect(emptyState.getByRole('button', { name: '新建需求' })).toBeVisible();
   await expect.poll(() => emptyState.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(176);
+
+  await page.goto('/web/app/requirements?priority=P0');
+  await expect(emptyState).toContainText('没有匹配的需求');
+  await expect(emptyState).toContainText('当前筛选条件下没有匹配项');
+  await emptyState.getByRole('button', { name: '清除筛选' }).click();
+  await expect(page).not.toHaveURL(/priority=P0/u);
 });
 
 test('work item detail can edit and handoff through app shell forms', async ({ page }) => {
@@ -4442,7 +4449,7 @@ test('shared project personal analysis preserves metrics, filters and completion
   await expect(page.getByText('工作项由你推进到完成、解决、验证或关闭后会记录在这里。')).toBeVisible();
 });
 
-test('shared shell reports API failures through a bounded global toast', async ({ page }) => {
+test('shared shell reports route load failures once through the page banner', async ({ page }) => {
   await page.route('**/api/v1/projects/YCE/my-analysis', (route) => route.fulfill({
     status: 500,
     contentType: 'application/json',
@@ -4451,13 +4458,15 @@ test('shared shell reports API failures through a bounded global toast', async (
 
   await login(page, '/web/app/projects/YCE/my-analysis');
 
-  const toast = page.locator('.yc-error-toast');
-  await expect(toast).toBeVisible();
-  await expect(toast).toContainText('操作未完成');
-  await expect(toast).toContainText('服务暂时无法完成请求，请稍后重试。');
+  const banner = page.locator('.shell-banner');
+  await expect(banner).toContainText('加载失败');
+  await expect(banner).toContainText('服务暂时无法完成请求，请稍后重试。');
+  await expect(page.locator('.yc-error-toast')).toBeHidden();
   await expect(page.getByRole('main')).not.toContainText('internal database decoder detail');
-  await toast.getByRole('button', { name: '关闭提示' }).click();
-  await expect(toast).toBeHidden();
+
+  await page.unroute('**/api/v1/projects/YCE/my-analysis');
+  await banner.getByRole('button', { name: '重试' }).click();
+  await expect(banner).toBeHidden();
 });
 
 test('project personal analysis serializes current project changes across rapid navigation', async ({ page }) => {
@@ -4829,7 +4838,7 @@ test('global top bar keeps one aligned row and avatars stay square in both theme
 
 test('dashboard project table keeps its horizontal scrollbar inside the table card', async ({ page }) => {
   const viewportHeight = 760;
-  await page.setViewportSize({ width: 820, height: viewportHeight });
+  await page.setViewportSize({ width: 720, height: viewportHeight });
   await login(page, '/web/app');
   await expect(page.getByRole('heading', { level: 2, name: '项目推进' })).toBeVisible();
 

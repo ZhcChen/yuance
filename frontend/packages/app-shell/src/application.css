@@ -438,7 +438,15 @@ button:disabled {
 .compact-table tbody tr:last-child td { border-bottom: 0; }
 .table-title-cell { display: grid; gap: 2px; min-width: 132px; }
 .table-title-cell > a { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-.table-title-cell > code { color: var(--yc-muted); font-family: var(--yc-font-mono); font-size: var(--yc-fs-11); }
+.table-title-meta { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--yc-muted); font-size: var(--yc-fs-12); }
+.table-title-meta > code { font-family: var(--yc-font-mono); font-size: var(--yc-fs-11); }
+.table-title-meta > span::before { content: "·"; margin-right: 6px; }
+.table-muted { color: var(--yc-muted-strong); }
+.work-item-create-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 var(--yc-sp-12); color: var(--yc-text-secondary); font-size: var(--yc-fs-13); }
+.work-item-create-scope strong { color: var(--yc-text-primary); }
+.work-item-create-scope code { color: var(--yc-muted); font-family: var(--yc-font-mono); font-size: var(--yc-fs-12); }
+.not-found-page .yc-empty { padding-block: var(--yc-sp-48, 48px); }
+.not-found-page .yc-empty__title h1 { margin: 0; font: inherit; outline: none; }
 .work-count-cell { display: grid; gap: 1px; }
 .work-count-cell strong { color: var(--yc-brand); font-size: 15px; line-height: 20px; font-variant-numeric: tabular-nums; }
 .work-count-cell span { color: var(--yc-muted); font-size: 12px; line-height: 16px; }
@@ -710,6 +718,7 @@ h2 {
   flex-direction: column;
   gap: 4px;
 }
+.shell-banner-retry { align-self: flex-start; margin-top: 8px; }
 
 .shell-stats dl {
   display: grid;
@@ -887,7 +896,8 @@ h2 {
 .work-item-table { min-width: 980px; }
 .work-item-table .work-item-row { display: table-row; }
 .work-item-table .work-table-select { width: 54px; min-width: 54px; padding-right: 10px; padding-left: 10px; }
-.work-item-table .work-table-title { width: 38%; white-space: normal; }
+.work-item-table td { white-space: nowrap; }
+.work-item-table .work-table-title { min-width: 220px; white-space: normal; }
 .work-table-key { display: inline-flex; align-items: center; gap: 8px; }
 .work-table-key code { color: var(--yc-muted-strong); font-size: 12px; }
 .work-table-title-link { display: -webkit-box; overflow: hidden; color: var(--yc-text); font-size: 14px; font-weight: 750; line-height: 20px; text-decoration: none; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

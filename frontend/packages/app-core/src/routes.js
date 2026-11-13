@@ -565,6 +565,6 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
     pathname,
     search,
     legacyPath,
-    title: '未迁移路由',
+    title: '页面不存在',
   };
 }

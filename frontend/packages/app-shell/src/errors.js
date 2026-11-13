@@ -2,6 +2,13 @@
 
 import { ApiError } from '@yuance/frontend-api-client';
 
+const NETWORK_ERROR_MESSAGE = '网络连接异常，请检查网络后重试。';
+
+/** fetch 断网或被拦截时只抛浏览器原生 TypeError，各浏览器文案不同且是英文。 @param {Error} error */
+function isNetworkError(error) {
+  return error instanceof TypeError && /failed to fetch|networkerror|load failed|network request failed/iu.test(error.message || '');
+}
+
 /** @param {ApiError | Error | null} error */
 export function errorMessage(error) {
   if (!error) {
@@ -12,6 +19,9 @@ export function errorMessage(error) {
   }
   if (error instanceof ApiError) {
     return error.message;
+  }
+  if (isNetworkError(error)) {
+    return NETWORK_ERROR_MESSAGE;
   }
   return error.message || '加载失败。';
 }
