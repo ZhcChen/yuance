@@ -73,6 +73,7 @@ struct LoginTemplate {
     csrf_token: String,
     error_message: String,
     return_to: String,
+    username: String,
 }
 
 #[derive(Template)]
@@ -990,6 +991,7 @@ pub async fn login(
             csrf_token: csrf_token.clone(),
             error_message: String::new(),
             return_to,
+            username: String::new(),
         })?
         .into_response(),
     )
@@ -1039,6 +1041,7 @@ pub async fn login_submit(
                     csrf_token: csrf_token.clone(),
                     error_message: message,
                     return_to: safe_web_return_to(&form.return_to).to_string(),
+                    username: form.username.trim().to_string(),
                 })?
                 .into_response(),
             );
