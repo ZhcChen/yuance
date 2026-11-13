@@ -512,13 +512,14 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 .yc-priority-P3::before { width: 8px; height: 8px; border: 0; border-radius: var(--yc-radius-full); background: var(--yc-text-tertiary); }
 
 .yc-content-tabs { position: relative; box-sizing: border-box; width: max-content; max-width: 100%; display: inline-flex; align-items: center; gap: var(--yc-sp-4); padding: 0; overflow: visible; border: 0; border-bottom: 1px solid var(--yc-line); border-radius: 0; background: transparent; }
-.yc-content-tabs--badge { padding-right: var(--yc-sp-6); }
 .yc-content-tabs-indicator { position: absolute; z-index: 0; bottom: -1px; left: 4px; width: var(--yc-content-tab-indicator-width, 0); height: 2px; border: 0; border-radius: var(--yc-radius-full); background: var(--yc-brand); box-shadow: none; transform: translateX(var(--yc-content-tab-indicator-x, 0)); transition: width 360ms cubic-bezier(.22, .8, .24, 1), transform 360ms cubic-bezier(.22, .8, .24, 1); will-change: width, transform; }
 .yc-content-tab { position: relative; z-index: 1; min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: var(--yc-sp-6); padding: 0 var(--yc-sp-12); border: 0; border-radius: 0; background: transparent; color: var(--yc-text-secondary); cursor: pointer; font-size: var(--yc-fs-13); font-weight: var(--yc-fw-medium); text-decoration: none; white-space: nowrap; transition: color var(--yc-motion-fast) var(--yc-ease-standard); }
 .yc-content-tab:hover,
 .yc-content-tab:focus-visible,
 .yc-content-tab.active { color: var(--yc-brand); }
-.yc-content-tab-badge { position: absolute; top: 2px; right: -6px; min-width: 16px; min-height: 16px; display: inline-grid; place-items: center; padding: 0 4px; border-radius: var(--yc-radius-full); background: var(--yc-danger); color: var(--yc-text-inverse); font-size: var(--yc-fs-11); font-weight: var(--yc-fw-bold); line-height: 16px; box-shadow: 0 0 0 2px var(--yc-surface); pointer-events: none; }
+.yc-content-tab-badge { min-width: 18px; min-height: 18px; display: inline-grid; place-items: center; padding: 0 5px; border-radius: var(--yc-radius-full); background: var(--yc-line-soft); color: var(--yc-text-secondary); font-size: var(--yc-fs-11); font-weight: var(--yc-fw-semibold); line-height: 18px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.yc-content-tab.active .yc-content-tab-badge--neutral { background: color-mix(in srgb, var(--yc-brand) 12%, transparent); color: var(--yc-brand); }
+.yc-content-tab-badge--danger { background: var(--yc-danger); color: var(--yc-text-inverse); }
 
 @media (prefers-reduced-motion: reduce) {
   .yc-content-tabs-indicator { transition: none; }

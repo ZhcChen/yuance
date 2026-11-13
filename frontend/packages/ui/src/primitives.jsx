@@ -235,10 +235,6 @@ export function PriorityBadge({ priority, children }) {
 /** @param {{ children?: React.ReactNode, ariaLabel: string }} props */
 export function ContentTabs({ children, ariaLabel }) {
   const tabsRef = useRef(/** @type {HTMLElement | null} */ (null));
-  // 角标悬在标签右上角，最后一个标签的角标会探出标签条；给标签条留出等宽的右侧余量。
-  const hasBadge = React.Children.toArray(children).some(
-    (child) => React.isValidElement(child) && Number(/** @type {{ badge?: number }} */ (child.props)?.badge || 0) > 0,
-  );
   const scrollbar = useOverlayScrollbar({ axis: 'horizontal', targetRef: tabsRef, label: ariaLabel, refreshKey: children });
   const hasSyncedRef = useRef(false);
 
@@ -263,12 +259,12 @@ export function ContentTabs({ children, ariaLabel }) {
     return () => observer?.disconnect();
   }, [children]);
 
-  return <><nav ref={tabsRef} className={`yc-content-tabs yc-overlay-scroll-target${hasBadge ? ' yc-content-tabs--badge' : ''}`} aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>{scrollbar.scrollbar}</>;
+  return <><nav ref={tabsRef} className="yc-content-tabs yc-overlay-scroll-target" aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>{scrollbar.scrollbar}</>;
 }
 
-/** @param {{ children?: React.ReactNode, href?: string, active?: boolean, badge?: number, onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement> }} props */
-export function ContentTab({ children, href, active = false, badge = 0, onClick }) {
-  const content = <>{children}{badge > 0 ? <span className="yc-content-tab-badge">{badge > 99 ? '99+' : badge}</span> : null}</>;
+/** @param {{ children?: React.ReactNode, href?: string, active?: boolean, badge?: number, badgeTone?: 'neutral' | 'danger', onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement> }} props */
+export function ContentTab({ children, href, active = false, badge = 0, badgeTone = 'neutral', onClick }) {
+  const content = <>{children}{badge > 0 ? <span className={`yc-content-tab-badge yc-content-tab-badge--${badgeTone}`}>{badge > 99 ? '99+' : badge}</span> : null}</>;
   const className = `yc-content-tab ${active ? 'active' : ''}`;
   return href
     ? <a className={className} href={href} aria-current={active ? 'page' : undefined} onClick={/** @type {React.MouseEventHandler<HTMLAnchorElement>} */ (onClick)}>{content}</a>
@@ -282,6 +278,12 @@ export function Modal({ open, title, wide = false, children, footer, onClose }) 
   const titleId = useId();
   const bodyScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: bodyRef, enabled: open, label: title, refreshKey: open });
   useAnimatedDialog(open, ref, 'yc-modal-closing');
+  useEffect(() => {
+    if (!open) return;
+    // React 不会把 autoFocus 写成 DOM 属性，showModal() 会把焦点交给第一个按钮（关闭）；由正文显式声明的字段接管焦点。
+    const target = /** @type {HTMLElement | null} */ (ref.current?.querySelector('.yc-modal-body [data-autofocus]') || null);
+    target?.focus();
+  }, [open]);
   return (
     <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={() => { if (open) onClose(); }}>
       <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
