@@ -24,4 +24,5 @@
 - [x] T009 `frontend`、`web` `npm run check` 通过；e2e（真实接口 + 内存对象存储）4 项通过：未填标题粘贴上传并创建、拖拽与按钮上传并创建、取消删除草稿、写主帖失败重试不重复创建。SC-001、SC-003
 - [x] T010 迁移在正式库副本（`qfy-test2` 上 `.backup` 至临时目录，未拉回本地）验证：231 行哈希一致、自增高水位 231 保留、`integrity_check` ok、外键检查无输出、索引存在。
 - [x] T011 独立代码复核，见 `docs/reviews/2026-11-16-work-item-draft-attachments.md`。
-- [ ] T012 正式环境部署与线上验收（按 `docs/runbooks/production-deployment.md`）。
+- [x] T012 正式环境部署（`c7ccb366`，2026-11-16）：迁移 38/38 已执行，部署前快照 `backups/20261116100601.qWKzQU`；迁移后 `file_attachments` 含 `draft` 约束、237 行、`quick_check` ok；`/api/readyz` 就绪；草稿接口路由已注册（未登录 POST 返回 415 而非 404）；线上前端包含草稿附件逻辑。
+- [ ] T013 线上业务验收：在正式环境新建需求，未填标题上传附件并创建，详情页附件可见（需用户确认后执行或由用户自测，会产生真实数据）。
