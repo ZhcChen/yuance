@@ -36,5 +36,7 @@ export {
   workItemAttachmentApiPath,
   workItemCommentApiPath,
   workItemCommentAttachmentApiPath,
+  workItemDraftAttachmentApiPath,
+  workItemDraftAttachmentWebUrl,
   workItemResourceLibraryLinkFromPayload,
 } from './work-items.js';

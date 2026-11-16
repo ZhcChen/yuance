@@ -63,6 +63,11 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemCommentAttachmentUploadUrl
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} markWorkItemCommentAttachmentUploaded
  * @property {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemCommentAttachmentDownloadUrl
+ * @property {(projectKey: string, payload: AttachmentCreatePayload) => Promise<Attachment>} createWorkItemDraftAttachment
+ * @property {(projectKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemDraftAttachmentUploadUrl
+ * @property {(projectKey: string, attachmentId: number) => Promise<Attachment>} markWorkItemDraftAttachmentUploaded
+ * @property {(projectKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemDraftAttachmentDownloadUrl
+ * @property {(projectKey: string, attachmentId: number) => Promise<Attachment>} deleteWorkItemDraftAttachment
  */
 /** @typedef {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, page?: number, perPage?: number }} WorkItemListQuery */
 /** @typedef {{ page: number, per_page: number, total_items: number, total_pages: number }} Pagination */
@@ -100,6 +105,25 @@ export function workItemAttachmentApiPath(itemKey, attachmentId) {
  */
 export function workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId) {
   return `${workItemCommentApiPath(itemKey, commentId)}/attachments/${encodeURIComponent(String(attachmentId))}`;
+}
+
+/**
+ * 新建工作项草稿附件接口路径（工作项创建前上传，创建时绑定到主帖）。
+ * @param {string} projectKey
+ * @param {number} [attachmentId]
+ */
+export function workItemDraftAttachmentApiPath(projectKey, attachmentId) {
+  const base = `/api/v1/projects/${encodeURIComponent(projectKey)}/work-item-draft-attachments`;
+  return attachmentId === undefined ? base : `${base}/${encodeURIComponent(String(attachmentId))}`;
+}
+
+/**
+ * 编辑器内引用草稿附件的 Web 地址；创建工作项时由服务端改写为主帖附件地址。
+ * @param {string} projectKey
+ * @param {number} attachmentId
+ */
+export function workItemDraftAttachmentWebUrl(projectKey, attachmentId) {
+  return `/web/projects/${encodeURIComponent(projectKey)}/work-item-draft-attachments/${encodeURIComponent(String(attachmentId))}/download`;
 }
 
 /**
@@ -690,6 +714,64 @@ export function createWorkItemClient({ request, prepareWrite }) {
       return attachmentSignedUrlFromPayload(await request(
         `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/download-url${signedUrlSuffix(query)}`,
       ));
+    },
+
+    /**
+     * @param {string} projectKey
+     * @param {AttachmentCreatePayload} payload
+     */
+    async createWorkItemDraftAttachment(projectKey, payload) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(workItemDraftAttachmentApiPath(projectKey), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(attachmentCreateRequestBody(payload)),
+      }));
+    },
+
+    /**
+     * @param {string} projectKey
+     * @param {number} attachmentId
+     * @param {SignedUrlOptions} [query]
+     */
+    async getWorkItemDraftAttachmentUploadUrl(projectKey, attachmentId, query = {}) {
+      return attachmentSignedUrlFromPayload(await request(
+        `${workItemDraftAttachmentApiPath(projectKey, attachmentId)}/upload-url${signedUrlSuffix(query)}`,
+      ));
+    },
+
+    /**
+     * @param {string} projectKey
+     * @param {number} attachmentId
+     */
+    async markWorkItemDraftAttachmentUploaded(projectKey, attachmentId) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(
+        `${workItemDraftAttachmentApiPath(projectKey, attachmentId)}/uploaded`,
+        { method: 'POST' },
+      ));
+    },
+
+    /**
+     * @param {string} projectKey
+     * @param {number} attachmentId
+     * @param {SignedUrlOptions} [query]
+     */
+    async getWorkItemDraftAttachmentDownloadUrl(projectKey, attachmentId, query = {}) {
+      return attachmentSignedUrlFromPayload(await request(
+        `${workItemDraftAttachmentApiPath(projectKey, attachmentId)}/download-url${signedUrlSuffix(query)}`,
+      ));
+    },
+
+    /**
+     * @param {string} projectKey
+     * @param {number} attachmentId
+     */
+    async deleteWorkItemDraftAttachment(projectKey, attachmentId) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(workItemDraftAttachmentApiPath(projectKey, attachmentId), {
+        method: 'DELETE',
+      }));
     },
   };
 }

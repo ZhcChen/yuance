@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+// 新建需求：拖拽与工具栏「附件」上传无需标题，取消新建会删除草稿附件。真实接口 + 内存对象存储。
+
 async function login(page, entryPath) {
   await page.goto(entryPath);
   await expect(page).toHaveURL(/\/web\/login/);
@@ -22,128 +24,85 @@ async function ensureCurrentProject(page, projectKey) {
   await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
-test('requirement create editor accepts dropped files and toolbar uploads', async ({ page }) => {
+async function ensureMemoryStorage(page) {
+  const csrf = (await (await page.request.get('/api/v1/auth/csrf')).json()).data.csrf_token;
+  const response = await page.request.post('/api/v1/storage/config', {
+    headers: { 'x-yuance-csrf-token': csrf },
+    data: { endpoint: 'memory://yuance-tests', region: 'test', bucket: 'draft-e2e', access_key_id: 'test-access-key', access_key_secret: 'test-access-secret', activate: true },
+  });
+  expect(response.status()).toBeLessThan(300);
+}
+
+async function dropFile(page, editor, name, type, bytes) {
+  const dataTransfer = await page.evaluateHandle(({ name, type, bytes }) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], name, { type }));
+    return transfer;
+  }, { name, type, bytes });
+  await editor.dispatchEvent('dragenter', { dataTransfer });
+  await editor.dispatchEvent('dragover', { dataTransfer });
+  await expect(editor).toHaveClass(/is-file-drag-over/);
+  await editor.dispatchEvent('drop', { dataTransfer });
+  await expect(editor).not.toHaveClass(/is-file-drag-over/);
+}
+
+test('requirement create accepts dropped and toolbar uploads without a title', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
+  await ensureMemoryStorage(page);
   await page.goto('/web/app/requirements');
-
-  const attachmentCreates = [];
-  const uploadStages = [];
-  const primaryPostUpdates = [];
-  let nextAttachmentId = 9100;
-  await page.route('**/api/v1/work-items/*/primary-post', async (route) => {
-    if (route.request().method() !== 'PATCH') {
-      await route.continue();
-      return;
-    }
-    primaryPostUpdates.push(route.request().postDataJSON().body);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: { id: 3, body: '', body_format: 'html' } }),
-    });
-  });
-  await page.route('**/api/v1/test-storage/upload**', async (route) => {
-    uploadStages.push(`put:${new URL(route.request().url()).searchParams.get('target')}`);
-    await route.fulfill({ status: 200, body: '' });
-  });
-  await page.route('**/api/v1/work-items/*/comments/*/attachments', async (route) => {
-    if (route.request().method() !== 'POST') {
-      await route.continue();
-      return;
-    }
-    const payload = route.request().postDataJSON();
-    const created = {
-      id: nextAttachmentId++,
-      filename: payload.original_filename,
-      content_type: payload.content_type,
-      byte_size: payload.byte_size,
-      status: 'pending',
-      created_by: '系统管理员',
-      created_at: '2026-08-11T00:00:00Z',
-    };
-    attachmentCreates.push({ payload, created });
-    uploadStages.push(`create:comment:${created.id}`);
-    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: created }) });
-  });
-  await page.route('**/api/v1/work-items/*/comments/*/attachments/*/upload-url', async (route) => {
-    const parts = new URL(route.request().url()).pathname.split('/');
-    const attachmentId = Number(parts[parts.length - 2]);
-    uploadStages.push(`sign:comment:${attachmentId}`);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: {
-          attachment: { ...attachmentCreates.find((entry) => entry.created.id === attachmentId).created },
-          request: { method: 'PUT', url: `/api/v1/test-storage/upload?target=comment-${attachmentId}`, headers: [] },
-          expires_in_seconds: 600,
-        },
-      }),
-    });
-  });
-  await page.route('**/api/v1/work-items/*/comments/*/attachments/*/uploaded', async (route) => {
-    const parts = new URL(route.request().url()).pathname.split('/');
-    const attachmentId = Number(parts[parts.length - 2]);
-    uploadStages.push(`mark:comment:${attachmentId}`);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: { ...attachmentCreates.find((entry) => entry.created.id === attachmentId).created, status: 'uploaded' },
-      }),
-    });
-  });
 
   await page.getByRole('button', { name: '新建需求' }).click();
   const dialog = page.getByRole('dialog', { name: '新建需求' });
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
   await editor.fill('拖拽前的内容');
 
-  // 未填写标题时：文件卡片进入等待态，不转圈、只显示一份提示文字。
-  const waitingChooser = page.waitForEvent('filechooser');
-  await dialog.getByRole('button', { name: '上传附件' }).click();
-  await (await waitingChooser).setFiles({ name: '待解决的问题.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') });
-  const waitingCard = editor.locator('[data-rich-pending-upload]', { hasText: '待解决的问题.pdf' });
-  await expect(waitingCard).toHaveAttribute('data-upload-state', 'waiting');
-  await expect(waitingCard.locator('[data-rich-pending-status]')).toHaveText('请先填写标题，填写后自动上传');
-  await expect(waitingCard.locator('.yc-rich-pending-overlay-status')).toBeHidden();
-  await expect(waitingCard.locator('.yc-rich-pending-progress')).toBeHidden();
-  await expect(dialog.locator('#work-item-create-title')).toBeFocused();
-  await waitingCard.screenshot({ path: '../.artifacts/rich-pending-waiting-card.png' });
-  await waitingCard.getByRole('button', { name: '移除 待解决的问题.pdf' }).click();
-  await expect(waitingCard).toHaveCount(0);
-  expect(attachmentCreates).toHaveLength(0);
+  await dropFile(page, editor, 'dropped.png', 'image/png', [137, 80, 78, 71]);
+  await expect(editor.locator('figure[data-yuance-attachment-id] img[src*="/work-item-draft-attachments/"]')).toHaveCount(1);
 
-  await dialog.locator('#work-item-create-title').fill('拖拽与按钮上传验收');
-
-  const dataTransfer = await page.evaluateHandle(() => {
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'dropped.png', { type: 'image/png' }));
-    return transfer;
-  });
-  await editor.dispatchEvent('dragenter', { dataTransfer });
-  await editor.dispatchEvent('dragover', { dataTransfer });
-  await expect(editor).toHaveClass(/is-file-drag-over/);
-  await editor.dispatchEvent('drop', { dataTransfer });
-  await expect(editor).not.toHaveClass(/is-file-drag-over/);
-  await expect.poll(() => attachmentCreates.length).toBe(1);
-  expect(attachmentCreates[0].payload.original_filename).toBe('dropped.png');
-  await expect(editor.locator('figure[data-yuance-attachment-id="9100"] img')).toBeVisible();
-  await expect(editor).toContainText('拖拽前的内容');
-
-  const uploadButton = dialog.getByRole('button', { name: '上传附件' });
-  await expect(uploadButton).toBeEnabled();
   const chooserPromise = page.waitForEvent('filechooser');
-  await uploadButton.click();
+  await dialog.getByRole('button', { name: '上传附件' }).click();
   const chooser = await chooserPromise;
   expect(chooser.isMultiple()).toBe(true);
-  await chooser.setFiles({ name: 'spec.txt', mimeType: 'text/plain', buffer: Buffer.from('spec') });
-  await expect.poll(() => attachmentCreates.length).toBe(2);
-  expect(attachmentCreates[1].payload.original_filename).toBe('spec.txt');
-  await expect(editor.locator('a[data-yuance-attachment-id="9101"][data-yuance-attachment-kind="file"]')).toBeVisible();
-  await expect.poll(() => primaryPostUpdates.at(-1) || '').toContain('data-yuance-attachment-id="9101"');
-  expect(primaryPostUpdates.at(-1)).toContain('data-yuance-attachment-id="9100"');
+  await chooser.setFiles({ name: '待解决的问题.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') });
+  const fileLink = editor.locator('a[data-yuance-attachment-kind="file"][href*="/work-item-draft-attachments/"]');
+  await expect(fileLink).toHaveCount(1);
+  await expect(editor.locator('[data-rich-pending-upload]')).toHaveCount(0);
   await expect(editor).toContainText('拖拽前的内容');
-  await expect(editor.getByRole('img', { name: 'dropped.png' })).toHaveCount(1);
+  await expect(dialog.locator('#work-item-create-title')).toHaveValue('');
+
+  await dialog.locator('#work-item-create-title').fill('拖拽与按钮上传验收');
+  await dialog.getByRole('button', { name: '创建' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/YCE-REQ-\d+/u);
+  const itemKey = page.url().match(/YCE-REQ-\d+/u)[0];
+  const view = (await (await page.request.get(`/api/v1/work-item-detail-view/${itemKey}`)).json()).data;
+  expect(view.primary_post.body).not.toContain('work-item-draft-attachments');
+  expect(view.primary_post.body).toContain('拖拽前的内容');
+  expect(view.primary_post.body.match(/\/comments\/\d+\/attachments\/\d+\/download/gu)).toHaveLength(2);
+});
+
+test('cancelling create deletes uploaded draft attachments', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  await ensureCurrentProject(page, 'YCE');
+  await ensureMemoryStorage(page);
+  await page.goto('/web/app/requirements');
+  const deletes = [];
+  page.on('request', (request) => {
+    if (request.method() === 'DELETE' && request.url().includes('/work-item-draft-attachments/')) deletes.push(request.url());
+  });
+
+  await page.getByRole('button', { name: '新建需求' }).click();
+  const dialog = page.getByRole('dialog', { name: '新建需求' });
+  const editor = dialog.getByRole('textbox', { name: '说明内容' });
+  await dropFile(page, editor, 'discard.png', 'image/png', [137, 80, 78, 71]);
+  const draft = editor.locator('figure[data-yuance-attachment-id] img[src*="/work-item-draft-attachments/"]');
+  await expect(draft).toHaveCount(1);
+  const draftSrc = await draft.getAttribute('src');
+
+  await dialog.getByRole('button', { name: '取消' }).click();
+  await page.getByRole('button', { name: '放弃并关闭' }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => deletes.length).toBe(1);
+  await expect.poll(async () => (await page.request.get(draftSrc, { maxRedirects: 0 })).status()).toBe(404);
 });

@@ -270,6 +270,32 @@ export function uploadWorkItemCommentAttachment({ api, platform, itemKey, commen
 }
 
 /**
+ * 新建工作项草稿附件上传：工作项尚未创建，附件先暂存到项目下，创建时由服务端绑定到主帖。
+ * @template {{ id: number }} T
+ * @param {{
+ *   api: {
+ *     createWorkItemDraftAttachment(projectKey: string, payload: AttachmentCreatePayload): Promise<T>,
+ *     getWorkItemDraftAttachmentUploadUrl(projectKey: string, attachmentId: number): Promise<{ request: unknown, expires_in_seconds: number }>,
+ *     markWorkItemDraftAttachmentUploaded(projectKey: string, attachmentId: number): Promise<T>,
+ *   },
+ *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'>,
+ *   projectKey: string,
+ *   file: SelectedFile,
+ *   lifecycle: AttachmentLifecycle<T>,
+ * }} options
+ */
+export function uploadWorkItemDraftAttachment({ api, platform, projectKey, file, lifecycle }) {
+  return uploadAttachment({
+    create: (payload) => api.createWorkItemDraftAttachment(projectKey, payload),
+    sign: (attachment) => api.getWorkItemDraftAttachmentUploadUrl(projectKey, attachment.id),
+    confirm: (attachment) => api.markWorkItemDraftAttachmentUploaded(projectKey, attachment.id),
+    platform,
+    file,
+    lifecycle,
+  });
+}
+
+/**
  * @param {{
  *   getSignedRequest: () => Promise<{ request: unknown, expires_in_seconds: number, encryption?: unknown }>,
  *   platform: Pick<PlatformCapabilities, 'downloads' | 'transfers'>,

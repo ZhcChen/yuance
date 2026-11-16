@@ -60,6 +60,7 @@ export {
   updateWorkItemComment,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
+  uploadWorkItemDraftAttachment,
   uploadProjectAttachment,
   uploadProjectResourceAttachment,
 } from './work-item-collaboration.js';

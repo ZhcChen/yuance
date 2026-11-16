@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// 新建工作项时附件无需标题：上传立即走项目草稿附件接口，创建时服务端绑定到主帖。
+// 使用真实接口与内存对象存储，不 mock 上传链路。
+
 async function login(page, entryPath) {
   await page.goto(entryPath);
   await expect(page).toHaveURL(/\/web\/login/);
@@ -22,81 +25,36 @@ async function ensureCurrentProject(page, projectKey) {
   await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
-test('work item create keeps pasted images inline and uploads them after title with deferred upload', async ({ page }) => {
+async function ensureMemoryStorage(page) {
+  const csrf = (await (await page.request.get('/api/v1/auth/csrf')).json()).data.csrf_token;
+  const response = await page.request.post('/api/v1/storage/config', {
+    headers: { 'x-yuance-csrf-token': csrf },
+    data: { endpoint: 'memory://yuance-tests', region: 'test', bucket: 'draft-e2e', access_key_id: 'test-access-key', access_key_secret: 'test-access-secret', activate: true },
+  });
+  expect(response.status()).toBeLessThan(300);
+}
+
+/** 记录与新建流程相关的写请求，便于断言“未填标题时不创建工作项”。 */
+function trackWrites(page) {
+  const writes = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (request.method() === 'GET' || !url.pathname.startsWith('/api/v1/')) return;
+    if (/work-item-draft-attachments|\/work-items|test-storage/u.test(url.pathname)) writes.push(`${request.method()} ${url.pathname}`);
+  });
+  return writes;
+}
+
+test('work item create uploads pasted images immediately without a title and binds them on create', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
+  await ensureMemoryStorage(page);
   await page.goto('/web/app/bugs');
-
-  const attachmentCreates = [];
-  const uploadStages = [];
-  const primaryPostUpdates = [];
-  let nextAttachmentId = 9100;
-  await page.route('**/api/v1/work-items/*/primary-post', async (route) => {
-    if (route.request().method() !== 'PATCH') {
-      await route.continue();
-      return;
-    }
-    primaryPostUpdates.push(route.request().postDataJSON().body);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ data: { id: 3, body: '', body_format: 'html' } }),
-    });
-  });
-  await page.route('**/api/v1/test-storage/upload**', async (route) => {
-    uploadStages.push(`put:${new URL(route.request().url()).searchParams.get('target')}`);
-    await route.fulfill({ status: 200, body: '' });
-  });
-  await page.route('**/api/v1/work-items/*/comments/*/attachments', async (route) => {
-    if (route.request().method() !== 'POST') {
-      await route.continue();
-      return;
-    }
-    const payload = route.request().postDataJSON();
-    const created = {
-      id: nextAttachmentId++,
-      filename: payload.original_filename,
-      content_type: payload.content_type,
-      byte_size: payload.byte_size,
-      status: 'pending',
-      created_by: '系统管理员',
-      created_at: '2026-08-11T00:00:00Z',
-    };
-    attachmentCreates.push({ payload, created });
-    uploadStages.push(`create:comment:${created.id}`);
-    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: created }) });
-  });
-  await page.route('**/api/v1/work-items/*/comments/*/attachments/*/upload-url', async (route) => {
-    const parts = new URL(route.request().url()).pathname.split('/');
-    const attachmentId = Number(parts[parts.length - 2]);
-    uploadStages.push(`sign:comment:${attachmentId}`);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: {
-          attachment: { id: attachmentId, filename: 'pasted.png', content_type: 'image/png', byte_size: 4, status: 'pending', created_by: '系统管理员', created_at: '2026-08-11T00:00:00Z' },
-          request: { method: 'PUT', url: `/api/v1/test-storage/upload?target=comment-${attachmentId}`, headers: [['content-type', 'image/png'], ['content-length', '4']] },
-          expires_in_seconds: 600,
-        },
-      }),
-    });
-  });
-  await page.route('**/api/v1/work-items/*/comments/*/attachments/*/uploaded', async (route) => {
-    const parts = new URL(route.request().url()).pathname.split('/');
-    const attachmentId = Number(parts[parts.length - 2]);
-    uploadStages.push(`mark:comment:${attachmentId}`);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: { id: attachmentId, filename: 'pasted.png', content_type: 'image/png', byte_size: 4, status: 'uploaded', created_by: '系统管理员', created_at: '2026-08-11T00:00:00Z' },
-      }),
-    });
-  });
+  const writes = trackWrites(page);
 
   await page.getByRole('button', { name: '新建 Bug' }).click();
   const dialog = page.getByRole('dialog', { name: '新建 Bug' });
+  await expect(dialog.locator('#work-item-create-title')).toHaveValue('');
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
   await editor.fill('图片上方的原有内容');
   await editor.evaluate((element) => {
@@ -118,20 +76,20 @@ test('work item create keeps pasted images inline and uploads them after title w
     Object.defineProperty(event, 'clipboardData', { value: clipboardData });
     element.dispatchEvent(event);
   });
-  const pendingImage = editor.getByRole('img', { name: 'pasted.png' });
-  const pendingImage2 = editor.getByRole('img', { name: 'pasted-2.png' });
-  await expect(pendingImage).toHaveCount(1);
-  await expect(pendingImage2).toHaveCount(1);
-  await expect(editor.getByRole('img', { name: 'same-as-pasted.png' })).toHaveCount(0);
-  await expect(pendingImage).toBeVisible();
-  await expect(pendingImage2).toBeVisible();
-  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'waiting');
-  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先填写标题，填写后自动上传');
-  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'waiting');
-  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先填写标题，填写后自动上传');
-  expect(attachmentCreates).toHaveLength(0);
 
-  // 图片等待上传时，焦点不应被反复抢回标题输入框，用户应能继续编辑图片上方内容。
+  // 标题仍为空：两张图立即上传完成，成为草稿附件节点。
+  const drafts = editor.locator('figure[data-yuance-attachment-id] img[src*="/work-item-draft-attachments/"]');
+  await expect(drafts).toHaveCount(2);
+  await expect(editor.locator('[data-rich-pending-upload]')).toHaveCount(0);
+  await expect(editor.getByRole('img', { name: 'same-as-pasted.png' })).toHaveCount(0);
+  await expect(dialog.locator('#work-item-create-title')).toHaveValue('');
+  expect(writes.filter((entry) => entry === 'POST /api/v1/work-items')).toHaveLength(0);
+  expect(writes.filter((entry) => entry === 'POST /api/v1/projects/YCE/work-item-draft-attachments')).toHaveLength(2);
+  // 草稿附件可由上传者直接预览。
+  const draftSrc = await drafts.first().getAttribute('src');
+  expect((await page.request.get(draftSrc, { maxRedirects: 0 })).status()).toBeLessThan(400);
+
+  // 上传后仍可继续编辑图片上方内容。
   await editor.evaluate((element) => {
     element.focus();
     const range = element.ownerDocument.createRange();
@@ -141,29 +99,18 @@ test('work item create keeps pasted images inline and uploads them after title w
     selection?.removeAllRanges();
     selection?.addRange(range);
   });
-  await page.waitForTimeout(250);
   await page.keyboard.type('图片上方继续编辑');
   await expect(editor).toContainText('图片上方继续编辑图片上方的原有内容');
-  await expect(dialog.locator('#work-item-create-title')).not.toHaveValue(/图片上方继续编辑/);
 
-  await dialog.locator('#work-item-create-title').fill('自动上传粘贴图片验收');
-  await expect.poll(() => attachmentCreates.length).toBe(2);
-  expect(attachmentCreates[0].payload.original_filename).toBe('pasted.png');
-  expect(attachmentCreates[1].payload.original_filename).toBe('pasted-2.png');
-  expect(attachmentCreates[0].payload.content_type).toBe('image/png');
-  expect(attachmentCreates[1].payload.content_type).toBe('image/png');
-  await expect(editor.locator('figure[data-yuance-attachment-id="9100"] img')).toBeVisible();
-  await expect(editor.locator('figure[data-yuance-attachment-id="9101"] img')).toBeVisible();
-  expect(uploadStages).toContain('put:comment-9100');
-  expect(uploadStages).toContain('put:comment-9101');
-  expect(uploadStages).toContain('mark:comment:9100');
-  expect(uploadStages).toContain('mark:comment:9101');
-  await expect.poll(() => primaryPostUpdates.length).toBeGreaterThanOrEqual(2);
-  const finalBody = primaryPostUpdates[primaryPostUpdates.length - 1];
-  expect(finalBody).toContain('data-yuance-attachment-id="9100"');
-  expect(finalBody).toContain('data-yuance-attachment-id="9101"');
-  expect(finalBody).not.toContain('data:');
-  expect(finalBody).not.toContain('data-yuance-attachment-id="-"');
-  expect(primaryPostUpdates[0]).not.toContain('data:');
-  expect(primaryPostUpdates[0]).not.toContain('data-yuance-attachment-id="-"');
+  await dialog.locator('#work-item-create-title').fill('草稿附件无需标题验收');
+  await dialog.getByRole('button', { name: '创建' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/\/work-items\/YCE-BUG-\d+|YCE-BUG-\d+/u);
+  const itemKey = page.url().match(/YCE-BUG-\d+/u)[0];
+
+  const view = (await (await page.request.get(`/api/v1/work-item-detail-view/${itemKey}`)).json()).data;
+  const body = view.primary_post.body;
+  expect(body).not.toContain('work-item-draft-attachments');
+  expect(body.match(new RegExp(`/web/work-items/${itemKey}/comments/${view.primary_post.id}/attachments/\\d+/download`, 'gu'))).toHaveLength(2);
+  expect(body).toContain('图片上方继续编辑');
 });

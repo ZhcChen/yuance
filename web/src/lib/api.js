@@ -212,6 +212,16 @@ export const markWorkItemCommentAttachmentUploaded = /** @type {(itemKey: string
 
 export const getWorkItemCommentAttachmentDownloadUrl = /** @type {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemCommentAttachmentDownloadUrl);
 
+export const createWorkItemDraftAttachment = /** @type {(projectKey: string, payload: AttachmentCreatePayload) => Promise<Attachment>} */ (apiClient.createWorkItemDraftAttachment);
+
+export const getWorkItemDraftAttachmentUploadUrl = /** @type {(projectKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemDraftAttachmentUploadUrl);
+
+export const markWorkItemDraftAttachmentUploaded = /** @type {(projectKey: string, attachmentId: number) => Promise<Attachment>} */ (apiClient.markWorkItemDraftAttachmentUploaded);
+
+export const getWorkItemDraftAttachmentDownloadUrl = /** @type {(projectKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemDraftAttachmentDownloadUrl);
+
+export const deleteWorkItemDraftAttachment = /** @type {(projectKey: string, attachmentId: number) => Promise<Attachment>} */ (apiClient.deleteWorkItemDraftAttachment);
+
 export const getNotifications = /** @type {(query?: number | { limit?: number, filter?: string, page?: number, perPage?: number }) => Promise<NotificationFeed>} */ (apiClient.getNotifications);
 
 export const getNotificationTarget = /** @type {(notificationId: number) => Promise<NotificationTargetPayload>} */ (apiClient.getNotificationTarget);
@@ -337,6 +347,11 @@ export const webApi = {
   getWorkItemAttachments,
   getWorkItemCommentAttachmentDownloadUrl,
   deleteWorkItemCommentAttachment,
+  createWorkItemDraftAttachment,
+  getWorkItemDraftAttachmentUploadUrl,
+  markWorkItemDraftAttachmentUploaded,
+  getWorkItemDraftAttachmentDownloadUrl,
+  deleteWorkItemDraftAttachment,
   deleteWorkItemPrimaryPostAttachment,
   getWorkItemCommentAttachmentPreview,
   getWorkItemCommentAttachmentUploadUrl,

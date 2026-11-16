@@ -40,8 +40,10 @@ import {
   updateWorkItemComment as updateWorkItemCommentUseCase,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
+  uploadWorkItemDraftAttachment,
   uploadProjectResourceAttachment,
 } from '@yuance/frontend-app-core';
+import { workItemDraftAttachmentWebUrl } from '@yuance/frontend-api-client';
 import {
   AppSidebar,
   AttachmentPreview as BaseAttachmentPreview,
@@ -1198,9 +1200,9 @@ export function SharedApp({ services }) {
   const workItemTypingControllerRef = useRef(/** @type {ReturnType<typeof createWorkItemTypingController> | null} */ (null));
   const workItemTypingClientIdRef = useRef('');
   const workItemBatchMutationRef = useRef(false);
-  const workItemCreateAttachmentMutationRef = useRef(false);
+  const workItemCreateUploadCountRef = useRef(0);
+  const workItemCreateDraftIdsRef = useRef(/** @type {Set<number>} */ (new Set()));
   const workItemCreateDescriptionRef = useRef('');
-  const workItemCreateDeferredFocusRef = useRef(false);
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
   const [shellReady, setShellReady] = useState(false);
@@ -5211,11 +5213,27 @@ export function SharedApp({ services }) {
   function openWorkItemCreate() {
     setWorkItemCreateError('');
     setWorkItemCreateCheckpoint(null);
+    workItemCreateUploadCountRef.current = 0;
     setWorkItemCreatePasteUploading(false);
-    workItemCreateDeferredFocusRef.current = false;
+    workItemCreateDraftIdsRef.current = new Set();
     workItemCreateDescriptionRef.current = '';
     setWorkItemCreateForm({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
     setWorkItemCreateOpen(true);
+  }
+
+  /**
+   * 删除本次新建中上传但未被正文引用（或放弃创建）的草稿附件；失败不影响主流程，过期清理兜底。
+   * @param {string} projectKey
+   * @param {string} [keptBody]
+   */
+  function discardWorkItemCreateDrafts(projectKey, keptBody = '') {
+    const drafts = [...workItemCreateDraftIdsRef.current];
+    workItemCreateDraftIdsRef.current = new Set();
+    const kept = new Set(richTextAttachmentIds(keptBody));
+    for (const attachmentId of drafts) {
+      if (kept.has(attachmentId)) continue;
+      void api.deleteWorkItemDraftAttachment(projectKey, attachmentId).catch(() => {});
+    }
   }
 
   function closeWorkItemCreate({ discard = false } = {}) {
@@ -5225,14 +5243,15 @@ export function SharedApp({ services }) {
       return;
     }
     setWorkItemCreateDiscardOpen(false);
-    workItemCreateDeferredFocusRef.current = false;
     if (workItemCreateCheckpoint) {
+      // 工作项已创建但主帖写入失败：保留草稿附件供详情页重新编辑时由过期清理兜底，直接打开详情。
       const itemKey = workItemCreateCheckpoint.item.key;
       setWorkItemCreateOpen(false);
       setWorkItemCreateCheckpoint(null);
       navigate(buildWorkItemDetailPath({ owner: workItemOwner, itemKey }), `已打开刚创建的 ${itemKey}。`);
       return;
     }
+    if (workItemListProject) discardWorkItemCreateDrafts(workItemListProject.key);
     setWorkItemCreateOpen(false);
   }
 
@@ -5253,99 +5272,68 @@ export function SharedApp({ services }) {
     };
   }
 
-  /** @returns {Promise<{ item: AppWorkItemDetail, primaryPostId: number | null }>} */
-  async function ensureWorkItemCreateCheckpoint() {
-    if (workItemCreateCheckpoint) return workItemCreateCheckpoint;
-    const payload = workItemCreatePayload();
-    if (!payload) throw new Error('当前页面无法创建工作项。');
-    const item = await api.createWorkItem(payload);
-    const checkpoint = { item, primaryPostId: null };
-    setWorkItemCreateCheckpoint(checkpoint);
-    return checkpoint;
-  }
-
-  /** @param {{ item: AppWorkItemDetail, primaryPostId: number | null }} checkpoint @returns {Promise<number>} */
-  async function ensureWorkItemCreatePrimaryPost(checkpoint) {
-    if (checkpoint.primaryPostId) return checkpoint.primaryPostId;
-    // 附件必须挂在已存在的主帖下；没有正文时先写入非空占位正文。
-    const body = richTextHasContent(workItemCreateDescriptionRef.current) ? workItemCreateDescriptionRef.current : '<p>图片上传中…</p>';
-    const primaryPost = await api.updateWorkItemPrimaryPost(checkpoint.item.key, body);
-    const next = { ...checkpoint, primaryPostId: primaryPost.id };
-    setWorkItemCreateCheckpoint(next);
-    return primaryPost.id;
-  }
-
-  /** @param {import('@yuance/frontend-platform-contract').PastedFile} file @param {RichTextPasteUploadOptions} [options] @returns {Promise<AppRichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE>} */
+  /**
+   * 新建弹窗上传附件：先暂存为项目草稿附件，无需标题、无需提前创建工作项；创建时由服务端绑定到主帖。
+   * @param {import('@yuance/frontend-platform-contract').PastedFile} file @param {RichTextPasteUploadOptions} [options] @returns {Promise<AppRichTextAttachmentOption | null>}
+   */
   async function pasteWorkItemCreateFile(file, options) {
-    if (!workItemListRoute || !currentProject || workItemCreateSubmitting) {
-      options?.onError?.('当前无法粘贴文件。');
+    const projectKey = workItemListProject?.key;
+    if (!workItemListRoute || !projectKey || workItemCreateSubmitting) {
+      options?.onError?.('当前无法上传文件。');
       return null;
     }
-    if (!workItemCreateForm.title.trim()) {
-      options?.onDeferred?.('请先填写标题，填写后自动上传');
-      if (!workItemCreateDeferredFocusRef.current) {
-        workItemCreateDeferredFocusRef.current = true;
-        runtime.getElementById('work-item-create-title')?.focus();
-      }
-      return DEFER_RICH_TEXT_PASTE;
+    const selectPastedFile = files.selectPastedFile;
+    if (typeof selectPastedFile !== 'function') {
+      options?.onError?.('当前环境不支持上传文件。');
+      return null;
     }
-    options?.onDeferred?.('');
-    if (workItemCreateAttachmentMutationRef.current) return DEFER_RICH_TEXT_PASTE;
-    workItemCreateAttachmentMutationRef.current = true;
+    workItemCreateUploadCountRef.current += 1;
     setWorkItemCreatePasteUploading(true);
     try {
-      const selectPastedFile = files.selectPastedFile;
-      if (typeof selectPastedFile !== 'function') {
-        options?.onError?.('当前环境不支持粘贴文件。');
-        return null;
-      }
       let selected;
       try { selected = await selectPastedFile(file); }
       catch (caught) {
-        options?.onError?.(errorMessage(caught instanceof Error ? caught : new Error('读取剪贴板文件失败。')));
+        options?.onError?.(errorMessage(caught instanceof Error ? caught : new Error('读取文件失败。')));
         return null;
       }
       if (!selected || !selected.byteSize || selected.byteSize <= 0) {
-        options?.onError?.('请粘贴非空文件。');
+        options?.onError?.('请选择非空文件。');
         return null;
       }
-      const checkpoint = await ensureWorkItemCreateCheckpoint();
-      const primaryPostId = await ensureWorkItemCreatePrimaryPost(checkpoint);
-      const result = await uploadWorkItemCommentAttachment({
+      const result = await uploadWorkItemDraftAttachment({
         api,
         platform: files,
-        itemKey: checkpoint.item.key,
-        commentId: primaryPostId,
+        projectKey,
         file: selected,
         lifecycle: {
-          isCurrent: () => workItemCreateOpen && !workItemCreateSubmitting && (options?.isCurrent?.() ?? true),
+          isCurrent: () => options?.isCurrent?.() ?? true,
           onStage: (stage) => options?.onProgress?.(stage),
-          onCreated: () => {},
+          onCreated: (created) => { workItemCreateDraftIdsRef.current.add(created.id); },
           onUploaded: () => {},
           refresh: async () => {},
         },
       });
+      if (result.created) workItemCreateDraftIdsRef.current.add(result.created.id);
       if (!result.completed || !result.uploaded) {
-        options?.onError?.('粘贴文件上传未完成，请重试。');
+        if (result.created) {
+          workItemCreateDraftIdsRef.current.delete(result.created.id);
+          void api.deleteWorkItemDraftAttachment(projectKey, result.created.id).catch(() => {});
+        }
+        options?.onError?.('文件上传未完成，请重试。');
         return null;
       }
-      const attachmentOption = workItemCommentAttachmentOption(checkpoint.item.key, primaryPostId, result.uploaded);
-      const nextBody = `${workItemCreateDescriptionRef.current}${richTextAttachmentHtml({
+      return {
         id: result.uploaded.id,
         filename: result.uploaded.filename,
         contentType: result.uploaded.content_type,
-        url: attachmentOption.url,
-      })}`;
-      await api.updateWorkItemPrimaryPost(checkpoint.item.key, nextBody);
-      workItemCreateDescriptionRef.current = nextBody;
-      setWorkItemCreateForm((current) => ({ ...current, description: nextBody }));
-      return attachmentOption;
+        url: workItemDraftAttachmentWebUrl(projectKey, result.uploaded.id),
+      };
     } catch (caught) {
-      options?.onError?.(errorMessage(caught instanceof Error ? caught : new Error('上传粘贴文件失败。')));
+      options?.onError?.(errorMessage(caught instanceof Error ? caught : new Error('上传文件失败。')));
       return null;
     } finally {
-      workItemCreateAttachmentMutationRef.current = false;
-      setWorkItemCreatePasteUploading(false);
+      workItemCreateUploadCountRef.current = Math.max(0, workItemCreateUploadCountRef.current - 1);
+      if (workItemCreateUploadCountRef.current === 0) setWorkItemCreatePasteUploading(false);
     }
   }
 
@@ -5360,6 +5348,7 @@ export function SharedApp({ services }) {
     }
     if (!payload.title) {
       setWorkItemCreateError('请输入工作项标题。');
+      runtime.getElementById('work-item-create-title')?.focus();
       return;
     }
     if (!payload.itemType) {
@@ -5370,9 +5359,10 @@ export function SharedApp({ services }) {
     setWorkItemCreateError('');
     try {
       const description = workItemCreateDescriptionRef.current;
-      let checkpoint = workItemCreateCheckpoint;
-      let item = checkpoint?.item || null;
+      const hasDescription = richTextHasContent(description);
+      let item = workItemCreateCheckpoint?.item || null;
       if (item) {
+        // 上次已创建工作项但主帖写入失败：只更新字段并重写主帖，避免重复创建。
         item = await api.updateWorkItem(item.key, {
           title: payload.title,
           priority: payload.priority,
@@ -5382,14 +5372,14 @@ export function SharedApp({ services }) {
           parentItemKey: payload.parentItemKey,
         });
       } else {
-        item = await api.createWorkItem({ ...payload, description: richTextHasContent(description) ? description : '' });
+        // 正文中的草稿附件由写主帖时服务端绑定，创建工作项只携带纯摘要占位，避免草稿地址进入描述。
+        item = await api.createWorkItem({ ...payload, description: hasDescription && richTextAttachmentIds(description).length === 0 ? description : '' });
+        setWorkItemCreateCheckpoint({ item, primaryPostId: null });
       }
-      const needsPrimaryPost = Boolean(checkpoint) || richTextHasContent(description);
-      if (needsPrimaryPost) {
-        const body = richTextHasContent(description) ? description : '<p>图片上传中…</p>';
-        const primaryPost = await api.updateWorkItemPrimaryPost(item.key, body);
-        setWorkItemCreateCheckpoint({ item, primaryPostId: primaryPost.id });
+      if (hasDescription) {
+        await api.updateWorkItemPrimaryPost(item.key, description);
       }
+      discardWorkItemCreateDrafts(payload.projectKey, hasDescription ? description : '');
       setWorkItemCreateOpen(false);
       setWorkItemCreateCheckpoint(null);
       setStatusMessage(`${item.key} 已创建。`);
@@ -6819,7 +6809,7 @@ export function SharedApp({ services }) {
                     <Field id="work-item-create-assignee" label="处理人"><Select id="work-item-create-assignee" searchable searchPlaceholder="搜索处理人" value={workItemCreateForm.assigneeUsername} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, assigneeUsername: event.target.value }))}><option value="">默认指派给我</option>{(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</Select></Field>
                     {route.itemType === 'task' ? <Field id="work-item-create-parent" label="父级需求"><Select id="work-item-create-parent" value={workItemCreateForm.parentItemKey} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, parentItemKey: event.target.value }))}><option value="">不关联</option>{(workItemPage?.parent_options || []).map((item) => <option key={item.key} value={item.key}>{item.key} · {item.title}</option>)}</Select></Field> : null}
                   </div>
-                  <div className="yc-field yc-rich-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting || workItemCreatePasteUploading} label="说明内容" onPasteFile={(file, options) => pasteWorkItemCreateFile(file, options)} onChange={(description) => { workItemCreateDescriptionRef.current = description; setWorkItemCreateForm((current) => ({ ...current, description })); }} /></div>
+                  <div className="yc-field yc-rich-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting} label="说明内容" onPasteFile={(file, options) => pasteWorkItemCreateFile(file, options)} onChange={(description) => { workItemCreateDescriptionRef.current = description; setWorkItemCreateForm((current) => ({ ...current, description })); }} /></div>
                   {workItemCreateError ? <Feedback tone="danger" title="创建失败">{workItemCreateError}</Feedback> : null}
                 </form>
               </Modal>
