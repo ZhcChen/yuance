@@ -81,8 +81,8 @@ pub enum FilesCommand {
         /// 只统计不写入。
         #[arg(long)]
         dry_run: bool,
-        /// 清理早于该小时数的草稿附件。
-        #[arg(long, default_value_t = 24)]
+        /// 清理早于该小时数的草稿附件（与登记时自动清理的保留期一致）。
+        #[arg(long, default_value_t = 72)]
         older_than_hours: i64,
     },
     /// 盘点文件对象和附件关系，不修改数据库或对象存储。

@@ -1202,6 +1202,7 @@ export function SharedApp({ services }) {
   const workItemBatchMutationRef = useRef(false);
   const workItemCreateUploadCountRef = useRef(0);
   const workItemCreateDraftIdsRef = useRef(/** @type {Set<number>} */ (new Set()));
+  const workItemCreateCloseSaveFailedRef = useRef(false);
   const workItemCreateDescriptionRef = useRef('');
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
@@ -5214,6 +5215,7 @@ export function SharedApp({ services }) {
     setWorkItemCreateError('');
     setWorkItemCreateCheckpoint(null);
     workItemCreateUploadCountRef.current = 0;
+    workItemCreateCloseSaveFailedRef.current = false;
     setWorkItemCreatePasteUploading(false);
     workItemCreateDraftIdsRef.current = new Set();
     workItemCreateDescriptionRef.current = '';
@@ -5236,7 +5238,7 @@ export function SharedApp({ services }) {
     }
   }
 
-  function closeWorkItemCreate({ discard = false } = {}) {
+  async function closeWorkItemCreate({ discard = false } = {}) {
     if (workItemCreateSubmitting || workItemCreatePasteUploading) return;
     if (!discard && !workItemCreateCheckpoint && (workItemCreateForm.title.trim() || richTextHasContent(workItemCreateDescriptionRef.current))) {
       setWorkItemCreateDiscardOpen(true);
@@ -5244,8 +5246,25 @@ export function SharedApp({ services }) {
     }
     setWorkItemCreateDiscardOpen(false);
     if (workItemCreateCheckpoint) {
-      // 工作项已创建但主帖写入失败：保留草稿附件供详情页重新编辑时由过期清理兜底，直接打开详情。
+      // 工作项已创建但上次写主帖失败：离开前再保存一次说明内容（含草稿附件绑定），避免正文丢失。
+      // 若仍失败则留在弹窗提示；再次点击才放弃保存并打开详情，草稿附件由过期清理兜底。
       const itemKey = workItemCreateCheckpoint.item.key;
+      const description = workItemCreateDescriptionRef.current;
+      if (richTextHasContent(description) && !workItemCreateCloseSaveFailedRef.current) {
+        setWorkItemCreateSubmitting(true);
+        setWorkItemCreateError('');
+        try {
+          await api.updateWorkItemPrimaryPost(itemKey, description);
+          if (workItemListProject) discardWorkItemCreateDrafts(workItemListProject.key, description);
+        } catch (caught) {
+          workItemCreateCloseSaveFailedRef.current = true;
+          setWorkItemCreateError(`${itemKey} 已创建，但说明内容保存失败：${errorMessage(/** @type {ApiError | Error} */ (caught))}。可点击「创建」重试；再次点击「转到详情」将放弃本次说明内容。`);
+          return;
+        } finally {
+          setWorkItemCreateSubmitting(false);
+        }
+      }
+      workItemCreateCloseSaveFailedRef.current = false;
       setWorkItemCreateOpen(false);
       setWorkItemCreateCheckpoint(null);
       navigate(buildWorkItemDetailPath({ owner: workItemOwner, itemKey }), `已打开刚创建的 ${itemKey}。`);

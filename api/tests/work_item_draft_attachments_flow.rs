@@ -338,6 +338,51 @@ async fn draft_attachments_are_private_to_their_uploader() {
 }
 
 #[tokio::test]
+async fn primary_post_with_drafts_can_be_retried_after_lost_response() {
+    let fixture = fixture().await;
+    let cookie = fixture.admin.cookie.clone();
+    let draft = create_draft(&fixture, &cookie, "a.png", true).await;
+    let item_key = create_work_item(&fixture).await;
+    let body = format!("<p>重试</p>{}", draft_figure(draft));
+    let mut comment_ids = Vec::new();
+    for _ in 0..2 {
+        let (status, post) = send(
+            &fixture.app,
+            "PATCH",
+            &format!("/api/v1/work-items/{item_key}/primary-post"),
+            &cookie,
+            Some(serde_json::json!({ "body": body, "body_format": "html" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{post}");
+        comment_ids.push(post["data"]["id"].as_i64().expect("primary post id"));
+    }
+    assert_eq!(comment_ids[0], comment_ids[1]);
+    assert_eq!(
+        attachment_target(&fixture.pool, draft).await,
+        ("comment".to_string(), comment_ids[0])
+    );
+}
+
+#[tokio::test]
+async fn draft_paths_in_plain_text_are_left_untouched() {
+    let fixture = fixture().await;
+    let cookie = fixture.admin.cookie.clone();
+    let item_key = create_work_item(&fixture).await;
+    let text = "接口示例 /api/v1/projects/YCE/work-item-draft-attachments/1/download 与 /web/projects/YCE/work-item-draft-attachments/9/download";
+    let (status, post) = send(
+        &fixture.app,
+        "PATCH",
+        &format!("/api/v1/work-items/{item_key}/primary-post"),
+        &cookie,
+        Some(serde_json::json!({ "body": format!("<p>{text}</p>"), "body_format": "html" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{post}");
+    assert!(post["data"]["body"].as_str().expect("body").contains(text));
+}
+
+#[tokio::test]
 async fn binding_rejects_drafts_that_are_not_uploaded() {
     let fixture = fixture().await;
     let cookie = fixture.admin.cookie.clone();
@@ -461,7 +506,7 @@ async fn expired_drafts_are_cleaned_up_but_fresh_and_bound_ones_are_kept() {
     // 新登记草稿时会顺带清理该用户在该项目下的过期草稿。
     let stale = create_draft(&fixture, &cookie, "stale.png", true).await;
     sqlx::query(
-        "UPDATE file_attachments SET created_at = datetime('now', '-30 hours') WHERE id = ?1",
+        "UPDATE file_attachments SET created_at = datetime('now', '-80 hours') WHERE id = ?1",
     )
     .bind(stale)
     .execute(&fixture.pool)

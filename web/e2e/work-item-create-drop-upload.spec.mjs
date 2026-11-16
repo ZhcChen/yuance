@@ -106,3 +106,43 @@ test('cancelling create deletes uploaded draft attachments', async ({ page }) =>
   await expect.poll(() => deletes.length).toBe(1);
   await expect.poll(async () => (await page.request.get(draftSrc, { maxRedirects: 0 })).status()).toBe(404);
 });
+
+test('primary post failure after create can be retried without duplicating the work item', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  await ensureCurrentProject(page, 'YCE');
+  await ensureMemoryStorage(page);
+  await page.goto('/web/app/requirements');
+  const creates = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/v1/work-items') creates.push(request.url());
+  });
+  let failNextPrimaryPost = true;
+  await page.route('**/api/v1/work-items/*/primary-post', async (route) => {
+    if (route.request().method() === 'PATCH' && failNextPrimaryPost) {
+      failNextPrimaryPost = false;
+      await route.fulfill({ status: 502, contentType: 'text/html', body: '<html>bad gateway</html>' });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.getByRole('button', { name: '新建需求' }).click();
+  const dialog = page.getByRole('dialog', { name: '新建需求' });
+  const editor = dialog.getByRole('textbox', { name: '说明内容' });
+  await editor.fill('重试前的正文');
+  await dropFile(page, editor, 'retry.png', 'image/png', [137, 80, 78, 71]);
+  await expect(editor.locator('figure[data-yuance-attachment-id] img[src*="/work-item-draft-attachments/"]')).toHaveCount(1);
+  await dialog.locator('#work-item-create-title').fill('写主帖失败重试验收');
+  await dialog.getByRole('button', { name: '创建' }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '转到详情' })).toBeVisible();
+
+  await dialog.getByRole('button', { name: '创建' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/YCE-REQ-\d+/u);
+  expect(creates).toHaveLength(1);
+  const itemKey = page.url().match(/YCE-REQ-\d+/u)[0];
+  const view = (await (await page.request.get(`/api/v1/work-item-detail-view/${itemKey}`)).json()).data;
+  expect(view.primary_post.body).toContain('重试前的正文');
+  expect(view.primary_post.body.match(/\/comments\/\d+\/attachments\/\d+\/download/gu)).toHaveLength(1);
+});

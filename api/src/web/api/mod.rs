@@ -5031,8 +5031,9 @@ async fn require_api_draft_attachment_context(
     Ok((principal, project))
 }
 
-/// 草稿附件默认保留期：超过该时长仍未绑定到工作项的草稿会被清理。
-const DRAFT_ATTACHMENT_RETENTION_HOURS: i64 = 24;
+/// 草稿附件保留期：超过该时长仍未绑定到工作项的草稿会被清理。
+/// 取 72 小时，避免误删长时间打开的新建弹窗中仍在使用的草稿。
+const DRAFT_ATTACHMENT_RETENTION_HOURS: i64 = 72;
 
 pub async fn create_work_item_draft_attachment(
     State(state): State<AppState>,
@@ -5048,11 +5049,11 @@ pub async fn create_work_item_draft_attachment(
     let config = storage::active_config(pool)
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
-    // 顺带清理该用户在该项目下已过期的草稿，避免依赖人工执行清理命令。
+    // 顺带清理全站已过期的草稿（单次最多 500 个），避免依赖人工执行清理命令。
     if let Err(error) = files::cleanup_expired_draft_attachments(
         pool,
         DRAFT_ATTACHMENT_RETENTION_HOURS,
-        Some((project.id, user.id)),
+        None,
         false,
     )
     .await

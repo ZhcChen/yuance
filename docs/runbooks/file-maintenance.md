@@ -98,6 +98,28 @@ docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cl
 - 若对象曾签发上传 URL，还必须等到最后一张 URL 到期后 4 小时 5 分钟；从未签发的对象仅按年龄判断。无法解析的非空过期时间会保留，不会按无签名处理。
 - 不影响 `uploaded` 文件。
 - 不影响已经 `deleted` 的文件。
+
+## 新建工作项草稿附件清理
+
+新建需求 / 任务 / Bug 弹窗中，未填标题即可上传附件：附件先登记为项目草稿附件（`file_attachments.target_type = 'draft'`、`target_id` 为项目 id，仅上传者可访问），写主帖时原地改绑为主帖附件。取消新建或正文未引用的草稿由前端即时删除；残留草稿按以下方式清理：
+
+- 自动：任意用户登记新草稿附件时，顺带清理全站超过 72 小时仍未绑定的草稿（单次最多 500 个），软删除文件对象并排入对象存储删除任务。
+- 手动：
+
+```bash
+cargo run -p yuance-api -- files cleanup-drafts --older-than-hours 72 --dry-run
+cargo run -p yuance-api -- files cleanup-drafts --older-than-hours 72
+```
+
+正式环境：
+
+```bash
+cd /srv/yuance/backend
+docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-drafts --older-than-hours 72 --dry-run
+docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-drafts --older-than-hours 72
+```
+
+草稿清理只排入删除任务，对象存储物理删除仍由 `files cleanup-deleted` 按安全窗口执行；单个草稿失败会记录日志并在命令输出 `failed` 计数，非零时命令以错误退出。
 - 当前只做数据库软删除标记，不主动删除 OSS 对象。
 
 ## 附件对象物理清理

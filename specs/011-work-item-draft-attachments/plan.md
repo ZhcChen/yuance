@@ -20,7 +20,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `` | 登记草稿附件（CSRF、`SCOPE_COMMENT_WRITE`、项目访问 + 内容写权限、项目可写、对象存储激活）；顺带清理该用户在该项目下超过 24 小时的草稿 |
+| POST | `` | 登记草稿附件（CSRF、`SCOPE_COMMENT_WRITE`、项目访问 + 内容写权限、项目可写、对象存储激活）；顺带清理全站超过 72 小时的草稿 |
 | GET | `/{id}/upload-url` | 上传签名，仅上传者 |
 | POST | `/{id}/uploaded` | 确认上传，仅上传者 |
 | GET | `/{id}/download-url` | 下载签名，仅上传者 |
@@ -30,10 +30,10 @@ Web 路由：`GET /web/projects/{project_key}/work-item-draft-attachments/{id}/d
 
 ### 绑定（`upsert_work_item_primary_post`）
 
-1. 在原始正文中识别草稿 URL `/web/projects/{key}/work-item-draft-attachments/{aid}/download`。
+1. 在原始正文中识别作为 `src`/`href` 属性值的草稿 URL `/web/projects/{key}/work-item-draft-attachments/{aid}/download`；文本中的同名路径不处理。
 2. 事务内先确定主帖 comment id（新建时先插入空正文行）。
 3. 将草稿 URL 改写为 `/web/work-items/{item_key}/comments/{cid}/attachments/{aid}/download`，再执行原有 `prepare_work_item_comment_body`（清洗与受控 URL 校验）。
-4. 事务内校验并改绑：草稿必须 `target_type='draft'`、`target_id=工作项项目`、`created_by_user_id=当前用户`、对象 `uploaded`；`UPDATE file_attachments SET target_type='comment', target_id=cid`，影响行数必须等于引用数，否则整体回滚。
+4. 事务内校验并改绑：附件必须属于当前用户，且为本项目草稿或已绑定到本主帖（重试幂等），对象 `uploaded`；草稿 `UPDATE file_attachments SET target_type='comment', target_id=cid`；任一不满足整体回滚。
 5. 继续执行原有引用校验、摘要、活动与提及通知。
 
 创建工作项与写主帖仍是两次请求；前端在创建成功但写主帖失败时保留已创建工作项，重试只重写主帖，草稿附件在失败时保持草稿状态不受影响。
@@ -42,14 +42,14 @@ Web 路由：`GET /web/projects/{project_key}/work-item-draft-attachments/{id}/d
 
 - `file_object_has_protecting_references_in_tx` 将 `draft` 视为保护引用（防止其他删除路径误删在用草稿）。
 - `files::delete_draft_attachment`：上传者删除，事务内排除自身后检查保护引用并 `enqueue_deleted_file_object_in_tx`。
-- `files::cleanup_expired_draft_attachments(pool, older_than_hours, user/project 可选, dry_run)`：对过期草稿逐个排队删除；CLI 新增 `files cleanup-drafts --older-than-hours 24 [--dry-run]`；登记新草稿时对当前用户 + 项目自动执行。
+- `files::cleanup_expired_draft_attachments(pool, older_than_hours, scope 可选, dry_run)`：对过期草稿逐个排队删除；CLI 新增 `files cleanup-drafts --older-than-hours 72 [--dry-run]`；登记新草稿时对全站自动执行（保留期 72 小时，单次最多 500 个）。
 
 ### 前端
 
 - `api-client`：新增草稿附件 5 个方法。
 - `app-core`：`uploadWorkItemDraftAttachment`。
-- `app-shell` 新建弹窗：上传走草稿接口，不再等标题、不再创建 checkpoint；移除「转到详情」分支；提交时“创建工作项 → 写主帖（含草稿 URL）”；编辑器移除草稿附件时调用删除接口。
-- `rich-text`：编辑器新增可选 `onRemoveAttachment` 回调（用户删除已上传附件节点时触发不在本次范围，只处理“移除上传占位”与上传失败）；草稿 URL 直接作为图片 / 视频 `src`。
+- `app-shell` 新建弹窗：上传走草稿接口，不再等标题、不为上传创建工作项；提交时“创建工作项 → 写主帖（含草稿 URL）”，写主帖失败保留已建工作项供重试，「转到详情」先补写主帖；取消或提交后删除正文未引用的草稿。
+- `rich-text`：无需改动；草稿 URL 直接作为图片 / 视频 `src` 与文件 `href`。
 
 ## 验证
 

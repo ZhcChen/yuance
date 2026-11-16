@@ -774,7 +774,8 @@ DELETE /api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id
 - 权限：需要 `work_item.view`、评论写入令牌范围、项目成员范围及项目内容写入权限，项目需处于可写状态。
 - 正文引用：编辑器使用 Web 地址 `/web/projects/{project_key}/work-item-draft-attachments/{attachment_id}/download`。`PATCH /api/v1/work-items/{item_key}/primary-post` 在同一事务内校验草稿附件属于当前用户、同一项目且已上传完成，然后原地改绑到主帖（附件 id 不变），并把正文地址改写为主帖附件地址；任一不满足则整体拒绝。
 - 删除：软删除文件对象并排入对象存储删除任务。
-- 过期清理：超过 24 小时未绑定的草稿在同一用户于同一项目登记新草稿时自动清理，也可执行 `yuance-api files cleanup-drafts --older-than-hours 24 [--dry-run]`。
+- 正文中仅 `src` / `href` 属性值里的草稿地址会被识别；文本中的同名路径原样保留。已绑定到同一主帖的附件重复提交视为成功，写主帖可安全重试。
+- 过期清理：任意用户登记新草稿时顺带清理全站超过 72 小时未绑定的草稿，也可执行 `yuance-api files cleanup-drafts --older-than-hours 72 [--dry-run]`。
 
 资料正文附件：
 

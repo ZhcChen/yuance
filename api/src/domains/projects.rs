@@ -8358,17 +8358,26 @@ fn rewrite_draft_attachment_urls(
     let mut remaining = body;
     while let Some(marker) = remaining.find(DRAFT_ATTACHMENT_URL_MARKER) {
         let before = &remaining[..marker];
-        let prefix_start = before
+        // 只处理作为属性值（src / href）出现的草稿地址；正文文本、代码块中的同名路径原样保留。
+        let attribute_prefix = before
             .rfind(DRAFT_ATTACHMENT_URL_PREFIX)
-            .ok_or_else(invalid)?;
-        let project_key = &before[prefix_start + DRAFT_ATTACHMENT_URL_PREFIX.len()..];
-        if project_key.is_empty()
-            || !project_key.chars().all(|character| {
-                character.is_ascii_alphanumeric() || character == '-' || character == '_'
+            .filter(|start| {
+                let head = &before[..*start];
+                head.ends_with("=\"") || head.ends_with("='")
             })
-        {
-            return Err(invalid());
-        }
+            .filter(|start| {
+                let project_key = &before[*start + DRAFT_ATTACHMENT_URL_PREFIX.len()..];
+                !project_key.is_empty()
+                    && project_key.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || character == '-' || character == '_'
+                    })
+            });
+        let Some(prefix_start) = attribute_prefix else {
+            let skip_to = marker + DRAFT_ATTACHMENT_URL_MARKER.len();
+            output.push_str(&remaining[..skip_to]);
+            remaining = &remaining[skip_to..];
+            continue;
+        };
         let after = &remaining[marker + DRAFT_ATTACHMENT_URL_MARKER.len()..];
         let digits_len = after
             .chars()
@@ -8404,20 +8413,24 @@ async fn bind_draft_attachments_in_transaction(
     comment_id: i64,
 ) -> AppResult<()> {
     for attachment_id in attachment_ids {
+        // 已绑定到本主帖的附件（上次请求已提交但响应丢失后重试）视为完成，保证写主帖可安全重试。
         let status = sqlx::query_scalar::<_, String>(
             r#"
             SELECT fo.status
             FROM file_attachments fa
             JOIN file_objects fo ON fo.id = fa.file_object_id
             WHERE fa.id = ?1
-              AND fa.target_type = 'draft'
-              AND fa.target_id = ?2
               AND fa.created_by_user_id = ?3
+              AND (
+                  (fa.target_type = 'draft' AND fa.target_id = ?2)
+                  OR (fa.target_type = 'comment' AND fa.target_id = ?4)
+              )
             "#,
         )
         .bind(attachment_id)
         .bind(project_id)
         .bind(actor_user_id)
+        .bind(comment_id)
         .fetch_optional(&mut **tx)
         .await?
         .ok_or_else(|| AppError::BadRequest("草稿附件不存在或无权使用".to_string()))?;
@@ -8426,7 +8439,7 @@ async fn bind_draft_attachments_in_transaction(
                 "只能引用已上传完成的草稿附件".to_string(),
             ));
         }
-        let updated = sqlx::query(
+        sqlx::query(
             r#"
             UPDATE file_attachments
             SET target_type = 'comment', target_id = ?2
@@ -8436,11 +8449,7 @@ async fn bind_draft_attachments_in_transaction(
         .bind(attachment_id)
         .bind(comment_id)
         .execute(&mut **tx)
-        .await?
-        .rows_affected();
-        if updated != 1 {
-            return Err(AppError::Conflict("草稿附件状态已变化，请重试".to_string()));
-        }
+        .await?;
     }
     Ok(())
 }
