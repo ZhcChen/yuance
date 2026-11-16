@@ -88,6 +88,18 @@ test('rich text editor exposes the shared formatting toolbar and textbox', async
   assert.doesNotMatch(html, /<p>正文<\/p>/);
 });
 
+test('rich text editor offers an upload button and drop handling only when uploads are supported', async () => {
+  const withUpload = renderToStaticMarkup(React.createElement(RichTextEditor, { id: 'body', value: '', onChange() {}, onPasteFile: () => null }));
+  assert.match(withUpload, /aria-label="上传附件"/);
+  assert.match(withUpload, /<input[^>]*type="file"[^>]*multiple/);
+  const withoutUpload = renderToStaticMarkup(React.createElement(RichTextEditor, { id: 'body', value: '', onChange() {} }));
+  assert.doesNotMatch(withoutUpload, /aria-label="上传附件"/);
+  assert.doesNotMatch(withoutUpload, /type="file"/);
+  const source = await readFile(new URL('../src/rich-text.jsx', import.meta.url), 'utf8');
+  assert.match(source, /onDrop=\{/);
+  assert.match(source, /function dropInsertionRange\(/);
+});
+
 test('rich text attachment HTML emits canonical escaped file and media nodes', () => {
   assert.equal(richTextAttachmentHtml({ id: 9, filename: 'a<&".txt', contentType: 'text/plain', url: '/web/projects/YCE/resources/8/attachments/9/download' }), '<a data-yuance-attachment-id="9" data-yuance-attachment-kind="file" data-yuance-file-kind="text" data-yuance-file-ext="TXT" data-yuance-align="left" href="/web/projects/YCE/resources/8/attachments/9/download" title="a&lt;&amp;&quot;.txt">a&lt;&amp;".txt</a>');
   assert.match(richTextAttachmentHtml({ id: 10, filename: 'design.png', contentType: 'image/png', url: '/web/projects/YCE/resources/8/attachments/10/download' }), /^<figure[\s\S]*<img[\s\S]*><\/figure>$/u);

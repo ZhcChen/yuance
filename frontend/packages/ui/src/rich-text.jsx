@@ -606,6 +606,10 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const colorTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const colorMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const toolbarRangeRef = useRef(/** @type {Range | null} */ (null));
+  const uploadInputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
+  const uploadRangeRef = useRef(/** @type {Range | null} */ (null));
+  const fileDragDepthRef = useRef(0);
+  const [fileDragActive, setFileDragActive] = useState(false);
   const moreHoverCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
   const paragraphCloseRef = useRef(/** @type {(() => void) | null} */ (null));
   const sizeCloseRef = useRef(/** @type {(() => void) | null} */ (null));
@@ -986,6 +990,45 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     void uploadPastedFile(uploadId);
   }
 
+  /** @param {File[]} files @param {Range | null} insertRange */
+  function startFileUploads(files, insertRange) {
+    const input = inputRef.current;
+    if (!input || disabled || !files.length) return;
+    pasteRangeRef.current = insertRange;
+    void uniquePastedFilesByContent(files).catch(() => files).then((uniqueFiles) => {
+      if (input.isConnected && !disabled) {
+        for (const file of uniqueFiles) startPasteUpload(file, insertRange);
+      }
+      if (pasteRangeRef.current === insertRange) pasteRangeRef.current = null;
+    });
+  }
+
+  function openUploadPicker() {
+    const input = inputRef.current;
+    if (!input || disabled || !onPasteFile) return;
+    uploadRangeRef.current = currentInsertionRange(input);
+    uploadInputRef.current?.click();
+  }
+
+  /** @param {import('react').ChangeEvent<HTMLInputElement>} event */
+  function handleUploadPickerChange(event) {
+    const files = [...(event.currentTarget.files || [])];
+    event.currentTarget.value = '';
+    const range = uploadRangeRef.current;
+    uploadRangeRef.current = null;
+    startFileUploads(files, range);
+  }
+
+  /** @param {import('react').DragEvent<HTMLDivElement>} event */
+  function canAcceptFileDrag(event) {
+    return Boolean(onPasteFile) && !disabled && [...(event.dataTransfer?.types || [])].includes('Files');
+  }
+
+  function resetFileDrag() {
+    fileDragDepthRef.current = 0;
+    setFileDragActive(false);
+  }
+
   /** @param {string} uploadId */
   async function uploadPastedFile(uploadId) {
     const entry = pendingUploadsRef.current.get(uploadId);
@@ -1234,6 +1277,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           <ToolbarButton label="插入链接" title="插入链接" disabled={disabled} onClick={createLink}>链接</ToolbarButton>
           {sectionLinks ? <ToolbarButton label="插入章节链接" title="选择本文章节" disabled={disabled} onClick={openSectionLinks}>章节链接</ToolbarButton> : null}
           {sectionOptions.length ? <select aria-label="选择目标章节" value="" onChange={(event) => { execute('createLink', `#${event.target.value}`); setSectionOptions([]); }}><option value="" disabled>选择目标章节</option>{sectionOptions.map((section, index) => <option key={section.id} value={section.id}>{index + 1}. {section.label}</option>)}</select> : null}
+          {onPasteFile ? <ToolbarButton label="上传附件" title="上传图片、视频或文件（也可直接拖拽或粘贴到正文）" disabled={disabled} onClick={openUploadPicker}>附件</ToolbarButton> : null}
+          {onPasteFile ? <input ref={uploadInputRef} type="file" multiple hidden tabIndex={-1} aria-hidden="true" data-rich-upload-input="" onChange={handleUploadPickerChange} /> : null}
           <ToolbarButton label="提及成员" title="提及成员" disabled={disabled || mentionOptions.length === 0} onClick={openMentionPicker}>@</ToolbarButton>
         </div>
         <span className="yc-rich-toolbar-sep" aria-hidden="true" />
@@ -1265,7 +1310,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       <div
         id={id}
         ref={inputRef}
-        className="yc-rich-text-input yc-overlay-scroll-target"
+        className={`yc-rich-text-input yc-overlay-scroll-target${fileDragActive ? ' is-file-drag-over' : ''}`}
         contentEditable={!disabled}
         role="textbox"
         aria-label={label}
@@ -1305,24 +1350,37 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           onBlur?.();
         }}
         onClick={handlePendingUploadClick}
+        onDragEnter={(event) => {
+          if (!canAcceptFileDrag(event)) return;
+          event.preventDefault();
+          fileDragDepthRef.current += 1;
+          setFileDragActive(true);
+        }}
+        onDragOver={(event) => {
+          if (!canAcceptFileDrag(event)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          if (!fileDragActive) setFileDragActive(true);
+        }}
+        onDragLeave={() => {
+          if (!fileDragActive) return;
+          fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+          if (fileDragDepthRef.current === 0) setFileDragActive(false);
+        }}
+        onDrop={(event) => {
+          resetFileDrag();
+          const files = pastedFiles(event.dataTransfer);
+          if (!files.length) return;
+          event.preventDefault();
+          if (!onPasteFile || disabled) return;
+          const input = event.currentTarget;
+          startFileUploads(files, dropInsertionRange(input, event.clientX, event.clientY));
+        }}
         onPaste={(event) => {
           const files = pastedFiles(event.clipboardData);
           if (files.length && onPasteFile && !disabled) {
             event.preventDefault();
-            const input = event.currentTarget;
-            const pasteRange = currentInsertionRange(input);
-            pasteRangeRef.current = pasteRange;
-            void uniquePastedFilesByContent(files).then((uniqueFiles) => {
-              if (input.isConnected && !disabled) {
-                for (const file of uniqueFiles) startPasteUpload(file, pasteRange);
-              }
-              if (pasteRangeRef.current === pasteRange) pasteRangeRef.current = null;
-            }).catch(() => {
-              if (input.isConnected && !disabled) {
-                for (const file of files) startPasteUpload(file, pasteRange);
-              }
-              if (pasteRangeRef.current === pasteRange) pasteRangeRef.current = null;
-            });
+            startFileUploads(files, currentInsertionRange(event.currentTarget));
             return;
           }
           event.preventDefault();
@@ -1389,6 +1447,26 @@ function currentInsertionRange(input) {
   range.selectNodeContents(input);
   range.collapse(false);
   return range;
+}
+
+/** @param {HTMLDivElement} input @param {number} x @param {number} y */
+function dropInsertionRange(input, x, y) {
+  const ownerDocument = input.ownerDocument;
+  /** @type {Range | null} */
+  let range = null;
+  const caretDocument = /** @type {Document & { caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node, offset: number } | null, caretRangeFromPoint?: (x: number, y: number) => Range | null }} */ (ownerDocument);
+  if (typeof caretDocument.caretPositionFromPoint === 'function') {
+    const position = caretDocument.caretPositionFromPoint(x, y);
+    if (position) {
+      range = ownerDocument.createRange();
+      range.setStart(position.offsetNode, position.offset);
+      range.collapse(true);
+    }
+  } else if (typeof caretDocument.caretRangeFromPoint === 'function') {
+    range = caretDocument.caretRangeFromPoint(x, y);
+  }
+  if (range && input.contains(range.startContainer) && !range.startContainer.parentElement?.closest('[data-rich-pending-upload], [data-yuance-attachment-id]')) return range;
+  return currentInsertionRange(input);
 }
 
 /** @param {HTMLDivElement} input @returns {{ start: number, end: number } | null} */

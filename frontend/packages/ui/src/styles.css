@@ -1837,6 +1837,11 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
   overflow-wrap: anywhere;
 }
 
+.yc-rich-text-input.is-file-drag-over {
+  background: var(--yc-brand-soft);
+  box-shadow: inset 0 0 0 2px var(--yc-brand-line);
+}
+
 .yc-rich-text-input:empty::before {
   color: var(--yc-muted);
   content: attr(data-placeholder);
