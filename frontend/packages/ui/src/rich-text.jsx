@@ -1465,8 +1465,15 @@ function dropInsertionRange(input, x, y) {
   } else if (typeof caretDocument.caretRangeFromPoint === 'function') {
     range = caretDocument.caretRangeFromPoint(x, y);
   }
-  if (range && input.contains(range.startContainer) && !range.startContainer.parentElement?.closest('[data-rich-pending-upload], [data-yuance-attachment-id]')) return range;
-  return currentInsertionRange(input);
+  if (!range || !input.contains(range.startContainer)) return currentInsertionRange(input);
+  const container = range.startContainer.nodeType === 1 ? /** @type {Element} */ (range.startContainer) : range.startContainer.parentElement;
+  // 落点在附件或上传占位内部时，改为插在该节点之后，避免附件互相嵌套。
+  const atomic = container?.closest('[data-rich-pending-upload], [data-yuance-attachment-id]');
+  if (atomic && atomic !== input && input.contains(atomic)) {
+    range.setStartAfter(atomic);
+    range.collapse(true);
+  }
+  return range;
 }
 
 /** @param {HTMLDivElement} input @returns {{ start: number, end: number } | null} */
