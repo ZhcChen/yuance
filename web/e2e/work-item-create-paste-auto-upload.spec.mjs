@@ -125,10 +125,10 @@ test('work item create keeps pasted images inline and uploads them after title w
   await expect(editor.getByRole('img', { name: 'same-as-pasted.png' })).toHaveCount(0);
   await expect(pendingImage).toBeVisible();
   await expect(pendingImage2).toBeVisible();
-  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'uploading');
-  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('正在等待填写标题后自动上传…');
-  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'uploading');
-  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('正在等待填写标题后自动上传…');
+  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'waiting');
+  await expect(pendingImage.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先填写标题，填写后自动上传');
+  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toHaveAttribute('data-upload-state', 'waiting');
+  await expect(pendingImage2.locator('xpath=ancestor::*[@data-rich-pending-upload][1]')).toContainText('请先填写标题，填写后自动上传');
   expect(attachmentCreates).toHaveLength(0);
 
   // 图片等待上传时，焦点不应被反复抢回标题输入框，用户应能继续编辑图片上方内容。

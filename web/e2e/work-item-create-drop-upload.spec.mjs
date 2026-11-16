@@ -97,9 +97,25 @@ test('requirement create editor accepts dropped files and toolbar uploads', asyn
 
   await page.getByRole('button', { name: '新建需求' }).click();
   const dialog = page.getByRole('dialog', { name: '新建需求' });
-  await dialog.locator('#work-item-create-title').fill('拖拽与按钮上传验收');
   const editor = dialog.getByRole('textbox', { name: '说明内容' });
   await editor.fill('拖拽前的内容');
+
+  // 未填写标题时：文件卡片进入等待态，不转圈、只显示一份提示文字。
+  const waitingChooser = page.waitForEvent('filechooser');
+  await dialog.getByRole('button', { name: '上传附件' }).click();
+  await (await waitingChooser).setFiles({ name: '待解决的问题.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') });
+  const waitingCard = editor.locator('[data-rich-pending-upload]', { hasText: '待解决的问题.pdf' });
+  await expect(waitingCard).toHaveAttribute('data-upload-state', 'waiting');
+  await expect(waitingCard.locator('[data-rich-pending-status]')).toHaveText('请先填写标题，填写后自动上传');
+  await expect(waitingCard.locator('.yc-rich-pending-overlay-status')).toBeHidden();
+  await expect(waitingCard.locator('.yc-rich-pending-progress')).toBeHidden();
+  await expect(dialog.locator('#work-item-create-title')).toBeFocused();
+  await waitingCard.screenshot({ path: '../.artifacts/rich-pending-waiting-card.png' });
+  await waitingCard.getByRole('button', { name: '移除 待解决的问题.pdf' }).click();
+  await expect(waitingCard).toHaveCount(0);
+  expect(attachmentCreates).toHaveLength(0);
+
+  await dialog.locator('#work-item-create-title').fill('拖拽与按钮上传验收');
 
   const dataTransfer = await page.evaluateHandle(() => {
     const transfer = new DataTransfer();

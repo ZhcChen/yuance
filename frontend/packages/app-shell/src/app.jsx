@@ -5282,7 +5282,7 @@ export function SharedApp({ services }) {
       return null;
     }
     if (!workItemCreateForm.title.trim()) {
-      options?.onDeferred?.('正在等待填写标题后自动上传…');
+      options?.onDeferred?.('请先填写标题，填写后自动上传');
       if (!workItemCreateDeferredFocusRef.current) {
         workItemCreateDeferredFocusRef.current = true;
         runtime.getElementById('work-item-create-title')?.focus();

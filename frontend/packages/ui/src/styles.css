@@ -2310,6 +2310,66 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
   font-weight: 800;
 }
 
+/* 文件卡片已自带文件名与状态行，不再叠加深色遮罩，进度与重试放到卡片右侧。 */
+.yc-rich-pending-upload-file[data-upload-state] {
+  padding-right: 76px;
+}
+
+.yc-rich-pending-upload-file .yc-rich-pending-overlay {
+  inset: 0 40px 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  background: transparent;
+  border-radius: 0;
+}
+
+.yc-rich-pending-upload-file .yc-rich-pending-overlay-status {
+  display: none;
+}
+
+.yc-rich-pending-upload-file .yc-rich-pending-progress {
+  border-color: var(--yc-line);
+  border-top-color: var(--yc-brand);
+}
+
+.yc-rich-pending-upload-file[data-upload-state="error"] .yc-rich-pending-progress {
+  display: none;
+}
+
+.yc-rich-pending-upload-file .yc-rich-pending-retry {
+  border-color: var(--yc-line-strong);
+  background: var(--yc-panel);
+  color: var(--yc-text-primary);
+}
+
+.yc-rich-pending-upload-file[data-upload-state="error"] .yc-rich-pending-status {
+  color: var(--yc-danger-text);
+}
+
+.yc-rich-pending-upload-file .yc-rich-pending-remove {
+  top: 50%;
+  margin-top: -13px;
+  border-color: var(--yc-line);
+  background: var(--yc-panel-soft);
+  color: var(--yc-text-secondary);
+  box-shadow: none;
+}
+
+/* 等待上传条件（如未填写标题）：不转圈，明确提示需要用户操作。 */
+.yc-rich-pending-upload[data-upload-state="waiting"] .yc-rich-pending-overlay {
+  opacity: 1;
+}
+
+.yc-rich-pending-upload[data-upload-state="waiting"] .yc-rich-pending-progress {
+  display: none;
+}
+
+.yc-rich-pending-upload-file[data-upload-state="waiting"] .yc-rich-pending-status {
+  color: var(--yc-warning-text);
+  font-weight: 600;
+}
+
 @keyframes yc-rich-pending-spin {
   to { transform: rotate(360deg); }
 }

@@ -1033,7 +1033,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   async function uploadPastedFile(uploadId) {
     const entry = pendingUploadsRef.current.get(uploadId);
     if (!entry || entry.cancelled || !onPasteFileRef.current) return;
-    setPendingUploadState(entry.node, 'uploading', entry.deferMessage || '正在上传');
+    // 处于等待上传条件（如未填标题）时保持等待态，避免每次重试在“上传中/等待”之间闪烁。
+    if (entry.node.getAttribute('data-upload-state') !== 'waiting') setPendingUploadState(entry.node, 'uploading', '正在上传');
     try {
       const attachment = await Promise.resolve(onPasteFileRef.current(entry.file, {
         onProgress: (stage) => {
@@ -1050,7 +1051,11 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         },
         onDeferred: (message) => {
           const current = pendingUploadsRef.current.get(uploadId);
-          if (current && !current.cancelled) current.deferMessage = message || '';
+          if (!current || current.cancelled) return;
+          current.deferMessage = message || '';
+          if (!current.deferMessage && current.node.getAttribute('data-upload-state') === 'waiting') {
+            setPendingUploadState(current.node, 'uploading', '正在上传');
+          }
         },
         isCurrent: () => {
           const current = pendingUploadsRef.current.get(uploadId);
@@ -1067,7 +1072,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           return;
         }
         entry.deferRetryCount += 1;
-        setPendingUploadState(current.node, 'uploading', entry.deferMessage || '等待上传条件…');
+        setPendingUploadState(current.node, 'waiting', entry.deferMessage || '排队等待上传…');
         current.node.ownerDocument.defaultView?.setTimeout(() => {
           void uploadPastedFile(uploadId);
         }, 200);
@@ -1732,7 +1737,7 @@ function createPendingUploadEntry(ownerDocument, file, uploadId) {
   return { node, file, cancelled: false, objectUrl, deferRetryCount: 0, deferMessage: '' };
 }
 
-/** @param {HTMLElement} node @param {'uploading' | 'error'} state @param {string} message */
+/** @param {HTMLElement} node @param {'uploading' | 'waiting' | 'error'} state @param {string} message */
 function setPendingUploadState(node, state, message) {
   node.setAttribute('data-upload-state', state);
   const status = node.querySelector('[data-rich-pending-status]');
