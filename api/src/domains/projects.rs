@@ -7440,7 +7440,10 @@ pub async fn upsert_work_item_primary_post(
     body: &str,
     actor_display_name_snapshot: &str,
 ) -> AppResult<WorkItemCommentSummary> {
-    let prepared = prepare_work_item_comment_body(body, COMMENT_BODY_FORMAT_HTML, "主内容")?;
+    // 正文可能引用新建弹窗上传的草稿附件；评论 id 确定前先以占位 id 改写，用于提前校验与提及解析。
+    let (preview_body, draft_attachment_ids) = rewrite_draft_attachment_urls(body, item_key, 0)?;
+    let prepared =
+        prepare_work_item_comment_body(&preview_body, COMMENT_BODY_FORMAT_HTML, "主内容")?;
     let actor_display_name_snapshot =
         normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
@@ -7550,6 +7553,31 @@ pub async fn upsert_work_item_primary_post(
         .bind(&prepared.body_format)
         .fetch_one(&mut *tx)
         .await?
+    };
+    let prepared = if draft_attachment_ids.is_empty() {
+        prepared
+    } else {
+        // 评论 id 已确定：改写为主帖附件 URL，并在同一事务内把草稿附件原地改绑到主帖（附件 id 不变）。
+        let (final_body, _) = rewrite_draft_attachment_urls(body, item_key, comment_id)?;
+        let final_prepared =
+            prepare_work_item_comment_body(&final_body, COMMENT_BODY_FORMAT_HTML, "主内容")?;
+        bind_draft_attachments_in_transaction(
+            &mut tx,
+            &draft_attachment_ids,
+            project_id,
+            actor_user_id,
+            comment_id,
+        )
+        .await?;
+        sqlx::query(
+            "UPDATE work_item_comments SET body = ?2, body_format = ?3, updated_at = datetime('now') WHERE id = ?1",
+        )
+        .bind(comment_id)
+        .bind(&final_prepared.body)
+        .bind(&final_prepared.body_format)
+        .execute(&mut *tx)
+        .await?;
+        final_prepared
     };
     ensure_comment_body_attachment_references_in_transaction(&mut tx, comment_id, &prepared.body)
         .await?;
@@ -8308,6 +8336,113 @@ fn decode_basic_html_entities(value: &str) -> String {
 
 fn comment_html_has_media_reference(body: &str) -> bool {
     body.contains("/comments/") && body.contains("/attachments/")
+}
+
+const DRAFT_ATTACHMENT_URL_PREFIX: &str = "/web/projects/";
+const DRAFT_ATTACHMENT_URL_MARKER: &str = "/work-item-draft-attachments/";
+const DRAFT_ATTACHMENT_URL_SUFFIX: &str = "/download";
+
+/// 将正文中的草稿附件 URL `/web/projects/{key}/work-item-draft-attachments/{id}/download`
+/// 改写为主帖附件 URL，并返回去重后的草稿附件 id。格式不完整的草稿引用直接拒绝。
+fn rewrite_draft_attachment_urls(
+    body: &str,
+    item_key: &str,
+    comment_id: i64,
+) -> AppResult<(String, Vec<i64>)> {
+    if !body.contains(DRAFT_ATTACHMENT_URL_MARKER) {
+        return Ok((body.to_string(), Vec::new()));
+    }
+    let invalid = || AppError::BadRequest("草稿附件引用无效".to_string());
+    let mut output = String::with_capacity(body.len());
+    let mut ids = Vec::new();
+    let mut remaining = body;
+    while let Some(marker) = remaining.find(DRAFT_ATTACHMENT_URL_MARKER) {
+        let before = &remaining[..marker];
+        let prefix_start = before
+            .rfind(DRAFT_ATTACHMENT_URL_PREFIX)
+            .ok_or_else(invalid)?;
+        let project_key = &before[prefix_start + DRAFT_ATTACHMENT_URL_PREFIX.len()..];
+        if project_key.is_empty()
+            || !project_key.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '-' || character == '_'
+            })
+        {
+            return Err(invalid());
+        }
+        let after = &remaining[marker + DRAFT_ATTACHMENT_URL_MARKER.len()..];
+        let digits_len = after
+            .chars()
+            .take_while(|character| character.is_ascii_digit())
+            .count();
+        if digits_len == 0 || !after[digits_len..].starts_with(DRAFT_ATTACHMENT_URL_SUFFIX) {
+            return Err(invalid());
+        }
+        let attachment_id = after[..digits_len].parse::<i64>().map_err(|_| invalid())?;
+        if attachment_id < 1 {
+            return Err(invalid());
+        }
+        output.push_str(&before[..prefix_start]);
+        output.push_str(&format!(
+            "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download"
+        ));
+        ids.push(attachment_id);
+        remaining = &after[digits_len + DRAFT_ATTACHMENT_URL_SUFFIX.len()..];
+    }
+    output.push_str(remaining);
+    ids.sort_unstable();
+    ids.dedup();
+    Ok((output, ids))
+}
+
+/// 校验草稿附件属于当前用户、属于该项目且已上传完成，然后原地改绑为评论附件。
+/// 任一校验失败返回错误，由调用方回滚整个事务。
+async fn bind_draft_attachments_in_transaction(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    attachment_ids: &[i64],
+    project_id: i64,
+    actor_user_id: i64,
+    comment_id: i64,
+) -> AppResult<()> {
+    for attachment_id in attachment_ids {
+        let status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT fo.status
+            FROM file_attachments fa
+            JOIN file_objects fo ON fo.id = fa.file_object_id
+            WHERE fa.id = ?1
+              AND fa.target_type = 'draft'
+              AND fa.target_id = ?2
+              AND fa.created_by_user_id = ?3
+            "#,
+        )
+        .bind(attachment_id)
+        .bind(project_id)
+        .bind(actor_user_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("草稿附件不存在或无权使用".to_string()))?;
+        if status != "uploaded" {
+            return Err(AppError::BadRequest(
+                "只能引用已上传完成的草稿附件".to_string(),
+            ));
+        }
+        let updated = sqlx::query(
+            r#"
+            UPDATE file_attachments
+            SET target_type = 'comment', target_id = ?2
+            WHERE id = ?1 AND target_type = 'draft'
+            "#,
+        )
+        .bind(attachment_id)
+        .bind(comment_id)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if updated != 1 {
+            return Err(AppError::Conflict("草稿附件状态已变化，请重试".to_string()));
+        }
+    }
+    Ok(())
 }
 
 fn extract_comment_attachment_references(body: &str) -> AppResult<Vec<(i64, i64)>> {

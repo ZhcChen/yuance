@@ -76,6 +76,15 @@ pub enum FilesCommand {
         #[arg(long, default_value_t = 24)]
         older_than_hours: i64,
     },
+    /// 清理超过保留期仍未绑定到工作项的新建草稿附件，并排入对象存储删除任务。
+    CleanupDrafts {
+        /// 只统计不写入。
+        #[arg(long)]
+        dry_run: bool,
+        /// 清理早于该小时数的草稿附件。
+        #[arg(long, default_value_t = 24)]
+        older_than_hours: i64,
+    },
     /// 盘点文件对象和附件关系，不修改数据库或对象存储。
     AuditObjects {
         /// 是否把已删除文件对象计入统计。

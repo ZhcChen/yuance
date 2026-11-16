@@ -5010,6 +5010,202 @@ pub async fn work_item_comment_attachment_delete(
     Ok(json(attachment_payload(attachment)))
 }
 
+/// 草稿附件上下文：新建工作项弹窗在工作项创建前上传附件。
+/// 要求可查看工作项、具备评论写入令牌范围、项目访问与内容写权限，且项目可写。
+async fn require_api_draft_attachment_context(
+    state: &AppState,
+    headers: &HeaderMap,
+    project_key: &str,
+) -> AppResult<(ApiPrincipal, projects::ProjectDetail)> {
+    let principal = require_api_principal(state, headers).await?;
+    let pool = state.pool()?;
+    let user = &principal.user;
+    ensure_api_permission(pool, headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    let project = projects::get_project_detail(pool, project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    Ok((principal, project))
+}
+
+/// 草稿附件默认保留期：超过该时长仍未绑定到工作项的草稿会被清理。
+const DRAFT_ATTACHMENT_RETENTION_HOURS: i64 = 24;
+
+pub async fn create_work_item_draft_attachment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<CreateAttachmentRequest>,
+) -> AppResult<impl IntoResponse> {
+    ensure_api_csrf(&headers)?;
+    let (principal, project) =
+        require_api_draft_attachment_context(&state, &headers, &project_key).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    let config = storage::active_config(pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    // 顺带清理该用户在该项目下已过期的草稿，避免依赖人工执行清理命令。
+    if let Err(error) = files::cleanup_expired_draft_attachments(
+        pool,
+        DRAFT_ATTACHMENT_RETENTION_HOURS,
+        Some((project.id, user.id)),
+        false,
+    )
+    .await
+    {
+        tracing::warn!(%error, "草稿附件过期清理失败");
+    }
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
+        pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: files::DRAFT_ATTACHMENT_TARGET_TYPE.to_string(),
+            target_id: project.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: payload.original_filename,
+            content_type: payload.content_type,
+            byte_size: payload.byte_size,
+            created_by_user_id: user.id,
+            created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
+            activity_summary: None,
+        },
+        &checksum_sha256,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.attach.draft",
+        "project",
+        &project.project_key,
+        &format!(r#"{{"file_object_id":{}}}"#, attachment.file_object_id),
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, json(attachment_payload(attachment))))
+}
+
+pub async fn work_item_draft_attachment_upload_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let (principal, project) =
+        require_api_draft_attachment_context(&state, &headers, &project_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_draft_attachment_for_owner(pool, attachment_id, project.id, principal.user.id)
+            .await?;
+    Ok(json(
+        signed_attachment_url_payload(
+            &state,
+            pool,
+            attachment,
+            principal.user.id,
+            SignedUrlKind::Upload,
+            query,
+        )
+        .await?,
+    ))
+}
+
+pub async fn work_item_draft_attachment_mark_uploaded(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    ensure_api_csrf(&headers)?;
+    let (principal, project) =
+        require_api_draft_attachment_context(&state, &headers, &project_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_draft_attachment_for_owner(pool, attachment_id, project.id, principal.user.id)
+            .await?;
+    let actual_checksum_sha256 = storage::verify_uploaded_object(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        attachment.byte_size,
+        &attachment.content_type,
+    )
+    .await?;
+    let attachment = files::mark_attachment_uploaded_with_checksum(
+        pool,
+        attachment_id,
+        files::DRAFT_ATTACHMENT_TARGET_TYPE,
+        project.id,
+        &actual_checksum_sha256,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(principal.user.id),
+        "file.upload.completed",
+        "project",
+        &project.project_key,
+        &format!(r#"{{"draft":true,"attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(attachment_payload(attachment)))
+}
+
+pub async fn work_item_draft_attachment_download_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let (principal, project) =
+        require_api_draft_attachment_context(&state, &headers, &project_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_draft_attachment_for_owner(pool, attachment_id, project.id, principal.user.id)
+            .await?;
+    Ok(json(
+        signed_attachment_url_payload(
+            &state,
+            pool,
+            attachment,
+            principal.user.id,
+            SignedUrlKind::Download,
+            query,
+        )
+        .await?,
+    ))
+}
+
+pub async fn work_item_draft_attachment_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    ensure_api_csrf(&headers)?;
+    let (principal, project) =
+        require_api_draft_attachment_context(&state, &headers, &project_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::delete_draft_attachment(pool, attachment_id, project.id, principal.user.id).await?;
+    audit::record(
+        pool,
+        Some(principal.user.id),
+        "file.archive",
+        "project",
+        &project.project_key,
+        &format!(r#"{{"draft":true,"attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(attachment_payload(attachment)))
+}
+
 pub async fn create_project_attachment(
     State(state): State<AppState>,
     headers: HeaderMap,

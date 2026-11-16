@@ -98,6 +98,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::project_attachment_preview_content),
         )
         .route(
+            "/web/projects/{project_key}/work-item-draft-attachments/{attachment_id}/download",
+            get(web::user::work_item_draft_attachment_download),
+        )
+        .route(
             "/web/projects/{project_key}/resources/{resource_id}",
             get(web::user::project_resource_detail_page),
         )
@@ -645,6 +649,26 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
             delete(web::api::work_item_comment_attachment_delete),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/work-item-draft-attachments",
+            post(web::api::create_work_item_draft_attachment),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}/upload-url",
+            get(web::api::work_item_draft_attachment_upload_url),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}/uploaded",
+            post(web::api::work_item_draft_attachment_mark_uploaded),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}/download-url",
+            get(web::api::work_item_draft_attachment_download_url),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}",
+            delete(web::api::work_item_draft_attachment_delete),
         )
         .route(
             "/api/v1/work-items/{item_key}/attachments",

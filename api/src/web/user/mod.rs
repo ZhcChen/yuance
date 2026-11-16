@@ -287,6 +287,41 @@ pub async fn project_attachment_download(
     Ok(Redirect::to("/web/projects/YCE").into_response())
 }
 
+/// 新建工作项草稿附件下载（编辑器内图片 / 视频预览），仅上传者本人可访问。
+pub async fn work_item_draft_attachment_download(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let attachment =
+            files::get_draft_attachment_for_owner(pool, attachment_id, project.id, context.user_id)
+                .await?;
+
+        return attachment_download_redirect(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+            "project",
+            &project_key,
+            format!(r#"{{"source":"web","draft":true,"attachment_id":{attachment_id}}}"#),
+        )
+        .await;
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
 pub async fn project_attachment_preview(
     State(state): State<AppState>,
     headers: HeaderMap,

@@ -229,6 +229,7 @@ pub async fn file_object_has_protecting_references_in_tx(
                   OR (fa.target_type = 'comment' AND EXISTS (
                       SELECT 1 FROM work_item_comments c WHERE c.id = fa.target_id AND c.deleted_at IS NULL
                   ))
+                  OR fa.target_type = 'draft'
               )
         ) OR EXISTS (
             SELECT 1 FROM system_release_assets sra WHERE sra.file_object_id = ?1
@@ -1512,6 +1513,181 @@ pub async fn archive_resource_attachment_if_match(
     Ok(archived)
 }
 
+/// 草稿附件：新建工作项前上传、尚未绑定到主帖的附件。
+/// `target_type = 'draft'`，`target_id` 为项目 id，仅上传者本人可访问。
+pub const DRAFT_ATTACHMENT_TARGET_TYPE: &str = "draft";
+
+/// 读取当前用户在指定项目下未删除的草稿附件；不属于该用户或已删除时按不存在处理，避免泄露。
+pub async fn get_draft_attachment_for_owner(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    project_id: i64,
+    owner_user_id: i64,
+) -> AppResult<FileAttachmentSummary> {
+    let owned = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM file_attachments fa
+            JOIN file_objects fo ON fo.id = fa.file_object_id
+            WHERE fa.id = ?1 AND fa.target_type = 'draft' AND fa.target_id = ?2
+              AND fa.created_by_user_id = ?3 AND fo.status <> 'deleted'
+        )
+        "#,
+    )
+    .bind(attachment_id)
+    .bind(project_id)
+    .bind(owner_user_id)
+    .fetch_one(pool)
+    .await?;
+    if !owned {
+        return Err(AppError::NotFound("附件不存在".to_string()));
+    }
+    get_attachment_for_target(
+        pool,
+        attachment_id,
+        DRAFT_ATTACHMENT_TARGET_TYPE,
+        project_id,
+    )
+    .await
+}
+
+/// 上传者删除尚未绑定的草稿附件：软删除文件对象并排入对象存储删除任务。
+pub async fn delete_draft_attachment(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    project_id: i64,
+    owner_user_id: i64,
+) -> AppResult<FileAttachmentSummary> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let attachment = sqlx::query_as::<_, AttachmentRow>(
+        r#"
+        SELECT fa.id, fa.file_object_id, fo.object_key, fo.original_filename,
+               fo.content_type, fo.byte_size, fo.status,
+               fa.created_by_display_name_snapshot, fa.created_at
+        FROM file_attachments fa
+        JOIN file_objects fo ON fo.id = fa.file_object_id
+        WHERE fa.id = ?1 AND fa.target_type = 'draft'
+          AND fa.target_id = ?2 AND fa.created_by_user_id = ?3
+          AND fo.status <> 'deleted'
+        "#,
+    )
+    .bind(attachment_id)
+    .bind(project_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("附件不存在".to_string()))?;
+
+    if file_object_has_protecting_references_in_tx(&mut tx, attachment.1, Some(attachment.0))
+        .await?
+    {
+        return Err(AppError::Conflict(
+            "文件对象仍被其他受保护的附件关系引用，不能删除".to_string(),
+        ));
+    }
+    enqueue_deleted_file_object_in_tx(&mut tx, attachment.1).await?;
+    tx.commit().await?;
+
+    let mut deleted = attachment_from_row(attachment);
+    deleted.status = "deleted".to_string();
+    Ok(deleted)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DraftAttachmentCleanupSummary {
+    pub matched_count: i64,
+    pub deleted_count: i64,
+    pub failed_count: i64,
+}
+
+/// 清理超过保留期仍未绑定的草稿附件。`scope` 为 `(project_id, owner_user_id)` 时只清理该用户在该项目下的草稿。
+/// 每个草稿独立事务排入删除任务，单个失败不影响其他草稿。
+pub async fn cleanup_expired_draft_attachments(
+    pool: &SqlitePool,
+    older_than_hours: i64,
+    scope: Option<(i64, i64)>,
+    dry_run: bool,
+) -> AppResult<DraftAttachmentCleanupSummary> {
+    validate_cleanup_age_hours(older_than_hours)?;
+    let (project_id, owner_user_id) = scope.map_or((None, None), |(p, u)| (Some(p), Some(u)));
+    let candidates = sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT fa.id, fa.file_object_id
+        FROM file_attachments fa
+        JOIN file_objects fo ON fo.id = fa.file_object_id
+        WHERE fa.target_type = 'draft'
+          AND fo.status <> 'deleted'
+          AND fa.created_at <= datetime('now', ?1)
+          AND (?2 IS NULL OR fa.target_id = ?2)
+          AND (?3 IS NULL OR fa.created_by_user_id = ?3)
+        ORDER BY fa.id
+        LIMIT 500
+        "#,
+    )
+    .bind(format!("-{older_than_hours} hours"))
+    .bind(project_id)
+    .bind(owner_user_id)
+    .fetch_all(pool)
+    .await?;
+    let matched_count = candidates.len() as i64;
+    if dry_run {
+        return Ok(DraftAttachmentCleanupSummary {
+            matched_count,
+            deleted_count: 0,
+            failed_count: 0,
+        });
+    }
+
+    let mut deleted_count = 0;
+    let mut failed_count = 0;
+    for (attachment_id, file_object_id) in candidates {
+        let result: AppResult<bool> = async {
+            let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+            // 事务内复核仍为未删除的草稿，避免与绑定或用户删除并发时误删。
+            let still_draft = sqlx::query_scalar::<_, bool>(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1 FROM file_attachments fa
+                    JOIN file_objects fo ON fo.id = fa.file_object_id
+                    WHERE fa.id = ?1 AND fa.target_type = 'draft' AND fo.status <> 'deleted'
+                )
+                "#,
+            )
+            .bind(attachment_id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !still_draft
+                || file_object_has_protecting_references_in_tx(
+                    &mut tx,
+                    file_object_id,
+                    Some(attachment_id),
+                )
+                .await?
+            {
+                return Ok(false);
+            }
+            enqueue_deleted_file_object_in_tx(&mut tx, file_object_id).await?;
+            tx.commit().await?;
+            Ok(true)
+        }
+        .await;
+        match result {
+            Ok(true) => deleted_count += 1,
+            Ok(false) => {}
+            Err(error) => {
+                failed_count += 1;
+                tracing::warn!(attachment_id, %error, "草稿附件过期清理失败");
+            }
+        }
+    }
+
+    Ok(DraftAttachmentCleanupSummary {
+        matched_count,
+        deleted_count,
+        failed_count,
+    })
+}
+
 pub async fn cleanup_deleted_file_objects(
     pool: &SqlitePool,
     settings: &Settings,
@@ -1915,8 +2091,10 @@ fn validate_target_type(target_type: &str) -> AppResult<&'static str> {
         "work_item" => Ok("work_item"),
         "comment" => Ok("comment"),
         "project_resource" => Ok("project_resource"),
+        "draft" => Ok("draft"),
         _ => Err(AppError::BadRequest(
-            "附件目标类型只能是 project / work_item / comment / project_resource".to_string(),
+            "附件目标类型只能是 project / work_item / comment / project_resource / draft"
+                .to_string(),
         )),
     }
 }

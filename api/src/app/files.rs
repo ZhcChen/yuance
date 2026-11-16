@@ -31,6 +31,34 @@ pub async fn run(command: FilesCommand) -> AppResult<()> {
                 );
             }
         }
+        FilesCommand::CleanupDrafts {
+            dry_run,
+            older_than_hours,
+        } => {
+            let summary =
+                files::cleanup_expired_draft_attachments(&pool, older_than_hours, None, dry_run)
+                    .await?;
+            if dry_run {
+                println!(
+                    "draft attachment cleanup dry-run: matched={} older_than_hours={}",
+                    summary.matched_count, older_than_hours
+                );
+            } else {
+                println!(
+                    "draft attachment cleanup applied: matched={} deleted={} failed={} older_than_hours={}",
+                    summary.matched_count,
+                    summary.deleted_count,
+                    summary.failed_count,
+                    older_than_hours
+                );
+                if summary.failed_count > 0 {
+                    return Err(AppError::Conflict(format!(
+                        "{} 个草稿附件清理失败，详见日志",
+                        summary.failed_count
+                    )));
+                }
+            }
+        }
         FilesCommand::AuditObjects { include_deleted } => {
             let summary = files::audit_file_objects(&pool, include_deleted).await?;
             println!(

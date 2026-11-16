@@ -760,6 +760,22 @@ DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachme
 - 登记、上传签名和上传完成：需要 `work_item.view`，并且当前用户具备项目内容写入权限；流程记录评论不能登记附件。
 - 删除：仅允许删除草稿评论的附件；用于富文本未发布前的附件清理，同时会尝试删除对象存储中的对应对象。
 
+新建工作项草稿附件（工作项创建前上传，无需标题）：
+
+```text
+POST   /api/v1/projects/{project_key}/work-item-draft-attachments
+GET    /api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}/upload-url
+POST   /api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}/uploaded
+GET    /api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}/download-url
+DELETE /api/v1/projects/{project_key}/work-item-draft-attachments/{attachment_id}
+```
+
+- 草稿附件归属项目与上传者本人（`file_attachments.target_type = 'draft'`、`target_id` 为项目 id），他人访问一律返回 404。
+- 权限：需要 `work_item.view`、评论写入令牌范围、项目成员范围及项目内容写入权限，项目需处于可写状态。
+- 正文引用：编辑器使用 Web 地址 `/web/projects/{project_key}/work-item-draft-attachments/{attachment_id}/download`。`PATCH /api/v1/work-items/{item_key}/primary-post` 在同一事务内校验草稿附件属于当前用户、同一项目且已上传完成，然后原地改绑到主帖（附件 id 不变），并把正文地址改写为主帖附件地址；任一不满足则整体拒绝。
+- 删除：软删除文件对象并排入对象存储删除任务。
+- 过期清理：超过 24 小时未绑定的草稿在同一用户于同一项目登记新草稿时自动清理，也可执行 `yuance-api files cleanup-drafts --older-than-hours 24 [--dry-run]`。
+
 资料正文附件：
 
 ```text
