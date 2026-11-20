@@ -677,30 +677,6 @@ fn upload_error(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn confirmation_redirects_are_uncertain_but_client_errors_are_rejections() {
-        let http_error = |status| AgentError::Http {
-            status,
-            code: "test".to_string(),
-            message: "test".to_string(),
-        };
-        assert!(confirmation_result_uncertain(&http_error(302)));
-        assert!(!confirmation_result_uncertain(&http_error(400)));
-        assert!(!confirmation_result_uncertain(&http_error(409)));
-        assert!(confirmation_result_uncertain(&http_error(500)));
-    }
-
-    #[test]
-    fn upload_size_is_validated_against_hashed_size() {
-        assert!(ensure_cli_upload_size(crate::transfer::MAX_TRANSFER_BYTES as u64).is_ok());
-        assert!(ensure_cli_upload_size(crate::transfer::MAX_TRANSFER_BYTES as u64 + 1).is_err());
-    }
-}
-
 async fn list_attachments(
     client: &ApiClient,
     args: ResourceAttachmentAccessArgs,
@@ -865,4 +841,28 @@ fn access_query(
         return Ok(Vec::new());
     }
     Ok(vec![("access", read_secret_stdin("资料访问凭证")?)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn confirmation_redirects_are_uncertain_but_client_errors_are_rejections() {
+        let http_error = |status| AgentError::Http {
+            status,
+            code: "test".to_string(),
+            message: "test".to_string(),
+        };
+        assert!(confirmation_result_uncertain(&http_error(302)));
+        assert!(!confirmation_result_uncertain(&http_error(400)));
+        assert!(!confirmation_result_uncertain(&http_error(409)));
+        assert!(confirmation_result_uncertain(&http_error(500)));
+    }
+
+    #[test]
+    fn upload_size_is_validated_against_hashed_size() {
+        assert!(ensure_cli_upload_size(crate::transfer::MAX_TRANSFER_BYTES as u64).is_ok());
+        assert!(ensure_cli_upload_size(crate::transfer::MAX_TRANSFER_BYTES as u64 + 1).is_err());
+    }
 }

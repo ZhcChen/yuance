@@ -324,10 +324,9 @@ fn parse_header(ciphertext: &[u8]) -> AppResult<(FileEncryptionHeader, &[u8])> {
         .get(cursor..header_len)
         .ok_or_else(|| AppError::Crypto("加密文件 nonce 表不完整".to_string()))?;
     let mut nonces = Vec::with_capacity(chunk_count as usize);
-    for nonce in nonce_bytes.chunks_exact(NONCE_LEN) {
-        let mut value = [0_u8; NONCE_LEN];
-        value.copy_from_slice(nonce);
-        nonces.push(value);
+    let (nonce_chunks, _) = nonce_bytes.as_chunks::<NONCE_LEN>();
+    for nonce in nonce_chunks {
+        nonces.push(*nonce);
     }
     let body = ciphertext
         .get(header_len..)

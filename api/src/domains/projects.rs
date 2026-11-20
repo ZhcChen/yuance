@@ -4728,7 +4728,7 @@ pub async fn batch_update_work_items(
 
     refresh_user_ids.sort_unstable();
     refresh_user_ids.dedup();
-    realtime::publish_topbar_refresh_for_users(refresh_user_ids.into_iter());
+    realtime::publish_topbar_refresh_for_users(refresh_user_ids);
 
     Ok(BatchUpdateWorkItemsResult {
         project_id: project.id,
@@ -6386,8 +6386,8 @@ pub async fn search_visible(
 
     let mut hits = project_hits
         .into_iter()
-        .chain(work_item_hits.into_iter())
-        .chain(resource_hits.into_iter())
+        .chain(work_item_hits)
+        .chain(resource_hits)
         .map(
             |(hit_type, key, title, context, url, updated_at)| SearchHit {
                 hit_type,
