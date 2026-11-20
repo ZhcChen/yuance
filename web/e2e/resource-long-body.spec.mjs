@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 

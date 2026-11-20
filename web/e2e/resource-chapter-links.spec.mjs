@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
 
 const sectionId = 'yuance-section-sql-310';
 const prefix = '/api/v1/projects/YCE/resources';

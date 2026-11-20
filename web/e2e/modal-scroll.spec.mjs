@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
+import { ensureCurrentProject } from './support/session.mjs';
 
 test.use({ viewport: { width: 1280, height: 720 } });
 
@@ -11,16 +12,6 @@ async function login(page, entryPath) {
     page.waitForURL((url) => !url.pathname.startsWith('/web/login')),
     page.getByRole('button', { name: '登录' }).click(),
   ]);
-}
-
-async function ensureCurrentProject(page, projectKey) {
-  await page.goto('/web/app/projects');
-  await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
-  const row = page.locator('.project-row', { hasText: projectKey });
-  const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
-  if (await currentButton.count()) return;
-  await row.getByRole('button', { name: '设为当前项目' }).click();
-  await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
 test('wide create dialog keeps compact body and footer visible', async ({ page }) => {

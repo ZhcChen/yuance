@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
 
 const storageKey = 'yuance:project-resource-detail:outline-width';
 const minWidth = 220;

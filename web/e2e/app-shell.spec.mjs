@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
+import { ensureCurrentProject } from './support/session.mjs';
 
 async function chooseFile(page, button, file) {
   const chooser = page.waitForEvent('filechooser');
@@ -18,6 +19,36 @@ test.beforeEach(async ({ page }) => {
   await routeEmptyProjectResourceLinkedWorkItemPosts(page);
 });
 
+/**
+ * 截住顶栏实时事件流并挂起。调用返回的函数时向最近一次连接推送 `topbar: invalidated`，
+ * 触发页面按实时通知刷新（工作项详情页已移除手动刷新按钮，实时通知是刷新的真实来源）。
+ * 必须在打开页面之前调用。
+ */
+async function holdTopbarEvents(page) {
+  const pending = [];
+  await page.route('**/api/v1/topbar/events', (route) => new Promise((resolve) => {
+    pending.push({ route, resolve });
+  }));
+  return async () => {
+    const latest = pending.pop();
+    if (!latest) throw new Error('页面尚未建立顶栏事件连接');
+    await latest.route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+      body: 'event: topbar\ndata: invalidated\n\n',
+    });
+    latest.resolve();
+  };
+}
+
+/**
+ * 页面内联错误提示：排除同时出现的全局错误 toast（二者都是 role=alert）。
+ * 以 getByRole 为基础，保留其对隐藏元素（如关闭弹窗内的提示）的排除。
+ */
+function inlineAlert(scope) {
+  return scope.getByRole('alert').and(scope.locator(':not(.yc-error-toast)'));
+}
+
 async function login(page, entryPath) {
   await page.goto(entryPath);
   await expect(page).toHaveURL(/\/web\/login/);
@@ -27,20 +58,6 @@ async function login(page, entryPath) {
     page.waitForURL((url) => !url.pathname.startsWith('/web/login')),
     page.getByRole('button', { name: '登录' }).click(),
   ]);
-}
-
-async function ensureCurrentProject(page, projectKey) {
-  await page.goto('/web/app/projects');
-  await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
-  await page.getByLabel('每页').selectOption('20');
-  const row = page.locator('.project-row', { hasText: projectKey });
-  await expect(row).toBeVisible();
-  const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
-  if (await currentButton.count()) {
-    return;
-  }
-  await row.getByRole('button', { name: '设为当前项目' }).click();
-  await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
 }
 
 function workItemDetailFixture(overrides = {}) {
@@ -443,14 +460,14 @@ test('app-owner task list can filter and open read-only work item detail', async
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2/);
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
   await expect(page.getByRole('link', { name: '打开旧版详情' })).toHaveCount(0);
-  await expect(page.getByRole('heading', { level: 3, name: '评论与流转' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '讨论', exact: true })).toBeVisible();
 });
 
 test('formal web work item detail keeps web route ownership', async ({ page }) => {
   await login(page, '/web/work-items/YCE-TASK-2');
   await expect(page).toHaveURL('/web/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 3, name: '评论与流转' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '讨论', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '打开旧版详情' })).toHaveCount(0);
 });
 
@@ -1002,6 +1019,7 @@ test('work item realtime discussion refresh preserves the mounted page and local
   expect(commentRequests).toBeGreaterThan(1);
 });
 
+// 输入状态仅在有人输入时渲染（.discussion-typing），无人输入时节点不存在。
 test('work item realtime typing reports bounded activity and isolates late events', async ({ page }) => {
   await page.addInitScript(() => {
     const sources = [];
@@ -1035,9 +1053,9 @@ test('work item realtime typing reports bounded activity and isolates late event
   await expect.poll(() => typingRequests.at(-1)?.body.active).toBe(false);
 
   await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [{ user_id: 7, display_name: 'Alice' }, { user_id: 8, display_name: 'Bob' }, { user_id: 9, display_name: 'Carol' }] })), activeSourceIndex);
-  await expect(page.locator('.work-item-typing-status')).toHaveText('Alice、Bob 等 3 人正在输入…');
+  await expect(page.locator('.discussion-typing')).toHaveText('Alice、Bob 等 3 人正在输入…');
   await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [] })), activeSourceIndex);
-  await expect(page.locator('.work-item-typing-status')).toHaveText('');
+  await expect(page.locator('.discussion-typing')).toHaveCount(0);
 
   await page.evaluate(() => {
     globalThis.history.pushState({}, '', '/web/app/work-items/YCE-TASK-1');
@@ -1048,7 +1066,7 @@ test('work item realtime typing reports bounded activity and isolates late event
   const oldClosed = await page.evaluate((index) => globalThis.__yuanceSseSources[index].closed, activeSourceIndex);
   expect(oldClosed).toBe(true);
   await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [{ user_id: 10, display_name: 'Late User' }] })), activeSourceIndex);
-  await expect(page.locator('.work-item-typing-status')).toHaveText('');
+  await expect(page.locator('.discussion-typing')).toHaveCount(0);
   await expect(page.getByText('Late User')).toHaveCount(0);
 });
 
@@ -1132,13 +1150,13 @@ test('work item edit success survives comments or topbar refresh failures', asyn
   const editForm = page.locator('#work-item-edit-form');
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill(editedDetail.description);
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
 
   await expect(page.getByRole('heading', { level: 1, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
   await expect(page.locator('.work-item-description .yc-rich-text-content')).toHaveText(editedDetail.description);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
   await expect(page.getByRole('navigation', { name: '主导航' }).getByRole('link', { name: /任务/ })).toContainText('9');
-  await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
+  await expect(inlineAlert(page)).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
 test('work item edit preserves committed fields and retryable primary post after partial failure', async ({ page }) => {
@@ -1185,17 +1203,17 @@ test('work item edit preserves committed fields and retryable primary post after
   const editForm = page.locator('#work-item-edit-form');
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill('保留这段正文用于重试。');
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
 
   await expect.poll(() => fieldPatchCount).toBe(1);
   await expect.poll(() => primaryPostPatchCount).toBe(1);
   await expect(page.getByRole('heading', { level: 1, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
   await expect(editForm.getByLabel('主内容')).toHaveText('保留这段正文用于重试。');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 字段已保存，主内容需要重试。');
-  await expect(page.getByRole('alert')).toHaveText('工作项字段已保存，但主内容保存失败：主帖暂时无法保存。');
-  await expect(editForm.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  await expect(inlineAlert(page)).toHaveText('工作项字段已保存，但主内容保存失败：主帖暂时无法保存。');
+  await expect(page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' })).toBeEnabled();
 
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
   await expect.poll(() => primaryPostPatchCount).toBe(2);
   expect(fieldPatchCount).toBe(1);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
@@ -1234,11 +1252,11 @@ test('work item refresh keeps the primary post out of comments when detail refre
   const editForm = page.locator('#work-item-edit-form');
   await editForm.getByLabel('标题').fill(editedDetail.title);
   await editForm.getByLabel('主内容').fill('只应显示一次的主帖正文');
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
 
   await expect(page.getByText('只应显示一次的主帖正文', { exact: true })).toHaveCount(1);
   await expect(page.getByText('普通讨论', { exact: true })).toBeVisible();
-  await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
+  await expect(inlineAlert(page)).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
 test('work item lifecycle closes and reopens through shared confirmation', async ({ page }) => {
@@ -1263,6 +1281,12 @@ test('work item lifecycle closes and reopens through shared confirmation', async
     const status = route.request().postDataJSON().status;
     statuses.push(status);
     currentDetail = workItemDetailFixture({ status, updated_at: `2026-08-08T10:0${statuses.length}:00Z` });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: currentDetail }) });
+  });
+  // 关闭走独立的 POST /close 接口（任何人可关闭并记录操作），重新打开仍通过 PATCH 更新状态。
+  await page.route('**/api/v1/work-items/YCE-TASK-2/close', async (route) => {
+    statuses.push('closed');
+    currentDetail = workItemDetailFixture({ status: 'closed', updated_at: `2026-08-08T10:0${statuses.length}:00Z` });
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: currentDetail }) });
   });
 
@@ -1331,7 +1355,9 @@ test('work item detail load failure does not expose stale write forms', async ({
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-1' }).getByRole('link', { name: '打开详情' }).click();
 
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-1$/);
-  await expect(page.getByRole('alert')).toContainText('详情加载失败。');
+  // 5xx 错误统一展示通用提示，不透出服务端内部信息。
+  await expect(page.getByRole('alert')).toContainText('服务暂时无法完成请求，请稍后重试。');
+  await expect(page.getByRole('alert')).not.toContainText('详情加载失败。');
   await expect(page.getByText('工作项详情暂不可用。')).toBeVisible();
   await expect(page.locator('.work-item-action-form')).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 1, name: /YCE-TASK-2/ })).toHaveCount(0);
@@ -1368,7 +1394,8 @@ test('work item mutation disables peer form and ignores stale responses after na
 
   await page.getByRole('button', { name: '编辑内容' }).click();
   const editForm = page.locator('#work-item-edit-form');
-  const saveButton = editForm.locator('button[type="submit"]');
+  // 提交中按钮文案会变为“处理中”，按关联表单定位保存按钮。
+  const saveButton = page.getByRole('dialog', { name: '编辑工作项' }).locator('button[type="submit"][form="work-item-edit-form"]');
   await editForm.getByLabel('标题').fill(staleDetail.title);
   await saveButton.click();
 
@@ -1421,7 +1448,7 @@ test('work item mutation ignores stale response after re-entering the same item'
   await page.getByRole('button', { name: '编辑内容' }).click();
   const firstEditForm = page.locator('#work-item-edit-form');
   await firstEditForm.getByLabel('标题').fill(staleDetail.title);
-  await firstEditForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
   await expect.poll(() => patchCount).toBe(1);
 
   await page.getByRole('button', { name: '关闭', exact: true }).click();
@@ -1433,7 +1460,7 @@ test('work item mutation ignores stale response after re-entering the same item'
   await page.getByRole('button', { name: '编辑内容' }).click();
   const currentEditForm = page.locator('#work-item-edit-form');
   const currentTitle = currentEditForm.getByLabel('标题');
-  await expect(currentEditForm.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  await expect(page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' })).toBeEnabled();
   await currentTitle.fill('当前重新输入未提交');
 
   releasePatch();
@@ -1444,6 +1471,7 @@ test('work item mutation ignores stale response after re-entering the same item'
 });
 
 test('work item mutation result is not rolled back by an older refresh response', async ({ page }) => {
+  const triggerTopbarRefresh = await holdTopbarEvents(page);
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
 
@@ -1452,6 +1480,7 @@ test('work item mutation result is not rolled back by an older refresh response'
     releaseRefresh = resolve;
   });
   let delayedRefreshCount = 0;
+  let delayedRefreshFulfilled = 0;
   const oldRefreshDetail = workItemDetailFixture({
     title: '旧刷新响应',
     description: '旧刷新响应不应该覆盖保存结果。',
@@ -1477,6 +1506,7 @@ test('work item mutation result is not rolled back by an older refresh response'
       response,
       json: payload,
     });
+    delayedRefreshFulfilled += 1;
   });
   await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
     if (route.request().method() !== 'PATCH') {
@@ -1497,17 +1527,19 @@ test('work item mutation result is not rolled back by an older refresh response'
     });
   });
 
-  await page.getByRole('button', { name: '刷新' }).click();
+  await triggerTopbarRefresh();
   await expect.poll(() => delayedRefreshCount).toBe(1);
 
   await page.getByRole('button', { name: '编辑内容' }).click();
   const editForm = page.locator('#work-item-edit-form');
   await editForm.getByLabel('标题').fill(savedDetail.title);
   await editForm.getByLabel('主内容').fill(savedDetail.description);
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
   await expect(page.getByRole('heading', { level: 1, name: `YCE-TASK-2 · ${savedDetail.title}` })).toBeVisible();
 
   releaseRefresh();
+  // 旧刷新响应必须真正送达页面后再断言，否则断言可能在旧响应到达前就已通过。
+  await expect.poll(() => delayedRefreshFulfilled).toBe(delayedRefreshCount);
 
   await expect(page.getByRole('heading', { level: 1, name: `YCE-TASK-2 · ${savedDetail.title}` })).toBeVisible();
   await expect(page.locator('.work-item-description .yc-rich-text-content')).toHaveText(savedDetail.description);
@@ -1541,21 +1573,21 @@ test('work item edit form keeps input on validation and server errors', async ({
   const editForm = page.locator('#work-item-edit-form');
   const titleInput = editForm.getByLabel('标题');
   await titleInput.fill('   ');
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
 
-  await expect(page.getByRole('alert')).toHaveText('标题不能为空。');
+  await expect(inlineAlert(page)).toHaveText('标题不能为空。');
   await expect.poll(() => patchCount).toBe(0);
   await expect(titleInput).toHaveValue('   ');
 
   await titleInput.fill('不会成功的标题');
   await editForm.getByLabel('主内容').fill('失败后仍保留的描述');
-  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
 
   await expect.poll(() => patchCount).toBe(1);
-  await expect(page.getByRole('alert')).toHaveText('服务端拒绝保存。');
+  await expect(inlineAlert(page)).toHaveText('服务端拒绝保存。');
   await expect(titleInput).toHaveValue('不会成功的标题');
   await expect(editForm.getByLabel('主内容')).toHaveText('失败后仍保留的描述');
-  await expect(editForm.getByRole('button', { name: '保存修改' })).toBeEnabled();
+  await expect(page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' })).toBeEnabled();
   await page.getByRole('button', { name: '关闭', exact: true }).click();
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/handoff', async (route) => {
@@ -1574,11 +1606,11 @@ test('work item edit form keeps input on validation and server errors', async ({
   await page.getByRole('button', { name: '指派 / 流转' }).click();
   const handoffForm = page.locator('#work-item-handoff-form');
   await handoffForm.getByLabel('处理说明').fill('失败后仍保留的推进说明');
-  await handoffForm.getByRole('button', { name: '确认推进' }).click();
+  await page.getByRole('dialog', { name: '指派 / 流转' }).getByRole('button', { name: '确认推进' }).click();
 
-  await expect(page.getByRole('alert')).toHaveText('服务端拒绝推进。');
+  await expect(inlineAlert(page)).toHaveText('服务端拒绝推进。');
   await expect(handoffForm.getByLabel('处理说明')).toHaveValue('失败后仍保留的推进说明');
-  await expect(handoffForm.getByRole('button', { name: '确认推进' })).toBeEnabled();
+  await expect(page.getByRole('dialog', { name: '指派 / 流转' }).getByRole('button', { name: '确认推进' })).toBeEnabled();
 });
 
 test('work item comments create rich mentions, reply, and edit through one shared composer', async ({ page }) => {
@@ -1662,7 +1694,7 @@ test('work item comments create rich mentions, reply, and edit through one share
   const newCommentForm = page.locator('.work-item-comment-form');
   await expect(newCommentForm.getByRole('option', { name: /@yuance_admin/ })).toBeVisible();
   await newCommentInput.press('Enter');
-  await page.getByRole('button', { name: '发布评论' }).click();
+  await page.getByRole('button', { name: '发表', exact: true }).click();
 
   await expect.poll(() => createRequests.length).toBe(1);
   expect(createRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
@@ -1676,9 +1708,10 @@ test('work item comments create rich mentions, reply, and edit through one share
   await expect(newCommentInput).toHaveText('');
 
   const newCommentRow = page.locator('#comment-903');
-  await newCommentRow.getByRole('button', { name: '回复' }).click();
+  await newCommentRow.getByRole('button', { name: '回复', exact: true }).click();
   await newCommentRow.getByLabel('回复 系统管理员').fill('共享富文本回复');
-  await newCommentRow.getByRole('button', { name: '回复评论' }).click();
+  // 回复表单内的提交按钮同名“回复”（另有“回复并指派”），限定在回复表单内精确匹配。
+  await newCommentRow.locator('.discussion-reply-form').getByRole('button', { name: '回复', exact: true }).click();
   await expect.poll(() => createRequests.length).toBe(2);
   expect(createRequests[1].payload).toMatchObject({
     body_format: 'html',
@@ -1708,6 +1741,7 @@ test('work item comments create rich mentions, reply, and edit through one share
 });
 
 test('work item comment mutation result is not rolled back by an older comments refresh', async ({ page }) => {
+  const triggerTopbarRefresh = await holdTopbarEvents(page);
   const originalComments = [workItemCommentFixture()];
   const comments = [...originalComments];
   let releaseOldComments = () => {};
@@ -1716,6 +1750,7 @@ test('work item comment mutation result is not rolled back by an older comments 
   });
   let holdOldCommentsRefresh = false;
   let oldCommentsRefreshHeld = false;
+  let oldCommentsDelivered = false;
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
     if (route.request().method() === 'POST') {
@@ -1741,6 +1776,7 @@ test('work item comment mutation result is not rolled back by an older comments 
         contentType: 'application/json',
         body: JSON.stringify({ data: originalComments }),
       });
+      oldCommentsDelivered = true;
       return;
     }
     await route.fulfill({
@@ -1754,17 +1790,18 @@ test('work item comment mutation result is not rolled back by an older comments 
   await expect(page.getByText('初始可编辑评论')).toBeVisible();
 
   holdOldCommentsRefresh = true;
-  await page.getByRole('button', { name: '刷新' }).click();
+  await triggerTopbarRefresh();
   await expect.poll(() => oldCommentsRefreshHeld).toBe(true);
 
   await page.getByLabel('新增评论').fill('旧刷新不能覆盖的评论');
-  await page.getByRole('button', { name: '发布评论' }).click();
-  await expect(page.getByText('旧刷新不能覆盖的评论')).toBeVisible();
+  await page.getByRole('button', { name: '发表', exact: true }).click();
+  await expect(page.locator('#comment-905')).toContainText('旧刷新不能覆盖的评论');
 
   releaseOldComments();
+  // 旧评论列表响应送达页面后再断言新评论仍在，避免断言先于旧响应完成。
+  await expect.poll(() => oldCommentsDelivered).toBe(true);
 
-  await expect(page.getByText('旧刷新不能覆盖的评论')).toBeVisible();
-  await expect(page.locator('#comment-905')).toBeVisible();
+  await expect(page.locator('#comment-905')).toContainText('旧刷新不能覆盖的评论');
 });
 
 test('work item comment form keeps input on validation and edit errors', async ({ page }) => {
@@ -1800,9 +1837,9 @@ test('work item comment form keeps input on validation and edit errors', async (
 
   const newCommentInput = page.getByLabel('新增评论');
   await newCommentInput.fill('   ');
-  await page.getByRole('button', { name: '发布评论' }).click();
+  await page.getByRole('button', { name: '发表', exact: true }).click();
 
-  await expect(page.getByRole('alert')).toHaveText('评论内容不能为空。');
+  await expect(inlineAlert(page)).toHaveText('评论内容不能为空。');
   await expect.poll(() => postCount).toBe(0);
   await expect(newCommentInput).toBeFocused();
   await expect(newCommentInput).toHaveText('   ');
@@ -1813,7 +1850,7 @@ test('work item comment form keeps input on validation and edit errors', async (
   await commentRow.getByLabel('编辑评论').fill('服务端会拒绝的评论');
   await commentRow.getByRole('button', { name: '保存评论' }).click();
 
-  await expect(page.getByRole('alert')).toHaveText('不能编辑这条评论。');
+  await expect(inlineAlert(page)).toHaveText('不能编辑这条评论。');
   await expect(commentRow.getByLabel('编辑评论')).toHaveText('服务端会拒绝的评论');
   await expect(commentRow.locator('.yc-rich-text-plain', { hasText: '初始可编辑评论' })).toBeVisible();
   await expect(commentRow.getByRole('button', { name: '保存评论' })).toBeEnabled();
@@ -1848,9 +1885,10 @@ test('work item comment creation preserves comment anchor route', async ({ page 
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2#comment-901$/);
 
   await page.getByLabel('新增评论').fill('锚点保持评论');
-  await page.getByRole('button', { name: '发布评论' }).click();
+  await page.getByRole('button', { name: '发表', exact: true }).click();
 
-  await expect(page.getByText('锚点保持评论')).toBeVisible();
+  // 输入框清空前正文会同时出现在编辑器与新评论中，限定在新评论内断言。
+  await expect(page.locator('#comment-904')).toContainText('锚点保持评论');
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2#comment-901$/);
 });
 
@@ -2231,7 +2269,8 @@ test('work item attachments can list download and upload for item and comments',
     content_type: 'text/plain',
     byte_size: 14,
   });
-  expect(uploadStages.filter((stage) => stage.includes('work-item:803') || stage === 'put:work-item-803')).toEqual([
+  // 上传各阶段异步推进，需轮询等待“确认上传”完成，不能在登记请求发出后立即断言。
+  await expect.poll(() => uploadStages.filter((stage) => stage.includes('work-item:803') || stage === 'put:work-item-803')).toEqual([
     'create:work-item:803',
     'sign:work-item:803',
     'put:work-item-803',
@@ -2255,7 +2294,7 @@ test('work item attachments can list download and upload for item and comments',
       byte_size: 13,
     },
   });
-  expect(uploadStages.filter((stage) => stage.includes('comment:901:812') || stage === 'put:comment-901-812')).toEqual([
+  await expect.poll(() => uploadStages.filter((stage) => stage.includes('comment:901:812') || stage === 'put:comment-901-812')).toEqual([
     'create:comment:901:812',
     'sign:comment:901:812',
     'put:comment-901-812',
@@ -2326,6 +2365,7 @@ test('work item attachments share preview navigation fallback download and stale
     attachmentFixture({ id: 823, filename: 'work-item-archive.bin', content_type: 'application/octet-stream' }),
   ];
   const previewRequests = [];
+  const contentRequests = [];
   const downloadRequests = [];
   let releaseDelayedPreview;
   const delayedPreview = new Promise((resolve) => { releaseDelayedPreview = resolve; });
@@ -2351,8 +2391,9 @@ test('work item attachments share preview navigation fallback download and stale
     const payload = index === 0 ? previewPayload(index, 'image', 'png') : index === 1 ? previewPayload(index, 'document', 'pdf') : previewPayload(index, null, null);
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: payload }) });
   });
-  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
-  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/822/preview/content', (route) => route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF') }));
+  // 查看器读取内容时会追加 ?client_decrypt=1 等查询参数，路由需允许查询串。
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content*', (route) => contentRequests.push(821) && route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/822/preview/content*', (route) => contentRequests.push(822) && route.fulfill({ status: 200, contentType: 'application/pdf', body: Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF') }));
   await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/download-url', async (route) => {
     const attachmentId = Number(new URL(route.request().url()).pathname.split('/').at(-2));
     downloadRequests.push(attachmentId);
@@ -2373,7 +2414,9 @@ test('work item attachments share preview navigation fallback download and stale
   const attachmentPanel = page.locator('.work-item-attachments-panel');
   await attachmentPanel.getByRole('button', { name: '预览附件 work-item-overview.png' }).click();
   const imagePreview = page.getByRole('dialog', { name: 'work-item-overview.png' });
-  await expect(imagePreview.getByRole('img', { name: 'work-item-overview.png' })).toHaveAttribute('src', '/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content');
+  // 图片内容经受控读取后以 blob 地址展示。
+  await expect(imagePreview.getByRole('img', { name: 'work-item-overview.png' })).toHaveAttribute('src', /^blob:/u);
+  expect(contentRequests).toContain(821);
   await expect(imagePreview).toContainText('1 / 2');
   await imagePreview.getByRole('button', { name: '下一个' }).click();
   const documentPreview = page.getByRole('dialog', { name: 'work-item-plan.pdf' });
@@ -2409,7 +2452,8 @@ test('work item attachments share preview navigation fallback download and stale
 });
 
 test('work item attachment confirmation failure keeps pending file context', async ({ page }) => {
-  const workItemAttachments = [];
+  // 工作项附件面板仅在已有附件或处于上传状态时展示，预置一个已上传附件使上传入口可见。
+  const workItemAttachments = [attachmentFixture({ id: 870, filename: 'existing-spec.pdf', content_type: 'application/pdf' })];
   const comments = [workItemCommentFixture()];
   let uploadedRequestCount = 0;
   let attachmentListGetCount = 0;
@@ -2529,7 +2573,7 @@ test('work item attachment confirmation failure keeps pending file context', asy
 
   await expect.poll(() => uploadedRequestCount).toBe(1);
   await expect.poll(() => attachmentListGetCount).toBeGreaterThan(1);
-  await expect(page.getByRole('alert')).toHaveText('broken-upload.txt 已上传，但服务端确认失败，请手动刷新后检查。');
+  await expect(inlineAlert(page)).toHaveText('broken-upload.txt 已上传，但服务端确认失败，请手动刷新后检查。');
   await expect(attachmentPanel).toContainText('broken-upload.txt');
   await expect(attachmentPanel).toContainText('待上传');
   await expect(attachmentPanel).not.toContainText('上传失败');
@@ -2543,7 +2587,8 @@ test('work item attachment confirmation failure keeps pending file context', asy
   });
   await expect.poll(() => uploadedRequestCount).toBe(2);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 附件已上传。');
-  await expect(attachmentPanel).toContainText('已上传');
+  // 重新选择会登记一条新附件并上传成功；先前待确认的记录仍保留。
+  await expect(attachmentPanel.locator('.work-item-attachment-row.is-uploaded', { hasText: 'broken-upload.txt' })).toBeVisible();
 });
 
 test('message center opens semantic target and unread filter becomes empty after read', async ({ page }) => {
@@ -2582,11 +2627,13 @@ test('app-owner message center opens semantic target inside app shell', async ({
 test('shared system dashboard renders the permission-filtered management entry set', async ({ page }) => {
   await login(page, '/web/app/system');
 
-  const dashboard = page.getByRole('region', { name: '管理入口' });
-  for (const label of ['用户管理', '角色权限', '对象存储', '系统 OpenAPI', '版本管理', '数据库统计', '审计日志']) {
+  // 版本管理页面已随桌面宿主一并移除（650a444e），当前共 6 个管理入口。
+  const dashboard = page.getByRole('region', { name: '系统管理' });
+  for (const label of ['用户管理', '角色权限', '对象存储', '系统 OpenAPI', '数据库统计', '审计日志']) {
     await expect(dashboard.getByRole('link', { name: new RegExp(label) })).toBeVisible();
   }
-  await expect(dashboard.locator('a')).toHaveCount(7);
+  await expect(dashboard.getByRole('link', { name: /版本管理/ })).toHaveCount(0);
+  await expect(dashboard.locator('a')).toHaveCount(6);
 });
 
 test('system dashboard preserves the main responsive geometry', async ({ page }) => {
@@ -2681,7 +2728,7 @@ test('shared database stats load cache first and preserve it across refresh fail
 
   fail = true;
   await refresh.click();
-  await expect(page.getByRole('alert')).toContainText('统计暂时不可用');
+  await expect(inlineAlert(page)).toContainText('统计暂时不可用');
   await expect(page.getByRole('table', { name: '数据库统计大表' })).toContainText('用户账号');
   expect(requestCount).toBe(2);
 });
@@ -3170,8 +3217,8 @@ test('shared system storage reports committed probe separately when final refres
   await login(page, '/web/app/system/storage');
   await page.getByRole('button', { name: '测试连接' }).click();
   await expect(page.locator('p.shell-live-region[role="status"]')).toContainText('对象存储探测通过');
-  await expect(page.getByRole('alert')).toContainText('操作已成功，但存储工作台刷新失败');
-  await expect(page.getByRole('alert')).not.toContainText('探测失败');
+  await expect(inlineAlert(page)).toContainText('操作已成功，但存储工作台刷新失败');
+  await expect(inlineAlert(page)).not.toContainText('探测失败');
   expect(failedRefreshRequests).toBe(1);
 });
 
@@ -3561,7 +3608,9 @@ test('shared project detail manages project information and member lifecycle', a
   const editDialog = page.getByRole('dialog', { name: '编辑项目' });
   await editDialog.getByLabel('项目描述').fill('共享详情描述');
   await editDialog.getByRole('button', { name: '保存' }).click();
-  await expect(page.getByText('共享详情描述')).toBeVisible();
+  // 等弹窗关闭动画结束，避免输入框中的同名文本参与匹配；详情页有多处展示项目描述。
+  await expect(editDialog).toBeHidden();
+  await expect(page.getByText('共享详情描述').first()).toBeVisible();
 
   await page.getByRole('link', { name: '成员', exact: true }).click();
   await page.getByRole('button', { name: '添加成员' }).click();
@@ -4138,7 +4187,8 @@ test('shared project resource attachments render inline and are managed from the
   await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/preview**', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment, preview: { kind: 'document', strategy: 'text', file_type: 'md', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/960/attachments/961/preview/content', download_url: '/api/v1/projects/YCE/resources/960/attachments/961/download-url' } }) });
   });
-  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/preview/content', (route) => route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: '# Markdown 预览\n\n- 保持原文展示' }));
+  // 查看器读取内容时会追加 ?client_decrypt=1；需允许查询串，否则会被上面的 preview** 路由截获。
+  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/preview/content*', (route) => route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: '# Markdown 预览\n\n- 保持原文展示' }));
   await page.route('**/api/v1/projects/YCE/resources/960/attachments/961', async (route) => {
     expect(route.request().method()).toBe('DELETE'); inlineOperations.push('delete');
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...attachment, status: 'deleted' } }) });
@@ -4585,6 +4635,9 @@ test('shared project cycles keep viewer access read only', async ({ page }) => {
 test('project switch serializes repeated input and refreshes the current context', async ({ page }) => {
   await login(page, '/web/app/projects');
   await ensureCurrentProject(page, 'YCE');
+  // 演示数据共 12 个项目，每页 20 条时 OPS 才在第一页。
+  await page.goto('/web/app/projects');
+  await page.getByLabel('每页').selectOption('20');
   let patchCount = 0;
   let switched = false;
   let releaseSwitch = () => {};
@@ -4708,7 +4761,6 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await projectMenu.getByPlaceholder('搜索项目名称').fill('交付');
   await expect(projectMenu.getByRole('button', { name: /交付运维台/ })).toBeVisible();
   await page.keyboard.press('Escape');
-
 
   await page.getByRole('button', { name: '打开消息通知' }).click();
   await expect(page.getByRole('dialog', { name: '最近消息' })).toBeVisible();

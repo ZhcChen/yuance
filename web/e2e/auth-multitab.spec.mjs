@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
 
 async function login(page, entryPath = '/web/app') {
   await page.goto(entryPath);

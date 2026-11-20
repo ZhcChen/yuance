@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
 import { readFile } from 'node:fs/promises';
 
 /*
@@ -92,6 +92,8 @@ const volatileMaskSelectors = [
 /** 易变文本：绝对时间戳与相对时间，按文本内容屏蔽。 */
 const volatileTextPatterns = [
   /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?/u,
+  // 工作台“更新”列等使用的短格式（如 11/20 10:54），随种子数据生成时间变化。
+  /(?:^|\D)\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}(?:\D|$)/u,
   /\d+\s*(?:秒|分钟|小时|天)前/u,
 ];
 

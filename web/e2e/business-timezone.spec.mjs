@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures.mjs';
 
 for (const timezoneId of ['UTC', 'Asia/Shanghai', 'America/Los_Angeles']) {
   test.describe(`business timezone on ${timezoneId} device`, () => {
