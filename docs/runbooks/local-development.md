@@ -46,6 +46,24 @@ make dev-web
 
 端口可通过 `YUANCE_VALIDATION_API_ORIGIN` 和 `YUANCE_VALIDATION_WEB_ORIGIN` 覆盖，只接受 `http://127.0.0.1:<端口>`，两个端口必须不同。为同一次开发的各终端设置相同配置；禁止使用正式 API、远程地址或 `0.0.0.0`。
 
+## 测试入口
+
+| 命令 | 范围 | 说明 |
+| --- | --- | --- |
+| `make test` | Rust 工作区、frontend 与 web 检查、脚本测试 | 日常提交前的全量非浏览器测试 |
+| `make rust-test` | `cargo test --workspace` | 后端改动的聚焦入口；仅 `yuance-api` 用 `make api-test` |
+| `make frontend-check` | `npm run check:frontend` | web 与 frontend 并行，各包类型检查 / lint / 单测并行执行 |
+| `make scripts-test` | `scripts/test/*.test.cjs` | 本地开发、Spec Kit、发布安全脚本测试 |
+| `make test-e2e` | `npm --prefix web run test:e2e` | 浏览器 e2e，含 Web 与后端构建；`YUANCE_E2E_SKIP_BUILD=1` 复用已有产物 |
+| `npm --prefix web run test:visual` | 像素基线 | 独立端口段与数据目录；界面有意改版后用 `--update-snapshots` 更新并人工核对截图 |
+
+约定：
+
+- Rust 集成测试统一放在 `api/tests/integration/`、`tools/yuance-agent-cli/tests/integration/`，以模块挂到同一测试二进制并行执行。会修改进程环境变量（如 `YUANCE_WEB_DIST_DIR`）的测试必须保留为独立测试文件，避免干扰并行用例。
+- `.cargo/config.toml` 为本地构建关闭 SQLite 内存统计（`SQLITE_DEFAULT_MEMSTATUS=0`），消除并行测试在 SQLite 全局分配锁上的争用；`Cargo.toml` 中仅对第三方依赖开启优化（`[profile.dev.package."*"]`），工作区代码保持 debug。
+- frontend / web 的 `npm run check` 并行执行，任一项失败时打印该项输出并整体失败；`YUANCE_CHECK_CONCURRENCY=1` 可串行排查，`YUANCE_CHECK_VERBOSE=1` 打印全部输出，`npm run check:serial` 为原串行写法。
+- e2e 每个用例启动独立的 `yuance-api` 服务与模板库副本（`web/e2e/support/fixtures.mjs`，端口由系统分配，数据目录按运行隔离，可与另一套 e2e 同时运行），初始数据为演示数据 + 通知 + 开发管理员当前项目 YCE；用例只能依赖这些初始数据或自身创建的数据，不得依赖其他用例。新 spec 从 `./support/fixtures.mjs` 导入 `test`/`expect`，准备性步骤（当前项目、内存对象存储）使用 `./support/session.mjs`。
+
 ## 本机 Docker
 
 ```bash

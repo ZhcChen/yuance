@@ -1,4 +1,4 @@
-.PHONY: help spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-cleanup-deleted api-files-deletion-jobs api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
+.PHONY: help test rust-test scripts-test test-e2e spec-kit-init spec-kit-check spec-kit-verify frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-cleanup-deleted api-files-deletion-jobs api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-status deploy-production deploy-validate deploy-safety-test cache-status docker-cache-status clean-rust clean-generated clean-frontend-dist clean-node-cache clean clean-deep
 
 export SPEC_KIT_FEATURE = $(FEATURE)
 export SPEC_KIT_STAGE = $(STAGE)
@@ -14,6 +14,7 @@ endef
 help:
 	@echo "元策开发命令"
 	@echo "  make dev-help（本地开发与本机 Docker 的统一入口）"
+	@echo "  make test（Rust + 前端检查 + 脚本测试） / make test-e2e（浏览器 e2e）"
 	@echo "  make dev-doctor / dev-setup / dev-seed"
 	@echo "  make dev-api / dev-web"
 	@echo "  make dev-docker-doctor / dev-docker-build / dev-docker-up / dev-docker-down"
@@ -71,6 +72,19 @@ $(DEV_TARGETS): dev-%:
 
 dev-verify:
 	node --test scripts/test/local-development.test.cjs
+
+# 日常提交前的全量非浏览器测试：Rust 工作区、前端与 web 检查、脚本测试。
+test: rust-test frontend-check scripts-test
+
+rust-test:
+	cargo test --workspace
+
+scripts-test:
+	node --test scripts/test/*.test.cjs
+
+# 浏览器 e2e：每个用例独立服务与数据库，可并行；YUANCE_E2E_SKIP_BUILD=1 复用已有构建产物。
+test-e2e:
+	npm --prefix web run test:e2e
 
 frontend-check:
 	npm run check:frontend

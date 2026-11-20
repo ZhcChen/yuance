@@ -106,7 +106,7 @@ git diff --cached
 
 根据改动范围补充验证：
 
-- Rust 代码：运行对应 crate 或测试目标，例如 `cargo test -p yuance-api`。
+- Rust 代码：运行对应 crate 或测试目标，例如 `cargo test -p yuance-api`；提交前可用 `make test` 跑全量非浏览器测试（入口见 `docs/runbooks/local-development.md`）。
 - 模板 / 静态资源：运行 `cargo check -p yuance-api` 或 `cargo build -p yuance-api`，确保 Askama 模板和打包资源可编译。
 - migration：运行迁移、相关 domain / flow 测试；确认已发布迁移只新增不修改。
 - 部署 / env：检查没有真实密码、密钥、token、证书私钥进入 diff。
