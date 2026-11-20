@@ -1325,6 +1325,9 @@ export function SharedApp({ services }) {
   const [systemRoleCreateForm, setSystemRoleCreateForm] = useState({ roleCode: '', roleName: '', dataScopeType: 'self' });
   const [systemRoleStatusTarget, setSystemRoleStatusTarget] = useState(/** @type {any | null} */ (null));
   const [systemRolePermissionKeys, setSystemRolePermissionKeys] = useState(/** @type {string[]} */ ([]));
+  // 记录存在未保存权限修改的角色编码。实时通知触发的后台刷新不得覆盖这些修改，
+  // 否则用户勾选后再保存会提交被重置的权限列表（最坏情况撤销该角色全部权限）。
+  const systemRolePermissionEditRef = useRef(/** @type {string | null} */ (null));
   const [systemRoleSubmitting, setSystemRoleSubmitting] = useState(false);
   const [systemRoleError, setSystemRoleError] = useState('');
   const systemRoleMutationRef = useRef(false);
@@ -2114,7 +2117,12 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'system-roles') {
         setSystemRolesView(nextSystemRolesView);
-        setSystemRolePermissionKeys((nextSystemRolesView?.permissions || []).filter((permission) => permission.granted).map((permission) => permission.permission_key));
+        const nextRoleCode = nextSystemRolesView?.selected_role?.role_code || '';
+        const keepUnsavedPermissions = mode === 'refresh' && systemRolePermissionEditRef.current !== null && systemRolePermissionEditRef.current === nextRoleCode;
+        if (!keepUnsavedPermissions) {
+          systemRolePermissionEditRef.current = null;
+          setSystemRolePermissionKeys((nextSystemRolesView?.permissions || []).filter((permission) => permission.granted).map((permission) => permission.permission_key));
+        }
         setSystemRoleError('');
       }
       if (targetRoute.id === 'system-storage') setSystemStorageView(nextSystemStorageView);
@@ -2756,6 +2764,7 @@ export function SharedApp({ services }) {
     const view = await api.getSystemRolesView({ role: roleCode || current.role, page: current.page, perPage: current.perPage });
     if (routeRef.current.id === 'system-roles' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) {
       setSystemRolesView(view);
+      systemRolePermissionEditRef.current = null;
       setSystemRolePermissionKeys(view.permissions.filter((permission) => permission.granted).map((permission) => permission.permission_key));
     }
     return view;
@@ -2802,6 +2811,7 @@ export function SharedApp({ services }) {
 
   function toggleSystemRolePermission(permission, checked) {
     if (!systemRolesView?.can_edit_permissions || systemRoleSubmitting) return;
+    systemRolePermissionEditRef.current = systemRolesView.selected_role?.role_code || null;
     const group = systemRolePermissionGroups.find((item) => item.key === permission.resource_key);
     setSystemRolePermissionKeys((current) => {
       const next = new Set(current);
@@ -2817,6 +2827,7 @@ export function SharedApp({ services }) {
 
   function toggleSystemRolePermissionGroup(group, checked) {
     if (!systemRolesView?.can_edit_permissions || systemRoleSubmitting) return;
+    systemRolePermissionEditRef.current = systemRolesView.selected_role?.role_code || null;
     setSystemRolePermissionKeys((current) => {
       const next = new Set(current);
       for (const permission of [...group.pages, ...group.actions]) checked ? next.add(permission.permission_key) : next.delete(permission.permission_key);

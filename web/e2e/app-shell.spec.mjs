@@ -3285,6 +3285,43 @@ test('shared system role mutations preserve permission parent and confirmation s
   ]);
 });
 
+test('unsaved role permission edits survive a realtime background refresh', async ({ page }) => {
+  const triggerTopbarRefresh = await holdTopbarEvents(page);
+  const savedPermissionKeys = [];
+  let viewRequests = 0;
+  const permissions = [
+    { permission_key: 'system.users.view', permission_name: '查看用户管理', resource_type: 'page', resource_key: 'system.users', granted: false },
+    { permission_key: 'system.users.manage', permission_name: '管理用户', resource_type: 'action', resource_key: 'system.users', granted: false },
+  ];
+  await page.route('**/api/v1/system/roles-view*', async (route) => {
+    viewRequests += 1;
+    const selected = { role_code: 'qa_lead', role_name: '质量负责人', status: 'active', is_system: false, data_scope_type: 'all', permission_count: 0 };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      items: [selected], selected_role: selected, permissions,
+      pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 },
+      can_manage_roles: true, can_edit_permissions: true,
+    } }) });
+  });
+  await page.route('**/api/v1/system/roles/qa_lead/permissions', async (route) => {
+    savedPermissionKeys.push(route.request().postDataJSON().permission_keys);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: permissions }) });
+  });
+
+  await login(page, '/web/app/system/roles?role=qa_lead');
+  const permissionsTree = page.getByRole('region', { name: '权限树' });
+  await permissionsTree.getByRole('checkbox', { name: '管理用户 未授权' }).check();
+  await expect(permissionsTree.getByRole('checkbox', { name: '查看用户管理 已授权' })).toBeChecked();
+
+  // 实时通知触发后台刷新，服务端仍返回未授权状态；未保存的勾选必须保留。
+  const viewRequestsBeforeRefresh = viewRequests;
+  await triggerTopbarRefresh();
+  await expect.poll(() => viewRequests).toBeGreaterThan(viewRequestsBeforeRefresh);
+  await expect(permissionsTree.getByRole('checkbox', { name: '管理用户 已授权' })).toBeChecked();
+
+  await page.getByRole('button', { name: '保存权限' }).click();
+  await expect.poll(() => savedPermissionKeys).toEqual([['system.users.manage', 'system.users.view']]);
+});
+
 test('shared system users core mutations use the same confirmed interaction contract', async ({ page }) => {
   const mutations = [];
   const user = {
