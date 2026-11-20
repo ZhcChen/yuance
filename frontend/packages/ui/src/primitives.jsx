@@ -278,6 +278,8 @@ export function Modal({ open, title, wide = false, children, footer, onClose }) 
   const titleId = useId();
   const bodyScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: bodyRef, enabled: open, label: title, refreshKey: open });
   useAnimatedDialog(open, ref, 'yc-modal-closing');
+  // 关闭动画结束调用 dialog.close() 后，close 事件在下一个任务才派发；若期间弹窗已被重新打开（showModal），
+  // 该事件是上一次关闭遗留的，忽略它以免把刚打开的弹窗关掉（onClose 仅在 dialog 确实处于关闭状态时触发）。
   useEffect(() => {
     if (!open) return;
     // React 不会把 autoFocus 写成 DOM 属性，showModal() 会把焦点交给第一个按钮（关闭）；由正文显式声明的字段接管焦点。
@@ -285,7 +287,7 @@ export function Modal({ open, title, wide = false, children, footer, onClose }) 
     target?.focus();
   }, [open]);
   return (
-    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={() => { if (open) onClose(); }}>
+    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={(event) => { if (open && !event.currentTarget.open) onClose(); }}>
       <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
       <div ref={bodyRef} className="yc-modal-body yc-overlay-scroll-target">{children}</div>
       {bodyScrollbar.scrollbar}

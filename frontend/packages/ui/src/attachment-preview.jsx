@@ -688,8 +688,9 @@ export function AttachmentPreview({ open, title, source, kind, strategy = null, 
       ref={dialogRef}
       className="attachment-preview attachment-preview-modal"
       aria-labelledby="attachment-preview-title"
-      onClose={() => {
-        if (open) {
+      onClose={(event) => {
+        // 忽略重新打开前遗留的 close 事件（见 Modal 中的说明）。
+        if (open && !event.currentTarget.open) {
           onClose();
         }
       }}
