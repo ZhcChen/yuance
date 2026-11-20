@@ -4,15 +4,15 @@
 
 本仓库默认使用 Spec Kit Skills 编排中型及以上工作。Spec Kit 不替代代码审查、测试、数据迁移门禁、部署授权或 Git 规则。
 
-当前固定上游资产为 Specify CLI `1.1.2`，集成 Codex。官方 `v1.1.2` 于 2026-10-07 发布；上游 CLI 仅用于版本与集成资产检查，日常工作流不要求安装全局命令。仓库内脚本和模板已提交，Codex 会话从 `.agents/skills/` 加载项目 Skills。
+当前固定上游资产为 Specify CLI `1.2.3`，集成 Codex（2026-10-27 由 `1.1.2` 升级，版本断言见 `scripts/test/spec-kit.test.cjs`）；上游 CLI 仅用于版本与集成资产检查，日常工作流不要求安装全局命令。仓库内脚本和模板已提交，Codex 会话从 `.agents/skills/` 加载项目 Skills。
 
 不得在当前仓库运行 `specify init --here --force`、`specify integration use` 或其他会刷新/覆盖项目资产的管理操作。CLI 只在临时目录生成升级候选；升级必须作为独立改动核对上游发布、manifest、模板、脚本执行位和回归结果。
 
 只读检查命令：
 
 ```bash
-uv tool run --from specify-cli==1.1.2 specify version
-uv tool run --from specify-cli==1.1.2 specify integration status --json
+uv tool run --from specify-cli==1.2.3 specify version
+uv tool run --from specify-cli==1.2.3 specify integration status --json
 ```
 
 ## 入口与流程

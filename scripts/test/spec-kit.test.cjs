@@ -252,10 +252,16 @@ test('上游 Skill 脚本显式绑定当前 FEATURE，忽略旧指针且不回�
   assert.ok(noPointer.stderr.includes('Feature directory not found'));
 });
 
+// 固定的上游 Spec Kit 版本；升级时与 .specify 下的版本元数据及 Runbook 一并更新。
+const SPEC_KIT_VERSION = '1.2.3';
+
 test('上游 manifest 的受管理资产哈希匹配且 Bash 脚本语法和执行位有效', () => {
+  const readJson = name => JSON.parse(fs.readFileSync(path.join(repo, '.specify', name), 'utf8'));
+  assert.equal(readJson('integration.json').version, SPEC_KIT_VERSION);
+  assert.equal(readJson('init-options.json').speckit_version, SPEC_KIT_VERSION);
   for (const integration of ['codex', 'speckit']) {
-    const manifest = JSON.parse(fs.readFileSync(path.join(repo, '.specify/integrations', `${integration}.manifest.json`), 'utf8'));
-    assert.equal(manifest.version, '1.1.2');
+    const manifest = readJson(`integrations/${integration}.manifest.json`);
+    assert.equal(manifest.version, SPEC_KIT_VERSION);
     for (const [name, expected] of Object.entries(manifest.files)) {
       const file = path.join(repo, name);
       const actual = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
