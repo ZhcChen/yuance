@@ -21,7 +21,7 @@
     "dev:docker:logs": "node scripts/ops/local-dev.cjs docker-logs",
     "dev:docker:status": "node scripts/ops/local-dev.cjs docker-status",
     "dev:docker:smoke": "node scripts/ops/local-dev.cjs docker-smoke",
-    "check:frontend": "npm --prefix web run check && npm --prefix frontend run check",
+    "check:frontend": "node ./scripts/check-frontend.mjs",
     "validation:prepare": "./scripts/local-validation.sh prepare",
     "validation:api": "./scripts/local-validation.sh api",
     "validation:web": "./scripts/local-validation.sh web",
