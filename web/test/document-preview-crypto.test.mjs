@@ -43,11 +43,18 @@ test('browser preview resolver preserves inline SVG data URLs without fetching t
   }
 });
 
-test('plain text preview blobs default to UTF-8 and preserve an explicit charset', async () => {
+test('text preview blobs default to UTF-8 and preserve an explicit charset', async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response('评论附件原文');
   try {
-    for (const [contentType, expectedType] of [['text/plain', 'text/plain;charset=utf-8'], ['text/plain;charset=gb18030', 'text/plain;charset=gb18030']]) {
+    for (const [contentType, expectedType] of [
+      ['text/plain', 'text/plain;charset=utf-8'],
+      ['text/plain;charset=gb18030', 'text/plain;charset=gb18030'],
+      // 浏览器上传 .md / .csv / .json 时给出的类型同样需要 UTF-8，否则中文按 Latin-1 解码成乱码。
+      ['text/markdown', 'text/markdown;charset=utf-8'],
+      ['text/csv', 'text/csv;charset=utf-8'],
+      ['application/json', 'application/json;charset=utf-8'],
+    ]) {
       const source = await resolveBrowserPreviewSource('/attachments/1/preview/content', { filename: 'notes.txt', contentType });
       try {
         const response = await originalFetch(source);

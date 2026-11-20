@@ -78,10 +78,14 @@ function ensureClientDecryptQuery(url) {
   return parsed.toString();
 }
 
+// 文本类内容（text/*、JSON、XML 及其 +json / +xml 变体）未声明字符集时按 UTF-8 解码，
+// 避免浏览器按 Latin-1 渲染导致中文乱码（如上传 .md 时类型为 text/markdown）。
+const TEXTUAL_CONTENT_TYPE = /^(?:text\/[\w.+-]+|application\/(?:json|xml|[\w.-]+\+(?:json|xml)))(?:\s*;|$)/iu;
+
 function contentTypeForPreview(filename, contentType) {
   const knownType = String(contentType || "").trim();
   if (knownType && knownType !== "application/octet-stream") {
-    if (/^text\/plain(?:\s*;|$)/iu.test(knownType) && !/;\s*charset\s*=/iu.test(knownType)) return `${knownType};charset=utf-8`;
+    if (TEXTUAL_CONTENT_TYPE.test(knownType) && !/;\s*charset\s*=/iu.test(knownType)) return `${knownType};charset=utf-8`;
     return knownType;
   }
   const extension = String(filename || "").trim().toLowerCase().match(/\.([^.]+)$/u)?.[1] || "";
