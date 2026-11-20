@@ -1,0 +1,7 @@
+# 本地开发 / 测试构建配置（正式镜像由 api/Dockerfile 构建，不读取本文件）。
+
+[env]
+# 关闭 SQLite 内存统计（SQLITE_DEFAULT_MEMSTATUS=0，SQLite 官方推荐的性能选项）。
+# 开启时每次 sqlite3_malloc 都要获取全局互斥锁；测试并行创建内存库并执行迁移时，
+# 线程大量阻塞在该锁上（集成测试 sys 时间可达 user 的数倍）。项目不使用 sqlite3_memory_used 等统计接口，无功能影响。
+LIBSQLITE3_FLAGS = "-DSQLITE_DEFAULT_MEMSTATUS=0"

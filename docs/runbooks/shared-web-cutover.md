@@ -11,8 +11,8 @@
 ```bash
 cargo test --manifest-path api/Cargo.toml --test routing_smoke retired_web_business_pages_share_one_app_entry -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test routing_smoke retired_system_web_mutation_routes_are_not_registered -- --test-threads=1
-cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_system_owner_keeps_rust_permission_gate -- --test-threads=1
-cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_work_item_detail_owner_preserves_deep_link_query_for_unauthenticated_request -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test integration auth_security_flow::web_app_system_owner_keeps_rust_permission_gate -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test integration auth_security_flow::web_app_work_item_detail_owner_preserves_deep_link_query_for_unauthenticated_request -- --test-threads=1
 ```
 
 执行 Web E2E，确认筛选 query、深链接、登录回跳、权限拒绝、实时刷新和文件能力保持一致。

@@ -1,3 +1,9 @@
 [workspace]
 members = ["api", "tools/yuance-agent-cli"]
 resolver = "3"
+
+# 开发 / 测试构建：只优化第三方依赖（argon2 密码哈希、加密、序列化等在 debug 下极慢），
+# 工作区自身代码保持 debug 以便增量编译与调试；依赖不生成调试信息以缩小测试二进制、加快链接。
+[profile.dev.package."*"]
+opt-level = 2
+debug = false

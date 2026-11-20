@@ -80,8 +80,9 @@ fn authorization_matrix_freezes_resource_boundaries() {
 
 #[test]
 fn openapi_covers_runtime_resource_actions_without_fake_pagination() {
-    let spec: Value = serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
-        .expect("OpenAPI document should be valid JSON");
+    let spec: Value =
+        serde_json::from_str(include_str!("../../../docs/openapi/yuance.openapi.json"))
+            .expect("OpenAPI document should be valid JSON");
     let paths = spec["paths"].as_object().unwrap();
     let required = [
         ("/api/v1/auth/me", "get"),
@@ -199,8 +200,9 @@ fn openapi_covers_runtime_resource_actions_without_fake_pagination() {
 
 #[test]
 fn sensitive_attachment_fields_are_explicitly_marked() {
-    let spec: Value = serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
-        .expect("OpenAPI document should be valid JSON");
+    let spec: Value =
+        serde_json::from_str(include_str!("../../../docs/openapi/yuance.openapi.json"))
+            .expect("OpenAPI document should be valid JSON");
     let schemas = &spec["components"]["schemas"];
     assert_eq!(
         schemas["AttachmentEncryption"]["properties"]["format"]["const"],

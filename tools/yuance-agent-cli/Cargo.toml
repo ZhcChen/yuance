@@ -6,6 +6,15 @@ rust-version = "1.94"
 description = "Codex Skill CLI for the Yuance OpenAPI"
 license = "MIT"
 
+# 库内没有文档测试；二进制入口没有单元测试。关闭二者避免额外的 rustdoc 编译与测试二进制链接。
+[lib]
+doctest = false
+
+[[bin]]
+name = "yuance-agent"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 aes-gcm = "0.10.3"
 base64 = "0.22.1"

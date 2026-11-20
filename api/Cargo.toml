@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
 
+# 库内没有文档测试，关闭 doctest 省去每次 `cargo test` 约 4 秒的 rustdoc 编译。
+[lib]
+doctest = false
+
+# 二进制入口只做命令分发、没有单元测试；关闭其测试目标，避免额外链接一个完整测试二进制。
+[[bin]]
+name = "yuance-api"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 argon2 = "0.5.3"
 ammonia = "4.1.2"

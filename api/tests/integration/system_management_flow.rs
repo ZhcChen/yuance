@@ -30,7 +30,7 @@ async fn legacy_file_objects_receive_conservative_upload_expiry_backfill() {
         .expect("legacy file object should insert");
 
     sqlx::raw_sql(include_str!(
-        "../migrations/202610100002_track_file_upload_url_expiration.sql"
+        "../../migrations/202610100002_track_file_upload_url_expiration.sql"
     ))
     .execute(&pool)
     .await
