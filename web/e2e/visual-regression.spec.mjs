@@ -89,11 +89,15 @@ const volatileMaskSelectors = [
   '[class*="created"]',
 ];
 
+/**
+ * 表格中的短格式时间（如工作台“更新”列的 11/20 10:54），随种子数据生成时间变化。
+ * 仅在表格单元格内屏蔽：通知下拉等不可见浮层中的同格式文本按位置屏蔽会误盖其后方的卡片。
+ */
+const volatileTableTimePattern = /^\s*\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}\s*$/u;
+
 /** 易变文本：绝对时间戳与相对时间，按文本内容屏蔽。 */
 const volatileTextPatterns = [
   /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?/u,
-  // 工作台“更新”列等使用的短格式（如 11/20 10:54），随种子数据生成时间变化。
-  /(?:^|\D)\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}(?:\D|$)/u,
   /\d+\s*(?:秒|分钟|小时|天)前/u,
 ];
 
@@ -202,6 +206,7 @@ test.describe('主 Web 像素基线', () => {
         const mask = [
           ...maskSelectors.map((selector) => page.locator(selector)),
           ...volatileTextPatterns.map((pattern) => page.getByText(pattern)),
+          page.getByRole('cell').filter({ hasText: volatileTableTimePattern }),
         ];
 
         await expect(page).toHaveScreenshot(`${target.id}-${viewport.name}.png`, {
