@@ -39,10 +39,18 @@ test('wide create dialog keeps compact body and footer visible', async ({ page }
   expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 1);
 
   // 关闭时先进入退出动画，再真正 close，避免原生 dialog 直接消失。
+  // 退出动画只持续约 180ms，轮询在高负载下可能错过；用 MutationObserver 记录是否出现过“动画中且仍打开”的状态。
+  await dialog.evaluate((element) => {
+    window.__yuanceModalClosingWhileOpen = false;
+    const observer = new MutationObserver(() => {
+      if (element.classList.contains('yc-modal-closing') && element.open) {
+        window.__yuanceModalClosingWhileOpen = true;
+        observer.disconnect();
+      }
+    });
+    observer.observe(element, { attributes: true, attributeFilter: ['class', 'open'] });
+  });
   await dialog.getByRole('button', { name: '取消' }).click();
-  await expect.poll(() => dialog.evaluate((element) => ({
-    closing: element.classList.contains('yc-modal-closing'),
-    open: element.open,
-  }))).toEqual({ closing: true, open: true });
   await expect(dialog).toBeHidden();
+  expect(await page.evaluate(() => window.__yuanceModalClosingWhileOpen)).toBe(true);
 });

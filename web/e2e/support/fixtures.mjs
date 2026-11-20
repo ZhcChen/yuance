@@ -10,13 +10,17 @@ import path from 'node:path';
 
 import { test as base, expect } from '@playwright/test';
 
-import { apiBinary, artifactsRoot, host, portBase, repoRoot, serverEnv, templateDbName, templateDir } from './environment.mjs';
+import { apiBinary, artifactsRoot, host, repoRoot, serverEnv, templateDbName, templateDir } from './environment.mjs';
 
-function portInUse(port) {
-  return new Promise((resolve) => {
-    const socket = net.connect({ host, port });
-    socket.once('connect', () => { socket.destroy(); resolve(true); });
-    socket.once('error', () => resolve(false));
+/** 由系统分配一个当前空闲的端口，避免与其他 worker 或其他 e2e 运行冲突。 */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, host, () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
   });
 }
 
@@ -37,10 +41,7 @@ async function waitForHealthy(url, child, output, timeoutMs = 30000) {
 
 export const test = base.extend({
   e2eServer: async ({}, use, testInfo) => {
-    const port = portBase + testInfo.parallelIndex;
-    if (await portInUse(port)) {
-      throw new Error(`[e2e] 端口 ${port} 已被占用，可能残留上次的服务；请结束该进程或设置 YUANCE_WEB_E2E_PORT_BASE`);
-    }
+    const port = await freePort();
     const dataDir = path.join(artifactsRoot, `worker-${testInfo.parallelIndex}`);
     rmSync(dataDir, { recursive: true, force: true });
     mkdirSync(dataDir, { recursive: true });
@@ -53,7 +54,13 @@ export const test = base.extend({
     const url = `http://${host}:${port}`;
     try {
       await waitForHealthy(url, child, output);
+      // 端口若被其他进程抢先占用，本服务会绑定失败并退出，健康检查却可能命中对方服务；
+      // 稍等后确认本进程仍在运行，确保用例连接的是自己的服务。
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      if (child.exitCode !== null) throw new Error(`[e2e] 服务启动后退出（${child.exitCode}），端口 ${port} 可能被占用：\n${output.join('')}`);
       await use({ url, dataDir });
+      // 服务在用例期间崩溃时界面可能只显示错误提示，这里显式断言服务仍存活。
+      if (child.exitCode !== null) throw new Error(`[e2e] 服务在用例执行期间退出（${child.exitCode}）：\n${output.join('')}`);
     } finally {
       if (child.exitCode === null) {
         const exited = new Promise((resolve) => child.once('exit', resolve));

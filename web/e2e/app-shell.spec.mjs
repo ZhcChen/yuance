@@ -1254,7 +1254,8 @@ test('work item refresh keeps the primary post out of comments when detail refre
   await editForm.getByLabel('主内容').fill('只应显示一次的主帖正文');
   await page.getByRole('dialog', { name: '编辑工作项' }).getByRole('button', { name: '保存修改' }).click();
 
-  await expect(page.getByText('只应显示一次的主帖正文', { exact: true })).toHaveCount(1);
+  // 只统计可见内容：编辑弹窗中的富文本输入框（关闭动画中或已隐藏）也含同样文本。
+  await expect(page.getByText('只应显示一次的主帖正文', { exact: true }).filter({ visible: true })).toHaveCount(1);
   await expect(page.getByText('普通讨论', { exact: true })).toBeVisible();
   await expect(inlineAlert(page)).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
@@ -3218,7 +3219,8 @@ test('shared system storage reports committed probe separately when final refres
   await page.getByRole('button', { name: '测试连接' }).click();
   await expect(page.locator('p.shell-live-region[role="status"]')).toContainText('对象存储探测通过');
   await expect(inlineAlert(page)).toContainText('操作已成功，但存储工作台刷新失败');
-  await expect(inlineAlert(page)).not.toContainText('探测失败');
+  // 反向断言覆盖所有提示（含全局 toast）：探测已成功，任何位置都不得出现“探测失败”。
+  await expect(page.getByRole('alert').filter({ hasText: '探测失败' })).toHaveCount(0);
   expect(failedRefreshRequests).toBe(1);
 });
 

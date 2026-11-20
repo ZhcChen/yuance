@@ -4,14 +4,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-// 视觉回归等独立运行的配置可通过 YUANCE_WEB_E2E_ROOT / YUANCE_WEB_E2E_PORT_BASE 与功能 e2e 隔离。
-export const artifactsRoot = process.env.YUANCE_WEB_E2E_ROOT || path.join(repoRoot, '.artifacts', 'web-e2e');
+// 每次运行使用独立数据目录（运行 ID 由配置文件在主进程设置，worker 继承），
+// 避免两次 e2e 同时运行时互相删除模板库或数据目录。可用 YUANCE_WEB_E2E_ROOT 覆盖根目录。
+export const runId = process.env.YUANCE_E2E_RUN_ID || String(process.pid);
+export const artifactsRoot = path.join(process.env.YUANCE_WEB_E2E_ROOT || path.join(repoRoot, '.artifacts', 'web-e2e'), `run-${runId}`);
 export const templateDir = path.join(artifactsRoot, 'template');
 export const templateDbName = 'yuance.sqlite3';
 export const apiBinary = path.join(repoRoot, 'target', 'debug', 'yuance-api');
 export const webDistDir = process.env.YUANCE_WEB_DIST_DIR || path.join(repoRoot, 'web', 'dist');
 export const host = process.env.YUANCE_WEB_E2E_HOST || '127.0.0.1';
-export const portBase = Number.parseInt(process.env.YUANCE_WEB_E2E_PORT_BASE || '33100', 10);
 
 /** 服务端运行所需环境变量；数据目录与端口按实例区分。 */
 export function serverEnv(dataDir, port) {

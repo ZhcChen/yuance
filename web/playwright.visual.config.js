@@ -8,20 +8,23 @@ import { fileURLToPath } from 'node:url';
  * 像素基线必须可重复，因此它不能与功能 e2e 共用同一个服务与数据库：
  * 功能用例会切换当前项目、增删工作项与评论，共享一份数据会让基线随执行顺序漂移。
  *
- * 这里给视觉回归单独开一份服务与一份全新种子数据（独立端口段、独立数据目录，由 worker fixture 启动），
+ * 这里给视觉回归单独开一份服务与一份全新种子数据（独立端口、独立数据目录，由用例级 fixture 启动），
  * 由 `npm --prefix web run test:visual` 单独触发；
  * 主配置 `playwright.config.js` 仍然会加载视觉回归 spec，但只跑与顺序无关的结构层。
  */
 
 const repositoryRoot = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
-// 视觉回归使用独立端口段与数据目录；worker fixture 每次从模板库启动全新服务，保证像素基线数据固定。
-process.env.YUANCE_WEB_E2E_PORT_BASE ||= process.env.YUANCE_VISUAL_E2E_PORT_BASE || '33200';
+// 视觉回归使用独立数据目录（端口由 fixture 动态分配）；每个用例从模板库启动全新服务，保证像素基线数据固定。
 process.env.YUANCE_WEB_E2E_ROOT ||= resolve(repositoryRoot, '.artifacts/web-e2e-visual');
+
+// 运行 ID 在主进程设置一次，worker 继承，用于区分本次运行的数据目录。
+process.env.YUANCE_E2E_RUN_ID ||= String(process.pid);
 
 export default defineConfig({
   testDir: './e2e',
   testMatch: 'visual-regression.spec.mjs',
   globalSetup: './e2e/support/global-setup.mjs',
+  globalTeardown: './e2e/support/global-teardown.mjs',
   timeout: 60000,
   retries: 0,
   workers: 1,

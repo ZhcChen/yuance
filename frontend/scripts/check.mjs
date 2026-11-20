@@ -20,8 +20,19 @@ const tasks = [
 ];
 
 const packagesDir = path.join(root, 'packages');
-/** 取脚本中双引号包裹的参数（lint / test 的文件模式），保持与 package.json 为唯一来源。 */
+/** 取脚本中双引号包裹的参数（lint 的文件模式），保持与 package.json 为唯一来源。 */
 const quotedArgs = (script) => [...script.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+
+/**
+ * 校验脚本只由已知前缀与双引号参数组成，避免将来新增的未加引号参数或选项被静默丢弃。
+ * @param {string} name @param {string} key @param {string} script @param {RegExp} prefix
+ */
+function assertScriptShape(name, key, script, prefix) {
+  const rest = script.replace(prefix, '').replace(/"[^"]+"/gu, '').trim();
+  if (!prefix.test(script) || rest) {
+    throw new Error(`${name} 的 ${key} 脚本格式超出并行检查支持范围，请同步更新 frontend/scripts/check.mjs：${script}`);
+  }
+}
 for (const name of readdirSync(packagesDir).sort()) {
   const cwd = path.join(packagesDir, name);
   const manifestPath = path.join(cwd, 'package.json');
@@ -30,8 +41,13 @@ for (const name of readdirSync(packagesDir).sort()) {
   for (const key of ['check:source', 'check:js', 'lint', 'test']) {
     if (!scripts[key]) throw new Error(`${name} 缺少 ${key} 脚本，无法生成检查任务`);
   }
+  assertScriptShape(name, 'lint', scripts.lint, /^eslint --cache --cache-location \S+ /u);
+  assertScriptShape(name, 'check:js', scripts['check:js'], /^tsc -p jsconfig\.json --incremental --tsBuildInfoFile \S+$/u);
+  if (!/^node \.\.\/\.\.\/scripts\/assert-js-only\.mjs( [\w./-]+)+$/u.test(scripts['check:source'])) {
+    throw new Error(`${name} 的 check:source 脚本格式超出并行检查支持范围：${scripts['check:source']}`);
+  }
   const [testCommand, ...testArgs] = scripts.test.split(/\s+/u);
-  if (!['node', 'tsx'].includes(testCommand)) throw new Error(`${name} 的 test 脚本使用了未支持的运行器：${testCommand}`);
+  if (!['node', 'tsx'].includes(testCommand) || testArgs[0] !== '--test') throw new Error(`${name} 的 test 脚本格式超出并行检查支持范围：${scripts.test}`);
   tasks.push(
     { name: `${name} 源码约束`, command: node, args: scripts['check:source'].split(/\s+/u).slice(1), cwd },
     { name: `${name} 类型检查`, command: bin('tsc'), args: ['-p', 'jsconfig.json', '--incremental', '--tsBuildInfoFile', path.join(cacheDir, `tsconfig.${name}.tsbuildinfo`)], cwd },
