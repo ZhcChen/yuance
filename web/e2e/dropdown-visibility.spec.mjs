@@ -210,3 +210,35 @@ for (const viewport of [{ name: '桌面', width: 1400, height: 960 }, { name: '�
     expect(problems, problems.join('\n')).toEqual([]);
   });
 }
+
+test('收起的下拉菜单不渲染：不可聚焦，也不撑高弹窗正文', async ({ page }) => {
+  await login(page);
+  await page.goto('/web/app/tasks');
+  await expect(page.locator('.work-item-filter-bar .yc-select-trigger').first()).toBeVisible();
+  // 收起状态的菜单及其列表不得占据布局或进入 Tab 顺序。
+  const closedMenus = await page.locator('.yc-select-menu').evaluateAll((menus) => menus.map((menu) => ({
+    display: getComputedStyle(menu).display,
+    focusableList: menu.querySelector('[role="listbox"]')?.tabIndex,
+  })));
+  expect(closedMenus.length).toBeGreaterThan(0);
+  expect(closedMenus.filter((menu) => menu.display !== 'none')).toEqual([]);
+  for (let index = 0; index < 40; index += 1) {
+    await page.keyboard.press('Tab');
+    const inClosedMenu = await page.evaluate(() => Boolean(document.activeElement?.closest('.yc-select-menu:not(:popover-open)')));
+    expect(inClosedMenu).toBe(false);
+  }
+
+  // 弹窗正文不因收起的菜单出现额外滚动。
+  await page.goto('/web/app/system/roles');
+  await page.getByRole('button', { name: '新建角色' }).click();
+  const body = page.getByRole('dialog', { name: '创建角色' }).locator('.yc-modal-body');
+  await expect.poll(() => body.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+
+  // 展开后仍可正常选择。
+  await page.keyboard.press('Escape');
+  await page.goto('/web/app/tasks');
+  const trigger = page.locator('.work-item-filter-bar .yc-field').filter({ hasText: /^状态/u }).locator('.yc-select-trigger');
+  await trigger.click();
+  await page.getByRole('option', { name: '进行中' }).click();
+  await expect(trigger).toContainText('进行中');
+});

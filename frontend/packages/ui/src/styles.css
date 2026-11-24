@@ -412,6 +412,12 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 .yc-select-menu { position: absolute; z-index: var(--yc-z-overlay); top: calc(100% + 6px); right: 0; left: 0; display: flex; flex-direction: column; padding: var(--yc-sp-6); overflow: hidden; color: inherit; border: 1px solid var(--yc-line); border-radius: var(--yc-radius-md); background: var(--yc-surface-overlay); box-shadow: var(--yc-shadow-lg); opacity: 0; pointer-events: none; transform: translateY(-7px) scale(.985); transform-origin: top center; transition: opacity 150ms ease, transform 180ms cubic-bezier(.22, .8, .24, 1); }
 /* 打开时菜单进入顶层并由脚本按触发按钮定位（top / left / width / max-height），不受祖先 overflow 裁剪。 */
 .yc-select-menu:popover-open { position: fixed; inset: auto; margin: 0; }
+/* 收起时不渲染（恢复浏览器对未打开 popover 的隐藏）：否则收起的菜单仍可被 Tab 聚焦、撑高滚动容器。
+   收起动画在 hidePopover 之前完成；展开动画通过 @starting-style 从隐藏状态过渡。不支持 popover 的浏览器忽略此规则。 */
+.yc-select-menu:not(:popover-open) { display: none; }
+@starting-style {
+  .yc-select.is-open .yc-select-menu:popover-open { opacity: 0; transform: translateY(-7px) scale(.985); }
+}
 .yc-select-menu[data-placement="top"] { transform-origin: bottom center; }
 .yc-select.is-open .yc-select-menu { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
 .yc-select-search { display: block; padding: 2px 2px 5px; }
