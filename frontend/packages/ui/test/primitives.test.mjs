@@ -53,7 +53,8 @@ test('select preserves native form semantics inside the shared control', () => {
   assert.match(html, /class="yc-select-native"[^>]*name="status" required=""/u);
   assert.match(html, /aria-haspopup="listbox"/u);
   assert.match(html, /aria-expanded="false"/u);
-  assert.match(html, /class="yc-select-menu(?: [^"]+)?" role="listbox"/u);
+  // 菜单外壳以 popover 进入顶层，内层列表承担 listbox 语义与滚动。
+  assert.match(html, /class="yc-select-menu" popover="manual" aria-hidden="true"><span id="[^"]+-listbox" class="yc-select-options(?: [^"]+)?" role="listbox"/u);
   assert.match(html, /class="yc-select-caret" aria-hidden="true"/u);
   assert.match(html, /value="open" selected=""/u);
 
@@ -65,7 +66,7 @@ test('select preserves native form semantics inside the shared control', () => {
   const searchableHtml = renderToStaticMarkup(createElement(Select, { searchable: true, searchPlaceholder: '搜索处理人' },
     createElement('option', { value: '' }, '未分配'),
     createElement('option', { value: 'alice' }, 'Alice · alice')));
-  assert.match(searchableHtml, /class="yc-select-menu is-searchable"/u);
+  assert.match(searchableHtml, /class="yc-select-menu is-searchable" popover="manual"/u);
   assert.match(searchableHtml, /type="search"[^>]*placeholder="搜索处理人"[^>]*aria-label="搜索处理人"/u);
   assert.match(searchableHtml, /class="yc-select-options(?: [^"]+)?" role="listbox"/u);
 });

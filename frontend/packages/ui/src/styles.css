@@ -409,13 +409,16 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 .yc-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .yc-select-caret { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; border: 0; background: currentColor; color: var(--yc-text-tertiary); pointer-events: none; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6.5 4 4 4-4'/%3E%3C/svg%3E") center / 15px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6.5 4 4 4-4'/%3E%3C/svg%3E") center / 15px no-repeat; transition: color var(--yc-motion-fast) var(--yc-ease-standard), transform 180ms cubic-bezier(.22, .8, .24, 1); }
 .yc-select.is-open .yc-select-caret { color: var(--yc-brand); transform: rotate(180deg); }
-.yc-select-menu { position: absolute; z-index: var(--yc-z-overlay); top: calc(100% + 6px); right: 0; left: 0; max-height: 248px; display: grid; gap: 2px; padding: var(--yc-sp-6); overflow-x: hidden; overflow-y: auto; border: 1px solid var(--yc-line); border-radius: var(--yc-radius-md); background: var(--yc-surface-overlay); box-shadow: var(--yc-shadow-lg); opacity: 0; pointer-events: none; transform: translateY(-7px) scale(.985); transform-origin: top center; transition: opacity 150ms ease, transform 180ms cubic-bezier(.22, .8, .24, 1); }
-.yc-select-menu.is-searchable { max-height: none; overflow: hidden; }
+.yc-select-menu { position: absolute; z-index: var(--yc-z-overlay); top: calc(100% + 6px); right: 0; left: 0; display: flex; flex-direction: column; padding: var(--yc-sp-6); overflow: hidden; color: inherit; border: 1px solid var(--yc-line); border-radius: var(--yc-radius-md); background: var(--yc-surface-overlay); box-shadow: var(--yc-shadow-lg); opacity: 0; pointer-events: none; transform: translateY(-7px) scale(.985); transform-origin: top center; transition: opacity 150ms ease, transform 180ms cubic-bezier(.22, .8, .24, 1); }
+/* 打开时菜单进入顶层并由脚本按触发按钮定位（top / left / width / max-height），不受祖先 overflow 裁剪。 */
+.yc-select-menu:popover-open { position: fixed; inset: auto; margin: 0; }
+.yc-select-menu[data-placement="top"] { transform-origin: bottom center; }
 .yc-select.is-open .yc-select-menu { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
 .yc-select-search { display: block; padding: 2px 2px 5px; }
 .yc-select-search input { box-sizing: border-box; width: 100%; min-height: 34px; padding: 0 10px; border: 1px solid var(--yc-line-strong); border-radius: var(--yc-radius-sm); outline: 0; background: var(--yc-surface); color: var(--yc-text-primary); font: inherit; font-size: var(--yc-fs-13); }
 .yc-select-search input:focus { border-color: var(--yc-brand); box-shadow: 0 0 0 2px var(--yc-brand-ring); }
-.yc-select-options { max-height: 202px; display: grid; gap: 2px; overflow-x: hidden; overflow-y: auto; }
+.yc-select-options { min-height: 0; flex: 1 1 auto; max-height: 234px; display: grid; align-content: start; gap: 2px; overflow-x: hidden; overflow-y: auto; }
+.yc-select-menu.is-searchable .yc-select-options { max-height: 202px; }
 .yc-select-empty { padding: var(--yc-sp-10); color: var(--yc-text-tertiary); font-size: var(--yc-fs-13); text-align: center; }
 .yc-select-option { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: var(--yc-sp-10); padding: 0 var(--yc-sp-10); border-radius: var(--yc-radius-sm); color: var(--yc-text-secondary); cursor: pointer; font-size: var(--yc-fs-13); line-height: 18px; transition: background-color 120ms ease, color 120ms ease; }
 .yc-select-option.is-active { background: var(--yc-surface-3); color: var(--yc-text-primary); }
@@ -1573,10 +1576,12 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
   position: absolute;
   z-index: 200;
   width: 264px;
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
   padding: 8px;
-  overflow-y: auto;
+  overflow: hidden;
+  border: 0;
+  color: inherit;
   border-radius: 10px;
   background: var(--yc-panel);
   box-shadow: var(--yc-shadow), var(--yc-shadow-soft);
@@ -1586,11 +1591,35 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
   position: absolute;
   z-index: 200;
   width: 172px;
+  display: flex;
+  flex-direction: column;
   padding: 6px;
-  overflow-y: auto;
+  overflow: hidden;
+  border: 0;
+  color: inherit;
   border-radius: 10px;
   background: var(--yc-panel);
   box-shadow: var(--yc-shadow), var(--yc-shadow-soft);
+}
+
+/* 富文本工具栏弹出层：外壳进入顶层并由脚本定位（见 popover-placement.js），内层滚动区承担滚动与覆盖式滚动条。 */
+.yc-rich-toolbar-popover:popover-open,
+.yc-rich-more-menu:popover-open {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+}
+
+.yc-rich-popover-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.yc-rich-more-menu > .yc-rich-popover-scroll {
+  display: grid;
+  gap: 8px;
 }
 
 .yc-rich-toolbar-popover-grid {

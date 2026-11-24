@@ -339,8 +339,9 @@ function targetRect(target, documentRef, view) {
 
 /** @param {HTMLElement} target @param {Document} ownerDocument */
 function overlayPortalHost(target, ownerDocument) {
-  const dialog = target.closest('dialog');
-  return dialog ? /** @type {HTMLElement} */ (dialog) : ownerDocument.body;
+  // 位于顶层（模态 dialog 或 popover，如下拉菜单）中的滚动区域，滚动条需渲染在同一顶层元素内，否则会被遮挡。
+  const host = target.closest('dialog, [popover]');
+  return host ? /** @type {HTMLElement} */ (host) : ownerDocument.body;
 }
 
 /** @param {number} value @param {DOMRect | null} hostRect @param {HTMLElement} host */

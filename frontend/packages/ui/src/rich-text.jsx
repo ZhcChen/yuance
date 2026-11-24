@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client';
 
 import { AttachmentImage } from './attachment-image.jsx';
 import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
+import { usePopoverPlacement } from './popover-placement.js';
 import { findRichTextSection, isRichTextSectionId, normalizeRichTextSections, richTextSectionFragment, scrollToRichTextSection, SECTION_ATTRIBUTE } from './rich-text-sections.js';
 export { richTextHeadingId } from './rich-text-sections.js';
 
@@ -599,6 +600,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const pendingUploadSequenceRef = useRef(0);
   const moreTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const moreMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const moreMenuScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const paragraphTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const paragraphMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const sizeTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
@@ -619,11 +621,12 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   const [formatState, setFormatState] = useState({ bold: false, italic: false, strikeThrough: false, unorderedList: false, orderedList: false, block: 'p', fontSize: /** @type {string | null} */ (null), color: /** @type {string | null} */ (null), align: /** @type {string | null} */ (null) });
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [sectionOptions, setSectionOptions] = useState(/** @type {Array<{ id: string, label: string }>} */ ([]));
-  const [moreMenuPosition, setMoreMenuPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const [toolbarMenuRoot, setToolbarMenuRoot] = useState(/** @type {HTMLDivElement | null} */ (null));
   const inputScrollbar = useOverlayScrollbar({ axis: 'both', targetRef: inputRef, label });
   const mentionScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: mentionPanelRef, enabled: mentionQuery !== null, label: '提及候选', refreshKey: mentionQuery });
-  const moreScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: moreMenuRef, enabled: moreMenuOpen, label: '更多格式', refreshKey: moreMenuOpen });
+  const moreScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: moreMenuScrollRef, enabled: moreMenuOpen, label: '更多格式', refreshKey: moreMenuOpen });
+  // “更多”菜单进入顶层并按触发按钮右对齐定位，空间不足时向上展开（见 popover-placement.js）。
+  usePopoverPlacement(moreMenuOpen, moreMenuRef, moreTriggerRef, { gap: 8, align: 'end', minHeight: 120, maxHeight: 460 });
   const filteredMentions = mentionQuery === null ? [] : mentionOptions
     .filter((option) => {
       const query = mentionQuery.toLocaleLowerCase();
@@ -781,18 +784,9 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
 
   function openMoreMenu() {
     const trigger = moreTriggerRef.current;
-    const view = trigger?.ownerDocument.defaultView;
-    if (!trigger || !view || disabled) return;
+    if (!trigger || disabled) return;
     for (const ref of [paragraphCloseRef, sizeCloseRef, colorCloseRef]) ref.current?.();
     captureToolbarRange();
-    const rect = trigger.getBoundingClientRect();
-    const rootRect = toolbarMenuRoot?.getBoundingClientRect() || null;
-    const menuWidth = 264;
-    const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
-    const left = Math.min(Math.max(8, rect.right - (rootRect?.left || 0) - menuWidth), Math.max(8, availableRight - menuWidth - 8));
-    const top = (rootRect ? rect.bottom - rootRect.top + 12 : Math.min(rect.bottom + 12, Math.max(8, view.innerHeight - 420)));
-    const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
-    setMoreMenuPosition({ left, top, maxHeight: Math.max(120, maxHeight) });
     setMoreMenuOpen(true);
   }
 
@@ -1414,13 +1408,14 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       </div> : null}
       {mentionScrollbar.scrollbar}
       </div>
-      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu yc-overlay-scroll-target" role="menu" aria-label="更多格式" style={{ left: moreMenuPosition.left, top: moreMenuPosition.top, maxHeight: moreMenuPosition.maxHeight }}
+      {toolbarMenuRoot ? createPortal(moreMenuOpen ? <div ref={moreMenuRef} className="yc-rich-more-menu" popover="manual" role="menu" aria-label="更多格式"
         onMouseEnter={cancelMoreMenuClose}
         onMouseLeave={(event) => {
           if (relatedInside(event, moreTriggerRef)) return;
           scheduleMoreMenuClose();
         }}
       >
+        <div ref={moreMenuScrollRef} className="yc-rich-popover-scroll yc-overlay-scroll-target">
         <section className="yc-rich-more-section" aria-label="更多操作">
           <div className="yc-rich-more-grid yc-rich-more-actions">
             <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { execute('formatBlock', 'blockquote'); closeMoreMenu(); }}>❝ 引用</button>
@@ -1429,6 +1424,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
             <button type="button" role="menuitem" className="yc-rich-more-option" disabled={disabled} onClick={() => { clearFormat(); closeMoreMenu(); }}>清除格式</button>
           </div>
         </section>
+        </div>
       </div> : null, toolbarMenuRoot) : null}
       {moreScrollbar.scrollbar}
     </div>
@@ -1786,10 +1782,12 @@ function ToolbarButton({ active = false, label, title, disabled = false, onClick
 /** @param {{ label: string, value?: string, disabled?: boolean, active?: boolean, triggerRef: React.Ref<HTMLButtonElement>, menuRef: React.Ref<HTMLDivElement>, menuRoot: HTMLDivElement | null, closeRef?: React.MutableRefObject<(() => void) | null>, onOpen?: () => void, onClose?: () => void, triggerClassName?: string, triggerExtra?: React.ReactNode, menuWidth?: number, menuClassName?: string, children: React.ReactNode }} props */
 function ToolbarDropdown({ label, value = '', disabled = false, active = false, triggerRef, menuRef, menuRoot, closeRef, onOpen, onClose, triggerClassName = '', triggerExtra = null, menuWidth = 172, menuClassName = '', children }) {
   const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0, maxHeight: 480 });
   const localTriggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const localMenuRef = useRef(/** @type {HTMLDivElement | null} */ (null));
-  const scrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: localMenuRef, enabled: open, label, refreshKey: open });
+  const localScrollRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: localScrollRef, enabled: open, label, refreshKey: open });
+  // 下拉面板进入顶层并按触发按钮定位，不被弹窗正文等滚动容器裁剪，空间不足时向上展开（见 popover-placement.js）。
+  usePopoverPlacement(open, localMenuRef, localTriggerRef, { gap: 8, minHeight: 120, maxHeight: 460 });
   const hoverCloseTimerRef = useRef(/** @type {ReturnType<typeof setTimeout> | null} */ (null));
 
   useEffect(() => {
@@ -1833,15 +1831,7 @@ function ToolbarDropdown({ label, value = '', disabled = false, active = false, 
 
   function openDropdown() {
     const trigger = localTriggerRef.current;
-    const view = trigger?.ownerDocument.defaultView;
-    if (!trigger || !view || disabled) return;
-    const rect = trigger.getBoundingClientRect();
-    const rootRect = menuRoot?.getBoundingClientRect() || null;
-    const availableRight = rootRect ? Math.min(rootRect.right, view.innerWidth) - rootRect.left : view.innerWidth;
-    const left = Math.min(Math.max(8, rect.left - (rootRect?.left || 0)), Math.max(8, availableRight - menuWidth - 8));
-    const top = (rootRect ? rect.bottom - rootRect.top + 12 : Math.min(rect.bottom + 12, Math.max(8, view.innerHeight - 420)));
-    const maxHeight = Math.min(460, (rootRect ? view.innerHeight - rootRect.top : view.innerHeight) - top - 8);
-    setPosition({ left, top, maxHeight: Math.max(120, maxHeight) });
+    if (!trigger || disabled) return;
     onOpen?.();
     setOpen(true);
   }
@@ -1901,20 +1891,22 @@ function ToolbarDropdown({ label, value = '', disabled = false, active = false, 
       </button>
       {open && menuRoot ? createPortal(<div
         ref={(node) => {
+          localMenuRef.current = node;
           if (typeof menuRef === 'function') menuRef(node);
           else /** @type {{ current: HTMLDivElement | null }} */ (menuRef).current = node;
         }}
-        className={`yc-rich-toolbar-popover yc-overlay-scroll-target${menuClassName ? ` ${menuClassName}` : ''}`}
+        className={`yc-rich-toolbar-popover${menuClassName ? ` ${menuClassName}` : ''}`}
+        popover="manual"
         role="menu"
         aria-label={label}
-        style={{ left: position.left, top: position.top, maxHeight: position.maxHeight }}
+        style={{ width: menuWidth }}
         onMouseEnter={cancelCloseDropdown}
         onMouseLeave={(event) => {
           if (relatedInside(event, localTriggerRef)) return;
           scheduleCloseDropdown();
         }}
       >
-        {children}
+        <div ref={localScrollRef} className="yc-rich-popover-scroll yc-overlay-scroll-target">{children}</div>
       </div>, menuRoot) : null}
       {scrollbar.scrollbar}
     </>

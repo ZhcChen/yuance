@@ -4,6 +4,7 @@
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import { useOverlayScrollbar } from './overlay-scrollbar.jsx';
+import { usePopoverPlacement } from './popover-placement.js';
 import { useAnimatedDialog } from './use-animated-dialog.js';
 
 /** @param {React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'secondary' | 'danger' | 'ghost', size?: 'md' | 'sm', className?: string, loading?: boolean, ariaLabel?: string }} props */
@@ -49,7 +50,7 @@ export function Select({ children, className = '', id, value, defaultValue = '',
   const nativeRef = useRef(/** @type {HTMLSelectElement | null} */ (null));
   const triggerRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const searchRef = useRef(/** @type {HTMLInputElement | null} */ (null));
-  const menuRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
+  const popupRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
   const optionsRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
   const [open, setOpen] = useState(false);
   const [internalValue, setInternalValue] = useState(String(defaultValue ?? ''));
@@ -67,7 +68,6 @@ export function Select({ children, className = '', id, value, defaultValue = '',
     return `${selectOptionText(option.props.children)} ${optionValue}`.toLocaleLowerCase().includes(normalizedSearchQuery);
   }).map(({ index }) => index);
   const scrollbarRefreshKey = `${open}:${searchable}:${options.length}:${visibleOptionIndices.length}`;
-  const menuScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: menuRef, enabled: open, label: '选择项', refreshKey: scrollbarRefreshKey });
   const optionsScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: optionsRef, enabled: open, label: '选择项', refreshKey: scrollbarRefreshKey });
 
   useEffect(() => {
@@ -81,6 +81,13 @@ export function Select({ children, className = '', id, value, defaultValue = '',
     ownerDocument.addEventListener('pointerdown', closeOnOutsidePointer);
     return () => ownerDocument.removeEventListener('pointerdown', closeOnOutsidePointer);
   }, [open]);
+
+  // 菜单通过 Popover API 进入顶层并按触发按钮固定定位，不受祖先 overflow 裁剪（见 popover-placement.js）。
+  usePopoverPlacement(open, popupRef, triggerRef, {
+    matchAnchorWidth: true,
+    hideDelay: 200,
+    isOpen: () => Boolean(rootRef.current?.classList.contains('is-open')),
+  });
 
   function chooseOption(index) {
     const option = options[index];
@@ -166,9 +173,8 @@ export function Select({ children, className = '', id, value, defaultValue = '',
       <button ref={triggerRef} id={controlId} className="yc-select-trigger" type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listboxId} aria-describedby={selectProps['aria-describedby']} aria-invalid={selectProps['aria-invalid']} onClick={() => { if (open) { setOpen(false); setSearchQuery(''); } else openAt(selectedIndex); }}>
         <span className="yc-select-value">{selectedOption?.props.children || '请选择'}</span><span className="yc-select-caret" aria-hidden="true" />
       </button>
-      {searchable ? <span className="yc-select-menu is-searchable" aria-hidden={!open}><span className="yc-select-search"><input ref={searchRef} type="search" value={searchQuery} placeholder={searchPlaceholder} aria-label={searchPlaceholder} tabIndex={open ? 0 : -1} onChange={handleSearchChange} /></span><span ref={optionsRef} id={listboxId} className="yc-select-options yc-overlay-scroll-target" role="listbox">{optionNodes.length ? optionNodes : <span className="yc-select-empty">{emptyText}</span>}</span></span>
-        : <span ref={menuRef} id={listboxId} className="yc-select-menu yc-overlay-scroll-target" role="listbox" aria-hidden={!open}>{optionNodes}</span>}
-      {menuScrollbar.scrollbar}
+      {searchable ? <span ref={popupRef} className="yc-select-menu is-searchable" popover="manual" aria-hidden={!open}><span className="yc-select-search"><input ref={searchRef} type="search" value={searchQuery} placeholder={searchPlaceholder} aria-label={searchPlaceholder} tabIndex={open ? 0 : -1} onChange={handleSearchChange} /></span><span ref={optionsRef} id={listboxId} className="yc-select-options yc-overlay-scroll-target" role="listbox">{optionNodes.length ? optionNodes : <span className="yc-select-empty">{emptyText}</span>}</span></span>
+        : <span ref={popupRef} className="yc-select-menu" popover="manual" aria-hidden={!open}><span ref={optionsRef} id={listboxId} className="yc-select-options yc-overlay-scroll-target" role="listbox">{optionNodes}</span></span>}
       {optionsScrollbar.scrollbar}
     </span>
   );
