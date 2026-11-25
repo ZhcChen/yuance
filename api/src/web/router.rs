@@ -814,14 +814,15 @@ async fn session_refresh_middleware(
     if access_valid {
         if let Some(raw_refresh) = refresh_cookie.as_deref() {
             match auth::touch_refresh_session(pool, raw_refresh, refresh_ttl_seconds).await {
-                Ok(true) => {
+                Ok(auth::RefreshTouch::Extended) => {
                     refresh_cookie_to_set = Some(auth::refresh_cookie_header_with_max_age(
                         raw_refresh,
                         refresh_ttl_seconds,
                         secure,
                     ));
                 }
-                Ok(false) => {
+                Ok(auth::RefreshTouch::Unchanged) => {}
+                Ok(auth::RefreshTouch::Invalid) => {
                     clear_refresh_cookie = true;
                 }
                 Err(error) => {

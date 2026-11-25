@@ -135,6 +135,7 @@ pub async fn authenticated_token_from_bearer_token(
         SET last_used_at = datetime('now'),
             updated_at = datetime('now')
         WHERE token_hash = ?1
+          AND (last_used_at IS NULL OR last_used_at = '' OR last_used_at <= datetime('now', '-60 seconds'))
         "#,
     )
     .bind(hash_token(raw_token))

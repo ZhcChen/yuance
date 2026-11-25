@@ -307,6 +307,10 @@ pub(crate) async fn clear_browser_refresh_rotation_recovery(
     Ok(())
 }
 
+/// 会话活跃时间写入的最小间隔：每个请求都写会让 SQLite 单写者成为瓶颈，60 秒粒度足够用于活跃统计与审计。
+const SESSION_TOUCH_INTERVAL: &str = "-60 seconds";
+
+/// 更新会话最近活跃时间（60 秒内不重复写入）；返回是否发生了写入。
 pub async fn touch_session(pool: &SqlitePool, raw_token: &str) -> AppResult<bool> {
     let rows = sqlx::query(
         r#"
@@ -316,9 +320,11 @@ pub async fn touch_session(pool: &SqlitePool, raw_token: &str) -> AppResult<bool
         WHERE session_token_hash = ?1
           AND session_status = 'active'
           AND expires_at > datetime('now')
+          AND (last_seen_at IS NULL OR last_seen_at = '' OR last_seen_at <= datetime('now', ?2))
         "#,
     )
     .bind(hash_session_token(raw_token))
+    .bind(SESSION_TOUCH_INTERVAL)
     .execute(pool)
     .await?
     .rows_affected();
@@ -326,11 +332,24 @@ pub async fn touch_session(pool: &SqlitePool, raw_token: &str) -> AppResult<bool
     Ok(rows > 0)
 }
 
+/// 刷新会话续期结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshTouch {
+    /// 已滑动续期，调用方应重新下发 Cookie。
+    Extended,
+    /// 仍然有效，但距上次续期不足间隔，未写入。
+    Unchanged,
+    /// 已失效（撤销、过期或用户停用）。
+    Invalid,
+}
+
+/// 滑动续期刷新会话（60 秒内不重复写入）。
 pub async fn touch_refresh_session(
     pool: &SqlitePool,
     raw_token: &str,
     ttl_seconds: i64,
-) -> AppResult<bool> {
+) -> AppResult<RefreshTouch> {
+    let token_hash = hash_refresh_token(raw_token);
     let rows = sqlx::query(
         r#"
         UPDATE refresh_sessions
@@ -341,15 +360,34 @@ pub async fn touch_refresh_session(
           AND session_status = 'active'
           AND expires_at > datetime('now')
           AND user_id IN (SELECT id FROM users WHERE status = 'active')
+          AND (last_seen_at IS NULL OR last_seen_at = '' OR last_seen_at <= datetime('now', ?3))
         "#,
     )
-    .bind(hash_refresh_token(raw_token))
+    .bind(&token_hash)
     .bind(ttl_seconds)
+    .bind(SESSION_TOUCH_INTERVAL)
     .execute(pool)
     .await?
     .rows_affected();
+    if rows > 0 {
+        return Ok(RefreshTouch::Extended);
+    }
 
-    Ok(rows > 0)
+    let still_valid = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM refresh_sessions
+            WHERE refresh_token_hash = ?1
+              AND session_status = 'active'
+              AND expires_at > datetime('now')
+              AND user_id IN (SELECT id FROM users WHERE status = 'active')
+        )
+        "#,
+    )
+    .bind(&token_hash)
+    .fetch_one(pool)
+    .await?;
+    Ok(if still_valid { RefreshTouch::Unchanged } else { RefreshTouch::Invalid })
 }
 
 pub async fn refresh_session(

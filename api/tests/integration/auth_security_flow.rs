@@ -1119,7 +1119,7 @@ async fn api_auth_me_refreshes_expired_access_cookie_when_refresh_cookie_is_vali
 async fn authenticated_requests_extend_refresh_cookie_window() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let login_response = app
         .clone()
@@ -1147,7 +1147,13 @@ async fn authenticated_requests_extend_refresh_cookie_window() {
         .cloned()
         .expect("refresh cookie should be set");
 
+    // 续期按 60 秒节流：模拟距上次活跃已超过间隔，随后的请求应滑动续期。
+    sqlx::query("UPDATE refresh_sessions SET last_seen_at = datetime('now', '-2 minutes')")
+        .execute(&pool)
+        .await
+        .expect("backdate refresh session");
     let me_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/auth/me")
@@ -1165,7 +1171,25 @@ async fn authenticated_requests_extend_refresh_cookie_window() {
     assert!(refreshed_cookies.iter().any(|cookie| {
         cookie.starts_with("yuance_refresh=") && cookie.contains("Max-Age=2592000")
     }));
+
+    // 间隔内的下一次请求不再写库、不再重发刷新 Cookie，但会话仍然有效。
+    let again = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(header::COOKIE, format!("{session_cookie}; {refresh_cookie}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(again.status(), StatusCode::OK);
+    assert!(!set_cookie_values(again.headers())
+        .iter()
+        .any(|cookie| cookie.starts_with("yuance_refresh=")));
 }
+
+
 
 #[tokio::test]
 async fn api_auth_login_rejects_invalid_credentials() {
