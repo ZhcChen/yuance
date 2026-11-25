@@ -3580,3 +3580,5 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
   font-size: 12px;
   line-height: 1.6;
 }
+
+.yc-lazy-loading { padding: var(--yc-sp-16); color: var(--yc-text-tertiary); font-size: var(--yc-fs-13); }

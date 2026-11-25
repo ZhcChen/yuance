@@ -46,7 +46,7 @@ import {
 import { workItemDraftAttachmentWebUrl } from '@yuance/frontend-api-client';
 import {
   AppSidebar,
-  AttachmentPreview as BaseAttachmentPreview,
+  LazyAttachmentPreview as BaseAttachmentPreview,
   Badge,
   Button,
   ContentTab,
@@ -76,7 +76,7 @@ import {
   TextArea,
   TextInput,
   useDirtyWhileOpen,
-  TimeAllocationGantt,
+  LazyTimeAllocationGantt as TimeAllocationGantt,
   UserAvatar,
   WorkItemAttachments,
   WorkItemComments,
