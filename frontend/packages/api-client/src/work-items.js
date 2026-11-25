@@ -56,6 +56,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(itemKey: string, attachmentId: number) => Promise<Attachment>} markWorkItemAttachmentUploaded
  * @property {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemAttachmentDownloadUrl
  * @property {(itemKey: string, commentId: number) => Promise<Attachment[]>} getWorkItemCommentAttachments
+ * @property {(itemKey: string) => Promise<Record<string, Attachment[]>>} getWorkItemCommentAttachmentsBatch
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<AttachmentPreview>} getWorkItemCommentAttachmentPreview
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} deleteWorkItemCommentAttachment
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} deleteWorkItemPrimaryPostAttachment
@@ -641,6 +642,23 @@ export function createWorkItemClient({ request, prepareWrite }) {
       return attachmentsFromPayload(await request(
         `${workItemCommentApiPath(itemKey, commentId)}/attachments`,
       ));
+    },
+
+    /**
+     * 一次读取工作项全部已发布评论的附件，按评论 ID 分组。
+     * @param {string} itemKey
+     * @returns {Promise<Record<string, Attachment[]>>}
+     */
+    async getWorkItemCommentAttachmentsBatch(itemKey) {
+      const payload = await request(`${workItemApiPath(itemKey)}/comment-attachments`);
+      /** @type {Record<string, Attachment[]>} */
+      const grouped = {};
+      if (payload && typeof payload === 'object') {
+        for (const [commentId, attachments] of Object.entries(payload)) {
+          grouped[commentId] = attachmentsFromPayload(attachments);
+        }
+      }
+      return grouped;
     },
 
     async getWorkItemCommentAttachmentPreview(itemKey, commentId, attachmentId) {

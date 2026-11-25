@@ -4737,6 +4737,42 @@ pub async fn create_work_item_comment_attachment(
     Ok((StatusCode::CREATED, json(attachment_payload(attachment))))
 }
 
+/// 一次返回工作项全部已发布评论的附件，按评论 ID 分组（避免详情页逐条评论请求）。
+pub async fn list_work_item_comment_attachments_batch(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<std::collections::BTreeMap<String, Vec<AttachmentPayload>>>>>
+{
+    let (_user, item, _project) =
+        require_api_work_item_context(&state, &headers, &item_key).await?;
+    let pool = state.pool()?;
+    let comment_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM work_item_comments
+        WHERE work_item_id = ?1
+          AND deleted_at IS NULL
+          AND is_draft = 0
+        ORDER BY id
+        "#,
+    )
+    .bind(item.id)
+    .fetch_all(pool)
+    .await?;
+    let mut grouped = std::collections::BTreeMap::new();
+    for comment_id in comment_ids {
+        let attachments = files::list_attachments(pool, "comment", comment_id)
+            .await?
+            .into_iter()
+            .map(attachment_payload)
+            .collect();
+        grouped.insert(comment_id.to_string(), attachments);
+    }
+
+    Ok(json(grouped))
+}
+
 pub async fn list_work_item_comment_attachments(
     State(state): State<AppState>,
     headers: HeaderMap,

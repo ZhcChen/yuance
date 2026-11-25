@@ -38,6 +38,7 @@ for (const timezoneId of ['UTC', 'Asia/Shanghai', 'America/Los_Angeles']) {
         });
         await page.route('**/api/v1/work-items/YCE-TASK-2/comments', route => route.fulfill({ json: { data: [{ id: 98701, body: '时区评论', body_format: 'plain', author: '时区验收', author_username: 'yuance_admin', parent_comment_id: null, parent_author: '', created_at: '2026-10-09 02:30:01', updated_at: '2026-10-09T02:31:01Z', is_flow: false, is_draft: false }] } }));
         await page.route('**/api/v1/work-items/YCE-TASK-2/comments/98701/attachments', route => route.fulfill({ json: { data: [{ id: 98702, filename: 'timezone.txt', content_type: 'text/plain', byte_size: 1, status: 'uploaded', created_by: '时区验收', created_at: '2026-10-09T02:30:01Z' }] } }));
+        await page.route('**/api/v1/work-items/YCE-TASK-2/comment-attachments', route => route.fulfill({ json: { data: { 98701: [{ id: 98702, filename: 'timezone.txt', content_type: 'text/plain', byte_size: 1, status: 'uploaded', created_by: '时区验收', created_at: '2026-10-09T02:30:01Z' }] } } }));
         await page.goto('/web/app/work-items/YCE-TASK-2');
         await expect(page.locator('.content-updated')).toHaveText('更新于 2026-10-09 10:30:01');
         await expect(page.locator('.work-item-properties .props')).toContainText('2026-10-09 10:30:01');

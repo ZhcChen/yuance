@@ -11,6 +11,7 @@ mod auth_security_flow;
 mod cli_files_flow;
 mod cli_migrate_flow;
 mod cli_seed_flow;
+mod comment_attachments_batch_flow;
 mod concurrency_flow;
 mod observability_flow;
 mod permission_boundaries_flow;

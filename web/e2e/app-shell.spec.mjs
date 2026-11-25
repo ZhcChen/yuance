@@ -1884,6 +1884,7 @@ test('work item comment edit confirms attachment deletion and removes its rich t
   const updateRequests = [];
   let attachments = [attachment];
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comment-attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { 901: attachments } }) }));
   await page.route(/\/api\/v1\/work-items\/YCE-TASK-2\/comments\/901\/attachments\/811$/u, async (route) => {
     deleteRequests.push(route.request().headers());
     attachments = [];
@@ -2124,6 +2125,17 @@ test('work item attachments can list download and upload for item and comments',
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ data: commentAttachments[commentId] || [] }),
+    });
+  });
+  // 详情加载使用批量接口一次读取全部评论附件。
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comment-attachments', async (route) => {
+    for (const commentId of Object.keys(commentAttachments)) {
+      commentAttachmentListGets[commentId] = (commentAttachmentListGets[commentId] || 0) + 1;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: commentAttachments }),
     });
   });
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments/draft', async (route) => {

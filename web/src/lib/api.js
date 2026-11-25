@@ -199,6 +199,7 @@ export const markWorkItemAttachmentUploaded = /** @type {(itemKey: string, attac
 export const getWorkItemAttachmentDownloadUrl = /** @type {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemAttachmentDownloadUrl);
 
 export const getWorkItemCommentAttachments = /** @type {(itemKey: string, commentId: number) => Promise<Attachment[]>} */ (apiClient.getWorkItemCommentAttachments);
+export const getWorkItemCommentAttachmentsBatch = /** @type {(itemKey: string) => Promise<Record<string, Attachment[]>>} */ (apiClient.getWorkItemCommentAttachmentsBatch);
 
 export const getWorkItemCommentAttachmentPreview = apiClient.getWorkItemCommentAttachmentPreview;
 export const deleteWorkItemCommentAttachment = apiClient.deleteWorkItemCommentAttachment;
@@ -356,6 +357,7 @@ export const webApi = {
   getWorkItemCommentAttachmentPreview,
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,
+  getWorkItemCommentAttachmentsBatch,
   getWorkItemComments,
   updateWorkItemTyping,
   getWorkItemListView,

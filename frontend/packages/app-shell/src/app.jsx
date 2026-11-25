@@ -891,16 +891,11 @@ function workItemHandoffFormFromDetail(item) {
  * @returns {Promise<WorkItemAttachmentBundle>}
  */
 async function loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise = api.getWorkItemAttachments(itemKey)) {
+  const publishedComments = comments.filter((comment) => !comment.is_draft);
+  // 评论附件一次批量读取，避免按评论逐条请求（N+1）。
   const [attachmentsResult, commentAttachmentsResult] = await Promise.allSettled([
     attachmentsPromise,
-    Promise.allSettled(
-      comments
-        .filter((comment) => !comment.is_draft)
-        .map(async (comment) => {
-          const nextAttachments = await api.getWorkItemCommentAttachments(itemKey, comment.id);
-          return /** @type {[string, AppAttachment[]]} */ ([String(comment.id), nextAttachments]);
-        }),
-    ),
+    publishedComments.length ? api.getWorkItemCommentAttachmentsBatch(itemKey) : Promise.resolve({}),
   ]);
   let loadFailed = false;
   const attachments = attachmentsResult.status === 'fulfilled' ? attachmentsResult.value : [];
@@ -910,13 +905,9 @@ async function loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsP
   /** @type {Record<string, AppAttachment[]>} */
   const commentAttachments = {};
   if (commentAttachmentsResult.status === 'fulfilled') {
-    for (const result of commentAttachmentsResult.value) {
-      if (result.status === 'fulfilled') {
-        const [commentId, nextAttachments] = result.value;
-        commentAttachments[commentId] = nextAttachments;
-      } else {
-        loadFailed = true;
-      }
+    for (const comment of publishedComments) {
+      const key = String(comment.id);
+      commentAttachments[key] = commentAttachmentsResult.value[key] || [];
     }
   } else {
     loadFailed = true;

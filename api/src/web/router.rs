@@ -628,6 +628,10 @@ pub fn build_router(state: AppState) -> Router {
             delete(web::api::cancel_work_item_comment_draft),
         )
         .route(
+            "/api/v1/work-items/{item_key}/comment-attachments",
+            get(web::api::list_work_item_comment_attachments_batch),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
             get(web::api::list_work_item_comment_attachments)
                 .post(web::api::create_work_item_comment_attachment),
