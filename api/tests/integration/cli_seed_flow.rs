@@ -94,7 +94,7 @@ fn run_local_admin_seed(root: &Path, database_url: &str, env: &str) -> Output {
         .env("YUANCE_DATA_DIR", root.join("data"))
         .env("YUANCE_ENV", env)
         .env("YUANCE_SESSION_SECRET", "cli-test-session-secret")
-        .env("YUANCE_SECURITY_MASTER_KEY", "cli-test-master-key-2026")
+        .env("YUANCE_SECURITY_MASTER_KEY", "cli-test-master-key-2026-long-enough")
         .env("YUANCE_SERVER_INSTANCE_ID", "cli-seed-test")
         .env("YUANCE_LOG_LEVEL", "off")
         .output()

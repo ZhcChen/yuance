@@ -53,10 +53,7 @@ impl Settings {
             cache_session_ttl: env_string("YUANCE_CACHE_SESSION_TTL", "5m"),
             log_level: env_string("YUANCE_LOG_LEVEL", "info"),
             env,
-            security_master_key: env_string(
-                "YUANCE_SECURITY_MASTER_KEY",
-                "change-me-32-byte-minimum",
-            ),
+            security_master_key: env_string("YUANCE_SECURITY_MASTER_KEY", DEFAULT_SECURITY_MASTER_KEY),
             file_master_key,
             experimental_legacy_preview_enabled: env_flag_enabled(
                 "YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED",
@@ -66,6 +63,10 @@ impl Settings {
         if settings.env.trim().is_empty() {
             return Err(AppError::Config("YUANCE_ENV 不能为空".to_string()));
         }
+        validate_security_master_key(
+            &settings.env,
+            env::var("YUANCE_SECURITY_MASTER_KEY").ok().as_deref(),
+        )?;
 
         Ok(settings)
     }
@@ -96,6 +97,24 @@ impl Settings {
     pub fn experimental_legacy_preview_enabled(&self) -> bool {
         self.experimental_legacy_preview_enabled
     }
+}
+
+const DEFAULT_SECURITY_MASTER_KEY: &str = "change-me-32-byte-minimum";
+const MIN_SECURITY_MASTER_KEY_LEN: usize = 32;
+
+/// 生产环境必须显式配置足够强度的安全主密钥：它加密 OSS Secret、API Token 密文、资料访问凭证等，
+/// 缺失时静默使用默认值会让这些密文形同明文。
+fn validate_security_master_key(env: &str, configured: Option<&str>) -> AppResult<()> {
+    if env != "production" {
+        return Ok(());
+    }
+    let key = configured.map(str::trim).unwrap_or_default();
+    if key.is_empty() || key == DEFAULT_SECURITY_MASTER_KEY || key.len() < MIN_SECURITY_MASTER_KEY_LEN {
+        return Err(AppError::Config(format!(
+            "生产环境必须配置 YUANCE_SECURITY_MASTER_KEY（不少于 {MIN_SECURITY_MASTER_KEY_LEN} 个字符，且不能使用默认值）"
+        )));
+    }
+    Ok(())
 }
 
 fn env_string(name: &str, default: &str) -> String {
@@ -333,5 +352,16 @@ mod tests {
             let normalized = normalize_environment(raw_environment);
             assert_eq!(normalized, "production");
         }
+    }
+
+    #[test]
+    fn production_requires_strong_security_master_key() {
+        assert!(validate_security_master_key("development", None).is_ok());
+        assert!(validate_security_master_key("test", Some("short")).is_ok());
+        assert!(validate_security_master_key("production", None).is_err());
+        assert!(validate_security_master_key("production", Some("  ")).is_err());
+        assert!(validate_security_master_key("production", Some(DEFAULT_SECURITY_MASTER_KEY)).is_err());
+        assert!(validate_security_master_key("production", Some("too-short-key")).is_err());
+        assert!(validate_security_master_key("production", Some(&"k".repeat(32))).is_ok());
     }
 }
