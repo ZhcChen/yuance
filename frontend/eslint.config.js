@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import reactPlugin from 'eslint-plugin-react';
+import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 const commonRules = {
@@ -42,7 +43,15 @@ export default [
         URLSearchParams: 'readonly',
       },
     },
-    rules: commonRules,
+    plugins: {
+      'react-hooks': reactHooksPlugin,
+    },
+    rules: {
+      ...commonRules,
+      // 体检 P2：Hooks 调用规则必须遵守；依赖数组问题先以警告呈现，逐步清理。
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+    },
   },
   {
     files: [
