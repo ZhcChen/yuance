@@ -869,3 +869,23 @@ test('自动文件主密钥缺失、快照失败或完整性失败时清理未�
     fixture.cleanup();
   }
 });
+
+test('远端发布持有部署锁，迁移成功后才把 latest 切到新镜像，并经公网复核', () => {
+  const source = fs.readFileSync(deployScript, 'utf8');
+  const remoteScript = source.slice(source.indexOf('REMOTE_SCRIPT'));
+  const lock = remoteScript.indexOf('flock -w 900 9');
+  const load = remoteScript.indexOf('run_timeout "加载镜像 tar"');
+  const restorePrevious = remoteScript.indexOf('docker tag "$PREVIOUS_IMAGE_ID" "$IMAGE"');
+  const migration = remoteScript.indexOf('run_compose_maintenance "yuance-api-maintenance-$stamp"');
+  const switchLatest = remoteScript.indexOf('docker tag "$RELEASE_TAG" "$IMAGE"');
+  const startApi = remoteScript.indexOf('重建并启动 api 容器');
+  assert.ok(lock >= 0 && lock < load, '部署锁必须在加载镜像前获取');
+  assert.ok(load < restorePrevious && restorePrevious < migration, '迁移前 latest 必须恢复为旧镜像');
+  assert.ok(migration < switchLatest && switchLatest < startApi, '迁移成功后才切换 latest 并启动');
+  assert.match(remoteScript, /env YUANCE_API_IMAGE="\$RELEASE_TAG" docker compose --env-file \.env -f compose\.yaml run --rm/);
+  assert.match(source, /YUANCE_API_IMAGE='\$RELEASE_IMAGE' YUANCE_API_IMAGE_TAR=/, '远端构建不得直接写入 latest 标签');
+  assert.match(source, /KEEP_RELEASE_BACKUPS="\$\{YUANCE_KEEP_RELEASE_BACKUPS:-3\}"/);
+  assert.match(source, /curl -fsS --max-time 10 -o \/dev\/null "\$PUBLIC_HEALTH_URL\/api\/readyz"/);
+  const backup = fs.readFileSync(path.join(rootDir, 'deploy/easy-deploy/production/backend/scripts/40-offsite-backup.sh'), 'utf8');
+  assert.match(backup, /\/run\/lock\/yuance-backup\.lock/, '备份与发布共用同一把锁');
+});

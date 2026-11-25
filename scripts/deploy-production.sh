@@ -20,7 +20,7 @@ REMOTE_BUILD_ROOT="${YUANCE_BUILD_ROOT:-$REMOTE_ROOT/build}"
 IMAGE="${YUANCE_API_IMAGE:-yuance-api:latest}"
 IMAGE_TAR="${YUANCE_API_IMAGE_TAR:-dist/yuance-api-linux-amd64.tar}"
 REMOTE_IMAGE_TAR=""
-KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
+KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-3}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
 SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
 STOP_GRACE_PERIOD="${YUANCE_STOP_GRACE_PERIOD:-45s}"
@@ -355,6 +355,20 @@ fi
 require_clean_main
 
 SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+# 远端构建使用按提交区分的镜像标签：构建阶段不改写正在运行的 latest，迁移成功后才切换。
+IMAGE_REPO="$(printf '%s' "$IMAGE" | sed 's/:[^:/]*$//')"
+RELEASE_IMAGE="$IMAGE"
+if [ "$BUILD_MODE" = "remote" ]; then
+  RELEASE_IMAGE="$IMAGE_REPO:release-$(printf '%.12s' "$SOURCE_COMMIT")"
+fi
+PUBLIC_HEALTH_URL="${YUANCE_PUBLIC_HEALTH_URL-https://yuance.quanxinfu.com}"
+case "$PUBLIC_HEALTH_URL" in
+  ''|https://*) ;;
+  *) echo "YUANCE_PUBLIC_HEALTH_URL 必须为空或 https:// 地址：$PUBLIC_HEALTH_URL" >&2; exit 1 ;;
+esac
+case "$PUBLIC_HEALTH_URL" in
+  *[!A-Za-z0-9.:/-]*) echo "YUANCE_PUBLIC_HEALTH_URL 含有不支持的字符" >&2; exit 1 ;;
+esac
 
 if [ "$DEPLOY_MODE" = "remote" ]; then
   preflight_remote_target
@@ -368,7 +382,7 @@ if [ "$DEPLOY_MODE" = "remote" ] && [ "$BUILD_MODE" = "remote" ]; then
   REMOTE_BUILD_TAR="$REMOTE_BUILD_DIR/dist/$(basename "$IMAGE_TAR")"
   run ssh "$REMOTE_HOST" "set -eu; mkdir -p '$REMOTE_BUILD_ROOT'; rm -rf '$REMOTE_BUILD_DIR.incoming'; mkdir -p '$REMOTE_BUILD_DIR.incoming'"
   run scp "$SOURCE_ARCHIVE" "$REMOTE_HOST:$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz"
-  run ssh "$REMOTE_HOST" "set -eu; tar -xzf '$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz' -C '$REMOTE_BUILD_DIR.incoming'; printf '%s\\n' '$SOURCE_COMMIT' > '$REMOTE_BUILD_DIR.incoming/.yuance-source-commit'; rm -rf '$REMOTE_BUILD_DIR'; mv '$REMOTE_BUILD_DIR.incoming' '$REMOTE_BUILD_DIR'; rm -f '$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz'; cd '$REMOTE_BUILD_DIR'; test \"\$(cat .yuance-source-commit)\" = '$SOURCE_COMMIT'; npm --prefix frontend ci; npm --prefix web ci; YUANCE_LOCAL_DOCKER=0 YUANCE_API_IMAGE='$IMAGE' YUANCE_API_IMAGE_TAR='$REMOTE_BUILD_TAR' YUANCE_RELEASE_VERSION='${YUANCE_RELEASE_VERSION:-}' sh scripts/build-api-image-amd64.sh; sha256sum '$REMOTE_BUILD_TAR'"
+  run ssh "$REMOTE_HOST" "set -eu; tar -xzf '$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz' -C '$REMOTE_BUILD_DIR.incoming'; printf '%s\\n' '$SOURCE_COMMIT' > '$REMOTE_BUILD_DIR.incoming/.yuance-source-commit'; rm -rf '$REMOTE_BUILD_DIR'; mv '$REMOTE_BUILD_DIR.incoming' '$REMOTE_BUILD_DIR'; rm -f '$REMOTE_BUILD_ROOT/source-$SOURCE_COMMIT.tar.gz'; cd '$REMOTE_BUILD_DIR'; test \"\$(cat .yuance-source-commit)\" = '$SOURCE_COMMIT'; npm --prefix frontend ci; npm --prefix web ci; YUANCE_LOCAL_DOCKER=0 YUANCE_API_IMAGE='$RELEASE_IMAGE' YUANCE_API_IMAGE_TAR='$REMOTE_BUILD_TAR' YUANCE_RELEASE_VERSION='${YUANCE_RELEASE_VERSION:-}' sh scripts/build-api-image-amd64.sh; sha256sum '$REMOTE_BUILD_TAR'"
   rm -f "$SOURCE_ARCHIVE"
   trap - EXIT HUP INT TERM
 else
@@ -541,13 +555,15 @@ if [ "$STOP_GRACE_PERIOD_EXPLICIT" = "1" ]; then
 fi
 
 run ssh "$REMOTE_HOST" \
-  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' $REMOTE_STOP_GRACE_ENV YUANCE_STOP_GRACE_PERIOD_EXPLICIT='$STOP_GRACE_PERIOD_EXPLICIT' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' YUANCE_BUILD_MODE='$BUILD_MODE' YUANCE_REMOTE_BUILD_DIR='$REMOTE_BUILD_DIR' sh -s" <<'REMOTE_SCRIPT'
+  "YUANCE_IMAGE='$IMAGE' YUANCE_RELEASE_IMAGE='$RELEASE_IMAGE' YUANCE_SOURCE_COMMIT='$SOURCE_COMMIT' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' $REMOTE_STOP_GRACE_ENV YUANCE_STOP_GRACE_PERIOD_EXPLICIT='$STOP_GRACE_PERIOD_EXPLICIT' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' YUANCE_BUILD_MODE='$BUILD_MODE' YUANCE_REMOTE_BUILD_DIR='$REMOTE_BUILD_DIR' sh -s" <<'REMOTE_SCRIPT'
 set -eu
 
 IMAGE="${YUANCE_IMAGE:-yuance-api:latest}"
+RELEASE_IMAGE="${YUANCE_RELEASE_IMAGE:-$IMAGE}"
+SOURCE_COMMIT="${YUANCE_SOURCE_COMMIT:-unknown}"
 IMAGE_TAR="${YUANCE_REMOTE_IMAGE_TAR:?set YUANCE_REMOTE_IMAGE_TAR}"
 BACKEND_DIR="${YUANCE_BACKEND_DIR:?set YUANCE_BACKEND_DIR}"
-KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
+KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-3}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
 SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
 STOP_GRACE_PERIOD_EXPLICIT="${YUANCE_STOP_GRACE_PERIOD_EXPLICIT:-0}"
@@ -559,7 +575,7 @@ MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 
 cd "$BACKEND_DIR"
 
-for command_name in docker timeout sha256sum sqlite3 awk; do
+for command_name in docker timeout sha256sum sqlite3 awk flock; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "服务器缺少命令：$command_name" >&2
     exit 1
@@ -587,6 +603,14 @@ export YUANCE_STOP_GRACE_PERIOD="$STOP_GRACE_PERIOD"
 chmod 600 .env
 chmod +x scripts/*.sh
 
+# 部署锁：与每日备份（40-offsite-backup.sh）共用，同一时刻只允许一个发布或备份。
+DEPLOY_LOCK="${YUANCE_DEPLOY_LOCK:-/run/lock/yuance-backup.lock}"
+exec 9>"$DEPLOY_LOCK"
+if ! flock -w 900 9; then
+  echo "另一个发布或备份正在进行，等待部署锁超时：$DEPLOY_LOCK" >&2
+  exit 1
+fi
+
 cleanup_transient_containers() {
   for prefix in yuance-api-run- yuance-api-maintenance-; do
     ids="$(docker ps -aq --filter "name=$prefix" 2>/dev/null || true)"
@@ -613,7 +637,7 @@ run_compose_maintenance() {
   container_name="$1"
   cleanup_named_container "$container_name"
   if ! run_timeout "执行迁移和基础 seed" 900 \
-    docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$container_name" -e "YUANCE_MIGRATION_STARTED_MARKER=$MIGRATION_STARTED_CONTAINER_PATH" api sh -eu -c '
+    env YUANCE_API_IMAGE="$RELEASE_TAG" docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$container_name" -e "YUANCE_MIGRATION_STARTED_MARKER=$MIGRATION_STARTED_CONTAINER_PATH" api sh -eu -c '
       ./yuance-api migrate status
       ./yuance-api migrate up
       ./yuance-api seed core
@@ -661,7 +685,16 @@ cleanup_transient_containers
 printf '发布约束: sse_drain_timeout=%s stop_grace_period=%s max_release_window=%s\n' \
   "$SSE_DRAIN_TIMEOUT" "$STOP_GRACE_PERIOD" "$MAX_RELEASE_WINDOW"
 
+PREVIOUS_IMAGE_ID="$(docker image inspect "$IMAGE" --format '{{.Id}}' 2>/dev/null || true)"
 run_timeout "加载镜像 tar" 300 docker load -i "$IMAGE_TAR"
+NEW_IMAGE_ID="$(docker image inspect "$RELEASE_IMAGE" --format '{{.Id}}')"
+RELEASE_TAG="$(printf '%s' "$IMAGE" | sed 's/:[^:/]*$//'):$(printf '%.12s' "$SOURCE_COMMIT")"
+docker tag "$NEW_IMAGE_ID" "$RELEASE_TAG"
+# 迁移成功前 latest 保持指向旧镜像：中途失败或容器被重启时不会以新代码访问未迁移的数据库。
+if [ -n "$PREVIOUS_IMAGE_ID" ] && [ "$PREVIOUS_IMAGE_ID" != "$NEW_IMAGE_ID" ]; then
+  docker tag "$PREVIOUS_IMAGE_ID" "$IMAGE"
+fi
+echo "发布镜像：$RELEASE_TAG（$NEW_IMAGE_ID），迁移成功后切换 $IMAGE"
 
 stamp="$(date +%Y%m%d%H%M%S)-$$"
 MIGRATION_STARTED_MARKER="$BACKEND_DIR/data/.yuance-api-maintenance-$stamp.migration-started"
@@ -689,6 +722,7 @@ fi
 run_compose_maintenance "yuance-api-maintenance-$stamp"
 RESTORE_API_ON_EXIT=0
 rm -f "$MIGRATION_STARTED_MARKER"
+docker tag "$RELEASE_TAG" "$IMAGE"
 
 run_timeout "重建并启动 api 容器" 300 docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api
 run_timeout "Compose 状态" 60 docker compose --env-file .env -f compose.yaml ps
@@ -720,5 +754,22 @@ if [ "${YUANCE_BUILD_MODE:-local}" = "remote" ]; then
   rm -rf "${YUANCE_REMOTE_BUILD_DIR:?}"
 fi
 REMOTE_SCRIPT
+
+# 经公网域名再验一次：确认网关、FRP 与新实例整条链路可用（readyz 必须如实为 200）。
+if [ "$DEPLOY_MODE" = "remote" ] && [ -n "$PUBLIC_HEALTH_URL" ]; then
+  public_ok=0
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if curl -fsS --max-time 10 -o /dev/null "$PUBLIC_HEALTH_URL/api/readyz"; then
+      public_ok=1
+      break
+    fi
+    sleep 3
+  done
+  if [ "$public_ok" != "1" ]; then
+    echo "公网健康检查失败：$PUBLIC_HEALTH_URL/api/readyz" >&2
+    exit 1
+  fi
+  echo "公网健康检查通过：$PUBLIC_HEALTH_URL"
+fi
 
 echo "正式环境部署完成：$REMOTE_HOST"
