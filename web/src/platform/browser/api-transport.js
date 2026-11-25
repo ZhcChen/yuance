@@ -140,15 +140,6 @@ export function createBrowserApiTransport(dependencies = {}) {
     }
   }
 
-  /**
-   * 写操作前确保持有 CSRF 令牌：已从响应头同步过令牌时直接复用，不再每次额外请求；
-   * 令牌失效时由 request 的 CSRF 失败重试兜底刷新。
-   */
-  async function ensureCsrfToken() {
-    if (csrfToken) return csrfToken;
-    return refreshCsrfToken();
-  }
-
   /** @param {string} url @param {RequestInit & { skipCsrfRetry?: boolean }} [options] */
   async function request(url, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
@@ -195,7 +186,7 @@ export function createBrowserApiTransport(dependencies = {}) {
 
   return {
     request,
-    prepareWrite: ensureCsrfToken,
+    prepareWrite: refreshCsrfToken,
     redirectToLogin,
     refreshCsrfToken,
     restorePendingReturnToHash,

@@ -43,7 +43,7 @@ export const fetchJson = browserApiTransport.request;
 const apiClient = createApiClient({
   request: fetchJson,
   prepareWrite: async () => {
-    await browserApiTransport.prepareWrite();
+    await refreshCsrfToken();
   },
 });
 
