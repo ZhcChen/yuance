@@ -4010,7 +4010,9 @@ pub async fn get_work_item_detail_view(
             can_edit_primary_post: !is_deleted
                 && can_manage_work_items
                 && projects::user_can_edit_work_item_post(item.reporter_user_id, user.id),
-            can_close_work_item: !is_deleted && !matches!(current_status, "closed" | "cancelled"),
+            can_close_work_item: can_manage_work_items
+                && !is_deleted
+                && !matches!(current_status, "closed" | "cancelled"),
             can_reopen_work_item: can_manage_work_items
                 && !is_deleted
                 && matches!(current_status, "closed" | "cancelled"),
@@ -4408,6 +4410,8 @@ pub async fn close_work_item(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    // “任何人可关闭”限定为对项目有写权限的成员，只读成员不可关闭。
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let updated = projects::close_work_item(pool, user.id, &item_key).await?;
     audit::record(
         pool,

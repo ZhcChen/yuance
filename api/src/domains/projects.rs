@@ -2090,6 +2090,12 @@ pub async fn add_project_members(
 ) -> AppResult<Vec<ProjectMemberDetail>> {
     let project_key = validate_project_key(project_key)?;
     let member_role = validate_member_role(member_role)?;
+    // 负责人只能通过编辑项目转移；添加成员不得授予 owner，否则会与 projects.owner_user_id 不一致。
+    if member_role == "owner" {
+        return Err(AppError::BadRequest(
+            "不能直接添加为项目负责人，请通过编辑项目转移负责人".to_string(),
+        ));
+    }
 
     let Some((project_id, project_name, project_status)) =
         sqlx::query_as::<_, (i64, String, String)>(
@@ -2129,9 +2135,11 @@ pub async fn add_project_members(
         ));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut added_count = 0;
     for (user_id, display_name, username) in &selected_users {
-        sqlx::query(
+        // 已是成员时不修改其角色（含负责人）：角色调整只能走成员角色接口，避免绕过其中的负责人保护。
+        let inserted = sqlx::query(
             r#"
             INSERT INTO project_members (
                 project_id,
@@ -2139,16 +2147,19 @@ pub async fn add_project_members(
                 member_role
             )
             VALUES (?1, ?2, ?3)
-            ON CONFLICT(project_id, user_id) DO UPDATE SET
-                member_role = excluded.member_role,
-                updated_at = datetime('now')
+            ON CONFLICT(project_id, user_id) DO NOTHING
             "#,
         )
         .bind(project_id)
         .bind(user_id)
         .bind(member_role)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
+        if inserted == 0 {
+            continue;
+        }
+        added_count += 1;
 
         sqlx::query(
             r#"
@@ -2171,6 +2182,11 @@ pub async fn add_project_members(
         .bind(format!(r#"{{"member_role":"{member_role}"}}"#))
         .execute(&mut *tx)
         .await?;
+    }
+    if added_count == 0 {
+        return Err(AppError::Conflict(
+            "所选用户已是项目成员，如需调整角色请使用成员角色设置".to_string(),
+        ));
     }
 
     tx.commit().await?;
