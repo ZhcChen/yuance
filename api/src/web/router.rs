@@ -727,8 +727,41 @@ pub fn build_router(state: AppState) -> Router {
             middleware_state,
             session_refresh_middleware,
         ))
+        // 请求可观测性：为每个请求生成 x-request-id（响应头回传），并在同一 span 中记录方法、路径、状态与耗时；
+        // 5xx 的完整错误由 AppError 在该 span 内记录，便于按请求编号定位。
+        .layer(tower_http::request_id::PropagateRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+        ))
+        .layer(
+            tower_http::trace::TraceLayer::new_for_http()
+                .make_span_with(|request: &Request| {
+                    let request_id = request
+                        .headers()
+                        .get(&REQUEST_ID_HEADER)
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("");
+                    tracing::info_span!(
+                        "http",
+                        method = %request.method(),
+                        path = %request.uri().path(),
+                        request_id = %request_id,
+                    )
+                })
+                .on_request(())
+                .on_response(
+                    tower_http::trace::DefaultOnResponse::new()
+                        .level(tracing::Level::INFO)
+                        .latency_unit(tower_http::LatencyUnit::Millis),
+                ),
+        )
+        .layer(tower_http::request_id::SetRequestIdLayer::new(
+            REQUEST_ID_HEADER.clone(),
+            tower_http::request_id::MakeRequestUuid,
+        ))
         .with_state(state)
 }
+
+static REQUEST_ID_HEADER: http::HeaderName = http::HeaderName::from_static("x-request-id");
 
 async fn session_refresh_middleware(
     State(state): State<AppState>,

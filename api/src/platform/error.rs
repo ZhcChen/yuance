@@ -76,7 +76,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             AppError::Config(_) | AppError::AddrParse(_) | AppError::Header(_) => {
-                (StatusCode::BAD_REQUEST, "config")
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }
             AppError::Crypto(_) => (StatusCode::INTERNAL_SERVER_ERROR, "crypto"),
             AppError::Database(_)
@@ -87,11 +87,16 @@ impl IntoResponse for AppError {
             | AppError::Template(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
 
+        // 5xx 不向客户端暴露内部错误原文（表名、约束、路径、锁状态等），完整错误写入日志，
+        // 由请求 span 中的 request_id 关联；客户端可凭响应头 x-request-id 反馈。
+        let message = if status.is_server_error() {
+            tracing::error!(error = %self, code, "request failed");
+            "服务暂时无法完成请求，请稍后重试。".to_string()
+        } else {
+            self.to_string()
+        };
         let body = ErrorEnvelope {
-            error: ErrorBody {
-                code,
-                message: self.to_string(),
-            },
+            error: ErrorBody { code, message },
         };
 
         (status, Json(body)).into_response()
