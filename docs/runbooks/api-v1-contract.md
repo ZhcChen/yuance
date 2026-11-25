@@ -743,6 +743,7 @@ HEAD   /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content
 评论附件：
 
 ```text
+GET    /api/v1/work-items/{item_key}/comment-attachments
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url
@@ -753,6 +754,8 @@ GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachme
 HEAD   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content
 DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}
 ```
+
+`comment-attachments` 一次返回该工作项全部已发布评论（不含草稿与已删除评论）的附件，按评论 ID 分组：`{"<comment_id>": [附件...]}`，单条评论的结果与逐条接口一致；详情页用它替代逐条读取。
 
 工作项和评论附件预览元数据返回内容分类及同归属附件导航；内容接口支持 `GET`、`HEAD` 与单段 `Range`，并使用 `no-store`、`nosniff` 和 sandbox 响应边界。
 
