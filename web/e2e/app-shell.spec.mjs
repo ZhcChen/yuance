@@ -3457,6 +3457,54 @@ test('shared system user project relationships preserve batch and blocking seman
   ]);
 });
 
+test('system user project assign drops checks for projects assigned by a partial failure', async ({ page }) => {
+  const posts = [];
+  const project = (key, name, roleCode = 'member') => ({
+    key, name, status: 'in_progress', role_code: roleCode, active_assigned_count: 0,
+    can_remove: true, can_update_role: true, remove_block_reason: '',
+  });
+  const user = {
+    id: 8, username: 'project_member', display_name: '项目成员', email: '', mobile: '', status: 'active', is_super_admin: false,
+    role_code: 'member', role_names: '项目成员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z',
+    assigned_projects: [],
+  };
+  const view = () => ({
+    items: [user], roles: [{ role_code: 'member', role_name: '项目成员', status: 'active', is_system: true, data_scope_type: 'project', permission_count: 1 }],
+    project_options: [
+      { key: 'YCE-B', name: '项目 B', owner: '管理员', status: 'in_progress' },
+      { key: 'YCE-C', name: '项目 C', owner: '管理员', status: 'in_progress' },
+    ],
+    pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, can_manage_users: true, can_manage_user_projects: true,
+  });
+  await page.route('**/api/v1/system/users-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) }));
+  await page.route(/\/api\/v1\/system\/users\/project_member\/projects$/u, async (route) => {
+    const body = route.request().postDataJSON();
+    posts.push(body.project_keys);
+    if (posts.length === 1) {
+      // 第一个项目写入成功、第二个失败：模拟逐项目写入的部分失败。
+      user.assigned_projects.push(project('YCE-B', '项目 B', body.member_role));
+      await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { code: 'bad_request', message: '项目已暂停，不能执行写入操作' } }) });
+      return;
+    }
+    for (const key of body.project_keys) user.assigned_projects.push(project(key, `项目 ${key.at(-1)}`, body.member_role));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: user }) });
+  });
+
+  await login(page, '/web/app/system/users');
+  await page.getByRole('table', { name: '系统用户列表' }).getByRole('button', { name: '项目' }).click();
+  const manageDialog = page.getByRole('dialog', { name: '管理用户项目' });
+  await manageDialog.getByLabel(/YCE-B · 项目 B/u).check();
+  await manageDialog.getByLabel(/YCE-C · 项目 C/u).check();
+  await manageDialog.getByRole('button', { name: '分配所选项目' }).click();
+  await expect(manageDialog).toContainText('项目已暂停');
+  await expect(manageDialog.getByRole('table', { name: '已分配项目' })).toContainText('YCE-B');
+  await expect(manageDialog.getByLabel(/YCE-C · 项目 C/u)).toBeChecked();
+
+  await manageDialog.getByRole('button', { name: '分配所选项目' }).click();
+  await expect(manageDialog.getByRole('table', { name: '已分配项目' })).toContainText('YCE-C');
+  expect(posts).toEqual([['YCE-B', 'YCE-C'], ['YCE-C']]);
+});
+
 test('project list can switch current project inside the app shell', async ({ page }) => {
   await login(page, '/web/app/projects');
 

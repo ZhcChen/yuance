@@ -7235,8 +7235,12 @@ pub async fn assign_system_user_projects(
         ));
     }
 
+    // 已是成员的项目直接跳过（不改角色、不算失败），保证重复提交与部分失败后的重试幂等。
     let mut assigned_project_keys = Vec::new();
     for project_key in project_keys {
+        if projects::is_project_member_by_key(pool, &project_key, target.id).await? {
+            continue;
+        }
         projects::add_project_member(
             pool,
             actor.id,

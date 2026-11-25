@@ -163,3 +163,48 @@ async fn viewer_cannot_close_work_item_but_writable_member_can() {
     assert_eq!(status, StatusCode::OK, "{closed}");
     assert_eq!(closed["data"]["status"], "closed");
 }
+
+#[tokio::test]
+async fn system_user_project_assign_skips_existing_memberships() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed");
+    create_user(&pool, "assign_user", "member").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "assign_user", "member")
+        .await
+        .expect("seed membership");
+    let other_key: String = sqlx::query_scalar(
+        "SELECT project_key FROM projects WHERE project_key <> 'YCE' AND status IN ('not_started','in_progress','acceptance') ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("another writable project");
+
+    // 部分项目已是成员：跳过而非整体失败，且不改已有角色。
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/v1/system/users/assign_user/projects",
+        &admin.cookie,
+        Some(serde_json::json!({ "project_keys": ["YCE", other_key], "member_role": "viewer" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(member_role(&pool, "YCE", "assign_user").await, "member");
+    assert_eq!(member_role(&pool, &other_key, "assign_user").await, "viewer");
+
+    // 全部已是成员时重复提交同样幂等。
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/v1/system/users/assign_user/projects",
+        &admin.cookie,
+        Some(serde_json::json!({ "project_keys": ["YCE", other_key], "member_role": "maintainer" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(member_role(&pool, "YCE", "assign_user").await, "member");
+}

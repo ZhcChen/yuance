@@ -2403,6 +2403,31 @@ pub async fn update_project_member_role(
         .ok_or_else(|| AppError::NotFound("项目成员不存在".to_string()))
 }
 
+/// 按项目 key 判断用户是否已是成员；项目不存在时返回 false，由后续写入报告“项目不存在”。
+pub async fn is_project_member_by_key(
+    pool: &SqlitePool,
+    project_key: &str,
+    user_id: i64,
+) -> AppResult<bool> {
+    let exists = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM project_members pm
+            JOIN projects p ON p.id = pm.project_id
+            WHERE p.project_key = ?1
+              AND pm.user_id = ?2
+        )
+        "#,
+    )
+    .bind(project_key)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(exists != 0)
+}
+
 pub async fn is_project_member(
     pool: &SqlitePool,
     project_id: i64,

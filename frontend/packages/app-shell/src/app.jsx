@@ -1631,6 +1631,15 @@ export function SharedApp({ services }) {
     : null;
   const systemUserAssignedProjectKeys = new Set((systemUserProjectTarget?.assigned_projects || []).map((project) => project.key));
   const systemUserAssignableProjects = (systemUsersView?.project_options || []).filter((project) => !systemUserAssignedProjectKeys.has(project.key));
+  const systemUserAssignableKeySignature = systemUserAssignableProjects.map((project) => project.key).join('\n');
+  // 分配部分失败或后台刷新后，已分配（不再可选）的项目不应仍保持勾选，避免重复提交。
+  useEffect(() => {
+    const assignable = new Set(systemUserAssignableKeySignature ? systemUserAssignableKeySignature.split('\n') : []);
+    setSystemUserProjectAssignKeys((current) => {
+      const next = current.filter((key) => assignable.has(key));
+      return next.length === current.length ? current : next;
+    });
+  }, [systemUserAssignableKeySignature]);
   const systemRolePermissionGroups = useMemo(() => {
     const groups = new Map();
     for (const permission of systemRolesView?.permissions || []) {
