@@ -91,3 +91,40 @@ async fn client_errors_keep_actionable_messages_and_request_ids_are_unique() {
     }
     assert_ne!(ids[0], ids[1]);
 }
+
+#[tokio::test]
+async fn responses_carry_security_headers_without_overriding_specific_policies() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    for uri in ["/web/login", "/api/v1/bootstrap/status", "/no-such-page"] {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let headers = response.headers();
+        assert_eq!(
+            headers.get("x-content-type-options").unwrap(),
+            "nosniff",
+            "{uri}"
+        );
+        assert_eq!(
+            headers.get("x-frame-options").unwrap(),
+            "SAMEORIGIN",
+            "{uri}"
+        );
+        assert_eq!(
+            headers.get("referrer-policy").unwrap(),
+            "strict-origin-when-cross-origin",
+            "{uri}"
+        );
+        assert!(
+            headers
+                .get("content-security-policy")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| !value.is_empty()),
+            "{uri}"
+        );
+    }
+}

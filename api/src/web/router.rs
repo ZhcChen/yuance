@@ -730,6 +730,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
         .layer(axum::middleware::from_fn(web_error_page_middleware))
+        .layer(axum::middleware::from_fn(security_headers_middleware))
         .layer(axum::middleware::from_fn_with_state(
             middleware_state,
             session_refresh_middleware,
@@ -769,6 +770,24 @@ pub fn build_router(state: AppState) -> Router {
 }
 
 static REQUEST_ID_HEADER: http::HeaderName = http::HeaderName::from_static("x-request-id");
+
+/// 全局安全响应头（体检 P1-5 / FR-013）：仅在处理器未设置时补齐，不覆盖预览等接口的专用策略。
+/// 站内文本预览使用同源 iframe，因此用 SAMEORIGIN / `frame-ancestors 'self'` 而非 DENY。
+async fn security_headers_middleware(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    for (name, value) in [
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (header::X_FRAME_OPTIONS, "SAMEORIGIN"),
+        (header::REFERRER_POLICY, "strict-origin-when-cross-origin"),
+        (header::CONTENT_SECURITY_POLICY, "frame-ancestors 'self'"),
+    ] {
+        if !headers.contains_key(&name) {
+            headers.insert(name, http::HeaderValue::from_static(value));
+        }
+    }
+    response
+}
 
 async fn session_refresh_middleware(
     State(state): State<AppState>,
