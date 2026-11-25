@@ -94,8 +94,51 @@ const services = {
 
 services.runtime.writeTheme(services.runtime.readTheme());
 
+// 发布后旧标签页按需加载的代码块已不存在：首次失败时自动刷新一次拿到新版本，
+// 60 秒内不重复刷新，避免网络故障时循环刷新（之后由根部错误边界提示）。
+const CHUNK_RELOAD_KEY = 'yuance.chunk-reload-at';
+window.addEventListener('vite:preloadError', (event) => {
+  let lastReload = 0;
+  try { lastReload = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0); } catch (_error) { lastReload = 0; }
+  if (Date.now() - lastReload < 60_000) return;
+  try { sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now())); } catch (_error) {
+    // 无法记录时仍刷新一次；下次失败将交给错误边界。
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
+/** 根部错误边界：渲染异常（如代码块加载失败）时提示刷新，而不是整页白屏。 */
+class RootErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error('应用渲染失败', error);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <main className="app-crash" role="alert">
+        <h1>页面已更新或加载失败</h1>
+        <p>请刷新页面后重试。</p>
+        <button type="button" className="yc-button yc-button-primary" onClick={() => window.location.reload()}>刷新页面</button>
+      </main>
+    );
+  }
+}
+
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <App services={services} />
+    <RootErrorBoundary>
+      <App services={services} />
+    </RootErrorBoundary>
   </React.StrictMode>,
 );

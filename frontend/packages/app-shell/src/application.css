@@ -1794,3 +1794,7 @@ a.list-row__title:hover, a.list-row:hover .list-row__title { color: var(--yc-bra
   .project-detail-metrics,
   .work-item-list-metrics { grid-template-columns: 1fr; }
 }
+
+.app-crash { min-height: 100vh; display: grid; place-content: center; gap: var(--yc-sp-12); padding: var(--yc-sp-24); text-align: center; background: var(--yc-bg, #f4f7fb); color: var(--yc-text-primary); }
+.app-crash h1 { margin: 0; font-size: var(--yc-fs-22); }
+.app-crash p { margin: 0; color: var(--yc-text-secondary); }
