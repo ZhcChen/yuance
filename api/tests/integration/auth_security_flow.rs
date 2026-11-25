@@ -1116,6 +1116,67 @@ async fn api_auth_me_refreshes_expired_access_cookie_when_refresh_cookie_is_vali
 }
 
 #[tokio::test]
+async fn refresh_session_revoked_within_touch_interval_still_clears_cookie() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"admin","password":"AdminPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let set_cookies = set_cookie_values(login_response.headers());
+    let session_cookie = set_cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("yuance_session="))
+        .cloned()
+        .expect("session cookie should be set");
+    let refresh_cookie = set_cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("yuance_refresh="))
+        .cloned()
+        .expect("refresh cookie should be set");
+
+    // 刚登录（仍在 60 秒节流间隔内）就被撤销：节流不能把它当成“无需续期”，必须清除刷新 Cookie。
+    sqlx::query(
+        "UPDATE refresh_sessions SET session_status = 'revoked', revoked_at = datetime('now')",
+    )
+    .execute(&pool)
+    .await
+    .expect("revoke refresh session");
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(
+                    header::COOKIE,
+                    format!("{session_cookie}; {refresh_cookie}"),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let cookies = set_cookie_values(response.headers());
+    assert!(
+        cookies
+            .iter()
+            .any(|cookie| cookie.starts_with("yuance_refresh=") && cookie.contains("Max-Age=0")),
+        "revoked refresh session must clear its cookie: {cookies:?}"
+    );
+}
+
+#[tokio::test]
 async fn authenticated_requests_extend_refresh_cookie_window() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;

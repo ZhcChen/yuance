@@ -7242,6 +7242,8 @@ pub async fn assign_system_user_projects(
         ));
     }
 
+    // 先校验角色：即使全部项目都会被跳过，也不接受非法角色。
+    projects::validate_assignable_member_role(&payload.member_role)?;
     // 已是成员的项目直接跳过（不改角色、不算失败），保证重复提交与部分失败后的重试幂等。
     let mut assigned_project_keys = Vec::new();
     for project_key in project_keys {
@@ -7258,20 +7260,22 @@ pub async fn assign_system_user_projects(
         .await?;
         assigned_project_keys.push(project_key);
     }
-    audit::record(
-        pool,
-        Some(actor.id),
-        "user.project.assign",
-        "user",
-        &target.username,
-        &serde_json::json!({
-            "source": "api",
-            "project_keys": assigned_project_keys,
-            "member_role": payload.member_role,
-        })
-        .to_string(),
-    )
-    .await?;
+    if !assigned_project_keys.is_empty() {
+        audit::record(
+            pool,
+            Some(actor.id),
+            "user.project.assign",
+            "user",
+            &target.username,
+            &serde_json::json!({
+                "source": "api",
+                "project_keys": assigned_project_keys,
+                "member_role": payload.member_role,
+            })
+            .to_string(),
+        )
+        .await?;
+    }
 
     Ok(json(system_user_view_payload(pool, target).await?))
 }

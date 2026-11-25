@@ -212,4 +212,37 @@ async fn system_user_project_assign_skips_existing_memberships() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(member_role(&pool, "YCE", "assign_user").await, "member");
+
+    // 小写 key 同样识别为已有成员关系。
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/v1/system/users/assign_user/projects",
+        &admin.cookie,
+        Some(serde_json::json!({ "project_keys": ["yce"], "member_role": "viewer" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(member_role(&pool, "YCE", "assign_user").await, "member");
+
+    // 全部跳过时也要校验角色，且不写空的分配审计。
+    let (status, body) = send(
+        &app,
+        "POST",
+        "/api/v1/system/users/assign_user/projects",
+        &admin.cookie,
+        Some(serde_json::json!({ "project_keys": ["YCE"], "member_role": "owner" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let assign_audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'user.project.assign' AND target_id = 'assign_user'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("audit count");
+    assert_eq!(
+        assign_audits, 1,
+        "only the call that actually assigned should be audited"
+    );
 }

@@ -2432,12 +2432,24 @@ pub async fn update_project_member_role(
         .ok_or_else(|| AppError::NotFound("项目成员不存在".to_string()))
 }
 
+/// 校验批量分配使用的成员角色：与添加成员一致，不允许直接授予负责人。
+pub fn validate_assignable_member_role(member_role: &str) -> AppResult<&'static str> {
+    let member_role = validate_member_role(member_role)?;
+    if member_role == "owner" {
+        return Err(AppError::BadRequest(
+            "不能直接添加为项目负责人，请通过编辑项目转移负责人".to_string(),
+        ));
+    }
+    Ok(member_role)
+}
+
 /// 按项目 key 判断用户是否已是成员；项目不存在时返回 false，由后续写入报告“项目不存在”。
 pub async fn is_project_member_by_key(
     pool: &SqlitePool,
     project_key: &str,
     user_id: i64,
 ) -> AppResult<bool> {
+    let project_key = validate_project_key(project_key)?;
     let exists = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT EXISTS(
@@ -2449,7 +2461,7 @@ pub async fn is_project_member_by_key(
         )
         "#,
     )
-    .bind(project_key)
+    .bind(&project_key)
     .bind(user_id)
     .fetch_one(pool)
     .await?;
