@@ -43,6 +43,7 @@
 - 恢复演练（`scripts/ops/restore-drill.sh`，2026-11-25 14:40）：sha256 ok、解密 ok、`integrity_check=ok`、users 11 / projects 16 / work_items 118 / file_objects 251、文件主密钥与安全主密钥存在、`migrate status` 正常、`files audit-objects` total=217 orphan=0（证明安全主密钥可解密存储配置并访问业务 Bucket）。
 - 部署（批次 B–E，提交 `fcbe2f83`，首次使用新发布流程）：新镜像以 `yuance-api:fcbe2f831610` 加载，迁移成功后才切换 latest；运行镜像、latest 与提交标签 ID 一致，容器 healthy。停机窗口内公网每秒探测：36 次返回 503（网关维护页如实返回 503，不再改写为 200），其余均 200。
   - 发布脚本在健康检查通过后报 `sh: 208: Syntax error: Unterminated quoted string`（exit=2），未执行收尾步骤。根因：远端脚本经 `sh -s` 从标准输入按块读取，迁移用的 `docker compose run` 未隔离标准输入，吞掉了尚未读入的脚本；此前脚本较短、剩余部分已在缓冲区内而未暴露。已在服务器上用 400 行填充复现（不包裹时后续命令丢失，包裹后正常）。修复：远端流程整体包进 `remote_main` 函数并以 `</dev/null` 调用，新增结构测试。收尾步骤（镜像 ID 比对、构建目录清理、公网复核）已手动完成。
+- 修复后再次发布（`955f32a3`）端到端成功：迁移后切换 latest、公网 readyz 复核通过、`release-*` 临时标签已删除、保留上一版 `yuance-api:fcbe2f831610` 作为回滚目标、构建目录已清理、镜像 tar 为当前加 3 份备份。
 - 线上功能核验：公网响应带 HSTS、`nosniff`、`SAMEORIGIN`、`Referrer-Policy`、`frame-ancestors`、`x-request-id`；不存在用户名登录失败耗时约 0.17s（与密码校验同量级）；审计日志记录真实客户端 IP，伪造的 `X-Real-IP` / `X-Forwarded-For` 被网关覆盖。
 - 网关：备份原配置后替换 Yuance server block，`nginx -t` 通过后 reload；公网响应已带 HSTS，`readyz` 与 404 原样透传。
 
