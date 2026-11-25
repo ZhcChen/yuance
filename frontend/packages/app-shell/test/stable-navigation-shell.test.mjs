@@ -14,7 +14,9 @@ test('route loading preserves the mounted navigation shell after initial recover
   assert.ok(routeLoadingIndex > navigationIndex);
   assert.ok(routeContentIndex > routeLoadingIndex);
   assert.match(source, /className="shell-route-loading"/u);
-  assert.match(source, /ProjectResourceDetailSkeleton/u);
+  // 资料详情页已拆到 pages/project-pages.jsx，详情骨架随页面一起渲染。
+  const projectPages = await readFile(new URL('../src/pages/project-pages.jsx', import.meta.url), 'utf8');
+  assert.match(projectPages, /ProjectResourceDetailSkeleton/u);
   assert.match(styles, /\.shell-route-loading \{[\s\S]*min-height: 420px;/u);
   assert.doesNotMatch(styles, /\.shell-route-loading[^}]*animation:/u);
 });
