@@ -1,0 +1,15 @@
+[Unit]
+Description=元策每日在线备份与异地同步
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/srv/yuance/backend/scripts/40-offsite-backup.sh
+WorkingDirectory=/srv/yuance/backend
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h
+StandardOutput=append:/var/log/yuance-backup.log
+StandardError=append:/var/log/yuance-backup.log

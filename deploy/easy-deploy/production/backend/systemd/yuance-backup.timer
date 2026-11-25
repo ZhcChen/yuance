@@ -1,0 +1,10 @@
+[Unit]
+Description=元策每日备份（凌晨 03:30，随机延迟 15 分钟）
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
