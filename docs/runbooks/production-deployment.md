@@ -11,7 +11,7 @@ date: 2026-08-02
 发布机通过 SSH/SCP 将当前 `main` 提交归档同步到 `qfy-test2` 的独立编译工作区，
 由 `qfy-test2` 完成前端检查、BuildKit 镜像构建和发布；正式服务器的
 `/srv/yuance/backend` 运行目录禁止源码编译和镜像构建。
-公网服务器 `qfy-sc-test` 只保留 Nginx、FRPS 和已停止的旧环境作为冷回滚。
+公网服务器 `qfy-sc-test` 只承担 Nginx 与 FRPS 入口；其上已停止的旧环境数据早已过期，冷回滚路径已作废（见“回滚”）。
 
 ## 构建发布唯一口径
 
@@ -137,7 +137,11 @@ YUANCE_DEPLOY_HOST=qfy-test2 \
 
 脚本要求 `main` 工作区干净并与 `origin/main` 一致，然后执行：
 
-同一 Docker Engine 上必须采用单发布者串行执行。当前脚本没有目标机部署锁，维护容器按前缀统一清理且生产镜像默认使用可变 `yuance-api:latest`；不得同时运行第二次发布、手工维护容器或会改写该镜像标签的任务，直到部署锁和按发布 ID 定向清理实现并验收。
+同一 Docker Engine 上串行发布：远端流程在加载镜像前获取 `/run/lock/yuance-backup.lock`（`flock`，最多等待 15 分钟），与每日备份共用同一把锁，第二次发布或备份会等待或失败退出。维护容器仍按前缀统一清理，不要在发布期间手工运行同前缀容器。
+
+镜像标签：远端构建产出 `yuance-api:release-<提交前 12 位>`，构建阶段不改写正在运行的 `yuance-api:latest`。加载后另打 `yuance-api:<提交前 12 位>`，迁移容器显式使用该标签；`latest` 在迁移成功后才切换到新镜像，因此迁移失败或容器被意外重启时不会以新代码访问未迁移的数据库。`/srv/yuance/releases` 默认保留最近 3 份镜像 tar（`YUANCE_KEEP_RELEASE_BACKUPS`）。
+
+健康检查：`90-healthcheck.sh` 在窗口内重试（默认 30 次、间隔 2 秒），healthz 与 readyz 都成功才通过；远端发布结束后，发布机再经公网 `https://yuance.quanxinfu.com/api/readyz` 复核（`YUANCE_PUBLIC_HEALTH_URL`，置空可跳过）。API 收到停机信号后会主动结束 SSE 长连接，旧实例不再固定等满停机宽限期。
 
 1. 预检目标机 Docker、Docker Compose、`sqlite3` 和 `.env`，再构建并校验 `linux/amd64` 镜像 tar。
 2. 备份 `/srv/yuance/releases` 中当前镜像 tar。
@@ -260,14 +264,57 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-维护页由 Nginx 本地生成，捕获 502、503、504 并返回“系统正在更新中”，
-不依赖 `yuance-api`、FRP 或 SSE。页面默认带 `Cache-Control: no-store`、
-`Retry-After: 5`，并每 5 秒自动重试。不要把该 server block 与旧 Yuance
+维护页由 Nginx 本地生成，只捕获上游不可达（502）与超时（504），以 **503** 状态返回“系统正在更新中”，
+不依赖 `yuance-api`、FRP 或 SSE。应用自身返回的 503（例如数据库不可用时的 `/api/readyz`）原样透传，
+监控与发布检查据此判断真实状态；不要再把 503 改写为 200。页面默认带 `Cache-Control: no-store`、
+`Retry-After: 5`，并每 5 秒自动重试。server 级下发 `Strict-Transport-Security: max-age=31536000`；
+`nosniff`、`X-Frame-Options: SAMEORIGIN`、`Referrer-Policy`、`frame-ancestors` 由应用层统一补齐。不要把该 server block 与旧 Yuance
 block 同时保留。
 
 FRPS 的代理端口只监听 `127.0.0.1`，禁止向公网开放 `40000-40999`。
 
 ## 数据备份
+
+### 每日异地备份（自动）
+
+`qfy-test2` 的 systemd timer `yuance-backup.timer` 每天 03:30（随机延迟 15 分钟）执行
+`scripts/40-offsite-backup.sh`：
+
+1. 调用 `00-backup-sqlite.sh` 生成在线一致性快照（含自动生成的文件主密钥），并附上 `.env`（含安全主密钥）。
+2. 打包压缩后用 age 公钥（`/etc/yuance-backup/age-recipient.txt`）加密，上传到独立 Bucket
+   `oss://yuance-backup/daily/`（cn-shanghai，私有、阻止公共访问、版本控制、`daily/` 生命周期 90 天，历史版本 30 天）。
+3. 上传凭据为 RAM 用户 `yuance-backup-writer`（策略 `yuance-backup-daily-rw`：仅 `daily/` 前缀的读写，无删除权限），
+   配置在 `/etc/yuance-backup/rclone.conf`（root 0600）。
+4. 本地 `backups/` 保留最近 14 份快照与每月首份（`YUANCE_BACKUP_KEEP_DAILY`），其余删除。
+5. 结果写入 `backups/.offsite-status`，日志在 `/var/log/yuance-backup.log`。
+
+age 私钥只在离线介质保管，服务器只有公钥：服务器被入侵也无法解密历史备份。私钥丢失则异地备份全部不可用，
+需与文件主密钥、安全主密钥一同离线保存两份。
+
+检查与手动触发：
+
+```bash
+systemctl list-timers yuance-backup.timer
+cat /srv/yuance/backend/backups/.offsite-status
+sudo systemctl start yuance-backup.service   # 手动执行一次
+```
+
+### 恢复演练（每季度）
+
+在持有 age 私钥的机器上执行，私钥经 SSH 标准输入写入目标机 `/dev/shm`，结束即删除：
+
+```bash
+scripts/ops/restore-drill.sh --identity <age 私钥文件> [--host qfy-test2] [--archive <归档名>]
+```
+
+脚本下载最近一份异地备份，校验 SHA-256、解密解压到临时目录，执行 `PRAGMA integrity_check`，
+并用临时容器对恢复出的数据库执行 `migrate status` 与 `files audit-objects`（验证安全主密钥能解密存储配置、
+业务 Bucket 可读），最后清理临时目录。输出贴入 `docs/reviews/` 留档。
+
+真实恢复到新主机：按演练步骤解密得到 `yuance.sqlite3`、`secrets/file_master_key`、`env.backup`，
+放入新主机的 `data/` 与 `.env`，再按下文“回滚”中的数据库恢复步骤启动匹配版本的镜像。
+
+### 发布前快照
 
 发布前执行：
 
@@ -333,31 +380,23 @@ docker compose --env-file .env -f compose.yaml exec -T api \
 写入普通备份。先确认 `PRAGMA integrity_check` 为 `ok`，再加载匹配版本的镜像并启动 API；
 随后检查迁移状态、文件对象关系、健康状态和测试附件解密。
 
-## 回滚到公网旧环境
+## 回滚
 
-观察期内不得删除公网服务器的旧容器、旧数据、镜像、迁移包或 Nginx/Caddy 备份。
-回滚遵循单写原则：
+**公网旧环境冷回滚已作废**：`qfy-sc-test` 上旧数据库最后写入于 2026-08-02，旧容器已不存在（2026-11-25 核查），
+落后多个 schema 版本与数月数据，启动它会造成数据分叉，不得再作为回滚目标。回滚只在 `qfy-test2` 上进行。
 
-1. 在 `qfy-test2` 停止当前 `yuance-api`。
-2. 在 FRP Web 停用 Yuance 路由，或把受管 FRPC 片段移出加载范围。
-3. 恢复服务器旧 `yuance.caddy`，执行 Caddy validate/reload。
-4. 在 `qfy-sc-test` 启动旧 `yuance-api`，不执行 migrate 或 seed。
-5. 验证 health、ready、登录、项目数据和 OSS 文件读取。
-
-关键命令：
+只回滚应用版本（未执行破坏性迁移时）：
 
 ```bash
-# qfy-test2
 cd /srv/yuance/backend
-docker compose --env-file .env -f compose.yaml stop api
-
-# qfy-sc-test
-cd /srv/yuance/easy-deploy/production/backend
-docker compose --env-file .env -f compose.yaml up -d api
+docker image ls yuance-api            # 每次发布都保留 yuance-api:<提交前 12 位> 标签
+docker tag yuance-api:<上一版提交前 12 位> yuance-api:latest
+docker compose --env-file .env -f compose.yaml up -d --force-recreate api
+./scripts/90-healthcheck.sh
 ```
 
-如只回滚 qfy-test2 应用版本，加载 `/srv/yuance/releases` 中上一版 tar 后重建
-容器。若还需回滚数据库，必须按对应备份的 manifest 停服务并恢复单文件快照、自动主密钥
+镜像已被清理时，从 `/srv/yuance/releases` 中最近 3 份 tar 执行 `docker load` 后再打标签。
+若还需回滚数据库，必须按对应备份的 manifest 停服务并恢复单文件快照、自动主密钥
 或受控环境密钥，不能将其他时间点的 WAL/SHM 与快照混用。
 
 ## 禁止事项
