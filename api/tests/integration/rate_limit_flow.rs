@@ -122,26 +122,50 @@ async fn unknown_username_costs_a_password_verification_like_a_wrong_password() 
     // 预热假哈希（首次使用时生成）。
     api_login(&app, "warmup_missing_user", "x").await;
 
-    let measure = |username: &'static str| {
-        let app = app.clone();
-        async move {
-            let mut total = Duration::ZERO;
-            for _ in 0..3 {
-                let started = Instant::now();
-                assert_eq!(
-                    api_login(&app, username, "wrong-password").await,
-                    StatusCode::UNAUTHORIZED
-                );
-                total += started.elapsed();
-            }
-            total
+    // 交替测量、各取最小值：排除并行测试下 Argon2 信号量排队带来的噪声。
+    let mut existing = Duration::MAX;
+    let mut missing = Duration::MAX;
+    for _ in 0..4 {
+        for (username, slot) in [("admin", &mut existing), ("no_such_user_x", &mut missing)] {
+            let started = Instant::now();
+            assert_eq!(
+                api_login(&app, username, "wrong-password").await,
+                StatusCode::UNAUTHORIZED
+            );
+            *slot = (*slot).min(started.elapsed());
         }
-    };
-    let existing = measure("admin").await;
-    let missing = measure("no_such_user_x").await;
+    }
     // 不存在的用户也执行一次 Argon2：耗时应与密码错误同量级，而不是快一个数量级。
     assert!(
         missing * 3 >= existing,
         "missing user login too fast: missing={missing:?} existing={existing:?}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_login_burst_cannot_exceed_the_failure_limit() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let mut handles = Vec::new();
+    for _ in 0..15 {
+        let app = app.clone();
+        handles.push(tokio::spawn(async move {
+            api_login(&app, "admin", "wrong-password").await
+        }));
+    }
+    let mut verified = 0;
+    let mut limited = 0;
+    for handle in handles {
+        match handle.await.expect("task should join") {
+            StatusCode::UNAUTHORIZED => verified += 1,
+            StatusCode::TOO_MANY_REQUESTS => limited += 1,
+            other => panic!("unexpected status {other}"),
+        }
+    }
+    assert!(
+        verified <= 10,
+        "burst verified {verified} passwords (limit 10)"
+    );
+    assert_eq!(verified + limited, 15);
 }

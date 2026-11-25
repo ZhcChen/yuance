@@ -42,8 +42,10 @@ struct RefreshSessionRecord {
 /// Argon2 同时执行的上限：每次约占数十 MB 内存与一个 CPU 核，限制并发避免突发登录拖垮服务。
 const PASSWORD_HASH_CONCURRENCY: usize = 4;
 
-static PASSWORD_HASH_PERMITS: std::sync::LazyLock<tokio::sync::Semaphore> =
-    std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(PASSWORD_HASH_CONCURRENCY));
+static PASSWORD_HASH_PERMITS: std::sync::LazyLock<std::sync::Arc<tokio::sync::Semaphore>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::Arc::new(tokio::sync::Semaphore::new(PASSWORD_HASH_CONCURRENCY))
+    });
 
 /// 用户不存在或未启用时用于校验的固定假哈希，使响应耗时与“密码错误”同量级，避免枚举用户名。
 static DUMMY_PASSWORD_HASH: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
@@ -72,13 +74,17 @@ where
     T: Send + 'static,
     F: FnOnce() -> AppResult<T> + Send + 'static,
 {
-    let _permit = PASSWORD_HASH_PERMITS
-        .acquire()
+    // 许可移入阻塞任务：请求被取消时任务仍在运行，许可随任务结束才释放，并发上限不会被突破。
+    let permit = std::sync::Arc::clone(&PASSWORD_HASH_PERMITS)
+        .acquire_owned()
         .await
         .map_err(|error| AppError::PasswordHash(error.to_string()))?;
-    tokio::task::spawn_blocking(task)
-        .await
-        .map_err(|error| AppError::PasswordHash(error.to_string()))?
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        task()
+    })
+    .await
+    .map_err(|error| AppError::PasswordHash(error.to_string()))?
 }
 
 pub async fn hash_password(password: &str) -> AppResult<String> {

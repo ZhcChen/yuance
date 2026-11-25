@@ -25,28 +25,31 @@ fn limited(wait: std::time::Duration, subject: &str) -> AppError {
     ))
 }
 
-/// 登录前检查：同一用户名或同一来源 IP 失败过多时拒绝（不执行密码校验）。
+/// 登录前登记一次尝试：同一用户名或同一来源 IP 失败过多时拒绝（不执行密码校验）。
+/// 校验前就计数，并发请求无法同时绕过上限；结果由 `record_login_result` 修正。
 pub fn ensure_login_allowed(
     state: &AppState,
     headers: &HeaderMap,
     username: &str,
 ) -> AppResult<()> {
     let limits = &state.auth_limits;
+    let user_key = username_key(username);
     limits
         .login_by_username
-        .check(&username_key(username))
+        .begin_attempt(&user_key)
         .map_err(|wait| limited(wait, "登录"))?;
     let ip = client_ip(headers);
-    if !ip.is_empty() {
-        limits
-            .login_by_ip
-            .check(&ip)
-            .map_err(|wait| limited(wait, "登录"))?;
+    if !ip.is_empty()
+        && let Err(wait) = limits.login_by_ip.begin_attempt(&ip)
+    {
+        limits.login_by_username.undo_attempt(&user_key);
+        return Err(limited(wait, "登录"));
     }
     Ok(())
 }
 
-/// 记录登录结果：凭据错误计入失败；成功清除该用户名的失败计数。
+/// 修正登录前登记的尝试：成功时清零该用户名并撤销 IP 计数；凭据错误保留计数；
+/// 其他错误（限流、内部错误）不算一次猜测，撤销登记。
 pub fn record_login_result<T>(
     state: &AppState,
     headers: &HeaderMap,
@@ -54,18 +57,23 @@ pub fn record_login_result<T>(
     result: &AppResult<T>,
 ) {
     let limits = &state.auth_limits;
+    let user_key = username_key(username);
+    let ip = client_ip(headers);
     match result {
-        Ok(_) => limits.login_by_username.reset(&username_key(username)),
-        Err(AppError::Unauthorized) => {
-            limits
-                .login_by_username
-                .record_failure(&username_key(username));
-            let ip = client_ip(headers);
+        Ok(_) => {
+            limits.login_by_username.reset(&user_key);
             if !ip.is_empty() {
-                limits.login_by_ip.record_failure(&ip);
+                limits.login_by_ip.undo_attempt(&ip);
             }
         }
-        Err(_) => {}
+        Err(AppError::Unauthorized) => {}
+        Err(AppError::TooManyRequests(_)) => {}
+        Err(_) => {
+            limits.login_by_username.undo_attempt(&user_key);
+            if !ip.is_empty() {
+                limits.login_by_ip.undo_attempt(&ip);
+            }
+        }
     }
 }
 
@@ -81,7 +89,7 @@ pub fn ensure_resource_unlock_allowed(
     state
         .auth_limits
         .resource_unlock
-        .check(&resource_key(user_id, resource_id))
+        .begin_attempt(&resource_key(user_id, resource_id))
         .map_err(|wait| limited(wait, "访问密码验证"))
 }
 
@@ -92,9 +100,8 @@ pub fn record_resource_unlock_result(
     verified: bool,
 ) {
     let key = resource_key(user_id, resource_id);
+    // 校验前已登记一次尝试：失败时保留计数，成功时清零。
     if verified {
         state.auth_limits.resource_unlock.reset(&key);
-    } else {
-        state.auth_limits.resource_unlock.record_failure(&key);
     }
 }

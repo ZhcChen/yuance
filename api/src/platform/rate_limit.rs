@@ -44,6 +44,40 @@ impl FailureLimiter {
         }
     }
 
+    /// 原子地检查并登记一次尝试：未达上限时立即计数并放行，达到上限时返回剩余等待时间。
+    /// 校验前先计数，避免并发请求都在计数为 0 时通过检查、绕过上限；校验成功后调用 `undo` 或 `reset`。
+    pub fn begin_attempt(&self, key: &str) -> Result<(), Duration> {
+        let now = Instant::now();
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if entries.len() >= PRUNE_THRESHOLD {
+            let window = self.window;
+            entries.retain(|_, (started, _)| now.duration_since(*started) < window);
+        }
+        let entry = entries.entry(key.to_string()).or_insert((now, 0));
+        if now.duration_since(entry.0) >= self.window {
+            *entry = (now, 0);
+        }
+        if entry.1 >= self.max_failures {
+            return Err(self.window - now.duration_since(entry.0));
+        }
+        entry.1 += 1;
+        Ok(())
+    }
+
+    /// 撤销一次由 `begin_attempt` 登记、最终成功的尝试。
+    pub fn undo_attempt(&self, key: &str) {
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(entry) = entries.get_mut(key) {
+            entry.1 = entry.1.saturating_sub(1);
+        }
+    }
+
     pub fn record_failure(&self, key: &str) {
         let now = Instant::now();
         let mut entries = self
@@ -112,6 +146,19 @@ mod tests {
         assert!(limiter.check("bob").is_ok());
         limiter.reset("alice");
         assert!(limiter.check("alice").is_ok());
+    }
+
+    #[test]
+    fn begin_attempt_counts_before_verification_so_bursts_cannot_bypass_the_limit() {
+        let limiter = FailureLimiter::new(3, Duration::from_secs(60));
+        // 并发突发：在任何校验完成前连续登记，第 4 次即被拒绝。
+        assert!(limiter.begin_attempt("k").is_ok());
+        assert!(limiter.begin_attempt("k").is_ok());
+        assert!(limiter.begin_attempt("k").is_ok());
+        assert!(limiter.begin_attempt("k").is_err());
+        // 成功的尝试撤销计数。
+        limiter.undo_attempt("k");
+        assert!(limiter.begin_attempt("k").is_ok());
     }
 
     #[test]

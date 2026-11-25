@@ -26,6 +26,7 @@ fn sample_plaintext() -> Vec<u8> {
 
 struct Fixture {
     app: axum::Router,
+    pool: sqlx::SqlitePool,
     cookie: String,
     attachment_id: i64,
     plaintext: Vec<u8>,
@@ -126,7 +127,8 @@ async fn encrypted_fixture(tamper: bool) -> Fixture {
     .expect("mark uploaded");
 
     Fixture {
-        app: build_router(AppState::new(test_settings(), Some(pool))),
+        app: build_router(AppState::new(test_settings(), Some(pool.clone()))),
+        pool,
         cookie: admin.cookie,
         attachment_id: attachment.id,
         plaintext,
@@ -256,4 +258,19 @@ async fn tampered_ciphertext_aborts_the_stream() {
         body.is_err(),
         "stream must fail instead of returning tampered data"
     );
+}
+
+#[tokio::test]
+async fn size_mismatch_between_record_and_header_fails_before_headers() {
+    let fixture = encrypted_fixture(false).await;
+    sqlx::query("UPDATE file_objects SET byte_size = byte_size + 1")
+        .execute(&fixture.pool)
+        .await
+        .expect("corrupt recorded size");
+    let uri = format!(
+        "/web/work-items/YCE-TASK-2/attachments/{}/download",
+        fixture.attachment_id
+    );
+    let (status, _, _) = get(&fixture, &uri, None).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
 }

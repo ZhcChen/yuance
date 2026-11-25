@@ -58,6 +58,13 @@ impl EncryptedAttachmentSource {
         )
         .await?;
         let header = file_crypto::parse_encryption_header(&header_bytes)?;
+        // 响应头中的 Content-Length / Content-Range 按数据库记录的大小计算，与加密头不一致时
+        // 在发出响应头前失败，避免声明长度与实际输出不符导致客户端挂起。
+        if header.plaintext_byte_size != attachment.byte_size as u64 {
+            return Err(AppError::Crypto(
+                "附件加密头记录的大小与登记信息不一致".to_string(),
+            ));
+        }
         Ok(Self {
             pool: pool.clone(),
             settings: state.settings.clone(),
@@ -73,8 +80,11 @@ impl EncryptedAttachmentSource {
         self.header.plaintext_byte_size as usize
     }
 
-    /// 流式输出明文 `[start, end_exclusive)`。完整读取（从 0 到末尾）时同时校验整文件 SHA-256，
-    /// 不匹配则中断响应流（客户端收到不完整的响应而不是被篡改的内容）。
+    /// 流式输出明文 `[start, end_exclusive)`。
+    ///
+    /// 完整性主要由分块 AES-GCM 保证（AAD 含文件与块序号，篡改、换序、截断都会解密失败并中断流）。
+    /// 完整读取时另外累计整文件 SHA-256 作为兜底；但声明了 Content-Length 时，HTTP 层写满字节后
+    /// 可能不再轮询流尾，因此该校验不保证一定执行。
     pub fn into_body(self, start: usize, end_exclusive: usize) -> Body {
         let total = self.plaintext_len();
         let end_exclusive = end_exclusive.min(total);
