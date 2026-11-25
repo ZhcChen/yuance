@@ -5,7 +5,7 @@ export { logoSrc } from './brand.js';
 export { AppSidebar } from './app-sidebar.jsx';
 export { ICON_PATHS, Icon } from './icons.jsx';
 export { GlobalNavigation, closeContainingNavigationMenu, closeNavigationMenuOnBlur, closeNavigationMenuOnEscape, formatNavigationBadge } from './global-navigation.jsx';
-export { Badge, Button, Card, ContentTab, ContentTabs, DataTable, EmptyState, ErrorToast, Feedback, Field, FilterBar, FilterField, IconTile, Metric, Modal, PaginatedList, PaginatedTable, Pagination, Panel, PriorityBadge, ProgressBar, Select, Skeleton, StatusPill, TextArea, TextInput } from './primitives.jsx';
+export { Badge, Button, Card, ContentTab, ContentTabs, DataTable, EmptyState, ErrorToast, Feedback, Field, FilterBar, FilterField, IconTile, Metric, Modal, PaginatedList, PaginatedTable, Pagination, Panel, PriorityBadge, ProgressBar, Select, Skeleton, StatusPill, TextArea, TextInput, useDirtyWhileOpen } from './primitives.jsx';
 export { AttachmentList, WorkItemAttachments } from './work-item-attachments.jsx';
 export { AttachmentPreview } from './attachment-preview.jsx';
 export { AttachmentImage } from './attachment-image.jsx';

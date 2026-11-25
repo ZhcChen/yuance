@@ -568,6 +568,8 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 .yc-modal-header,
 .yc-modal-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--yc-sp-12); padding: var(--yc-sp-16) var(--yc-sp-20); }
 .yc-modal-header { border-bottom: 1px solid var(--yc-line-soft); }
+.yc-modal-discard { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--yc-sp-12); padding: var(--yc-sp-12) var(--yc-sp-20); border-top: 1px solid var(--yc-line-soft); background: var(--yc-surface-2); font-size: var(--yc-fs-13); }
+.yc-modal-discard-actions { display: flex; gap: var(--yc-sp-8); }
 .yc-modal-header h2 { margin: 0; font-size: var(--yc-fs-15); font-weight: var(--yc-fw-semibold); }
 .yc-modal-header button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--yc-radius-xs); background: transparent; color: var(--yc-text-tertiary); font-size: 20px; line-height: 1; }
 .yc-modal-header button:hover,

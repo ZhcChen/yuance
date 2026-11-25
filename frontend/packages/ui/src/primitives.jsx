@@ -278,11 +278,32 @@ export function ContentTab({ children, href, active = false, badge = 0, badgeTon
 }
 
 /** @param {{ open: boolean, title: string, wide?: boolean, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void }} props */
-export function Modal({ open, title, wide = false, children, footer, onClose }) {
+/**
+ * 弹窗打开期间记录表单初始值，返回是否已修改（用于 Modal 的 `dirty`）。
+ * 初始值在弹窗打开的那次渲染中捕获；关闭后清空，下次打开重新捕获。
+ * @param {boolean} open
+ * @param {unknown} value
+ */
+export function useDirtyWhileOpen(open, value) {
+  const baselineRef = useRef(/** @type {string | null} */ (null));
+  const serialized = JSON.stringify(value);
+  if (!open) baselineRef.current = null;
+  else if (baselineRef.current === null) baselineRef.current = serialized;
+  return open && baselineRef.current !== serialized;
+}
+
+/**
+ * 通用弹窗。`dirty` 为真时，Esc 与右上角关闭先在弹窗内确认是否放弃修改；
+ * 底部“取消”属于明确操作，由调用方直接关闭。
+ * @param {{ open: boolean, title: React.ReactNode, wide?: boolean, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void, dirty?: boolean }} props
+ */
+export function Modal({ open, title, wide = false, children, footer, onClose, dirty = false }) {
   const ref = useRef(/** @type {HTMLDialogElement | null} */ (null));
   const bodyRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const keepEditingRef = useRef(/** @type {HTMLButtonElement | null} */ (null));
   const titleId = useId();
-  const bodyScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: bodyRef, enabled: open, label: title, refreshKey: open });
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const bodyScrollbar = useOverlayScrollbar({ axis: 'vertical', targetRef: bodyRef, enabled: open, label: typeof title === 'string' ? title : '弹窗', refreshKey: open });
   useAnimatedDialog(open, ref, 'yc-modal-closing');
   useEffect(() => {
     if (!open) return;
@@ -290,13 +311,36 @@ export function Modal({ open, title, wide = false, children, footer, onClose }) 
     const target = /** @type {HTMLElement | null} */ (ref.current?.querySelector('.yc-modal-body [data-autofocus]') || null);
     target?.focus();
   }, [open]);
+  useEffect(() => {
+    if (!open || !dirty) setConfirmingDiscard(false);
+  }, [open, dirty]);
+  useEffect(() => {
+    if (confirmingDiscard) keepEditingRef.current?.focus();
+  }, [confirmingDiscard]);
+  function requestClose() {
+    if (dirty && !confirmingDiscard) {
+      setConfirmingDiscard(true);
+      return;
+    }
+    setConfirmingDiscard(false);
+    onClose();
+  }
   // 关闭动画结束调用 dialog.close() 后，close 事件在下一个任务才派发；若期间弹窗已被重新打开（showModal），
   // 该事件是上一次关闭遗留的，忽略它以免把刚打开的弹窗关掉（onClose 仅在 dialog 确实处于关闭状态时触发）。
   return (
-    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={(event) => { if (open && !event.currentTarget.open) onClose(); }}>
-      <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
+    <dialog ref={ref} className={wide ? 'yc-modal yc-modal-wide' : 'yc-modal'} aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); if (confirmingDiscard) { setConfirmingDiscard(false); return; } requestClose(); }} onClose={(event) => { if (open && !event.currentTarget.open) onClose(); }}>
+      <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={requestClose}>×</button></div>
       <div ref={bodyRef} className="yc-modal-body yc-overlay-scroll-target">{children}</div>
       {bodyScrollbar.scrollbar}
+      {confirmingDiscard ? (
+        <div className="yc-modal-discard" role="alertdialog" aria-label="放弃未保存的修改">
+          <span>有未保存的修改，确定放弃吗？</span>
+          <span className="yc-modal-discard-actions">
+            <button ref={keepEditingRef} type="button" className="yc-button yc-button-secondary" onClick={() => setConfirmingDiscard(false)}>继续编辑</button>
+            <button type="button" className="yc-button yc-button-danger" onClick={() => { setConfirmingDiscard(false); onClose(); }}>放弃修改</button>
+          </span>
+        </div>
+      ) : null}
       {footer ? <div className="yc-modal-footer">{footer}</div> : null}
     </dialog>
   );
