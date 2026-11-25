@@ -1251,6 +1251,7 @@ export function SharedApp({ services }) {
   const [projectPersonalAnalysis, setProjectPersonalAnalysis] = useState(/** @type {AppProjectPersonalAnalysis | null} */ (null));
   const [timeAllocations, setTimeAllocations] = useState(/** @type {AppTimeAllocation[]} */ ([]));
   const [projectTimeAllocations, setProjectTimeAllocations] = useState(/** @type {AppTimeAllocation[]} */ ([]));
+  const [projectTimeAllocationsError, setProjectTimeAllocationsError] = useState('');
   const [timeProjects, setTimeProjects] = useState(/** @type {Array<{ key: string, name: string }>} */ ([]));
   const [timeMembers, setTimeMembers] = useState(/** @type {Array<{ username: string, display_name: string }>} */ ([]));
   const [timeChangesOpen, setTimeChangesOpen] = useState(false);
@@ -1947,18 +1948,23 @@ export function SharedApp({ services }) {
             api.getProjectMembers(targetRoute.projectKey),
             api.getProjectCycles(targetRoute.projectKey),
             Promise.resolve([]),
-            baseApi.getProjectTimeAllocations(targetRoute.projectKey).catch(() => []),
+            // 排期加载失败不影响项目详情其它部分，在排期页内提示，不弹全局错误。
+            baseApi.getProjectTimeAllocations(targetRoute.projectKey).then(
+              (items) => ({ items, error: '' }),
+              (caught) => ({ items: null, error: errorMessage(caught instanceof Error ? caught : new Error('时间排期加载失败。')) }),
+            ),
           ])
           : Promise.resolve(null),
         targetRoute.id === 'project-resource-library'
           ? (async () => {
+            // 先同步记录操作编号与筛选，再发请求：加载期间用户提交的筛选不应被这里重置或覆盖。
+            if (mode === 'load') projectResourceAppliedFiltersRef.current = { q: '', category: '', status: '', tag: '' };
+            const resourceFilters = mode === 'load' ? {} : projectResourceAppliedFiltersRef.current;
+            const resourceActionId = projectResourceActionRef.current;
             const [project, members] = await Promise.all([
               api.getProject(targetRoute.projectKey),
               api.getProjectMembers(targetRoute.projectKey),
             ]);
-            if (mode === 'load') projectResourceAppliedFiltersRef.current = { q: '', category: '', status: '', tag: '' };
-            const resourceFilters = mode === 'load' ? {} : projectResourceAppliedFiltersRef.current;
-            const resourceActionId = projectResourceActionRef.current;
             // 失败在页面内展示（resourceError / linkedError），不重复弹出全局提示。
             const [resourcesResult, linkedPostsResult] = await Promise.allSettled([
               baseApi.getProjectResources(targetRoute.projectKey, resourceFilters),
@@ -1984,6 +1990,8 @@ export function SharedApp({ services }) {
           : Promise.resolve(null),
         targetRoute.id === 'project-resource-detail'
           ? (async () => {
+            const resourceActionId = projectResourceActionRef.current;
+            const unlocked = projectResourceUnlockedRef.current;
             const [project, members, resources] = await Promise.all([
               api.getProject(targetRoute.projectKey),
               api.getProjectMembers(targetRoute.projectKey),
@@ -1992,24 +2000,31 @@ export function SharedApp({ services }) {
             const summary = resources.find((resource) => resource.id === targetRoute.resourceId) || null;
             if (!summary) {
               const resource = await api.getProjectResource(targetRoute.projectKey, targetRoute.resourceId);
-              return { project, members, resource, locked: false, attachments: await api.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId) };
+              return { project, members, resourceActionId, resource, locked: false, attachments: await api.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId) };
             }
             const locked = summary.is_protected;
             // 后台刷新时，同一资料已解锁则保持解锁：沿用解锁后的详情，用访问凭证刷新附件。
-            const unlocked = projectResourceUnlockedRef.current;
+            // 凭证过期或密码已被重置（403）时回退为锁定，让用户重新输入密码；不弹全局错误提示。
             if (mode === 'refresh' && locked && unlocked && unlocked.key === `${targetRoute.projectKey}:${targetRoute.resourceId}`) {
-              return {
-                project,
-                members,
-                resource: unlocked.resource,
-                locked: false,
-                attachments: await api.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId, unlocked.resource.access_token),
-              };
+              try {
+                return {
+                  project,
+                  members,
+                  resourceActionId,
+                  resource: unlocked.resource,
+                  locked: false,
+                  attachments: await baseApi.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId, unlocked.resource.access_token),
+                };
+              } catch (caught) {
+                if (!(caught && typeof caught === 'object' && 'status' in caught && caught.status === 403)) throw caught;
+                return { project, members, resourceActionId, resource: summary, locked: true, attachments: [] };
+              }
             }
             const resource = locked ? summary : await api.getProjectResource(targetRoute.projectKey, targetRoute.resourceId);
             return {
               project,
               members,
+              resourceActionId,
               resource,
               locked,
               attachments: locked ? [] : await api.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId),
@@ -2113,7 +2128,11 @@ export function SharedApp({ services }) {
         setProjectMembers(nextProjectBundle?.[1] || []);
         setProjectCycles(nextProjectBundle?.[2] || []);
         setProjectResources(nextProjectBundle?.[3] || []);
-        setProjectTimeAllocations(nextProjectBundle?.[4] || []);
+        const timeAllocations = nextProjectBundle?.[4];
+        // 后台刷新失败时保留已显示的排期，只给出提示；首次加载失败则显示为空并提示。
+        if (timeAllocations?.items) setProjectTimeAllocations(timeAllocations.items);
+        else if (mode === 'load') setProjectTimeAllocations([]);
+        setProjectTimeAllocationsError(timeAllocations?.error || '');
       }
       if (targetRoute.id === 'project-resource-library') {
         setProjectDetail(nextProjectResourceLibraryBundle?.project || null);
@@ -2133,9 +2152,12 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'project-resource-detail') {
         setProjectDetail(nextResourceDetailBundle?.project || null);
         setProjectMembers(nextResourceDetailBundle?.members || []);
-        setProjectResourceDetail(nextResourceDetailBundle?.resource || null);
-        setProjectResourceLocked(Boolean(nextResourceDetailBundle?.locked));
-        setProjectResourceAttachments(nextResourceDetailBundle?.attachments || []);
+        // 加载期间用户已解锁、编辑或重置密码时，以该操作的结果为准，不用较早发起的加载结果覆盖。
+        if (nextResourceDetailBundle?.resourceActionId === projectResourceActionRef.current) {
+          setProjectResourceDetail(nextResourceDetailBundle?.resource || null);
+          setProjectResourceLocked(Boolean(nextResourceDetailBundle?.locked));
+          setProjectResourceAttachments(nextResourceDetailBundle?.attachments || []);
+        }
       }
       if (targetRoute.id === 'project-personal-analysis') {
         setProjectDetail(nextPersonalAnalysisBundle?.[0] || null);
@@ -3114,7 +3136,7 @@ export function SharedApp({ services }) {
     if (!systemUserProjectTarget || systemUserProjectAssignKeys.length === 0) { setSystemUserError('请至少选择一个要分配的项目。'); return; }
     const completed = await runSystemUserMutation(
       () => api.assignSystemUserProjects(systemUserProjectTarget.username, systemUserProjectAssignKeys, systemUserProjectAssignRole),
-      `已为 ${systemUserProjectTarget.display_name} 分配 ${systemUserProjectAssignKeys.length} 个项目。`,
+      `已为 ${systemUserProjectTarget.display_name} 分配所选项目。`,
     );
     if (completed) setSystemUserProjectAssignKeys([]);
   }
@@ -6592,6 +6614,7 @@ export function SharedApp({ services }) {
                       <p>为项目成员安排时间投入，拖动色块即可调整起止日期。</p>
                     </div>
                   </div>
+                  {projectTimeAllocationsError ? <Feedback tone="danger" title="时间排期加载失败">{projectTimeAllocationsError}</Feedback> : null}
                   <TimeAllocationGantt
                     allocations={projectTimeAllocations}
                     projects={[{ key: activeProjectDetail.key, name: activeProjectDetail.name }]}

@@ -48,6 +48,76 @@ test('已解锁的受保护资料在后台刷新后保持解锁', async ({ page 
   await expect(page.locator('.resource-lock-card')).toHaveCount(0);
 });
 
+test('资料访问凭证失效后，后台刷新回退为锁定状态', async ({ page }) => {
+  const refresh = await holdTopbarEvents(page);
+  await login(page);
+  const created = await page.request.post('/api/v1/projects/YCE/resources', {
+    headers: await csrfHeaders(page),
+    data: { title: '凭证失效资料', category: 'other', body: '<p>凭证失效前可见的正文</p>', body_format: 'html', access_password: 'Secret2026!', tags: [] },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const resource = (await created.json()).data;
+  const attachmentStatuses = [];
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname === `/api/v1/projects/YCE/resources/${resource.id}/attachments`) attachmentStatuses.push(response.status());
+  });
+
+  await page.goto(`/web/app/projects/YCE/resources/${resource.id}`);
+  await page.locator('.resource-lock-card').getByLabel('访问密码').fill('Secret2026!');
+  await page.getByRole('button', { name: '验证并查看' }).click();
+  await expect(page.getByText('凭证失效前可见的正文')).toBeVisible();
+
+  // 他处重置了访问密码：已签发的访问凭证随之失效（附件接口返回 403）。
+  const reset = await page.request.post(`/api/v1/projects/YCE/resources/${resource.id}/password/reset`, {
+    headers: await csrfHeaders(page),
+    data: { access_password_action: 'set', access_password: 'Another2026!' },
+  });
+  expect(reset.status(), await reset.text()).toBe(200);
+
+  await refresh();
+  await expect.poll(() => attachmentStatuses.includes(403)).toBe(true);
+  await expect(page.locator('.resource-lock-card')).toBeVisible();
+  await expect(page.getByText('凭证失效前可见的正文')).toHaveCount(0);
+  await expect(page.locator('.resource-lock-card').getByLabel('访问密码')).toBeEditable();
+});
+
+test('后台刷新进行中完成解锁，较早的刷新结果不会把资料重新锁上', async ({ page }) => {
+  const refresh = await holdTopbarEvents(page);
+  await login(page);
+  const created = await page.request.post('/api/v1/projects/YCE/resources', {
+    headers: await csrfHeaders(page),
+    data: { title: '竞态资料', category: 'other', body: '<p>竞态解锁后的正文</p>', body_format: 'html', access_password: 'Secret2026!', tags: [] },
+  });
+  expect(created.status(), await created.text()).toBe(201);
+  const resource = (await created.json()).data;
+
+  await page.goto(`/web/app/projects/YCE/resources/${resource.id}`);
+  await expect(page.locator('.resource-lock-card')).toBeVisible();
+
+  // 拦住刷新发出的资料列表请求，让它在用户解锁之后才返回。
+  let releaseList = () => {};
+  let listHeld = false;
+  const listGate = new Promise((resolve) => { releaseList = resolve; });
+  await page.route('**/api/v1/projects/YCE/resources', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    listHeld = true;
+    await listGate;
+    await route.continue();
+  });
+  await refresh();
+  await expect.poll(() => listHeld).toBe(true);
+
+  await page.locator('.resource-lock-card').getByLabel('访问密码').fill('Secret2026!');
+  await page.getByRole('button', { name: '验证并查看' }).click();
+  await expect(page.getByText('竞态解锁后的正文')).toBeVisible();
+
+  releaseList();
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(300);
+  await expect(page.getByText('竞态解锁后的正文')).toBeVisible();
+  await expect(page.locator('.resource-lock-card')).toHaveCount(0);
+});
+
 test('编辑个人资料时后台刷新不覆盖输入，取消后重新打开恢复为已保存的值', async ({ page }) => {
   const refresh = await holdTopbarEvents(page);
   await login(page);
@@ -108,8 +178,29 @@ test('资料库已提交的筛选在后台刷新后保持，且不采用未提�
   await expect(list).not.toContainText('另一份无关资料');
 });
 
+test('项目时间排期加载失败时在页内提示，恢复后提示消失', async ({ page }) => {
+  const refresh = await holdTopbarEvents(page);
+  let failAllocations = true;
+  await page.route('**/api/v1/projects/YCE/time-allocations', async (route) => {
+    if (route.request().method() === 'GET' && failAllocations) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'internal_error', message: '服务暂时不可用' } }) });
+      return;
+    }
+    await route.continue();
+  });
+  await login(page, '/web/app/projects/YCE?tab=time');
+  await expect(page.getByRole('heading', { level: 3, name: '项目时间排期' })).toBeVisible();
+  await expect(page.getByText('时间排期加载失败')).toBeVisible();
+
+  failAllocations = false;
+  await refresh();
+  await expect(page.getByText('时间排期加载失败')).toHaveCount(0);
+});
+
 test('首屏加载每个接口只请求一次', async ({ page }) => {
   await login(page, '/web/app/tasks');
+  // 等登录后首个页面的请求结束再开始计数，避免把重载前的请求算进来。
+  await page.waitForLoadState('networkidle');
   const counts = new Map();
   page.on('request', (request) => {
     const url = new URL(request.url());
