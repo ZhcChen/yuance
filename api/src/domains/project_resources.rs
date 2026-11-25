@@ -771,7 +771,7 @@ pub async fn create_resource(
         String::new()
     } else {
         validate_access_password(&input.access_password)?;
-        auth::hash_password(&input.access_password)?
+        auth::hash_password(&input.access_password).await?
     };
     let tags = normalize_resource_tags(&input.tags)?;
     let related_work_item_key =
@@ -895,7 +895,7 @@ pub async fn update_resource(
                 ));
             } else {
                 validate_access_password(password)?;
-                auth::hash_password(password)?
+                auth::hash_password(password).await?
             }
         }
         _ => unreachable!("unsupported access password action"),
@@ -1045,7 +1045,7 @@ pub async fn reset_resource_access_password(
                 ));
             }
             validate_access_password(password)?;
-            auth::hash_password(password)?
+            auth::hash_password(password).await?
         }
         _ => unreachable!("unsupported access password reset action"),
     };
@@ -1109,7 +1109,7 @@ pub async fn verify_resource_password(
         return Ok(false);
     }
 
-    auth::verify_password(password, &password_hash)
+    auth::verify_password(password, &password_hash).await
 }
 
 pub async fn verify_resource_password_and_issue_access_token(
@@ -1123,7 +1123,7 @@ pub async fn verify_resource_password_and_issue_access_token(
     if password_hash.trim().is_empty() {
         return Ok((true, None));
     }
-    if password.trim().is_empty() || !auth::verify_password(password, &password_hash)? {
+    if password.trim().is_empty() || !auth::verify_password(password, &password_hash).await? {
         return Ok((false, None));
     }
     let grant = ResourceAccessGrant {

@@ -236,7 +236,7 @@ pub async fn create_user(pool: &SqlitePool, input: CreateUserInput) -> AppResult
     let email = validate_email(&input.email)?;
     let mobile = validate_mobile(&input.mobile)?;
 
-    let password_hash = auth::hash_password(&input.password)?;
+    let password_hash = auth::hash_password(&input.password).await?;
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
@@ -321,11 +321,11 @@ pub async fn change_own_password(
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::Unauthorized)?;
-    if !auth::verify_password(current_password, &password_hash)? {
+    if !auth::verify_password(current_password, &password_hash).await? {
         return Err(AppError::BadRequest("当前密码不正确".to_string()));
     }
 
-    let new_password_hash = auth::hash_password(new_password)?;
+    let new_password_hash = auth::hash_password(new_password).await?;
     let CurrentPasswordSession::Browser {
         raw_session,
         raw_refresh,
@@ -442,7 +442,7 @@ pub async fn reset_user_password(
     let username = auth::validate_username(username)?;
     auth::validate_password(password)?;
     let (user_id, _is_super_admin) = find_user_id_and_super_admin(pool, &username).await?;
-    let password_hash = auth::hash_password(password)?;
+    let password_hash = auth::hash_password(password).await?;
 
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(

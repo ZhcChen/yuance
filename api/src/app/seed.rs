@@ -62,7 +62,7 @@ async fn migrated_pool(settings: &Settings) -> AppResult<sqlx::SqlitePool> {
 }
 
 async fn upsert_local_admin(pool: &sqlx::SqlitePool) -> AppResult<i64> {
-    let password_hash = auth::hash_password("Yuance@2026Dev!")?;
+    let password_hash = auth::hash_password("Yuance@2026Dev!").await?;
 
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"

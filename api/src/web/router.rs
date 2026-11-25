@@ -27,11 +27,17 @@ static FILE_VIEWER_VENDOR_DIR: Dir<'_> =
 pub struct AppState {
     pub settings: Settings,
     pub pool: Option<sqlx::SqlitePool>,
+    /// 登录与资料解锁的失败限流（进程内）。
+    pub auth_limits: std::sync::Arc<crate::platform::rate_limit::AuthRateLimits>,
 }
 
 impl AppState {
     pub fn new(settings: Settings, pool: Option<sqlx::SqlitePool>) -> Self {
-        Self { settings, pool }
+        Self {
+            settings,
+            pool,
+            auth_limits: Default::default(),
+        }
     }
 
     pub fn for_tests() -> Self {
@@ -51,6 +57,7 @@ impl AppState {
                 experimental_legacy_preview_enabled: false,
             },
             pool: None,
+            auth_limits: Default::default(),
         }
     }
 

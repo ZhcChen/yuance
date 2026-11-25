@@ -39,7 +39,18 @@ struct RefreshSessionRecord {
     rotated_refresh_token_ciphertext: Option<String>,
 }
 
-pub fn hash_password(password: &str) -> AppResult<String> {
+/// Argon2 同时执行的上限：每次约占数十 MB 内存与一个 CPU 核，限制并发避免突发登录拖垮服务。
+const PASSWORD_HASH_CONCURRENCY: usize = 4;
+
+static PASSWORD_HASH_PERMITS: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(PASSWORD_HASH_CONCURRENCY));
+
+/// 用户不存在或未启用时用于校验的固定假哈希，使响应耗时与“密码错误”同量级，避免枚举用户名。
+static DUMMY_PASSWORD_HASH: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    hash_password_blocking("yuance-dummy-password-for-timing").unwrap_or_else(|_| String::new())
+});
+
+fn hash_password_blocking(password: &str) -> AppResult<String> {
     let salt = SaltString::generate(&mut OsRng);
     Ok(Argon2::default()
         .hash_password(password.as_bytes(), &salt)
@@ -47,12 +58,51 @@ pub fn hash_password(password: &str) -> AppResult<String> {
         .to_string())
 }
 
-pub fn verify_password(password: &str, password_hash: &str) -> AppResult<bool> {
+fn verify_password_blocking(password: &str, password_hash: &str) -> AppResult<bool> {
     let parsed = PasswordHash::new(password_hash)
         .map_err(|error| AppError::PasswordHash(error.to_string()))?;
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())
+}
+
+/// 在阻塞线程池中执行 Argon2，不占用异步 worker。
+async fn run_password_task<T, F>(task: F) -> AppResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    let _permit = PASSWORD_HASH_PERMITS
+        .acquire()
+        .await
+        .map_err(|error| AppError::PasswordHash(error.to_string()))?;
+    tokio::task::spawn_blocking(task)
+        .await
+        .map_err(|error| AppError::PasswordHash(error.to_string()))?
+}
+
+pub async fn hash_password(password: &str) -> AppResult<String> {
+    let password = password.to_string();
+    run_password_task(move || hash_password_blocking(&password)).await
+}
+
+pub async fn verify_password(password: &str, password_hash: &str) -> AppResult<bool> {
+    let password = password.to_string();
+    let password_hash = password_hash.to_string();
+    run_password_task(move || verify_password_blocking(&password, &password_hash)).await
+}
+
+/// 不存在的账号也执行一次等价的密码校验，结果恒为失败。
+async fn verify_dummy_password(password: &str) -> AppResult<()> {
+    let password = password.to_string();
+    run_password_task(move || {
+        let dummy = DUMMY_PASSWORD_HASH.as_str();
+        if !dummy.is_empty() {
+            let _ = verify_password_blocking(&password, dummy);
+        }
+        Ok(())
+    })
+    .await
 }
 
 pub fn validate_username(username: &str) -> AppResult<String> {
@@ -137,10 +187,13 @@ pub async fn login_with_ttls(
     )
     .bind(username)
     .fetch_optional(pool)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
+    .await?;
 
-    if row.2 != "active" || !verify_password(password, &row.1)? {
+    let Some(row) = row.filter(|row| row.2 == "active") else {
+        verify_dummy_password(password).await?;
+        return Err(AppError::Unauthorized);
+    };
+    if !verify_password(password, &row.1).await? {
         return Err(AppError::Unauthorized);
     }
 

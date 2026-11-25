@@ -10282,7 +10282,9 @@ async fn create_user_with_optional_role(
     display_name: &str,
     role_code: Option<&str>,
 ) -> InitializedUser {
-    let password_hash = auth::hash_password("MemberPass2026!").expect("password should hash");
+    let password_hash = auth::hash_password("MemberPass2026!")
+        .await
+        .expect("password should hash");
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO users (

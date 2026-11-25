@@ -34,6 +34,8 @@ pub enum AppError {
     NotFound(String),
     #[error("未登录或登录已失效")]
     Unauthorized,
+    #[error("{0}")]
+    TooManyRequests(String),
     #[error(transparent)]
     AddrParse(#[from] AddrParseError),
     #[error(transparent)]
@@ -75,6 +77,7 @@ impl IntoResponse for AppError {
             AppError::InvalidEnvironment(_) => (StatusCode::FORBIDDEN, "invalid_environment"),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            AppError::TooManyRequests(_) => (StatusCode::TOO_MANY_REQUESTS, "too_many_requests"),
             AppError::Config(_) | AppError::AddrParse(_) | AppError::Header(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal")
             }

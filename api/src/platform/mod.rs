@@ -3,6 +3,7 @@ pub mod crypto;
 pub mod db;
 pub mod error;
 pub mod file_crypto;
+pub mod rate_limit;
 pub mod realtime;
 pub mod security;
 pub mod telemetry;

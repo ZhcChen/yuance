@@ -558,7 +558,9 @@ async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> Session {
 }
 
 async fn create_member(pool: &sqlx::SqlitePool, username: &str, display_name: &str) -> Session {
-    let password_hash = auth::hash_password("MemberPass2026!").expect("password should hash");
+    let password_hash = auth::hash_password("MemberPass2026!")
+        .await
+        .expect("password should hash");
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO users (username, password_hash, display_name, status, is_super_admin)

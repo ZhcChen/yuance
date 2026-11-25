@@ -44,7 +44,7 @@ pub async fn bootstrap_init(
     if input.password != input.password_confirm {
         return Err(AppError::BadRequest("两次输入的密码不一致".to_string()));
     }
-    let password_hash = auth::hash_password(&input.password)?;
+    let password_hash = auth::hash_password(&input.password).await?;
 
     rbac::seed_core(pool).await?;
 

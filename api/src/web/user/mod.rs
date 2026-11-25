@@ -24,7 +24,7 @@ use crate::{
             AttachmentPreviewStrategy, file_type as attachment_preview_file_type,
             strategy as attachment_preview_strategy,
         },
-        audit_context, response,
+        audit_context, auth_limits, response,
         router::AppState,
         test_storage::bind_test_storage_download_grant,
     },
@@ -1039,15 +1039,21 @@ pub async fn login_submit(
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
     let pool = state.pool()?;
-    let session = match auth::login_with_ttls(
-        pool,
-        &form.username,
-        &form.password,
-        state.settings.session_ttl_seconds()?,
-        state.settings.refresh_session_ttl_seconds()?,
-    )
-    .await
-    {
+    let login_result = match auth_limits::ensure_login_allowed(&state, &headers, &form.username) {
+        Ok(()) => {
+            auth::login_with_ttls(
+                pool,
+                &form.username,
+                &form.password,
+                state.settings.session_ttl_seconds()?,
+                state.settings.refresh_session_ttl_seconds()?,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    auth_limits::record_login_result(&state, &headers, &form.username, &login_result);
+    let session = match login_result {
         Ok(session) => session,
         Err(error) => {
             let request_context = audit_context::from_headers(&headers);

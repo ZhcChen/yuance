@@ -15,6 +15,7 @@ mod observability_flow;
 mod permission_boundaries_flow;
 mod project_management_flow;
 mod query_plan_flow;
+mod rate_limit_flow;
 mod resource_contract;
 mod storage_config_flow;
 mod support;

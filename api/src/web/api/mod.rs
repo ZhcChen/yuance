@@ -27,7 +27,7 @@ use crate::{
         security::csrf,
     },
     web::{
-        attachment_preview, audit_context,
+        attachment_preview, audit_context, auth_limits,
         response::{ApiEnvelope, json},
         router::{AppState, app_release_version},
         test_storage::{
@@ -2248,15 +2248,22 @@ pub async fn login(
     let request_context = audit_context::from_headers(&headers);
     let ttl_seconds = state.settings.session_ttl_seconds()?;
     let refresh_ttl_seconds = state.settings.refresh_session_ttl_seconds()?;
-    let session = match auth::login_with_ttls(
-        pool,
-        &payload.username,
-        &payload.password,
-        ttl_seconds,
-        refresh_ttl_seconds,
-    )
-    .await
+    let login_result = match auth_limits::ensure_login_allowed(&state, &headers, &payload.username)
     {
+        Ok(()) => {
+            auth::login_with_ttls(
+                pool,
+                &payload.username,
+                &payload.password,
+                ttl_seconds,
+                refresh_ttl_seconds,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    auth_limits::record_login_result(&state, &headers, &payload.username, &login_result);
+    let session = match login_result {
         Ok(session) => session,
         Err(error) => {
             if let Err(audit_error) = audit::record_with_context(
@@ -6040,6 +6047,7 @@ pub async fn unlock_project_resource(
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_UNLOCK).await?;
+    auth_limits::ensure_resource_unlock_allowed(&state, user.id, resource.id)?;
     let (verified, access_token) =
         project_resources::verify_resource_password_and_issue_access_token(
             pool,
@@ -6049,6 +6057,7 @@ pub async fn unlock_project_resource(
             &payload.access_password,
         )
         .await?;
+    auth_limits::record_resource_unlock_result(&state, user.id, resource.id, verified);
     let audit_action = if verified {
         "project_resource.unlock.success"
     } else {

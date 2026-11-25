@@ -98,7 +98,9 @@ pub async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> Session {
 
 /// 创建一个启用状态的普通用户（系统角色 `role_code`）并签发会话。
 pub async fn create_user(pool: &sqlx::SqlitePool, username: &str, role_code: &str) -> Session {
-    let password_hash = auth::hash_password("MemberPass2026!").expect("password should hash");
+    let password_hash = auth::hash_password("MemberPass2026!")
+        .await
+        .expect("password should hash");
     let user_id = sqlx::query_scalar::<_, i64>(
         "INSERT INTO users (username, password_hash, display_name, status, is_super_admin) VALUES (?1, ?2, ?1, 'active', 0) RETURNING id",
     )
