@@ -3,6 +3,7 @@
 /**
  * @typedef {{
  *   connectionId: string,
+ *   connected: boolean,
  *   lastSequence: number,
  *   refreshRevision: number,
  *   releaseVersion: string,
@@ -21,6 +22,7 @@
 export function createNotificationEventState() {
   return freezeState({
     connectionId: '',
+    connected: false,
     lastSequence: 0,
     refreshRevision: 0,
     releaseVersion: '',
@@ -55,7 +57,11 @@ export function reduceNotificationEvent(state, value) {
     lastSequence: event.sequence,
   };
   if (event.type === 'stream-connected') {
-    next.refreshRevision += 1;
+    // 首次连接时页面数据刚由路由加载取得，无需再全量刷新（否则每个页面首屏请求翻倍）；
+    // 之前已连接过（断线重连或换新连接）才补拉期间可能遗漏的变更。
+    // 服务端会先推送 release-version 再推送 connected，因此以“是否收到过连接事件”判断，而非连接 id。
+    if (state.connected || (state.connectionId && isNewConnection)) next.refreshRevision += 1;
+    next.connected = true;
   } else if (event.type === 'topbar-invalidated') {
     next.refreshRevision += 1;
   } else if (event.type === 'release-version') {

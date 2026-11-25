@@ -22,8 +22,9 @@ test('相同事件序列产生稳定快照并丢弃连接内重复和乱序事�
   assert.deepEqual(browser, replay);
   assert.deepEqual(browser, {
     connectionId: 'browser-1',
+    connected: true,
     lastSequence: 3,
-    refreshRevision: 2,
+    refreshRevision: 1,
     releaseVersion: '1.2.3',
     targetPath: '',
     targetRevision: 0,
@@ -37,6 +38,17 @@ test('新连接重置序号并强制一次全量恢复', () => {
   assert.equal(reconnected.connectionId, 'stream-b');
   assert.equal(reconnected.lastSequence, 1);
   assert.equal(reconnected.refreshRevision, 2);
+});
+
+test('首次连接不触发全量刷新，同一连接或新连接重连时补拉一次', () => {
+  // 服务端先推送版本号、再推送连接事件：首次连接仍不刷新。
+  const versioned = reduceNotificationEvent(createNotificationEventState(), event('release-version', 'topbar', 1, { version: '1.0.0' }));
+  const connected = reduceNotificationEvent(versioned, event('stream-connected', 'topbar', 2));
+  assert.equal(connected.refreshRevision, 0);
+  const sameReconnected = reduceNotificationEvent(connected, event('stream-connected', 'topbar', 3));
+  assert.equal(sameReconnected.refreshRevision, 1);
+  const newReconnected = reduceNotificationEvent(sameReconnected, event('stream-connected', 'topbar-2', 1));
+  assert.equal(newReconnected.refreshRevision, 2);
 });
 
 test('刷新中的重复失效事实合并为一次后续刷新', async () => {

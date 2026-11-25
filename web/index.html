@@ -7,6 +7,18 @@
     <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
     <link rel="alternate icon" href="/static/brand/yuance-logo.svg" type="image/svg+xml" />
     <script>
+      // 在样式与应用脚本加载前应用已保存的主题，避免深色用户刷新时先闪一下浅色（与登录页一致）。
+      (function () {
+        try {
+          var theme = localStorage.getItem("yuance-theme") === "dark" ? "dark" : "light";
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.colorScheme = theme;
+        } catch (_error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <script>
       window.__YUANCE_APP_RELEASE_VERSION__ = "__YUANCE_RELEASE_VERSION_PLACEHOLDER__";
     </script>
   </head>

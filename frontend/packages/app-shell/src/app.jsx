@@ -1228,6 +1228,10 @@ export function SharedApp({ services }) {
   const [projectResourceError, setProjectResourceError] = useState('');
   const [projectResourceLinkedError, setProjectResourceLinkedError] = useState('');
   const [projectResourceFilters, setProjectResourceFilters] = useState({ q: '', category: '', status: '', tag: '' });
+  // 已提交（已用于查询）的资料筛选条件；筛选框随输入变化，后台刷新必须沿用已提交的条件。
+  const projectResourceAppliedFiltersRef = useRef({ q: '', category: '', status: '', tag: '' });
+  // 当前已解锁的受保护资料（含访问凭证）；后台刷新不得把它重新锁上。
+  const projectResourceUnlockedRef = useRef(/** @type {{ key: string, resource: AppProjectResource } | null} */ (null));
   const [projectResourceSubmitting, setProjectResourceSubmitting] = useState(false);
   const [projectResourceModalOpen, setProjectResourceModalOpen] = useState(false);
   const [projectResourceForm, setProjectResourceForm] = useState({ id: 0, title: '', category: 'other', body: '', bodyFormat: 'html', accessPasswordAction: 'keep', accessPassword: '', tagsText: '' });
@@ -1498,13 +1502,20 @@ export function SharedApp({ services }) {
   const bugsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'bug', ...workItemNavQuery });
   const messageFilter = /** @type {'all' | 'unread' | 'pending' | 'read'} */ (messageRoute ? messageRoute.filter : 'all');
   const previewItems = useMemo(() => (homeFeed?.items || []).slice(0, 8), [homeFeed]);
+  useEffect(() => {
+    const detailRoute = route.id === 'project-resource-detail' ? route : null;
+    projectResourceUnlockedRef.current = detailRoute && projectResourceDetail?.is_protected && !projectResourceLocked && projectResourceDetail.access_token
+      ? { key: `${detailRoute.projectKey}:${detailRoute.resourceId}`, resource: projectResourceDetail }
+      : null;
+  }, [route, projectResourceDetail, projectResourceLocked]);
+  const loadRouteStateRef = useRef(/** @type {(targetRoute: any, mode: 'load' | 'refresh') => Promise<void>} */ (async () => {}));
   const notificationActions = useMemo(() => createNotificationActionCoordinator({
     markAllRead: () => api.markAllNotificationsRead(),
     markRead: (notificationId) => api.markNotificationRead(notificationId),
     getTarget: (notificationId) => api.getNotificationTarget(notificationId),
     setCurrentProject: (projectKey) => api.updateCurrentProject(projectKey),
     currentProjectKey: () => topbarRef.current?.current_project?.key || '',
-    refresh: () => loadRouteState(routeRef.current, 'refresh'),
+    refresh: () => loadRouteStateRef.current(routeRef.current, 'refresh'),
     navigate: (path) => navigate(path, '正在打开消息目标。'),
     targetPath: (target) => notificationTargetPath(target, /** @type {'app' | 'web'} */ (routeRef.current.owner)),
     onState: (state) => {
@@ -1682,6 +1693,9 @@ export function SharedApp({ services }) {
    * @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} targetRoute
    * @param {'load' | 'refresh'} mode
    */
+  // 订阅类回调（实时事件、通知协调器）在首次渲染时创建，须经 ref 调用最新的加载函数，避免读到过期状态。
+  loadRouteStateRef.current = loadRouteState;
+
   async function loadRouteState(targetRoute, mode) {
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
@@ -1690,7 +1704,8 @@ export function SharedApp({ services }) {
       const targetItemKey = targetRoute.id === 'work-item-detail' ? targetRoute.itemKey : '';
       if (draft && draft.itemKey !== targetItemKey) {
         try {
-          await api.cancelWorkItemCommentDraft(draft.itemKey, draft.commentId);
+          // 离开页面时的后台清理：失败不打扰用户（不经全局错误提示）。
+          await baseApi.cancelWorkItemCommentDraft(draft.itemKey, draft.commentId);
           if (workItemCommentDraftRef.current?.commentId === draft.commentId) {
             workItemCommentDraftRef.current = null;
             setWorkItemNewCommentDraftId(null);
@@ -1848,7 +1863,7 @@ export function SharedApp({ services }) {
         api.getCurrentUser(),
         api.getTopbarStatus(),
         ['home', 'profile', 'projects'].includes(targetRoute.id)
-          ? api.getDashboard().catch((caught) => {
+          ? baseApi.getDashboard().catch((caught) => {
             const caughtError = caught instanceof Error ? /** @type {Error & { status?: number }} */ (caught) : null;
             routeLoadWarning = caughtError?.status === 404
               ? new Error('当前服务端尚未提供工作台聚合接口，请先发布配套 API 版本。')
@@ -1895,13 +1910,14 @@ export function SharedApp({ services }) {
           ? (async () => {
             const itemKey = String(targetRoute.itemKey || '');
             const commentsPromise = api.getWorkItemComments(itemKey);
-            const attachmentsPromise = api.getWorkItemAttachments(itemKey);
-            const resourceLibraryLinkPromise = api.getWorkItemResourceLibraryLink(itemKey).catch(() => null);
+            // 附件与资料库链接失败时页面内给出提示或降级，不经全局错误提示重复打扰。
+            const attachmentsPromise = baseApi.getWorkItemAttachments(itemKey);
+            const resourceLibraryLinkPromise = baseApi.getWorkItemResourceLibraryLink(itemKey).catch(() => null);
             void attachmentsPromise.catch(() => {});
             const [detailView, comments, attachmentBundle, resourceLibraryLink] = await Promise.all([
               api.getWorkItemDetailView(itemKey),
               commentsPromise,
-              commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
+              commentsPromise.then((comments) => loadWorkItemAttachmentBundle(baseApi, itemKey, comments, attachmentsPromise)),
               resourceLibraryLinkPromise,
             ]);
             return {
@@ -1922,7 +1938,7 @@ export function SharedApp({ services }) {
             api.getProjectMembers(targetRoute.projectKey),
             api.getProjectCycles(targetRoute.projectKey),
             Promise.resolve([]),
-            api.getProjectTimeAllocations(targetRoute.projectKey).catch(() => []),
+            baseApi.getProjectTimeAllocations(targetRoute.projectKey).catch(() => []),
           ])
           : Promise.resolve(null),
         targetRoute.id === 'project-resource-library'
@@ -1931,14 +1947,18 @@ export function SharedApp({ services }) {
               api.getProject(targetRoute.projectKey),
               api.getProjectMembers(targetRoute.projectKey),
             ]);
-            const resourceFilters = mode === 'load' ? {} : projectResourceFilters;
+            if (mode === 'load') projectResourceAppliedFiltersRef.current = { q: '', category: '', status: '', tag: '' };
+            const resourceFilters = mode === 'load' ? {} : projectResourceAppliedFiltersRef.current;
+            const resourceActionId = projectResourceActionRef.current;
+            // 失败在页面内展示（resourceError / linkedError），不重复弹出全局提示。
             const [resourcesResult, linkedPostsResult] = await Promise.allSettled([
-              api.getProjectResources(targetRoute.projectKey, resourceFilters),
-              api.getProjectResourceLinkedWorkItemPosts(targetRoute.projectKey, { q: resourceFilters.q || '' }),
+              baseApi.getProjectResources(targetRoute.projectKey, resourceFilters),
+              baseApi.getProjectResourceLinkedWorkItemPosts(targetRoute.projectKey, { q: resourceFilters.q || '' }),
             ]);
             return {
               project,
               members,
+              resourceActionId,
               resources: resourcesResult.status === 'fulfilled' ? resourcesResult.value : [],
               resourceError: resourcesResult.status === 'rejected'
                 ? errorMessage(resourcesResult.reason instanceof Error ? resourcesResult.reason : new Error('资料列表加载失败。'))
@@ -1966,6 +1986,17 @@ export function SharedApp({ services }) {
               return { project, members, resource, locked: false, attachments: await api.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId) };
             }
             const locked = summary.is_protected;
+            // 后台刷新时，同一资料已解锁则保持解锁：沿用解锁后的详情，用访问凭证刷新附件。
+            const unlocked = projectResourceUnlockedRef.current;
+            if (mode === 'refresh' && locked && unlocked && unlocked.key === `${targetRoute.projectKey}:${targetRoute.resourceId}`) {
+              return {
+                project,
+                members,
+                resource: unlocked.resource,
+                locked: false,
+                attachments: await api.getProjectResourceAttachments(targetRoute.projectKey, targetRoute.resourceId, unlocked.resource.access_token),
+              };
+            }
             const resource = locked ? summary : await api.getProjectResource(targetRoute.projectKey, targetRoute.resourceId);
             return {
               project,
@@ -2057,7 +2088,6 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'profile' && nextProfile) {
         setDashboard(nextDashboard);
         setProfile(nextProfile);
-        setProfileForm({ displayName: nextProfile.display_name, email: nextProfile.email, mobile: nextProfile.mobile });
         setApiTokens(nextSecurity?.[0] || []);
       }
       if (targetRoute.id === 'messages') {
@@ -2079,10 +2109,13 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'project-resource-library') {
         setProjectDetail(nextProjectResourceLibraryBundle?.project || null);
         setProjectMembers(nextProjectResourceLibraryBundle?.members || []);
-        setProjectResources(nextProjectResourceLibraryBundle?.resources || []);
-        setProjectResourceLinkedWorkItemPosts(nextProjectResourceLibraryBundle?.linkedWorkItemPosts || []);
-        setProjectResourceError(nextProjectResourceLibraryBundle?.resourceError || '');
-        setProjectResourceLinkedError(nextProjectResourceLibraryBundle?.linkedError || '');
+        // 加载期间用户已提交新的筛选（或其他资料操作）时，以其结果为准，不用较早发起的刷新结果覆盖。
+        if (nextProjectResourceLibraryBundle?.resourceActionId === projectResourceActionRef.current) {
+          setProjectResources(nextProjectResourceLibraryBundle?.resources || []);
+          setProjectResourceLinkedWorkItemPosts(nextProjectResourceLibraryBundle?.linkedWorkItemPosts || []);
+          setProjectResourceError(nextProjectResourceLibraryBundle?.resourceError || '');
+          setProjectResourceLinkedError(nextProjectResourceLibraryBundle?.linkedError || '');
+        }
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectCycleDetail(nextCycleDetailBundle?.[0] || null);
@@ -3157,11 +3190,12 @@ export function SharedApp({ services }) {
     if (!projectKey) return;
     const actionId = projectResourceActionRef.current + 1;
     projectResourceActionRef.current = actionId;
+    projectResourceAppliedFiltersRef.current = { ...filters };
     setProjectResourceError('');
     setProjectResourceLinkedError('');
     const [resourcesResult, linkedPostsResult] = await Promise.allSettled([
-      api.getProjectResources(projectKey, filters),
-      api.getProjectResourceLinkedWorkItemPosts(projectKey, { q: filters.q || '' }),
+      baseApi.getProjectResources(projectKey, filters),
+      baseApi.getProjectResourceLinkedWorkItemPosts(projectKey, { q: filters.q || '' }),
     ]);
     const currentRoute = routeRef.current;
     if (projectResourceActionRef.current !== actionId || !isProjectResourceListRoute(currentRoute) || projectResourceListProjectKey(currentRoute) !== projectKey) return;
@@ -3299,7 +3333,7 @@ export function SharedApp({ services }) {
         setProjectResourceModalOpen(false);
         setProjectResourceStatus('资料已更新。');
       } else {
-        const resources = await api.getProjectResources(projectKey, projectResourceFilters);
+        const resources = await api.getProjectResources(projectKey, projectResourceAppliedFiltersRef.current);
         if (!isCurrent()) return;
         setProjectResources(resources);
         setProjectResourceCreateCheckpoint(null);
@@ -3648,7 +3682,7 @@ export function SharedApp({ services }) {
 
   useEffect(() => {
     const coordinator = createNotificationEventCoordinator({
-      refresh: () => loadRouteState(routeRef.current, 'refresh'),
+      refresh: () => loadRouteStateRef.current(routeRef.current, 'refresh'),
       onNavigate: (path) => router.assign(path),
       onReleaseVersion: (version) => appUpdateControllerRef.current?.handleRealtimeVersion(version),
     });
@@ -4002,14 +4036,14 @@ export function SharedApp({ services }) {
   /** @param {string} itemKey */
   async function refreshWorkItemRealtimeState(itemKey) {
     const commentsPromise = api.getWorkItemComments(itemKey);
-    const attachmentsPromise = api.getWorkItemAttachments(itemKey);
+    const attachmentsPromise = baseApi.getWorkItemAttachments(itemKey);
     const resourceLibraryLinkGeneration = workItemResourceLibraryLinkGenerationRef.current;
-    const resourceLibraryLinkPromise = api.getWorkItemResourceLibraryLink(itemKey);
+    const resourceLibraryLinkPromise = baseApi.getWorkItemResourceLibraryLink(itemKey);
     void attachmentsPromise.catch(() => {});
     const [detailViewResult, commentsResult, attachmentBundleResult, resourceLibraryLinkResult] = await Promise.allSettled([
       api.getWorkItemDetailView(itemKey),
       commentsPromise,
-      commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
+      commentsPromise.then((comments) => loadWorkItemAttachmentBundle(baseApi, itemKey, comments, attachmentsPromise)),
       resourceLibraryLinkPromise,
     ]);
     const current = routeRef.current;
@@ -5245,7 +5279,7 @@ export function SharedApp({ services }) {
     const kept = new Set(richTextAttachmentIds(keptBody));
     for (const attachmentId of drafts) {
       if (kept.has(attachmentId)) continue;
-      void api.deleteWorkItemDraftAttachment(projectKey, attachmentId).catch(() => {});
+      void baseApi.deleteWorkItemDraftAttachment(projectKey, attachmentId).catch(() => {});
     }
   }
 
@@ -5347,7 +5381,7 @@ export function SharedApp({ services }) {
       if (!result.completed || !result.uploaded) {
         if (result.created) {
           workItemCreateDraftIdsRef.current.delete(result.created.id);
-          void api.deleteWorkItemDraftAttachment(projectKey, result.created.id).catch(() => {});
+          void baseApi.deleteWorkItemDraftAttachment(projectKey, result.created.id).catch(() => {});
         }
         options?.onError?.('文件上传未完成，请重试。');
         return null;
@@ -6320,7 +6354,7 @@ export function SharedApp({ services }) {
                   </div>
                 </div>
                 <div className="page-head__actions">
-                  <Button variant="secondary" onClick={() => { setProfileError(''); setProfileModalOpen(true); }}>编辑资料</Button>
+                  <Button variant="secondary" onClick={() => { setProfileError(''); if (profile) setProfileForm({ displayName: profile.display_name, email: profile.email, mobile: profile.mobile }); setProfileModalOpen(true); }}>编辑资料</Button>
                   <Button variant="secondary" onClick={() => { setAccountSecurityError(''); setPasswordModalOpen(true); }}>修改密码</Button>
                   <Button variant="secondary" disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建访问 Token</Button>
                 </div>

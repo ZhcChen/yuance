@@ -1,4 +1,5 @@
 import { expect, test } from './support/fixtures.mjs';
+import { holdTopbarEvents } from './support/realtime.mjs';
 import { ensureCurrentProject } from './support/session.mjs';
 
 async function chooseFile(page, button, file) {
@@ -19,27 +20,6 @@ test.beforeEach(async ({ page }) => {
   await routeEmptyProjectResourceLinkedWorkItemPosts(page);
 });
 
-/**
- * 截住顶栏实时事件流并挂起。调用返回的函数时向最近一次连接推送 `topbar: invalidated`，
- * 触发页面按实时通知刷新（工作项详情页已移除手动刷新按钮，实时通知是刷新的真实来源）。
- * 必须在打开页面之前调用。
- */
-async function holdTopbarEvents(page) {
-  const pending = [];
-  await page.route('**/api/v1/topbar/events', (route) => new Promise((resolve) => {
-    pending.push({ route, resolve });
-  }));
-  return async () => {
-    const latest = pending.pop();
-    if (!latest) throw new Error('页面尚未建立顶栏事件连接');
-    await latest.route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
-      body: 'event: topbar\ndata: invalidated\n\n',
-    });
-    latest.resolve();
-  };
-}
 
 /**
  * 页面内联错误提示：排除同时出现的全局错误 toast（二者都是 role=alert）。
