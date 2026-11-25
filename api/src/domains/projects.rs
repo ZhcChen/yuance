@@ -437,6 +437,9 @@ pub struct UpdateWorkItemInput {
     pub parent_item_key: String,
     pub cycle_id: Option<i64>,
     pub actor_display_name_snapshot: String,
+    /// 乐观锁：非空时只有当前 `updated_at` 与之相同才写入，否则返回 409。
+    /// 评论、正文发布也会刷新 `updated_at`，因此是否携带由调用方决定。
+    pub expected_updated_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,7 +512,20 @@ pub async fn list_project_summaries_paginated(
     let normalized = normalize_project_filter(filter)?;
     let pagination = normalize_pagination(pagination)?;
     let total_items = count_project_summaries(pool, &normalized).await?;
-    let rows = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, i64, String)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+            i64,
+            String,
+        ),
+    >(
         r#"
         SELECT
             p.id,
@@ -612,7 +628,20 @@ pub async fn list_project_summaries_for_user_paginated(
     let normalized = normalize_project_filter(filter)?;
     let pagination = normalize_pagination(pagination)?;
     let total_items = count_project_summaries_for_user(pool, user_id, &normalized).await?;
-    let rows = sqlx::query_as::<_, (i64, String, String, String, String, String, i64, i64, String)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+            i64,
+            String,
+        ),
+    >(
         r#"
         SELECT
             p.id,
@@ -997,7 +1026,7 @@ pub async fn create_work_item_saved_view(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     if input.is_default {
         clear_default_work_item_saved_views(&mut tx, user_id, scope.project_id, &scope.item_type)
             .await?;
@@ -1104,7 +1133,7 @@ pub async fn set_default_work_item_saved_view(
         return Ok(current);
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     clear_default_work_item_saved_views(&mut tx, user_id, current.project_id, &current.item_type)
         .await?;
     sqlx::query(
@@ -1157,7 +1186,7 @@ pub async fn create_project(
 
     for _ in 0..PROJECT_KEY_GENERATE_MAX_ATTEMPTS {
         let project_key = generate_project_key();
-        let mut tx = pool.begin().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let project_id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO projects (
@@ -1286,7 +1315,7 @@ pub async fn update_project(
         ));
     };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE projects
@@ -1827,7 +1856,7 @@ pub async fn create_project_cycle(
         Some(resolve_project_member_user_id(pool, project_id, owner_username).await?)
     };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let sort_order = sqlx::query_scalar::<_, i64>(
         "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM project_cycles WHERE project_id = ?1",
     )
@@ -1938,7 +1967,7 @@ pub async fn update_project_cycle(
         Some(resolve_project_member_user_id(pool, project_id, owner_username).await?)
     };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE project_cycles
@@ -2027,7 +2056,7 @@ pub async fn close_project_cycle(
         return get_project_cycle(pool, project_id, cycle_id).await;
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE project_cycles
@@ -2243,7 +2272,7 @@ pub async fn remove_project_member(
         )));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         DELETE FROM project_members
@@ -2356,7 +2385,7 @@ pub async fn update_project_member_role(
             .ok_or_else(|| AppError::NotFound("项目成员不存在".to_string()));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE project_members
@@ -3465,7 +3494,7 @@ pub async fn create_work_item_with_cycle(
         resolve_project_member_user_id(pool, project_id, assignee_username).await?
     };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let prefix = format!("{project_key}-{item_segment}-");
     let next_number = sqlx::query_scalar::<_, i64>(
         r#"
@@ -3903,8 +3932,9 @@ pub async fn update_work_item_status(
     };
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
-    let mut tx = pool.begin().await?;
-    sqlx::query(
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    // 状态校验基于事务外读取的 current_status：带前置条件更新，状态已被并发修改时拒绝而非覆盖。
+    let updated = sqlx::query(
         r#"
         UPDATE work_items
         SET status = ?2,
@@ -3914,12 +3944,17 @@ pub async fn update_work_item_status(
             END,
             updated_at = datetime('now')
         WHERE id = ?1
+          AND status = ?3
+          AND deleted_at IS NULL
         "#,
     )
     .bind(work_item_id)
     .bind(status)
+    .bind(&current_status)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    ensure_work_item_unchanged(updated)?;
 
     let flow_summary = format_work_item_flow_summary(
         &current_status,
@@ -4091,8 +4126,8 @@ pub async fn handoff_work_item(
         &next_assignee_display_name,
         &body,
     );
-    let mut tx = pool.begin().await?;
-    sqlx::query(
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let updated = sqlx::query(
         r#"
         UPDATE work_items
         SET status = ?2,
@@ -4103,13 +4138,20 @@ pub async fn handoff_work_item(
             END,
             updated_at = datetime('now')
         WHERE id = ?1
+          AND status = ?4
+          AND assignee_user_id IS ?5
+          AND deleted_at IS NULL
         "#,
     )
     .bind(work_item_id)
     .bind(status)
     .bind(next_assignee_user_id)
+    .bind(&current_status)
+    .bind(current_assignee_user_id)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    ensure_work_item_unchanged(updated)?;
 
     let should_notify_assignment = current_assignee_user_id != next_assignee_user_id
         || input.source_comment_id.is_some()
@@ -4438,7 +4480,7 @@ pub async fn batch_update_work_items(
         _ => unreachable!("validated batch action should be exhaustive"),
     };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let mut refresh_user_ids = Vec::new();
     for item in &items {
         match &target {
@@ -4447,18 +4489,23 @@ pub async fn batch_update_work_items(
                 assignee_username,
                 assignee_display_name,
             } => {
-                sqlx::query(
+                let updated = sqlx::query(
                     r#"
                     UPDATE work_items
                     SET assignee_user_id = ?2,
                         updated_at = datetime('now')
                     WHERE id = ?1
+                      AND assignee_user_id IS ?3
+                      AND deleted_at IS NULL
                     "#,
                 )
                 .bind(item.id)
                 .bind(assignee_user_id)
+                .bind(item.assignee_user_id)
                 .execute(&mut *tx)
-                .await?;
+                .await?
+                .rows_affected();
+                ensure_work_item_unchanged(updated)?;
 
                 let flow_summary = format_work_item_flow_summary(
                     &item.status,
@@ -4536,7 +4583,7 @@ pub async fn batch_update_work_items(
                 refresh_user_ids.push(*assignee_user_id);
             }
             BatchActionTarget::Status { status } => {
-                sqlx::query(
+                let updated = sqlx::query(
                     r#"
                     UPDATE work_items
                     SET status = ?2,
@@ -4546,12 +4593,17 @@ pub async fn batch_update_work_items(
                         END,
                         updated_at = datetime('now')
                     WHERE id = ?1
+                      AND status = ?3
+                      AND deleted_at IS NULL
                     "#,
                 )
                 .bind(item.id)
                 .bind(status)
+                .bind(&item.status)
                 .execute(&mut *tx)
-                .await?;
+                .await?
+                .rows_affected();
+                ensure_work_item_unchanged(updated)?;
 
                 let flow_summary = format_work_item_flow_summary(
                     &item.status,
@@ -4610,18 +4662,23 @@ pub async fn batch_update_work_items(
                 }
             }
             BatchActionTarget::Priority { priority } => {
-                sqlx::query(
+                let updated = sqlx::query(
                     r#"
                     UPDATE work_items
                     SET priority = ?2,
                         updated_at = datetime('now')
                     WHERE id = ?1
+                      AND priority = ?3
+                      AND deleted_at IS NULL
                     "#,
                 )
                 .bind(item.id)
                 .bind(priority)
+                .bind(&item.priority)
                 .execute(&mut *tx)
-                .await?;
+                .await?
+                .rows_affected();
+                ensure_work_item_unchanged(updated)?;
 
                 let flow_summary = format!(
                     "优先级：{} → {}",
@@ -4677,18 +4734,23 @@ pub async fn batch_update_work_items(
                 cycle_id,
                 cycle_name,
             } => {
-                sqlx::query(
+                let updated = sqlx::query(
                     r#"
                     UPDATE work_items
                     SET cycle_id = ?2,
                         updated_at = datetime('now')
                     WHERE id = ?1
+                      AND cycle_id IS ?3
+                      AND deleted_at IS NULL
                     "#,
                 )
                 .bind(item.id)
                 .bind(cycle_id)
+                .bind(item.cycle_id)
                 .execute(&mut *tx)
-                .await?;
+                .await?
+                .rows_affected();
+                ensure_work_item_unchanged(updated)?;
 
                 let previous_cycle_label = work_item_cycle_label(&item.cycle_name);
                 let next_cycle_label = work_item_cycle_label(cycle_name);
@@ -4864,8 +4926,9 @@ pub async fn update_work_item(
         .unwrap_or_default();
     let cycle_changed = current_cycle_id != cycle_id;
 
-    let mut tx = pool.begin().await?;
-    sqlx::query(
+    let expected_updated_at = input.expected_updated_at.trim().to_string();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let updated = sqlx::query(
         r#"
         UPDATE work_items
         SET title = ?2,
@@ -4882,6 +4945,8 @@ pub async fn update_work_item(
             END,
             updated_at = datetime('now')
         WHERE id = ?1
+          AND deleted_at IS NULL
+          AND (?10 = '' OR updated_at = ?10)
         "#,
     )
     .bind(work_item_id)
@@ -4893,8 +4958,11 @@ pub async fn update_work_item(
     .bind(&due_date)
     .bind(parent_work_item_id)
     .bind(cycle_id)
+    .bind(&expected_updated_at)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    ensure_work_item_unchanged(updated)?;
 
     if cycle_changed {
         let (cycle_action, cycle_summary) = if current_cycle_id.is_none() && cycle_id.is_some() {
@@ -5031,19 +5099,24 @@ pub async fn set_work_item_cycle(
             .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()));
     }
 
-    let mut tx = pool.begin().await?;
-    sqlx::query(
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let updated = sqlx::query(
         r#"
         UPDATE work_items
         SET cycle_id = ?2,
             updated_at = datetime('now')
         WHERE id = ?1
+          AND cycle_id IS ?3
+          AND deleted_at IS NULL
         "#,
     )
     .bind(work_item_id)
     .bind(next_cycle_id)
+    .bind(current_cycle_id)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    ensure_work_item_unchanged(updated)?;
 
     let action = if current_cycle_id.is_none() && next_cycle_id.is_some() {
         "work_item.cycle.linked"
@@ -5134,20 +5207,23 @@ pub async fn archive_work_item(
             .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()));
     }
 
-    let mut tx = pool.begin().await?;
-    sqlx::query(
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let updated = sqlx::query(
         r#"
         UPDATE work_items
         SET deleted_at = datetime('now'),
             deleted_by_user_id = ?2,
             updated_at = datetime('now')
         WHERE id = ?1
+          AND deleted_at IS NULL
         "#,
     )
     .bind(work_item_id)
     .bind(actor_user_id)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    ensure_work_item_unchanged(updated)?;
 
     sqlx::query(
         r#"
@@ -5242,18 +5318,21 @@ pub async fn restore_work_item(
         ));
     }
 
-    sqlx::query(
+    let updated = sqlx::query(
         r#"
         UPDATE work_items
         SET deleted_at = NULL,
             deleted_by_user_id = NULL,
             updated_at = datetime('now')
         WHERE id = ?1
+          AND deleted_at IS NOT NULL
         "#,
     )
     .bind(work_item_id)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    ensure_work_item_unchanged(updated)?;
 
     sqlx::query(
         r#"
@@ -5377,7 +5456,7 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
         .map(|target| target.user_id)
         .collect::<HashSet<_>>();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let comment_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO work_item_comments (
@@ -5605,7 +5684,7 @@ pub async fn publish_work_item_comment_draft(
         .map(|target| target.user_id)
         .collect::<HashSet<_>>();
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let updated_count = sqlx::query(
         r#"
         UPDATE work_item_comments
@@ -6014,7 +6093,7 @@ async fn update_work_item_comment_with_format_internal(
         resolve_project_mention_targets(pool, project_id, &mention_usernames).await?;
     ensure_comment_body_attachment_references(pool, comment_id, &prepared.body).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let updated_count = sqlx::query(
         r#"
         UPDATE work_item_comments
@@ -7508,7 +7587,7 @@ pub async fn upsert_work_item_primary_post(
     let mention_targets =
         resolve_project_mention_targets(pool, project_id, &mention_usernames).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let locked = sqlx::query(
         "UPDATE work_items SET updated_at = updated_at WHERE id = ?1 AND deleted_at IS NULL",
     )
@@ -9126,6 +9205,16 @@ pub fn allowed_work_item_status_transitions(
         "closed" | "cancelled" => Ok(&["in_progress"]),
         _ => unreachable!("validated work item status should be exhaustive"),
     }
+}
+
+/// 带前置条件的工作项更新未命中任何行：说明读取后已被他人修改（或已删除），返回 409 让调用方刷新重试。
+fn ensure_work_item_unchanged(rows_affected: u64) -> AppResult<()> {
+    if rows_affected == 0 {
+        return Err(AppError::Conflict(
+            "工作项已被其他人修改，请刷新后重试".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn ensure_work_item_status_transition(current_status: &str, next_status: &str) -> AppResult<()> {

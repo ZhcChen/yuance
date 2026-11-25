@@ -237,7 +237,7 @@ pub async fn create_user(pool: &SqlitePool, input: CreateUserInput) -> AppResult
     let mobile = validate_mobile(&input.mobile)?;
 
     let password_hash = auth::hash_password(&input.password)?;
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO users (
@@ -334,7 +334,7 @@ pub async fn change_own_password(
     let current_refresh_hash = raw_refresh
         .filter(|token| !token.trim().is_empty())
         .map(|token| auth::hash_refresh_token(&token));
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE users
@@ -423,7 +423,7 @@ pub async fn replace_user_role(
         ));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query("DELETE FROM user_roles WHERE user_id = ?1")
         .bind(user_id)
         .execute(&mut *tx)
@@ -444,7 +444,7 @@ pub async fn reset_user_password(
     let (user_id, _is_super_admin) = find_user_id_and_super_admin(pool, &username).await?;
     let password_hash = auth::hash_password(password)?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE users
@@ -503,7 +503,7 @@ pub async fn set_user_status(pool: &SqlitePool, username: &str, status: &str) ->
         ));
     }
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE users

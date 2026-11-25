@@ -48,7 +48,7 @@ pub async fn bootstrap_init(
 
     rbac::seed_core(pool).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     ensure_bootstrap_row(&mut tx).await?;
 
     let completed = sqlx::query_scalar::<_, i64>(

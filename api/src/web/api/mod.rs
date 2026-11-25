@@ -1714,6 +1714,9 @@ pub struct UpdateWorkItemRequest {
     parent_item_key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_cycle_id")]
     cycle_id: Option<Option<i64>>,
+    /// 可选乐观锁：传入读取时的 `updated_at`，期间被修改则返回 409。
+    #[serde(default)]
+    expected_updated_at: Option<String>,
 }
 
 fn deserialize_optional_cycle_id<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
@@ -2504,7 +2507,10 @@ pub async fn list_projects(
         .items
         .into_iter()
         .map(|project| {
-            let pending = pending_by_project.get(&project.id).cloned().unwrap_or_default();
+            let pending = pending_by_project
+                .get(&project.id)
+                .cloned()
+                .unwrap_or_default();
             let mut payload = project_payload(project);
             payload.pending_requirements = pending.requirements;
             payload.pending_tasks = pending.tasks;
@@ -4231,6 +4237,7 @@ pub async fn update_work_item(
                 .unwrap_or_else(|| item.parent_item_key.clone()),
             cycle_id,
             actor_display_name_snapshot: principal.actor_display_name_snapshot(),
+            expected_updated_at: payload.expected_updated_at.unwrap_or_default(),
         },
     )
     .await?;

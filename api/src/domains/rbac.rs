@@ -392,7 +392,7 @@ pub async fn replace_role_permissions(
     }
     let permission_keys = normalize_permission_keys(pool, permission_keys).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     for permission_key in &permission_keys {
         let exists = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM permissions WHERE permission_key = ?1",

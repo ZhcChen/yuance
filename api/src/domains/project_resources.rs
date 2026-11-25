@@ -779,7 +779,7 @@ pub async fn create_resource(
     let related_cycle_id = normalize_related_cycle_id(input.related_cycle_id)?;
     let actor_display_name_snapshot =
         normalize_display_name_snapshot(&input.actor_display_name_snapshot);
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let resource_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO project_resources (
@@ -917,7 +917,7 @@ pub async fn update_resource(
         normalize_display_name_snapshot(&input.actor_display_name_snapshot);
     let prepared_body = prepared.body.clone();
     let prepared_body_format = prepared.body_format.clone();
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE project_resources
@@ -986,7 +986,7 @@ pub async fn archive_resource(
     let existing = get_project_resource(pool, project_id, resource_id).await?;
     ensure_resource_accepts_writes(&existing)?;
     let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE project_resources
@@ -1051,7 +1051,7 @@ pub async fn reset_resource_access_password(
     };
     let actor_display_name_snapshot =
         normalize_display_name_snapshot(&input.actor_display_name_snapshot);
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE project_resources

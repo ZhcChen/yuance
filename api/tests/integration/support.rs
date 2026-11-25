@@ -47,6 +47,30 @@ pub async fn test_pool() -> sqlx::SqlitePool {
     pool
 }
 
+/// 文件型测试库（多连接 + WAL），用于并发测试；内存库只有一个连接，无法暴露锁竞争。
+/// 返回的目录在测试结束后由调用方保留或忽略即可（位于系统临时目录）。
+pub async fn test_file_pool(name: &str) -> sqlx::SqlitePool {
+    let dir = std::env::temp_dir().join(format!(
+        "yuance-test-{name}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or_default()
+    ));
+    std::fs::create_dir_all(&dir).expect("temp dir should create");
+    let mut settings = test_settings();
+    settings.data_dir = dir.to_string_lossy().to_string();
+    settings.database_url = format!("sqlite://{}/test.sqlite3", dir.to_string_lossy());
+    let pool = db::connect_pool(&settings)
+        .await
+        .expect("file pool should connect");
+    db::run_migrations(&pool)
+        .await
+        .expect("migrations should run");
+    pool
+}
+
 pub fn with_csrf_cookie(session_cookie: &str) -> String {
     format!("{session_cookie}; yuance_csrf={CSRF_TOKEN}")
 }

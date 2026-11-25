@@ -524,7 +524,7 @@ async fn create_attachment_inner(
     }
     let object_key = generate_object_key(&original_filename);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let (encryption_status, encryption_format) = if encryption_master_key.is_some() {
         ("encrypted", file_crypto::FILE_ENCRYPTION_FORMAT)
     } else {
@@ -1393,7 +1393,7 @@ pub async fn archive_attachment(
         .transpose()?;
     let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE file_objects
@@ -2370,7 +2370,7 @@ async fn ensure_folder_name_available(
 pub async fn delete_folder(pool: &SqlitePool, id: i64) -> AppResult<FileFolder> {
     let folder = get_folder(pool, id).await?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         WITH RECURSIVE folder_tree(id) AS (

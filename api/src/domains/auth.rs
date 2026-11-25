@@ -171,7 +171,7 @@ pub async fn issue_session_with_ttls(
     let refresh_token = Uuid::new_v4().to_string();
     let token_hash = hash_session_token(&raw_token);
     let refresh_token_hash = hash_refresh_token(&refresh_token);
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
     sqlx::query(
         r#"
@@ -252,7 +252,7 @@ pub async fn revoke_refresh_session(
     reason: &str,
 ) -> AppResult<()> {
     let token_hash = hash_refresh_token(raw_token);
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let Some(user_id) = sqlx::query_scalar::<_, i64>(
         "SELECT user_id FROM refresh_sessions WHERE refresh_token_hash = ?1",
     )
@@ -387,7 +387,11 @@ pub async fn touch_refresh_session(
     .bind(&token_hash)
     .fetch_one(pool)
     .await?;
-    Ok(if still_valid { RefreshTouch::Unchanged } else { RefreshTouch::Invalid })
+    Ok(if still_valid {
+        RefreshTouch::Unchanged
+    } else {
+        RefreshTouch::Invalid
+    })
 }
 
 pub async fn refresh_session(
@@ -416,7 +420,7 @@ pub async fn refresh_session(
         crypto::encrypt_secret(security_master_key, &raw_token, aad.as_bytes())?;
     let rotated_refresh_token_ciphertext =
         crypto::encrypt_secret(security_master_key, &next_refresh_token, aad.as_bytes())?;
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     let revoked = sqlx::query(
         r#"
         UPDATE refresh_sessions

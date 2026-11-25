@@ -49,7 +49,7 @@ async fn maintainer_cannot_demote_owner_or_grant_owner_through_member_add() {
         &pool,
         maintainer.user_id,
         "YCE",
-        &[owner_username.clone()],
+        std::slice::from_ref(&owner_username),
         "viewer",
     )
     .await;
@@ -194,7 +194,10 @@ async fn system_user_project_assign_skips_existing_memberships() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(member_role(&pool, "YCE", "assign_user").await, "member");
-    assert_eq!(member_role(&pool, &other_key, "assign_user").await, "viewer");
+    assert_eq!(
+        member_role(&pool, &other_key, "assign_user").await,
+        "viewer"
+    );
 
     // 全部已是成员时重复提交同样幂等。
     let (status, body) = send(
@@ -202,7 +205,9 @@ async fn system_user_project_assign_skips_existing_memberships() {
         "POST",
         "/api/v1/system/users/assign_user/projects",
         &admin.cookie,
-        Some(serde_json::json!({ "project_keys": ["YCE", other_key], "member_role": "maintainer" })),
+        Some(
+            serde_json::json!({ "project_keys": ["YCE", other_key], "member_role": "maintainer" }),
+        ),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");

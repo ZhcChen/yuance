@@ -373,7 +373,7 @@ pub async fn save_config(
     )?;
     let status = if input.activate { "active" } else { "draft" };
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     if input.activate {
         sqlx::query(
             r#"
@@ -527,7 +527,7 @@ pub async fn rollback_config(
         aad.as_bytes(),
     )?;
 
-    let mut tx = pool.begin().await?;
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         r#"
         UPDATE storage_configs
