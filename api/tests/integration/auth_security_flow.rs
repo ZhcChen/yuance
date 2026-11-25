@@ -1177,19 +1177,22 @@ async fn authenticated_requests_extend_refresh_cookie_window() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/auth/me")
-                .header(header::COOKIE, format!("{session_cookie}; {refresh_cookie}"))
+                .header(
+                    header::COOKIE,
+                    format!("{session_cookie}; {refresh_cookie}"),
+                )
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
     assert_eq!(again.status(), StatusCode::OK);
-    assert!(!set_cookie_values(again.headers())
-        .iter()
-        .any(|cookie| cookie.starts_with("yuance_refresh=")));
+    assert!(
+        !set_cookie_values(again.headers())
+            .iter()
+            .any(|cookie| cookie.starts_with("yuance_refresh="))
+    );
 }
-
-
 
 #[tokio::test]
 async fn api_auth_login_rejects_invalid_credentials() {

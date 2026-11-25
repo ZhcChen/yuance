@@ -1764,10 +1764,12 @@ async fn project_summaries_can_filter_by_keyword() {
     .await
     .expect("keyword filtered project page should load");
     assert!(by_name.total_items >= 1);
-    assert!(by_name
-        .items
-        .iter()
-        .all(|project| project.name.contains("运维") || project.project_key.contains("运维")));
+    assert!(
+        by_name
+            .items
+            .iter()
+            .all(|project| project.name.contains("运维") || project.project_key.contains("运维"))
+    );
 
     let by_key = projects::list_project_summaries_paginated(
         &pool,

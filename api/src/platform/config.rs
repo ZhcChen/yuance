@@ -53,7 +53,10 @@ impl Settings {
             cache_session_ttl: env_string("YUANCE_CACHE_SESSION_TTL", "5m"),
             log_level: env_string("YUANCE_LOG_LEVEL", "info"),
             env,
-            security_master_key: env_string("YUANCE_SECURITY_MASTER_KEY", DEFAULT_SECURITY_MASTER_KEY),
+            security_master_key: env_string(
+                "YUANCE_SECURITY_MASTER_KEY",
+                DEFAULT_SECURITY_MASTER_KEY,
+            ),
             file_master_key,
             experimental_legacy_preview_enabled: env_flag_enabled(
                 "YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED",
@@ -109,7 +112,10 @@ fn validate_security_master_key(env: &str, configured: Option<&str>) -> AppResul
         return Ok(());
     }
     let key = configured.map(str::trim).unwrap_or_default();
-    if key.is_empty() || key == DEFAULT_SECURITY_MASTER_KEY || key.len() < MIN_SECURITY_MASTER_KEY_LEN {
+    if key.is_empty()
+        || key == DEFAULT_SECURITY_MASTER_KEY
+        || key.len() < MIN_SECURITY_MASTER_KEY_LEN
+    {
         return Err(AppError::Config(format!(
             "生产环境必须配置 YUANCE_SECURITY_MASTER_KEY（不少于 {MIN_SECURITY_MASTER_KEY_LEN} 个字符，且不能使用默认值）"
         )));
@@ -360,7 +366,9 @@ mod tests {
         assert!(validate_security_master_key("test", Some("short")).is_ok());
         assert!(validate_security_master_key("production", None).is_err());
         assert!(validate_security_master_key("production", Some("  ")).is_err());
-        assert!(validate_security_master_key("production", Some(DEFAULT_SECURITY_MASTER_KEY)).is_err());
+        assert!(
+            validate_security_master_key("production", Some(DEFAULT_SECURITY_MASTER_KEY)).is_err()
+        );
         assert!(validate_security_master_key("production", Some("too-short-key")).is_err());
         assert!(validate_security_master_key("production", Some(&"k".repeat(32))).is_ok());
     }
