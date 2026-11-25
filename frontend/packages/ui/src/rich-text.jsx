@@ -459,6 +459,8 @@ function releaseResolvedSource(resolved) {
 /** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, sectionLinks?: boolean, label?: string, mentionOptions?: RichTextMentionOption[], onPasteFile?: (file: File, options?: RichTextPasteOptions) => Promise<RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE> | RichTextAttachmentOption | null | typeof DEFER_RICH_TEXT_PASTE, onFocus?: () => void, onInputActivity?: () => void, onBlur?: () => void }} props */
 export function RichTextEditor({ id, value, onChange, disabled = false, required = false, sectionLinks = false, label = '资料正文', mentionOptions = [], onPasteFile, onFocus, onInputActivity, onBlur }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  /** 本编辑器最近一次发布的已清洗内容，用于跳过对同一值的重复清洗。 */
+  const lastPublishedRef = useRef(/** @type {string | null} */ (null));
   const mentionPanelRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const onPasteFileRef = useRef(onPasteFile);
   onPasteFileRef.current = onPasteFile;
@@ -511,7 +513,8 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
       return;
     }
     for (const node of pendingNodes) node.remove();
-    const sanitized = sanitizeEditorHtml(input, value, sectionLinks);
+    // 刚由本编辑器发布的值已经清洗过（清洗是幂等的），直接复用，避免每次按键清洗两遍。
+    const sanitized = value === lastPublishedRef.current ? value : sanitizeEditorHtml(input, value, sectionLinks);
     if (input.innerHTML !== sanitized) {
       const selection = captureEditorSelection(input);
       input.innerHTML = sanitized;
@@ -1304,6 +1307,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     const clone = /** @type {HTMLDivElement} */ (input.cloneNode(true));
     clone.querySelectorAll('[data-rich-pending-upload]').forEach((node) => node.remove());
     const sanitized = sanitizeEditorHtml(clone, clone.innerHTML, sectionLinks);
+    lastPublishedRef.current = sanitized;
     onChange(sanitized);
   }
 }

@@ -160,3 +160,10 @@ test('rich text file helpers derive document previewability and file card visual
   assert.equal(isPreviewableDocumentFile('说明.rtf', ''), true);
   assert.equal(isPreviewableDocumentFile('photo.png', ''), false);
 });
+
+test('编辑器发布的值在同步回编辑器时不再重复清洗', async () => {
+  const source = await readFile(new URL('../src/rich-text.jsx', import.meta.url), 'utf8');
+  // 发布时记录已清洗的值；值回流到 effect 时直接复用，避免每次按键两次完整清洗。
+  assert.match(source, /lastPublishedRef\.current = sanitized;\s+onChange\(sanitized\);/u);
+  assert.match(source, /const sanitized = value === lastPublishedRef\.current \? value : sanitizeEditorHtml\(input, value, sectionLinks\);/u);
+});
