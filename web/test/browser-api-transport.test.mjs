@@ -253,3 +253,54 @@ class MapStorage {
   setItem(key, value) { this.#values.set(key, value); }
   removeItem(key) { this.#values.delete(key); }
 }
+
+function transportWithQueue(responses, calls, location = { pathname: '/web/app/tasks', search: '', hash: '', assign() {} }) {
+  return createBrowserApiTransport({
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url: String(url), csrf: new Headers(options.headers || {}).get('x-yuance-csrf-token') });
+      const response = responses.shift();
+      assert.ok(response, `unexpected fetch ${url}`);
+      return response;
+    },
+    location,
+    history: { replaceState() {} },
+    storage: new MapStorage(),
+  });
+}
+
+test('写操作复用已同步的 CSRF 令牌，不再每次额外请求 /auth/csrf', async () => {
+  const calls = [];
+  const transport = transportWithQueue([
+    jsonResponse({ id: 1 }, { csrfToken: 'synced-token' }),
+    jsonResponse({ updated: true }, { csrfToken: 'synced-token' }),
+    jsonResponse({ updated: true }, { csrfToken: 'synced-token' }),
+  ], calls);
+
+  await transport.request('/api/v1/auth/me');
+  for (let index = 0; index < 2; index += 1) {
+    await transport.prepareWrite();
+    await transport.request('/api/v1/work-items/YCE-TASK-1', { method: 'PATCH', body: '{}' });
+  }
+  assert.deepEqual(calls.map((call) => call.url), [
+    '/api/v1/auth/me',
+    '/api/v1/work-items/YCE-TASK-1',
+    '/api/v1/work-items/YCE-TASK-1',
+  ]);
+  assert.deepEqual(calls.slice(1).map((call) => call.csrf), ['synced-token', 'synced-token']);
+});
+
+test('清空令牌后下一次写操作重新获取 CSRF', async () => {
+  const calls = [];
+  const transport = transportWithQueue([
+    jsonResponse({ id: 1 }, { csrfToken: 'old-token' }),
+    jsonResponse({ csrf_token: 'fresh-token' }, { csrfToken: 'fresh-token' }),
+    jsonResponse({ updated: true }),
+  ], calls);
+
+  await transport.request('/api/v1/auth/me');
+  transport.clearCsrfToken();
+  await transport.prepareWrite();
+  await transport.request('/api/v1/work-items/YCE-TASK-1', { method: 'PATCH', body: '{}' });
+  assert.deepEqual(calls.map((call) => call.url), ['/api/v1/auth/me', '/api/v1/auth/csrf', '/api/v1/work-items/YCE-TASK-1']);
+  assert.equal(calls[2].csrf, 'fresh-token');
+});

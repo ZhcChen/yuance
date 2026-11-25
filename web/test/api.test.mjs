@@ -46,17 +46,15 @@ import {
   updateSystemApiToken,
   unlockProjectResource,
   unlinkWorkItemFromResourceLibrary,
+  clearCsrfToken,
 } from '../src/lib/api.js';
 
 test('system OpenAPI token lifecycle is exposed through the bounded browser API adapter', async () => {
   await withFetchQueue([
     jsonResponse({ items: [], active_count: 0, token_limit: 100, can_manage_tokens: true }),
     jsonResponse({ refreshed_at: '2026-08-08T00:00:00Z', tables: [] }),
-    jsonResponse({ csrf_token: 'csrf-openapi-create' }, { csrfToken: 'csrf-openapi-create' }),
     jsonResponse({ item: { id: 8 }, raw_token: 'yuance_sys_pat_once_only' }),
-    jsonResponse({ csrf_token: 'csrf-openapi-update' }, { csrfToken: 'csrf-openapi-update' }),
     jsonResponse({ item: { id: 8 } }),
-    jsonResponse({ csrf_token: 'csrf-openapi-delete' }, { csrfToken: 'csrf-openapi-delete' }),
     jsonResponse({ deleted: true }),
   ], async (calls) => {
     await getSystemOpenApiView();
@@ -68,11 +66,8 @@ test('system OpenAPI token lifecycle is exposed through the bounded browser API 
     assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET']), [
       ['/api/v1/system/openapi-view', 'GET'],
       ['/api/v1/system/database-stats', 'GET'],
-      ['/api/v1/auth/csrf', 'GET'],
       ['/api/v1/system/api-tokens', 'POST'],
-      ['/api/v1/auth/csrf', 'GET'],
       ['/api/v1/system/api-tokens/8', 'PATCH'],
-      ['/api/v1/auth/csrf', 'GET'],
       ['/api/v1/system/api-tokens/8', 'DELETE'],
     ]);
   });
@@ -166,7 +161,6 @@ test('project resources are exposed through the bounded browser API adapter', as
   await withFetchQueue([
     jsonResponse([resourcePayload({ body: '' })]),
     jsonResponse(resourcePayload()),
-    jsonResponse({ csrf_token: 'csrf-resource-token' }, { csrfToken: 'csrf-resource-token' }),
     jsonResponse(resourcePayload({ is_protected: true })),
   ], async (calls) => {
     const resources = await getProjectResources('YCE', { q: 'client', tag: '联调' });
@@ -178,10 +172,12 @@ test('project resources are exposed through the bounded browser API adapter', as
     assert.equal(unlocked.is_protected, true);
     assert.equal(calls[0].url, '/api/v1/projects/YCE/resources?q=client&tag=%E8%81%94%E8%B0%83');
     assert.equal(calls[1].url, '/api/v1/projects/YCE/resources/9');
-    assert.equal(calls[3].url, '/api/v1/projects/YCE/resources/9/unlock');
-    assert.equal(calls[3].options.method, 'POST');
-    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-resource-token');
-    assert.deepEqual(JSON.parse(String(calls[3].options.body)), { access_password: 'safe-pass' });
+    // 写操作复用读响应同步的 CSRF 令牌，不再额外请求 /auth/csrf。
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].url, '/api/v1/projects/YCE/resources/9/unlock');
+    assert.equal(calls[2].options.method, 'POST');
+    assert.equal(new Headers(calls[2].options.headers).get('x-yuance-csrf-token'), 'csrf-test-token');
+    assert.deepEqual(JSON.parse(String(calls[2].options.body)), { access_password: 'safe-pass' });
   });
 });
 
@@ -189,9 +185,7 @@ test('linked work item posts and link mutations share Browser paths and CSRF con
   await withFetchQueue([
     jsonResponse([{ key: 'YCE-TASK-2', item_type: 'task', title: '售后流程', summary: '处理步骤', author: 'Alice', updated_at: '2026-09-11T08:00:00Z', linked_at: '2026-09-10T08:00:00Z', url: '/web/work-items/YCE-TASK-2' }]),
     jsonResponse({ item_key: 'YCE-TASK-2', linked: true, linked_at: '2026-09-10T08:00:00Z', can_manage: true }),
-    jsonResponse({ csrf_token: 'csrf-link' }, { csrfToken: 'csrf-link' }),
     jsonResponse({ item_key: 'YCE-TASK-2', linked: true, linked_at: '2026-09-11T08:00:00Z', can_manage: true }),
-    jsonResponse({ csrf_token: 'csrf-unlink' }, { csrfToken: 'csrf-unlink' }),
     jsonResponse({ item_key: 'YCE-TASK-2', linked: false, linked_at: '', can_manage: true }),
   ], async (calls) => {
     const posts = await getProjectResourceLinkedWorkItemPosts('YCE', { q: '售后' });
@@ -204,14 +198,15 @@ test('linked work item posts and link mutations share Browser paths and CSRF con
     assert.equal(linked.linked, true);
     assert.equal(unlinked.linked, false);
     assert.equal(calls[0].url, '/api/v1/projects/YCE/resource-library/linked-work-item-posts?q=%E5%94%AE%E5%90%8E');
+    assert.equal(calls.length, 4);
+    assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK-2/resource-library-link');
+    assert.equal(calls[2].options.method, 'POST');
+    assert.equal(new Headers(calls[2].options.headers).get('x-yuance-csrf-token'), 'csrf-test-token');
     assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK-2/resource-library-link');
-    assert.equal(calls[3].options.method, 'POST');
-    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-link');
-    assert.equal(calls[5].url, '/api/v1/work-items/YCE-TASK-2/resource-library-link');
-    assert.equal(calls[5].options.method, 'DELETE');
-    assert.equal(new Headers(calls[5].options.headers).get('x-yuance-csrf-token'), 'csrf-unlink');
+    assert.equal(calls[3].options.method, 'DELETE');
+    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-test-token');
+    assert.equal(calls[2].options.body, undefined);
     assert.equal(calls[3].options.body, undefined);
-    assert.equal(calls[5].options.body, undefined);
   });
 });
 
@@ -220,11 +215,8 @@ test('project resource mutations share Browser JSON contracts', async () => {
   await withFetchQueue([
     jsonResponse({ csrf_token: 'resource-write' }, { csrfToken: 'resource-write' }),
     jsonResponse(resource, { status: 201 }),
-    jsonResponse({ csrf_token: 'resource-update' }, { csrfToken: 'resource-update' }),
     jsonResponse(resource),
-    jsonResponse({ csrf_token: 'resource-archive' }, { csrfToken: 'resource-archive' }),
     jsonResponse({ ...resource, status: 'archived' }),
-    jsonResponse({ csrf_token: 'resource-password-reset' }, { csrfToken: 'resource-password-reset' }),
     jsonResponse({ ...resource, is_protected: true }),
   ], async (calls) => {
     const payload = { title: '部署参数', category: 'integration', body: 'client_id=test', bodyFormat: 'plain', accessPassword: '', tags: ['联调'], relatedWorkItemKey: '', relatedCycleId: null };
@@ -238,7 +230,9 @@ test('project resource mutations share Browser JSON contracts', async () => {
       ['/api/v1/projects/YCE/resources/9', 'DELETE', undefined],
       ['/api/v1/projects/YCE/resources/9/password/reset', 'POST', { access_password_action: 'set', access_password: 'new-pass' }],
     ]);
-    assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), ['resource-write', 'resource-update', 'resource-archive', 'resource-password-reset']);
+    assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), ['resource-write', 'csrf-test-token', 'csrf-test-token', 'csrf-test-token']);
+    // 只在尚无令牌时请求一次 /auth/csrf；之后沿用每个响应头同步的最新令牌。
+    assert.equal(calls.filter(({ url }) => url === '/api/v1/auth/csrf').length, 1);
   });
 });
 
@@ -246,14 +240,11 @@ test('project resource attachments use fixed Browser paths and access grants', a
   const attachment = attachmentPayload({ id: 11, filename: 'notes.txt' });
   await withFetchQueue([
     jsonResponse([attachment]),
-    jsonResponse({ csrf_token: 'resource-attachment-create' }, { csrfToken: 'resource-attachment-create' }),
     jsonResponse(attachment, { status: 201 }),
     jsonResponse(signedUrlPayload({ attachment })),
-    jsonResponse({ csrf_token: 'resource-attachment-confirm' }, { csrfToken: 'resource-attachment-confirm' }),
     jsonResponse(attachment),
     jsonResponse(signedUrlPayload({ attachment })),
     jsonResponse({ attachment, preview: { kind: 'document', strategy: 'text', file_type: 'txt', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/9/attachments/11/preview/content?access=grant+token', download_url: '/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token' }),
-    jsonResponse({ csrf_token: 'resource-attachment-delete' }, { csrfToken: 'resource-attachment-delete' }),
     jsonResponse({ ...attachment, status: 'deleted' }),
   ], async (calls) => {
     await getProjectResourceAttachments('YCE', 9, 'grant token');
@@ -275,10 +266,12 @@ test('project resource attachments use fixed Browser paths and access grants', a
       ['/api/v1/projects/YCE/resources/9/attachments/11', 'DELETE'],
     ]);
     assert.deepEqual(businessCalls.filter(({ options }) => options.method && options.method !== 'GET').map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), [
-      'resource-attachment-create',
-      'resource-attachment-confirm',
-      'resource-attachment-delete',
+      'csrf-test-token',
+      'csrf-test-token',
+      'csrf-test-token',
     ]);
+    // 写操作前已有读响应同步的令牌，不再请求 /auth/csrf。
+    assert.equal(calls.filter(({ url }) => url === '/api/v1/auth/csrf').length, 0);
   });
 });
 
@@ -300,6 +293,8 @@ test('project attachment preview is exposed through the bounded browser API adap
 });
 
 async function withFetchQueue(responses, callback) {
+  // 每个用例从“尚未持有 CSRF 令牌”开始，避免共享的传输层单例在用例之间残留令牌。
+  clearCsrfToken();
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
@@ -396,7 +391,6 @@ test('comment clients create and update plain text comments', async () => {
   await withFetchQueue([
     jsonResponse({ csrf_token: 'csrf-create-comment' }, { csrfToken: 'csrf-create-comment' }),
     jsonResponse({ id: 42, body: '新增评论', body_format: 'plain' }, { status: 201 }),
-    jsonResponse({ csrf_token: 'csrf-update-comment' }, { csrfToken: 'csrf-update-comment' }),
     jsonResponse({ id: 42, body: '编辑后的评论', body_format: 'plain' }),
   ], async (calls) => {
     const created = await createWorkItemComment('YCE-TASK-2', { body: '新增评论' });
@@ -411,10 +405,12 @@ test('comment clients create and update plain text comments', async () => {
       body: '新增评论',
       body_format: 'plain',
     });
-    assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK-2/comments/42');
-    assert.equal(calls[3].options.method, 'PATCH');
-    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-update-comment');
-    assert.deepEqual(JSON.parse(String(calls[3].options.body)), {
+    // 第二次写操作复用第一次响应头同步的令牌。
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK-2/comments/42');
+    assert.equal(calls[2].options.method, 'PATCH');
+    assert.equal(new Headers(calls[2].options.headers).get('x-yuance-csrf-token'), 'csrf-test-token');
+    assert.deepEqual(JSON.parse(String(calls[2].options.body)), {
       body: '编辑后的评论',
       body_format: 'plain',
     });
@@ -425,9 +421,7 @@ test('draft, publish and cancel comment clients use the expected paths and paylo
   await withFetchQueue([
     jsonResponse({ csrf_token: 'csrf-draft-token' }, { csrfToken: 'csrf-draft-token' }),
     jsonResponse({ id: 50, body: '', body_format: 'plain', is_draft: true }, { status: 201 }),
-    jsonResponse({ csrf_token: 'csrf-publish-token' }, { csrfToken: 'csrf-publish-token' }),
     jsonResponse({ id: 50, body: '发布草稿', body_format: 'html', is_draft: false }),
-    jsonResponse({ csrf_token: 'csrf-cancel-token' }, { csrfToken: 'csrf-cancel-token' }),
     jsonResponse({ id: 51, body: '', body_format: 'html', is_draft: true }),
   ], async (calls) => {
     const draft = await createWorkItemCommentDraft('YCE-TASK-2', {
@@ -450,14 +444,15 @@ test('draft, publish and cancel comment clients use the expected paths and paylo
       body_format: 'plain',
       parent_comment_id: 42,
     });
-    assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK-2/comments/50/publish');
-    assert.equal(calls[3].options.method, 'POST');
-    assert.deepEqual(JSON.parse(String(calls[3].options.body)), {
+    assert.equal(calls.length, 4);
+    assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK-2/comments/50/publish');
+    assert.equal(calls[2].options.method, 'POST');
+    assert.deepEqual(JSON.parse(String(calls[2].options.body)), {
       body: '<p>发布草稿</p>',
       body_format: 'html',
     });
-    assert.equal(calls[5].url, '/api/v1/work-items/YCE-TASK-2/comments/51/draft');
-    assert.equal(calls[5].options.method, 'DELETE');
+    assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK-2/comments/51/draft');
+    assert.equal(calls[3].options.method, 'DELETE');
   });
 });
 
@@ -485,7 +480,6 @@ test('attachment read clients use GET without CSRF refresh', async () => {
 test('work item attachment upload-url and uploaded clients handle query and CSRF', async () => {
   await withFetchQueue([
     jsonResponse(signedUrlPayload({ request: { method: 'PUT', url: '/upload' } })),
-    jsonResponse({ csrf_token: 'csrf-uploaded-token' }, { csrfToken: 'csrf-uploaded-token' }),
     jsonResponse(attachmentPayload({ status: 'uploaded' })),
   ], async (calls) => {
     const signed = await getWorkItemAttachmentUploadUrl('YCE-TASK-2', 7, {
@@ -497,9 +491,9 @@ test('work item attachment upload-url and uploaded clients handle query and CSRF
     assert.equal(uploaded.status, 'uploaded');
     assert.equal(calls[0].url, '/api/v1/work-items/YCE-TASK-2/attachments/7/upload-url?expires_in_seconds=120');
     assert.equal(calls[0].options.method, undefined);
-    assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK-2/attachments/7/uploaded');
-    assert.equal(calls[2].options.method, 'POST');
-    assert.equal(new Headers(calls[2].options.headers).get('x-yuance-csrf-token'), 'csrf-uploaded-token');
+    assert.equal(calls[1].url, '/api/v1/work-items/YCE-TASK-2/attachments/7/uploaded');
+    assert.equal(calls[1].options.method, 'POST');
+    assert.equal(new Headers(calls[1].options.headers).get('x-yuance-csrf-token'), 'csrf-test-token');
   });
 });
 
@@ -530,19 +524,16 @@ test('createWorkItemAttachment posts attachment metadata with CSRF', async () =>
 test('comment attachment clients cover list, create, delete, signed URLs and uploaded marker', async () => {
   await withFetchQueue([
     jsonResponse([attachmentPayload({ id: 11, filename: 'comment-log.txt' })]),
-    jsonResponse({ csrf_token: 'csrf-comment-attachment' }, { csrfToken: 'csrf-comment-attachment' }),
     jsonResponse(attachmentPayload({ id: 12, filename: 'comment.png', status: 'pending' }), { status: 201 }),
     jsonResponse(signedUrlPayload({
       attachment: { id: 12, filename: 'comment.png' },
       request: { method: 'PUT', url: '/comment-upload' },
     })),
-    jsonResponse({ csrf_token: 'csrf-comment-uploaded' }, { csrfToken: 'csrf-comment-uploaded' }),
     jsonResponse(attachmentPayload({ id: 12, filename: 'comment.png', status: 'uploaded' })),
     jsonResponse(signedUrlPayload({
       attachment: { id: 12, filename: 'comment.png' },
       request: { method: 'GET', url: '/comment-download' },
     })),
-    jsonResponse({ csrf_token: 'csrf-comment-delete' }, { csrfToken: 'csrf-comment-delete' }),
     jsonResponse(attachmentPayload({ id: 12, filename: 'comment.png', status: 'deleted' })),
   ], async (calls) => {
     const attachments = await getWorkItemCommentAttachments('YCE-TASK/2', 42);
@@ -567,24 +558,23 @@ test('comment attachment clients cover list, create, delete, signed URLs and upl
     assert.equal(download.request.method, 'GET');
     assert.equal(deleted.status, 'deleted');
     assert.equal(calls[0].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments');
-    assert.equal(calls[1].url, '/api/v1/auth/csrf');
-    assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments');
-    assert.equal(calls[2].options.method, 'POST');
-    assert.deepEqual(JSON.parse(String(calls[2].options.body)), {
+    assert.equal(calls.filter(({ url }) => url === '/api/v1/auth/csrf').length, 0);
+    assert.equal(calls[1].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments');
+    assert.equal(calls[1].options.method, 'POST');
+    assert.deepEqual(JSON.parse(String(calls[1].options.body)), {
       original_filename: 'comment.png',
       content_type: 'image/png',
       byte_size: 512,
     });
-    assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/upload-url?expires_in_seconds=180');
-    assert.equal(calls[5].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/uploaded');
-    assert.equal(calls[5].options.method, 'POST');
-    assert.equal(new Headers(calls[5].options.headers).get('x-yuance-csrf-token'), 'csrf-comment-uploaded');
-    assert.equal(calls[6].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/download-url?expires_in_seconds=240');
-    assert.equal(calls[7].url, '/api/v1/auth/csrf');
-    assert.equal(calls[8].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12');
-    assert.equal(calls[8].options.method, 'DELETE');
-    const deleteHeaders = new Headers(calls[8].options.headers);
-    assert.equal(deleteHeaders.get('x-yuance-csrf-token'), 'csrf-comment-delete');
+    assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/upload-url?expires_in_seconds=180');
+    assert.equal(calls[3].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/uploaded');
+    assert.equal(calls[3].options.method, 'POST');
+    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-test-token');
+    assert.equal(calls[4].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/download-url?expires_in_seconds=240');
+    assert.equal(calls[5].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12');
+    assert.equal(calls[5].options.method, 'DELETE');
+    const deleteHeaders = new Headers(calls[5].options.headers);
+    assert.equal(deleteHeaders.get('x-yuance-csrf-token'), 'csrf-test-token');
     assert.equal(deleteHeaders.get('x-yuance-editor-context'), 'work-item-comment-edit');
   });
 });

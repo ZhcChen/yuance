@@ -38,12 +38,13 @@ const browserEvents = createBrowserEvents();
 export const redirectToLogin = browserApiTransport.redirectToLogin;
 export const restorePendingReturnToHash = browserApiTransport.restorePendingReturnToHash;
 export const refreshCsrfToken = browserApiTransport.refreshCsrfToken;
+export const clearCsrfToken = browserApiTransport.clearCsrfToken;
 export const fetchJson = browserApiTransport.request;
 
 const apiClient = createApiClient({
   request: fetchJson,
   prepareWrite: async () => {
-    await refreshCsrfToken();
+    await browserApiTransport.prepareWrite();
   },
 });
 

@@ -54,6 +54,7 @@ export function createBrowserApiTransport(dependencies = {}) {
   }
 
   function redirectToLogin() {
+    csrfToken = '';
     const currentLocation = location();
     if (currentLocation.pathname === '/web/login') return;
     const returnTo = `${currentLocation.pathname}${currentLocation.search}`;
@@ -140,6 +141,20 @@ export function createBrowserApiTransport(dependencies = {}) {
     }
   }
 
+  /**
+   * 写操作前确保持有 CSRF 令牌：已从响应头同步过令牌时直接复用，不再每次额外请求；
+   * 令牌失效时由 request 的 CSRF 失败重试兜底刷新。
+   */
+  async function ensureCsrfToken() {
+    if (csrfToken) return csrfToken;
+    return refreshCsrfToken();
+  }
+
+  /** 丢弃已缓存的 CSRF 令牌（登录失效后不再复用旧会话的令牌）。 */
+  function clearCsrfToken() {
+    csrfToken = '';
+  }
+
   /** @param {string} url @param {RequestInit & { skipCsrfRetry?: boolean }} [options] */
   async function request(url, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
@@ -186,7 +201,8 @@ export function createBrowserApiTransport(dependencies = {}) {
 
   return {
     request,
-    prepareWrite: refreshCsrfToken,
+    prepareWrite: ensureCsrfToken,
+    clearCsrfToken,
     redirectToLogin,
     refreshCsrfToken,
     restorePendingReturnToHash,
