@@ -965,29 +965,19 @@ pub async fn project_attachment_mark_uploaded(
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
-    let actual_checksum_sha256 = storage::verify_uploaded_object(
+    let attachment = complete_attachment_upload(
+        &state,
         pool,
-        &state.settings,
-        &attachment.object_key,
-        attachment.byte_size,
-        &attachment.content_type,
-    )
-    .await?;
-    let attachment = files::mark_attachment_uploaded_with_checksum(
-        pool,
-        attachment_id,
-        "project",
-        project.id,
-        &actual_checksum_sha256,
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "file.upload.completed",
-        "project",
-        &project_key,
-        &format!(r#"{{"attachment_id":{attachment_id}}}"#),
+        user.id,
+        attachment,
+        AttachmentTarget {
+            kind: "project",
+            id: project.id,
+            audit_target_type: "project",
+            audit_target_id: project_key.clone(),
+            audit_metadata: format!(r#"{{"attachment_id":{attachment_id}}}"#),
+        },
+        UploadCompletionOptions::PLAIN,
     )
     .await?;
 

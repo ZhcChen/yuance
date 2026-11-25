@@ -5,6 +5,7 @@
 //! （见 `tests/bootstrap_flow.rs`、`tests/routing_smoke.rs`），避免与并行用例互相干扰。
 
 mod attachment_stream_flow;
+mod attachment_upload_completion_flow;
 mod audit_flow;
 mod auth_cache_flow;
 mod auth_csrf_refresh_flow;

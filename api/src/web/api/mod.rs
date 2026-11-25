@@ -47,7 +47,9 @@ pub use work_items_api::*;
 mod projects_api;
 pub use projects_api::*;
 mod account_api;
+mod attachments_api;
 pub use account_api::*;
+use attachments_api::*;
 
 #[derive(Debug, Serialize)]
 pub struct HealthPayload<'a> {

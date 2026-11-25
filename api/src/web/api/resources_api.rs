@@ -638,71 +638,25 @@ pub async fn project_resource_attachment_mark_uploaded(
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
             .await?;
-    let attachment = if files::get_file_object_encryption(pool, attachment.file_object_id)
-        .await?
-        .is_some()
-    {
-        let encrypted_checksum_sha256 = parse_mark_uploaded_request(&body)?
-            .and_then(|request| request.encrypted_sha256)
-            .ok_or_else(|| {
-                AppError::BadRequest("加密附件上传完成登记缺少密文 SHA-256".to_string())
-            })?;
-        let encrypted_byte_size = i64::try_from(file_crypto::encrypted_total_size(
-            attachment.byte_size as u64,
-        ))
-        .map_err(|_| AppError::BadRequest("加密文件大小超出系统支持范围".to_string()))?;
-        let actual_checksum_sha256 = storage::verify_uploaded_object(
-            pool,
-            &state.settings,
-            &attachment.object_key,
-            encrypted_byte_size,
-            "application/octet-stream",
-        )
-        .await?;
-        if actual_checksum_sha256 != encrypted_checksum_sha256 {
-            return Err(AppError::BadRequest(
-                "上传对象 SHA-256 与提交的密文摘要不一致".to_string(),
-            ));
-        }
-        validate_svg_attachment_content(&state, pool, &attachment).await?;
-        files::mark_attachment_uploaded_encrypted(
-            pool,
-            attachment_id,
-            "project_resource",
-            resource.id,
-            encrypted_byte_size,
-            &actual_checksum_sha256,
-        )
-        .await?
-    } else {
-        let actual_checksum_sha256 = storage::verify_uploaded_object(
-            pool,
-            &state.settings,
-            &attachment.object_key,
-            attachment.byte_size,
-            &attachment.content_type,
-        )
-        .await?;
-        validate_svg_attachment_content(&state, pool, &attachment).await?;
-        files::mark_attachment_uploaded_with_checksum(
-            pool,
-            attachment_id,
-            "project_resource",
-            resource.id,
-            &actual_checksum_sha256,
-        )
-        .await?
-    };
-    audit::record(
+    let attachment = complete_attachment_upload(
+        &state,
         pool,
-        Some(user.id),
-        "file.upload.completed",
-        "project_resource",
-        &resource.id.to_string(),
-        &format!(
-            r#"{{"project":"{}","attachment_id":{attachment_id}}}"#,
-            project.project_key
-        ),
+        user.id,
+        attachment,
+        AttachmentTarget {
+            kind: "project_resource",
+            id: resource.id,
+            audit_target_type: "project_resource",
+            audit_target_id: resource.id.to_string(),
+            audit_metadata: format!(
+                r#"{{"project":"{}","attachment_id":{attachment_id}}}"#,
+                project.project_key
+            ),
+        },
+        UploadCompletionOptions {
+            request_body: Some(&body),
+            validate_svg: true,
+        },
     )
     .await?;
 

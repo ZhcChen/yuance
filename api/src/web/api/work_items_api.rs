@@ -1428,29 +1428,21 @@ pub async fn work_item_comment_attachment_mark_uploaded(
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-    let actual_checksum_sha256 = storage::verify_uploaded_object(
+    let attachment = complete_attachment_upload(
+        &state,
         pool,
-        &state.settings,
-        &attachment.object_key,
-        attachment.byte_size,
-        &attachment.content_type,
-    )
-    .await?;
-    let attachment = files::mark_attachment_uploaded_with_checksum(
-        pool,
-        attachment_id,
-        "comment",
-        comment.id,
-        &actual_checksum_sha256,
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "file.upload.completed",
-        "comment",
-        &comment_id.to_string(),
-        &format!(r#"{{"work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+        user.id,
+        attachment,
+        AttachmentTarget {
+            kind: "comment",
+            id: comment.id,
+            audit_target_type: "comment",
+            audit_target_id: comment_id.to_string(),
+            audit_metadata: format!(
+                r#"{{"work_item":"{item_key}","attachment_id":{attachment_id}}}"#
+            ),
+        },
+        UploadCompletionOptions::PLAIN,
     )
     .await?;
 
@@ -1784,29 +1776,19 @@ pub async fn work_item_draft_attachment_mark_uploaded(
     let attachment =
         files::get_draft_attachment_for_owner(pool, attachment_id, project.id, principal.user.id)
             .await?;
-    let actual_checksum_sha256 = storage::verify_uploaded_object(
+    let attachment = complete_attachment_upload(
+        &state,
         pool,
-        &state.settings,
-        &attachment.object_key,
-        attachment.byte_size,
-        &attachment.content_type,
-    )
-    .await?;
-    let attachment = files::mark_attachment_uploaded_with_checksum(
-        pool,
-        attachment_id,
-        files::DRAFT_ATTACHMENT_TARGET_TYPE,
-        project.id,
-        &actual_checksum_sha256,
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(principal.user.id),
-        "file.upload.completed",
-        "project",
-        &project.project_key,
-        &format!(r#"{{"draft":true,"attachment_id":{attachment_id}}}"#),
+        principal.user.id,
+        attachment,
+        AttachmentTarget {
+            kind: files::DRAFT_ATTACHMENT_TARGET_TYPE,
+            id: project.id,
+            audit_target_type: "project",
+            audit_target_id: project.project_key.clone(),
+            audit_metadata: format!(r#"{{"draft":true,"attachment_id":{attachment_id}}}"#),
+        },
+        UploadCompletionOptions::PLAIN,
     )
     .await?;
 
@@ -1971,29 +1953,19 @@ pub async fn work_item_attachment_mark_uploaded(
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
-    let actual_checksum_sha256 = storage::verify_uploaded_object(
+    let attachment = complete_attachment_upload(
+        &state,
         pool,
-        &state.settings,
-        &attachment.object_key,
-        attachment.byte_size,
-        &attachment.content_type,
-    )
-    .await?;
-    let attachment = files::mark_attachment_uploaded_with_checksum(
-        pool,
-        attachment_id,
-        "work_item",
-        item.id,
-        &actual_checksum_sha256,
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "file.upload.completed",
-        "work_item",
-        &item_key,
-        &format!(r#"{{"attachment_id":{attachment_id}}}"#),
+        user.id,
+        attachment,
+        AttachmentTarget {
+            kind: "work_item",
+            id: item.id,
+            audit_target_type: "work_item",
+            audit_target_id: item_key.clone(),
+            audit_metadata: format!(r#"{{"attachment_id":{attachment_id}}}"#),
+        },
+        UploadCompletionOptions::PLAIN,
     )
     .await?;
 
