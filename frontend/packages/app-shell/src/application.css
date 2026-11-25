@@ -880,7 +880,8 @@ h2 {
  */
 .work-item-filter-bar {
   display: grid;
-  grid-template-columns: minmax(200px, 1.5fr) repeat(5, minmax(0, 1fr)) auto;
+  /* 下拉列至少 112px，1280 宽度下“全部优先级 / 全部处理人”不被截断。 */
+  grid-template-columns: minmax(160px, 1.2fr) repeat(5, minmax(112px, 1fr)) auto;
   align-items: end;
   gap: 12px;
   padding: 14px 16px 16px;
@@ -1075,12 +1076,14 @@ h2 {
     grid-template-columns: 1fr;
   }
 
-  .work-item-list-metrics { grid-template-columns: 1fr; }
+  /* 手机端指标卡两列，避免单列占满一屏；分析页输出仍单列（下方规则覆盖）。 */
+  .metric-grid,
+  .work-item-list-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--yc-sp-12); }
+  .metric-grid .yc-metric { padding: var(--yc-sp-12); gap: var(--yc-sp-8); min-width: 0; }
   .filter-shell-head { align-items: flex-start; flex-direction: column; }
 
   .shell-grid,
   .shell-columns,
-  .metric-grid,
   .workspace-side,
   .personal-analysis-output,
   .analysis-columns,
@@ -1571,10 +1574,11 @@ html[data-theme="dark"] .project-stats div {
   .profile-hero-actions { width: 100%; max-width: none; }
   .profile-hero-details, .profile-metrics, .profile-detail-grid { grid-template-columns: 1fr; }
   .token-panel-actions { align-items: stretch; flex-direction: column; }
-  .project-list-metrics, .project-card-grid { grid-template-columns: 1fr; }
+  .project-card-grid { grid-template-columns: 1fr; }
+  .project-list-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--yc-sp-12); }
   .project-list-panel > .panel-head { align-items: stretch; }
   .project-list-panel > .panel-head .yc-content-tabs { width: 100%; }
-  .project-detail-metrics { grid-template-columns: 1fr; }
+  .project-detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--yc-sp-12); }
   .project-tabs-head { align-items: stretch; flex-direction: column; }
   .project-tabs-head .yc-content-tabs { width: 100%; }
   .project-detail-dl { grid-template-columns: 1fr; }
@@ -1762,4 +1766,31 @@ a.list-row__title:hover, a.list-row:hover .list-row__title { color: var(--yc-bra
   .page-head { flex-direction: column; gap: var(--yc-sp-12); }
   .page-head__actions { margin-left: 0; width: 100%; }
   .page-head__actions .yc-button { flex: 1; }
+}
+
+
+/* 手机端触控区域（体检 P2）：常用小控件的可点击高度不低于 36px，勾选框放大到 20px。 */
+@media (max-width: 768px) {
+  .yc-pagination-pages button { min-width: 36px; min-height: 36px; }
+  .scope-tab { height: 36px; }
+  .pending-shortcuts a { min-height: 36px; display: inline-flex; align-items: center; }
+  .message-open { min-height: 32px; padding: 0 var(--yc-sp-8); }
+  input[type="checkbox"] { width: 20px; height: 20px; }
+}
+
+/* 961–1180px：侧栏收窄但筛选项仍多，改为自动换行的网格，避免横向溢出。 */
+@media (min-width: 961px) and (max-width: 1180px) {
+  .work-item-filter-bar { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+
+/* 手机端指标卡两列（工作台的 auto-fit 规则在前文无条件生效，这里按宽度覆盖）；极窄屏退回单列。 */
+@media (max-width: 960px) {
+  .dashboard-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--yc-sp-12); }
+}
+@media (max-width: 360px) {
+  .metric-grid,
+  .dashboard-metrics,
+  .project-list-metrics,
+  .project-detail-metrics,
+  .work-item-list-metrics { grid-template-columns: 1fr; }
 }

@@ -6,24 +6,10 @@
  * 概览 / 项目 / 交付 / 协作 / 工具 / 系统。
  */
 
-import React, { useSyncExternalStore } from 'react';
+import React from 'react';
 
 import { logoSrc } from './brand.js';
 import { Icon } from './icons.jsx';
-
-/** 与样式表 `@media (max-width: 768px)` 一致：此宽度下侧栏收起为抽屉。 */
-const OFF_CANVAS_QUERY = '(max-width: 768px)';
-
-function subscribeOffCanvas(callback) {
-  if (typeof window === 'undefined' || !window.matchMedia) return () => {};
-  const media = window.matchMedia(OFF_CANVAS_QUERY);
-  media.addEventListener('change', callback);
-  return () => media.removeEventListener('change', callback);
-}
-
-function isOffCanvas() {
-  return typeof window !== 'undefined' && Boolean(window.matchMedia?.(OFF_CANVAS_QUERY).matches);
-}
 
 /**
  * @typedef {{
@@ -49,13 +35,10 @@ function isOffCanvas() {
  * }} props
  */
 export function AppSidebar({ productName, groups, onNavigate, onOpenChange, open = false, footer }) {
-  const offCanvas = useSyncExternalStore(subscribeOffCanvas, isOffCanvas, () => false);
-  // 窄屏收起时侧栏移出视口，但仍在 DOM 中：设为 inert，避免 Tab 聚焦到看不见的链接。
-  const hidden = offCanvas && !open;
   return (
     <>
       {open ? <div className="app-sidebar__scrim" onClick={() => onOpenChange?.(false)} /> : null}
-      <aside className="app-sidebar" data-open={open ? 'true' : 'false'} inert={hidden || undefined} aria-hidden={hidden || undefined}>
+      <aside className="app-sidebar" data-open={open ? 'true' : 'false'}>
       <div className="app-sidebar__brand">
         <img className="app-sidebar__logo" src={logoSrc} alt="" width="32" height="32" />
         <span className="app-sidebar__name">{productName}</span>

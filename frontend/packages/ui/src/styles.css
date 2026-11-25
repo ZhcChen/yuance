@@ -314,6 +314,8 @@ html.yc-overlay-scrollbars-enabled *::-webkit-scrollbar,
 @media (max-width: 768px) {
   .app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: var(--yc-z-sticky); width: var(--yc-sidebar-w); flex-basis: auto; padding: var(--yc-sp-20) var(--yc-sp-12) var(--yc-sp-16); transform: translateX(-100%); transition: transform var(--yc-motion-base) var(--yc-ease-out); box-shadow: var(--yc-shadow-lg); }
   .app-sidebar[data-open="true"] { transform: translateX(0); }
+  /* 收起时移出视口且不可聚焦（visibility: hidden 的元素不进入 Tab 顺序）；延迟到滑出动画结束再隐藏。 */
+  .app-sidebar[data-open="false"] { visibility: hidden; transition: transform var(--yc-motion-base) var(--yc-ease-out), visibility 0s linear var(--yc-motion-base); }
   .app-sidebar__name,
   .app-sidebar__group-label,
   .app-sidebar__badge,

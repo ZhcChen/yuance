@@ -528,7 +528,8 @@ test('work item lists preserve the main responsive geometry', async ({ page }) =
         };
       });
       expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-      expect(geometry.metricColumns).toBe(viewport.compact ? 1 : viewport.width <= 768 ? 3 : 4);
+      // 手机与平板宽度下指标卡两列（体检 P2：避免单列占满一屏）。
+      expect(geometry.metricColumns).toBe(viewport.width <= 960 ? 2 : 4);
       expect(geometry.filterColumns).toBe(viewport.compact ? 1 : 7);
       expect(geometry.tableContained).toBe(true);
     }
@@ -3558,7 +3559,7 @@ test('project list preserves the main responsive card geometry', async ({ page }
       };
     });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-    expect(geometry.metricColumns).toBe(viewport.width <= 720 ? 1 : viewport.width <= 768 ? 3 : 4);
+    expect(geometry.metricColumns).toBe(viewport.width <= 720 ? 2 : viewport.width <= 768 ? 3 : 4);
     expect(geometry.cardColumns).toBe(viewport.columns);
   }
 });
@@ -3566,7 +3567,7 @@ test('project list preserves the main responsive card geometry', async ({ page }
 test('project detail preserves the main responsive geometry', async ({ page }) => {
   await login(page, '/web/app/projects/YCE');
   for (const viewport of [
-    { width: 390, height: 844, metrics: 1, tabsVertical: true, overview: 1 },
+    { width: 390, height: 844, metrics: 2, tabsVertical: true, overview: 1 },
     { width: 768, height: 1024, metrics: 4, tabsVertical: false, overview: 1 },
     { width: 1280, height: 800, metrics: 4, tabsVertical: false, overview: 1 },
     { width: 1440, height: 900, metrics: 4, tabsVertical: false, overview: 2 },
@@ -4675,7 +4676,7 @@ test('shared project cycle creates updates closes and opens the status board', a
     await page.setViewportSize(viewport);
     const geometry = await page.locator('.cycle-detail-page').evaluate((element) => { const main = element.closest('.main'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, metrics: getComputedStyle(element.querySelector('.cycle-detail-metrics')).gridTemplateColumns.split(' ').length, overview: getComputedStyle(element.querySelector('.cycle-detail-overview')).gridTemplateColumns.split(' ').length, board: getComputedStyle(element.querySelector('.cycle-board-grid')).gridTemplateColumns.split(' ').length }; });
     expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
-    expect(geometry.metrics).toBe(viewport.width <= 960 ? 1 : 4);
+    expect(geometry.metrics).toBe(viewport.width <= 960 ? 2 : 4);
     expect(geometry.overview).toBe(viewport.width <= 1280 ? 1 : 2);
     expect(geometry.board).toBe(viewport.width <= 1100 ? 1 : 2);
   }
@@ -4843,11 +4844,21 @@ test('shared global shell remains usable at canonical responsive widths', async 
   for (const width of [390, 768, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.locator('.global-nav')).toBeVisible();
-    await expect(page.locator('.app-sidebar')).toBeVisible();
-    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+    if (width <= 768) {
+      // 窄屏侧栏收起为抽屉：收起时隐藏且不可聚焦，通过“打开导航”展开。
+      await expect(page.locator('.app-sidebar')).toBeHidden();
+      await page.getByRole('button', { name: '打开导航' }).click();
+      await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+      await expect(page.locator('.app-sidebar__logo')).toBeVisible();
+      await page.locator('.app-sidebar__scrim').click({ position: { x: width - 12, y: 450 } });
+      await expect(page.locator('.app-sidebar')).toBeHidden();
+    } else {
+      await expect(page.locator('.app-sidebar')).toBeVisible();
+      await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
+      await expect(page.locator('.app-sidebar__logo')).toBeVisible();
+    }
     await expect(page.getByRole('search')).toBeVisible();
     await expect(page.getByRole('button', { name: '切换当前项目' })).toBeVisible();
-    await expect(page.locator('.app-sidebar__logo')).toBeVisible();
     await expect(page.getByRole('button', { name: /打开 .* 的账户菜单/ })).toBeVisible();
     const geometry = await page.evaluate(() => {
       const nav = document.querySelector('.global-nav')?.getBoundingClientRect();
@@ -4880,10 +4891,10 @@ test('shared global shell remains usable at canonical responsive widths', async 
       expect(geometry.sidebarRight).toBeLessThanOrEqual(geometry.navWidth);
     }
     expect(geometry.workspaceColumns.trim().split(/\s+/u)).toHaveLength(width <= 1280 ? 1 : 2);
-    // 指标磁贴按可用宽度自适应折行：390 单列、768 三列、更宽四列
+    // 指标磁贴：960 及以下两列（手机端不再单列占屏）、更宽四列
     // auto-fit 会把空轨道折叠成 0px，计数时需要排除
     const metricColumns = geometry.metricColumns.trim().split(/\s+/u).filter((value) => value !== '0px');
-    expect(metricColumns).toHaveLength(width <= 390 ? 1 : width <= 768 ? 3 : 4);
+    expect(metricColumns).toHaveLength(width <= 960 ? 2 : 4);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`global-shell-${width}.png`), fullPage: true });
   }
