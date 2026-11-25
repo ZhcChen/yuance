@@ -6,6 +6,8 @@
 import React, { Suspense, lazy, useState } from 'react';
 
 const TimeAllocationGanttImpl = lazy(() => import('./time-allocation-gantt.jsx').then((module) => ({ default: module.TimeAllocationGantt })));
+const loadRichText = () => import('./rich-text.jsx');
+const RichTextEditorImpl = lazy(() => loadRichText().then((module) => ({ default: module.RichTextEditor })));
 const AttachmentPreviewImpl = lazy(() => import('./attachment-preview.jsx').then((module) => ({ default: module.AttachmentPreview })));
 
 function LazyFallback() {
@@ -26,4 +28,17 @@ export function LazyAttachmentPreview(props) {
   if (props.open && !requested) setRequested(true);
   if (!requested && !props.open) return null;
   return <Suspense fallback={props.open ? <LazyFallback /> : null}><AttachmentPreviewImpl {...props} /></Suspense>;
+}
+
+/**
+ * 富文本编辑器（含 DOMPurify、marked）按需加载；占位保持编辑区高度，避免布局跳动。
+ * @param {any} props
+ */
+export function LazyRichTextEditor(props) {
+  return <Suspense fallback={<div className="yc-rich-text-root yc-lazy-loading" role="status" aria-live="polite">编辑器加载中…</div>}><RichTextEditorImpl {...props} /></Suspense>;
+}
+
+/** 空闲时预取富文本编辑器代码，首次打开编辑弹窗时无需等待。 */
+export function preloadRichTextEditor() {
+  return loadRichText().then(() => undefined, () => undefined);
 }

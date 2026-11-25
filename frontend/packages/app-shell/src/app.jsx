@@ -56,7 +56,8 @@ import {
   Pagination,
   Panel,
   PriorityBadge,
-  RichTextEditor,
+  LazyRichTextEditor as RichTextEditor,
+  preloadRichTextEditor,
   Select,
   StatusPill,
   TextInput,
@@ -831,6 +832,11 @@ export function SharedApp({ services }) {
   const bugsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'bug', ...workItemNavQuery });
   const messageFilter = /** @type {'all' | 'unread' | 'pending' | 'read'} */ (messageRoute ? messageRoute.filter : 'all');
   const previewItems = useMemo(() => (homeFeed?.items || []).slice(0, 8), [homeFeed]);
+  // 空闲时预取富文本编辑器代码：首次打开新建/编辑弹窗时不必等待下载。
+  useEffect(() => {
+    const timer = setTimeout(() => { void preloadRichTextEditor(); }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
   useEffect(() => {
     const detailRoute = route.id === 'project-resource-detail' ? route : null;
     projectResourceUnlockedRef.current = detailRoute && projectResourceDetail?.is_protected && !projectResourceLocked && projectResourceDetail.access_token
