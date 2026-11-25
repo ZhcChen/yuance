@@ -226,6 +226,7 @@ pub async fn issue_session_with_ttls(
     ttl_seconds: i64,
     refresh_ttl_seconds: i64,
 ) -> AppResult<IssuedSession> {
+    invalidate_request_auth_cache();
     let raw_token = Uuid::new_v4().to_string();
     let refresh_token = Uuid::new_v4().to_string();
     let token_hash = hash_session_token(&raw_token);
@@ -285,6 +286,7 @@ pub async fn issue_session_with_ttls(
 }
 
 pub async fn revoke_session(pool: &SqlitePool, raw_token: &str, reason: &str) -> AppResult<()> {
+    invalidate_request_auth_cache();
     let token_hash = hash_session_token(raw_token);
     sqlx::query(
         r#"
@@ -461,6 +463,7 @@ pub async fn refresh_session(
     rotation_recovery_ttl_seconds: i64,
     security_master_key: &str,
 ) -> AppResult<Option<IssuedSession>> {
+    invalidate_request_auth_cache();
     let refresh_token_hash = hash_refresh_token(raw_refresh_token);
     let Some(row) = find_refresh_session(pool, &refresh_token_hash).await? else {
         return Ok(None);
@@ -628,8 +631,25 @@ pub async fn user_from_headers(
     let Some(raw_token) = session_cookie(headers) else {
         return Ok(None);
     };
-    let token_hash = hash_session_token(&raw_token);
-    user_from_token_hash(pool, &token_hash).await
+    user_from_raw_session(pool, &raw_token).await
+}
+
+tokio::task_local! {
+    /// 请求级会话校验缓存：中间件与处理函数在同一请求内按同一令牌校验会话时复用结果。
+    /// 作用域随请求结束，不跨请求；任何改变会话或用户状态的写操作都会清空。
+    static REQUEST_AUTH_CACHE: std::cell::RefCell<Option<(String, Option<AuthUser>)>>;
+}
+
+/// 在请求级会话缓存作用域内执行（由路由中间件为每个请求建立）。
+pub async fn with_request_auth_cache<F: std::future::Future>(future: F) -> F::Output {
+    REQUEST_AUTH_CACHE
+        .scope(std::cell::RefCell::new(None), future)
+        .await
+}
+
+/// 清空当前请求的会话缓存；不在作用域内时无操作。
+pub fn invalidate_request_auth_cache() {
+    let _ = REQUEST_AUTH_CACHE.try_with(|cache| cache.borrow_mut().take());
 }
 
 pub async fn user_from_raw_session(
@@ -637,7 +657,24 @@ pub async fn user_from_raw_session(
     raw_token: &str,
 ) -> AppResult<Option<AuthUser>> {
     let token_hash = hash_session_token(raw_token);
-    user_from_token_hash(pool, &token_hash).await
+    let cached = REQUEST_AUTH_CACHE
+        .try_with(|cache| {
+            cache
+                .borrow()
+                .as_ref()
+                .filter(|(hash, _)| *hash == token_hash)
+                .map(|(_, user)| user.clone())
+        })
+        .ok()
+        .flatten();
+    if let Some(user) = cached {
+        return Ok(user);
+    }
+    let user = user_from_token_hash(pool, &token_hash).await?;
+    let _ = REQUEST_AUTH_CACHE.try_with(|cache| {
+        *cache.borrow_mut() = Some((token_hash, user.clone()));
+    });
+    Ok(user)
 }
 
 async fn user_from_token_hash(pool: &SqlitePool, token_hash: &str) -> AppResult<Option<AuthUser>> {

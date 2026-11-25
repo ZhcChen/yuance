@@ -272,6 +272,7 @@ pub async fn update_own_profile(
     user_id: i64,
     input: UpdateOwnProfileInput,
 ) -> AppResult<UserSummary> {
+    crate::domains::auth::invalidate_request_auth_cache();
     let display_name = auth::validate_display_name(&input.display_name)?;
     let email = validate_email(&input.email)?;
     let mobile = validate_mobile(&input.mobile)?;
@@ -313,6 +314,7 @@ pub async fn change_own_password(
     new_password: &str,
     current_session: CurrentPasswordSession,
 ) -> AppResult<()> {
+    crate::domains::auth::invalidate_request_auth_cache();
     auth::validate_password(new_password)?;
     let password_hash = sqlx::query_scalar::<_, String>(
         "SELECT password_hash FROM users WHERE id = ?1 AND status = 'active'",
@@ -439,6 +441,7 @@ pub async fn reset_user_password(
     username: &str,
     password: &str,
 ) -> AppResult<()> {
+    crate::domains::auth::invalidate_request_auth_cache();
     let username = auth::validate_username(username)?;
     auth::validate_password(password)?;
     let (user_id, _is_super_admin) = find_user_id_and_super_admin(pool, &username).await?;
@@ -493,6 +496,7 @@ pub async fn reset_user_password(
 }
 
 pub async fn set_user_status(pool: &SqlitePool, username: &str, status: &str) -> AppResult<()> {
+    crate::domains::auth::invalidate_request_auth_cache();
     let username = auth::validate_username(username)?;
     let status = validate_user_status(status)?;
     let (user_id, is_super_admin) = find_user_id_and_super_admin(pool, &username).await?;

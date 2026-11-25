@@ -739,6 +739,8 @@ pub fn build_router(state: AppState) -> Router {
             middleware_state,
             session_refresh_middleware,
         ))
+        // 请求级会话校验缓存：包住会话中间件与处理函数，同一请求内只查询一次会话。
+        .layer(axum::middleware::from_fn(request_auth_cache_middleware))
         // 请求可观测性：为每个请求生成 x-request-id（响应头回传），并在同一 span 中记录方法、路径、状态与耗时；
         // 5xx 的完整错误由 AppError 在该 span 内记录，便于按请求编号定位。
         .layer(tower_http::request_id::PropagateRequestIdLayer::new(
@@ -771,6 +773,10 @@ pub fn build_router(state: AppState) -> Router {
             tower_http::request_id::MakeRequestUuid,
         ))
         .with_state(state)
+}
+
+async fn request_auth_cache_middleware(request: Request, next: Next) -> Response {
+    auth::with_request_auth_cache(next.run(request)).await
 }
 
 static REQUEST_ID_HEADER: http::HeaderName = http::HeaderName::from_static("x-request-id");

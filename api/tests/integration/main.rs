@@ -6,6 +6,7 @@
 
 mod attachment_stream_flow;
 mod audit_flow;
+mod auth_cache_flow;
 mod auth_csrf_refresh_flow;
 mod auth_security_flow;
 mod cli_files_flow;
