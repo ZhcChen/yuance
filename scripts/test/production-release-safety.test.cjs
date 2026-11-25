@@ -880,6 +880,7 @@ test('远端发布持有部署锁，迁移成功后才把 latest 切到新镜像
   const switchLatest = remoteScript.indexOf('docker tag "$RELEASE_TAG" "$IMAGE"');
   const startApi = remoteScript.indexOf('重建并启动 api 容器');
   assert.ok(lock >= 0 && lock < load, '部署锁必须在加载镜像前获取');
+  assert.match(remoteScript, /\nremote_main\(\) \{\n[\s\S]*\n\}\nremote_main <\/dev\/null\nREMOTE_SCRIPT\n/, '远端脚本须整体包在函数中并隔离标准输入，避免子进程吞掉未读入的脚本');
   assert.ok(load < restorePrevious && restorePrevious < migration, '迁移前 latest 必须恢复为旧镜像');
   assert.ok(migration < switchLatest && switchLatest < startApi, '迁移成功后才切换 latest 并启动');
   assert.match(remoteScript, /env YUANCE_API_IMAGE="\$RELEASE_TAG" docker compose --env-file \.env -f compose\.yaml run --rm/);
