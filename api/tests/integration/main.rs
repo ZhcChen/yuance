@@ -4,6 +4,7 @@
 //! （如 `YUANCE_WEB_DIST_DIR`）的测试不得放入本二进制，应保留为独立测试文件
 //! （见 `tests/bootstrap_flow.rs`、`tests/routing_smoke.rs`），避免与并行用例互相干扰。
 
+mod attachment_stream_flow;
 mod audit_flow;
 mod auth_csrf_refresh_flow;
 mod auth_security_flow;

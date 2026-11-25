@@ -27,7 +27,7 @@ use crate::{
         security::csrf,
     },
     web::{
-        attachment_preview, audit_context, auth_limits,
+        attachment_preview, attachment_stream, audit_context, auth_limits,
         response::{ApiEnvelope, json},
         router::{AppState, app_release_version},
         test_storage::{
@@ -5581,39 +5581,21 @@ async fn attachment_preview_content_response(
         None => (StatusCode::OK, 0, total.saturating_sub(1)),
     };
     let selected_length = if total == 0 { 0 } else { end - start + 1 };
-    let body = if let Some(encryption) = encryption {
-        if method == Method::HEAD || selected_length == 0 {
-            Bytes::new()
-        } else {
-            Bytes::from(
-                read_decrypted_attachment_range(
-                    state,
-                    pool,
-                    &attachment,
-                    &encryption,
-                    start,
-                    end + 1,
-                )
-                .await?,
-            )
-        }
-    } else if method == Method::HEAD || selected_length == 0 {
-        Bytes::new()
-    } else if status == StatusCode::PARTIAL_CONTENT {
-        Bytes::from(
-            storage::read_object_range(
-                pool,
-                &state.settings,
-                &attachment.object_key,
-                start as u64,
-                (end + 1) as u64,
-            )
-            .await?,
-        )
+    // 按块流式输出（加密附件逐块解密），整文件与 Range 请求都不把文件读入内存。
+    let body = if method == Method::HEAD || selected_length == 0 {
+        axum::body::Body::empty()
+    } else if let Some(encryption) = encryption {
+        attachment_stream::EncryptedAttachmentSource::open(state, pool, &attachment, &encryption)
+            .await?
+            .into_body(start, end + 1)
     } else {
-        let (_, content) =
-            storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-        Bytes::from(content)
+        attachment_stream::plain_object_body(
+            pool,
+            &state.settings,
+            &attachment.object_key,
+            start as u64,
+            (end + 1) as u64,
+        )
     };
     let mut response = (status, body).into_response();
     let response_headers = response.headers_mut();
@@ -5704,58 +5686,6 @@ pub(crate) async fn encrypted_preview_content_response(
     headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
     Ok(response)
-}
-
-async fn read_decrypted_attachment_range(
-    state: &AppState,
-    pool: &SqlitePool,
-    attachment: &files::FileAttachmentSummary,
-    encryption: &files::FileObjectEncryption,
-    start: usize,
-    end_exclusive: usize,
-) -> AppResult<Vec<u8>> {
-    let data_key = file_crypto::open_data_key(
-        &state.settings.file_master_key,
-        &encryption.data_key_envelope,
-        attachment.object_key.as_bytes(),
-    )?;
-    let header_len = file_crypto::header_len_for(attachment.byte_size as u64);
-    let header_bytes = storage::read_object_range(
-        pool,
-        &state.settings,
-        &attachment.object_key,
-        0,
-        header_len as u64,
-    )
-    .await?;
-    let header = file_crypto::parse_encryption_header(&header_bytes)?;
-    if start >= header.plaintext_byte_size as usize
-        || end_exclusive > header.plaintext_byte_size as usize
-        || start >= end_exclusive
-    {
-        return Ok(Vec::new());
-    }
-    let first_chunk = start / header.chunk_size;
-    let last_chunk = (end_exclusive - 1) / header.chunk_size;
-    let body_start = header_len + file_crypto::body_offset_for_chunk(&header, first_chunk as u32);
-    let body_end =
-        header_len + file_crypto::body_offset_for_chunk(&header, (last_chunk as u32) + 1);
-    let body = storage::read_object_range(
-        pool,
-        &state.settings,
-        &attachment.object_key,
-        body_start as u64,
-        body_end as u64,
-    )
-    .await?;
-    file_crypto::decrypt_body_range(
-        &data_key,
-        attachment.file_object_id,
-        &header,
-        &body,
-        first_chunk as u32..(last_chunk as u32) + 1,
-        start..end_exclusive,
-    )
 }
 
 pub async fn project_attachment_delete(

@@ -14,17 +14,14 @@ use crate::{
         bootstrap::{self, BootstrapInitInput},
         files, project_resources, projects, rbac, storage,
     },
+    platform::error::{AppError, AppResult},
     platform::security::csrf,
-    platform::{
-        error::{AppError, AppResult},
-        file_crypto,
-    },
     web::{
         attachment_preview::{
             AttachmentPreviewStrategy, file_type as attachment_preview_file_type,
             strategy as attachment_preview_strategy,
         },
-        audit_context, auth_limits, response,
+        attachment_stream, audit_context, auth_limits, response,
         router::AppState,
         test_storage::bind_test_storage_download_grant,
     },
@@ -1566,6 +1563,11 @@ async fn attachment_download_redirect(
             content_type: String,
             content: Vec<u8>,
         },
+        Stream {
+            content_type: String,
+            body: axum::body::Body,
+            content_length: usize,
+        },
         SignedRedirect {
             url: String,
         },
@@ -1573,9 +1575,19 @@ async fn attachment_download_redirect(
 
     let encryption = files::get_file_object_encryption(pool, attachment.file_object_id).await?;
     let download_target = if let Some(encryption) = encryption {
-        DownloadTarget::Plaintext {
+        // 按块流式解密输出，避免整文件进入内存。
+        let source = attachment_stream::EncryptedAttachmentSource::open(
+            state,
+            pool,
+            &attachment,
+            &encryption,
+        )
+        .await?;
+        let content_length = source.plaintext_len();
+        DownloadTarget::Stream {
             content_type: attachment.content_type.clone(),
-            content: read_attachment_plaintext(state, pool, &attachment, &encryption).await?,
+            body: source.into_body(0, content_length),
+            content_length,
         }
     } else if let Some((content_type, content)) =
         storage::read_test_memory_object(pool, &state.settings, &attachment.object_key).await?
@@ -1609,15 +1621,36 @@ async fn attachment_download_redirect(
             content_type,
             content,
         } => attachment_content_response(content_type, content),
+        DownloadTarget::Stream {
+            content_type,
+            body,
+            content_length,
+        } => attachment_body_response(content_type, body, Some(content_length)),
         DownloadTarget::SignedRedirect { url } => Ok(Redirect::temporary(&url).into_response()),
     }
 }
 
 fn attachment_content_response(content_type: String, content: Vec<u8>) -> AppResult<Response> {
+    let content_length = content.len();
+    attachment_body_response(
+        content_type,
+        axum::body::Body::from(content),
+        Some(content_length),
+    )
+}
+
+fn attachment_body_response(
+    content_type: String,
+    body: axum::body::Body,
+    content_length: Option<usize>,
+) -> AppResult<Response> {
     let is_inline_media = is_previewable_image_content_type(&content_type)
         || is_previewable_video_content_type(&content_type);
-    let mut response = content.into_response();
+    let mut response = body.into_response();
     let headers = response.headers_mut();
+    if let Some(content_length) = content_length {
+        headers.insert(header::CONTENT_LENGTH, content_length.to_string().parse()?);
+    }
     headers.insert(
         header::CONTENT_TYPE,
         if is_inline_media {
@@ -1631,22 +1664,6 @@ fn attachment_content_response(content_type: String, content: Vec<u8>) -> AppRes
         headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
     }
     Ok(response)
-}
-
-async fn read_attachment_plaintext(
-    state: &AppState,
-    pool: &SqlitePool,
-    attachment: &files::FileAttachmentSummary,
-    encryption: &files::FileObjectEncryption,
-) -> AppResult<Vec<u8>> {
-    let (_, ciphertext) =
-        storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-    let data_key = file_crypto::open_data_key(
-        &state.settings.file_master_key,
-        &encryption.data_key_envelope,
-        attachment.object_key.as_bytes(),
-    )?;
-    file_crypto::decrypt_ciphertext_full(&data_key, attachment.file_object_id, &ciphertext)
 }
 
 struct AttachmentDocumentPreviewInput<'a> {
@@ -1939,9 +1956,15 @@ async fn attachment_document_preview_content_response(
     if let Some(encryption) =
         files::get_file_object_encryption(pool, attachment.file_object_id).await?
     {
-        let plaintext = read_attachment_plaintext(state, pool, &attachment, &encryption).await?;
-        let plaintext_len = plaintext.len();
-        let mut response = plaintext.into_response();
+        let source = attachment_stream::EncryptedAttachmentSource::open(
+            state,
+            pool,
+            &attachment,
+            &encryption,
+        )
+        .await?;
+        let plaintext_len = source.plaintext_len();
+        let mut response = source.into_body(0, plaintext_len).into_response();
         let headers = response.headers_mut();
         headers.insert(header::CONTENT_TYPE, attachment.content_type.parse()?);
         headers.insert(header::CONTENT_LENGTH, plaintext_len.to_string().parse()?);
