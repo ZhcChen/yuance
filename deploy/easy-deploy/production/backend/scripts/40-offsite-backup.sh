@@ -12,7 +12,8 @@ umask 077
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 APP_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-BACKUP_ROOT="${YUANCE_BACKUP_DIR:-$APP_DIR/backups}"
+# 与 00-backup-sqlite.sh 在 with-clean-backup-env.sh 下的默认目录保持一致（该入口会清除 YUANCE_BACKUP_DIR）。
+BACKUP_ROOT="$APP_DIR/backups"
 CONF_DIR="${YUANCE_OFFSITE_CONF_DIR:-/etc/yuance-backup}"
 RCLONE_CONFIG="$CONF_DIR/rclone.conf"
 AGE_RECIPIENT_FILE="$CONF_DIR/age-recipient.txt"
@@ -42,7 +43,7 @@ for tool in sqlite3 age rclone tar zstd flock sha256sum; do
 done
 [ -f "$RCLONE_CONFIG" ] || fail "缺少异地存储配置：$RCLONE_CONFIG"
 [ -s "$AGE_RECIPIENT_FILE" ] || fail "缺少 age 公钥：$AGE_RECIPIENT_FILE"
-case "$KEEP_DAILY" in ''|*[!0-9]*) fail "YUANCE_BACKUP_KEEP_DAILY 必须是非负整数" ;; esac
+case "$KEEP_DAILY" in ''|*[!0-9]*|0) fail "YUANCE_BACKUP_KEEP_DAILY 必须是正整数" ;; esac
 
 # 与发布流程互斥：发布期间不做备份，备份期间不发布（发布脚本使用同一把锁）。
 exec 9>"$LOCK_FILE"
@@ -65,8 +66,14 @@ STAMP="$(basename "$SNAPSHOT_DIR")"
 WORK="$(mktemp -d "$BACKUP_ROOT/.offsite.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 ARCHIVE="$WORK/yuance-$STAMP.tar.zst.age"
-tar -C "$SNAPSHOT_DIR" -cf - . | zstd -q -T0 -10 | age -R "$AGE_RECIPIENT_FILE" -o "$ARCHIVE" \
-  || fail "打包或加密失败"
+# 分步落盘并逐步检查：POSIX sh 没有 pipefail，管道中前段失败会被后段掩盖，可能把截断的归档当成功上传。
+tar -C "$SNAPSHOT_DIR" -cf "$WORK/snapshot.tar" . || fail "打包失败"
+zstd -q -T0 -10 "$WORK/snapshot.tar" -o "$WORK/snapshot.tar.zst" || fail "压缩失败"
+zstd -q -t "$WORK/snapshot.tar.zst" || fail "压缩包自检失败"
+rm -f "$WORK/snapshot.tar"
+age -R "$AGE_RECIPIENT_FILE" -o "$ARCHIVE" "$WORK/snapshot.tar.zst" || fail "加密失败"
+rm -f "$WORK/snapshot.tar.zst"
+[ -s "$ARCHIVE" ] || fail "加密归档为空"
 ARCHIVE_SHA="$(sha256sum "$ARCHIVE" | cut -d' ' -f1)"
 ARCHIVE_SIZE="$(wc -c < "$ARCHIVE" | tr -d '[:space:]')"
 printf '%s  %s\n' "$ARCHIVE_SHA" "$(basename "$ARCHIVE")" > "$ARCHIVE.sha256"

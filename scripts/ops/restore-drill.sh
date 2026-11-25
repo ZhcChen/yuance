@@ -39,6 +39,7 @@ cleanup() {
   rm -rf "$DRILL"
 }
 trap cleanup EXIT
+trap "exit 1" HUP INT TERM
 chmod 600 "$KEY"
 cat > "$KEY"
 RCLONE="rclone --config /etc/yuance-backup/rclone.conf --s3-no-check-bucket"
@@ -50,13 +51,16 @@ fi
 echo "archive=$ARCHIVE_NAME"
 $RCLONE copyto "$REMOTE/$ARCHIVE_NAME" "$DRILL/$ARCHIVE_NAME"
 $RCLONE copyto "$REMOTE/$ARCHIVE_NAME.sha256" "$DRILL/$ARCHIVE_NAME.sha256"
-(cd "$DRILL" && sha256sum -c "$ARCHIVE_NAME.sha256" >/dev/null) && echo "sha256=ok"
+if ! (cd "$DRILL" && sha256sum -c "$ARCHIVE_NAME.sha256" >/dev/null); then echo "sha256=mismatch" >&2; exit 1; fi
+echo "sha256=ok"
 mkdir -p "$DRILL/restore"
 age -d -i "$KEY" "$DRILL/$ARCHIVE_NAME" | zstd -d -q | tar -x -C "$DRILL/restore"
 rm -f "$KEY"
 echo "decrypt=ok"
 echo "manifest:"; sed "s/^/  /" "$DRILL/restore/manifest.txt"
-echo "integrity_check=$(sqlite3 "$DRILL/restore/yuance.sqlite3" "PRAGMA integrity_check;")"
+INTEGRITY="$(sqlite3 "$DRILL/restore/yuance.sqlite3" "PRAGMA integrity_check;")"
+echo "integrity_check=$INTEGRITY"
+[ "$INTEGRITY" = "ok" ] || { echo "数据库完整性检查失败" >&2; exit 1; }
 echo "counts=users:$(sqlite3 "$DRILL/restore/yuance.sqlite3" "SELECT COUNT(*) FROM users") projects:$(sqlite3 "$DRILL/restore/yuance.sqlite3" "SELECT COUNT(*) FROM projects") work_items:$(sqlite3 "$DRILL/restore/yuance.sqlite3" "SELECT COUNT(*) FROM work_items") file_objects:$(sqlite3 "$DRILL/restore/yuance.sqlite3" "SELECT COUNT(*) FROM file_objects")"
 if [ -f "$DRILL/restore/secrets/file_master_key" ]; then
   echo "file_master_key=present($(wc -c < "$DRILL/restore/secrets/file_master_key" | tr -d " ") bytes)"
@@ -72,8 +76,10 @@ run_app() {
     -e YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3 -e YUANCE_DATA_DIR=/data -e YUANCE_LOG_LEVEL=warn \
     -v "$DATA:/data" "$IMAGE" ./yuance-api "$@"
 }
-echo "migrate_status:"; run_app migrate status 2>&1 | tail -n 3 | sed "s/^/  /"
-echo "files_audit:"; run_app files audit-objects 2>&1 | tail -n 5 | sed "s/^/  /"
+MIGRATE_OUTPUT="$(run_app migrate status 2>&1)" || { echo "$MIGRATE_OUTPUT" >&2; echo "migrate status 失败" >&2; exit 1; }
+echo "migrate_status:"; printf "%s\n" "$MIGRATE_OUTPUT" | tail -n 3 | sed "s/^/  /"
+AUDIT_OUTPUT="$(run_app files audit-objects 2>&1)" || { echo "$AUDIT_OUTPUT" >&2; echo "files audit-objects 失败" >&2; exit 1; }
+echo "files_audit:"; printf "%s\n" "$AUDIT_OUTPUT" | tail -n 5 | sed "s/^/  /"
 echo "drill=ok"
 '
 

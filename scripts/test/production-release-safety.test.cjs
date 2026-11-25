@@ -888,4 +888,8 @@ test('远端发布持有部署锁，迁移成功后才把 latest 切到新镜像
   assert.match(source, /curl -fsS --max-time 10 -o \/dev\/null "\$PUBLIC_HEALTH_URL\/api\/readyz"/);
   const backup = fs.readFileSync(path.join(rootDir, 'deploy/easy-deploy/production/backend/scripts/40-offsite-backup.sh'), 'utf8');
   assert.match(backup, /\/run\/lock\/yuance-backup\.lock/, '备份与发布共用同一把锁');
+  assert.ok(remoteScript.indexOf('docker rmi "$RELEASE_IMAGE"') > startApi, '发布成功后才清理临时构建标签');
+  assert.match(remoteScript, /tail -n \+"\$\(\(KEEP_RELEASE_BACKUPS \+ 2\)\)"/, '按提交的镜像标签只保留当前与最近若干版本');
+  assert.doesNotMatch(backup, /\| *zstd[^\n]*\| *age/, '备份不得用管道串联打包、压缩与加密（sh 无 pipefail）');
+  assert.match(backup, /zstd -q -t /, '压缩包落盘后自检');
 });

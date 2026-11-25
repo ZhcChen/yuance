@@ -745,6 +745,20 @@ if [ -n "$old_backups" ]; then
   done
 fi
 
+# 清理镜像标签：构建用的 release-* 标签用完即删；按提交的标签保留当前版本与最近 KEEP_RELEASE_BACKUPS 个旧版本，
+# 其余去掉标签，使旧镜像可被 dangling 清理回收。latest 指向的镜像不受影响。
+if [ "$RELEASE_IMAGE" != "$IMAGE" ] && [ "$RELEASE_IMAGE" != "$RELEASE_TAG" ]; then
+  docker rmi "$RELEASE_IMAGE" >/dev/null 2>&1 || true
+fi
+IMAGE_REPO="$(printf '%s' "$IMAGE" | sed 's/:[^:/]*$//')"
+docker image ls "$IMAGE_REPO" --format '{{.CreatedAt}}	{{.Tag}}' 2>/dev/null \
+  | awk -F '\t' '$2 ~ /^[0-9a-f]{12}$/ { print $1 "\t" $2 }' \
+  | sort -r \
+  | tail -n +"$((KEEP_RELEASE_BACKUPS + 2))" \
+  | while IFS="$(printf '\t')" read -r _created stale_tag; do
+      docker rmi "$IMAGE_REPO:$stale_tag" >/dev/null 2>&1 || true
+    done
+
 if [ "$PRUNE_DANGLING_IMAGES" = "1" ]; then
   run_timeout "清理 Docker dangling 镜像" 300 docker image prune -f
 fi
