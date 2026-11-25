@@ -64,6 +64,8 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
+    tracing::info!("shutdown signal received, closing realtime streams");
+    crate::platform::realtime::begin_shutdown();
 }
 
 #[cfg(test)]

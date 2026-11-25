@@ -1047,7 +1047,14 @@ pub async fn topbar_events(
         );
         yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("connected"));
         loop {
-            match receiver.recv().await {
+            // 停机时结束流，避免优雅停机一直等待长连接。
+            let next = tokio::select! {
+                biased;
+                _ = realtime::wait_for_shutdown() => None,
+                message = receiver.recv() => Some(message),
+            };
+            let Some(next) = next else { break };
+            match next {
                 Ok(message) => {
                     if message.kind == "topbar" && message.user_ids.contains(&user_id) {
                         yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("refresh"));
@@ -1094,7 +1101,13 @@ pub async fn work_item_events(
             Event::default().event("typing").data(snapshot_json.clone())
         );
         loop {
-            match receiver.recv().await {
+            let next = tokio::select! {
+                biased;
+                _ = realtime::wait_for_shutdown() => None,
+                message = receiver.recv() => Some(message),
+            };
+            let Some(next) = next else { break };
+            match next {
                 Ok(message) => {
                     if message.item_key != event_item_key {
                         continue;

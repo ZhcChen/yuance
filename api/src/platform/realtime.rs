@@ -56,6 +56,23 @@ pub fn subscribe_work_item_realtime() -> broadcast::Receiver<WorkItemRealtimeEve
     work_item_realtime_sender().subscribe()
 }
 
+fn shutdown_sender() -> &'static tokio::sync::watch::Sender<bool> {
+    static SHUTDOWN_SENDER: OnceLock<tokio::sync::watch::Sender<bool>> = OnceLock::new();
+    SHUTDOWN_SENDER.get_or_init(|| tokio::sync::watch::channel(false).0)
+}
+
+/// 进程开始停机：通知所有实时事件流结束，让优雅停机不必等待长连接超时。
+/// 客户端 EventSource 会自动重连到新实例。
+pub fn begin_shutdown() {
+    shutdown_sender().send_replace(true);
+}
+
+/// 等待停机信号；已经在停机时立即返回。
+pub async fn wait_for_shutdown() {
+    let mut receiver = shutdown_sender().subscribe();
+    let _ = receiver.wait_for(|stopping| *stopping).await;
+}
+
 #[derive(Debug, Clone)]
 struct TypingPresenceEntry {
     user_id: i64,
